@@ -1,0 +1,47 @@
+appId: com.whisperio.app
+productName: Whisperio
+directories:
+  buildResources: build
+  output: dist
+files:
+  - out/**/*
+asarUnpack:
+  - "node_modules/koffi/**"
+extraResources:
+  - from: icons/whisperio.ico
+    to: icons/whisperio.ico
+publish:
+  provider: github
+  owner: draenger
+  repo: whisperio
+
+win:
+  icon: build/icon.ico
+  target:
+    - target: nsis
+      arch:
+        - x64
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  installerIcon: build/icon.ico
+  uninstallerIcon: build/icon.ico
+
+mac:
+  icon: build/icon.png
+  target:
+    - target: dmg
+      arch:
+        - x64
+        - arm64
+
+linux:
+  icon: icons/whisperio.png
+  target:
+    - target: AppImage
+      arch:
+        - x64
+    - target: deb
+      arch:
+        - x64
+  category: Utility
