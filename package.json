@@ -1,6 +1,6 @@
 {
   "name": "whisperio",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "author": "Daniel Kasprzyk <daniel@danielkasprzyk.com>",
   "description": "Whisperio — Global dictation with hotkey, overlay, and auto-paste. Press hotkey to record, press again to transcribe and paste.",
   "main": "./out/main/index.js",
