@@ -63,7 +63,12 @@ On first launch, open Settings from the system tray and enter your API key.
 
 ## Run without installing
 
-If you have Node.js 18+ installed, you can run Whisperio directly from source:
+No installer, no system Node.js required. The launcher scripts bootstrap
+everything into the project folder: if Node.js is missing they download a
+portable copy into `./.node`, run `npm install`, and start the app. Nothing is
+written outside the folder — delete the folder and it's gone.
+
+**Windows** (PowerShell):
 
 ```powershell
 git clone https://github.com/draenger/whisperio.git
@@ -71,11 +76,21 @@ cd whisperio
 powershell -ExecutionPolicy Bypass -File start.ps1
 ```
 
-Or manually:
+**macOS / Linux**:
 
 ```bash
 git clone https://github.com/draenger/whisperio.git
 cd whisperio
+bash start.sh
+```
+
+(No `git`? Download the repo as a ZIP from GitHub, extract it, and run the same
+script from inside the folder.)
+
+If you already have Node.js 18+ on your PATH, the scripts use it instead of
+downloading a portable one. To run manually:
+
+```bash
 npm install
 npm run dev
 ```
