@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, type ReactElement } from 'react'
+import { useState, useEffect, useCallback, useRef, type ReactElement } from 'react'
 import { useTheme } from '../../ThemeContext'
 import { TitleBar } from '../common/TitleBar'
 import type { Theme } from '../../theme'
@@ -16,13 +16,14 @@ interface RecordingEntry {
   size: number
 }
 
-export function RecordingsPanel(): ReactElement {
+export function RecordingsView(): ReactElement {
   const { theme } = useTheme()
   const [recordings, setRecordings] = useState<RecordingEntry[]>([])
   const [loading, setLoading] = useState(true)
   const [hoveredId, setHoveredId] = useState<string | null>(null)
   const [deleteAllConfirm, setDeleteAllConfirm] = useState(false)
   const [copiedId, setCopiedId] = useState<string | null>(null)
+  const [selectedId, setSelectedId] = useState<string | null>(null)
 
   const s = makeStyles(theme)
 
@@ -86,6 +87,13 @@ export function RecordingsPanel(): ReactElement {
     return text.slice(0, maxLen) + '...'
   }
 
+  const formatSize = (bytes: number): string => {
+    if (!bytes) return '—'
+    if (bytes < 1024) return `${bytes} B`
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+  }
+
   const statusIcon = (status: string): { char: string; color: string } => {
     switch (status) {
       case 'completed':
@@ -99,19 +107,40 @@ export function RecordingsPanel(): ReactElement {
 
   if (loading) {
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', background: theme.bg }}>
-        <TitleBar title="Whisperio Recordings" />
-        <div style={{ ...s.container, justifyContent: 'center', alignItems: 'center', flex: 1 }}>
-          <p style={{ color: theme.textMuted }}>Loading...</p>
+      <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, justifyContent: 'center', alignItems: 'center' }}>
+        <p style={{ color: theme.textMuted }}>Loading...</p>
+      </div>
+    )
+  }
+
+  const selectedRec = selectedId ? recordings.find((r) => r.id === selectedId) ?? null : null
+  if (selectedRec) {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
+        <div style={s.scrollArea}>
+          <RecordingDetail
+            theme={theme}
+            rec={selectedRec}
+            onBack={() => setSelectedId(null)}
+            onCopy={() => selectedRec.transcription && handleCopy(selectedRec.id, selectedRec.transcription)}
+            copied={copiedId === selectedRec.id}
+            onReprocess={() => handleReprocess(selectedRec.id)}
+            onDelete={async () => {
+              await handleDelete(selectedRec.id)
+              setSelectedId(null)
+            }}
+            formatDate={formatDate}
+            formatDuration={formatDuration}
+            formatSize={formatSize}
+            statusIcon={statusIcon}
+          />
         </div>
       </div>
     )
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', background: theme.bg }}>
-      <TitleBar title="Whisperio Recordings" />
-
+    <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
       {/* Toolbar */}
       <div style={s.toolbar}>
         <span style={s.recordingCount}>
@@ -188,8 +217,10 @@ export function RecordingsPanel(): ReactElement {
                   key={rec.id}
                   style={{
                     ...s.recordingRow,
+                    cursor: 'pointer',
                     borderColor: isHovered ? theme.accent : theme.border
                   }}
+                  onClick={() => setSelectedId(rec.id)}
                   onMouseEnter={() => setHoveredId(rec.id)}
                   onMouseLeave={() => setHoveredId(null)}
                 >
@@ -218,11 +249,14 @@ export function RecordingsPanel(): ReactElement {
                   </div>
 
                   {/* Action buttons (visible on hover) */}
-                  <div style={{
-                    ...s.actionButtons,
-                    opacity: isHovered ? 1 : 0,
-                    pointerEvents: isHovered ? 'auto' : 'none'
-                  }}>
+                  <div
+                    onClick={(e) => e.stopPropagation()}
+                    style={{
+                      ...s.actionButtons,
+                      opacity: isHovered ? 1 : 0,
+                      pointerEvents: isHovered ? 'auto' : 'none'
+                    }}
+                  >
                     {rec.status === 'completed' && rec.transcription && (
                       <button
                         onClick={() => handleCopy(rec.id, rec.transcription!)}
@@ -284,11 +318,283 @@ export function RecordingsPanel(): ReactElement {
                       </svg>
                     </button>
                   </div>
+
+                  {/* Chevron — opens detail */}
+                  <span style={{ display: 'flex', flexShrink: 0, color: theme.textMuted }}>
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <polyline points="9 6 15 12 9 18" />
+                    </svg>
+                  </span>
                 </div>
               )
             })
           )}
         </div>
+      </div>
+    </div>
+  )
+}
+
+/* Standalone window wrapper (own title bar + full height). */
+export function RecordingsPanel(): ReactElement {
+  const { theme } = useTheme()
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', background: theme.bg }}>
+      <TitleBar title="Whisperio Recordings" />
+      <RecordingsView />
+    </div>
+  )
+}
+
+/* --- Recording detail sub-page --- */
+
+function mimeFromName(name: string): string {
+  const ext = name.toLowerCase().split('.').pop() ?? ''
+  if (ext === 'wav') return 'audio/wav'
+  if (ext === 'mp3') return 'audio/mpeg'
+  if (ext === 'ogg') return 'audio/ogg'
+  if (ext === 'm4a') return 'audio/mp4'
+  return 'audio/webm'
+}
+
+function RecordingDetail({
+  theme,
+  rec,
+  onBack,
+  onCopy,
+  copied,
+  onReprocess,
+  onDelete,
+  formatDate,
+  formatDuration,
+  formatSize,
+  statusIcon
+}: {
+  theme: Theme
+  rec: RecordingEntry
+  onBack: () => void
+  onCopy: () => void
+  copied: boolean
+  onReprocess: () => void
+  onDelete: () => void
+  formatDate: (t: number) => string
+  formatDuration: (s: number) => string
+  formatSize: (b: number) => string
+  statusIcon: (status: string) => { char: string; color: string }
+}): ReactElement {
+  const audioRef = useRef<HTMLAudioElement | null>(null)
+  const [audioUrl, setAudioUrl] = useState<string | null>(null)
+  const [playing, setPlaying] = useState(false)
+  const [current, setCurrent] = useState(0)
+  const failed = rec.status === 'failed'
+  const si = statusIcon(rec.status)
+
+  useEffect(() => {
+    let url: string | null = null
+    let cancelled = false
+    window.api.recordings.getAudio(rec.id).then((buf) => {
+      if (cancelled || !buf) return
+      const bytes = buf instanceof Uint8Array ? buf : new Uint8Array(buf as ArrayBuffer)
+      const blob = new Blob([bytes as BlobPart], { type: mimeFromName(rec.filename) })
+      url = URL.createObjectURL(blob)
+      setAudioUrl(url)
+    })
+    return () => {
+      cancelled = true
+      if (url) URL.revokeObjectURL(url)
+    }
+  }, [rec.id, rec.filename])
+
+  const togglePlay = (): void => {
+    const a = audioRef.current
+    if (!a) return
+    if (a.paused) {
+      a.play()
+      setPlaying(true)
+    } else {
+      a.pause()
+      setPlaying(false)
+    }
+  }
+
+  // 40 deterministic waveform bars seeded from the recording id
+  const bars = Array.from({ length: 40 }, (_, i) => {
+    const seed = rec.id.charCodeAt(i % rec.id.length) || 12
+    return 7 + ((seed * (i + 3)) % 24)
+  })
+  const progress = rec.duration > 0 ? current / rec.duration : 0
+  const fmtTime = (s: number): string => {
+    const m = Math.floor(s / 60)
+    const sec = Math.floor(s % 60)
+    return `${m}:${sec.toString().padStart(2, '0')}`
+  }
+
+  const ghostBtn: React.CSSProperties = {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 7,
+    background: 'none',
+    border: `1px solid ${theme.border}`,
+    borderRadius: 9,
+    padding: '8px 13px',
+    fontSize: 13,
+    fontWeight: 500,
+    color: theme.textSecondary,
+    cursor: 'pointer',
+    fontFamily: 'IBM Plex Sans, sans-serif',
+    transition: 'border-color .15s, color .15s, background .15s'
+  }
+  const meta: Array<[string, string]> = [
+    ['Duration', formatDuration(rec.duration)],
+    ['Provider', rec.provider],
+    ['Status', rec.status.charAt(0).toUpperCase() + rec.status.slice(1)],
+    ['Size', formatSize(rec.size)]
+  ]
+
+  return (
+    <div style={{ padding: '20px 26px 28px' }}>
+      <button
+        onClick={onBack}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 7,
+          background: 'none',
+          border: 'none',
+          cursor: 'pointer',
+          color: theme.textSecondary,
+          fontFamily: 'IBM Plex Sans, sans-serif',
+          fontSize: 13,
+          fontWeight: 500,
+          padding: 0,
+          marginBottom: 18
+        }}
+        onMouseEnter={(e) => (e.currentTarget.style.color = theme.text)}
+        onMouseLeave={(e) => (e.currentTarget.style.color = theme.textSecondary)}
+      >
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <line x1="19" y1="12" x2="5" y2="12" />
+          <polyline points="12 19 5 12 12 5" />
+        </svg>
+        Recordings
+      </button>
+
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
+        <span style={{ fontSize: 17, fontWeight: 700, color: si.color, flexShrink: 0 }}>{si.char}</span>
+        <h2 style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 18, fontWeight: 600, color: theme.text, letterSpacing: '-.01em' }}>
+          {formatDate(rec.timestamp)}
+        </h2>
+      </div>
+
+      <div style={{ display: 'flex', gap: 30, flexWrap: 'wrap', paddingBottom: 20, borderBottom: `1px solid ${theme.border}` }}>
+        {meta.map(([k, v]) => (
+          <div key={k}>
+            <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, letterSpacing: '.14em', textTransform: 'uppercase', color: theme.textMuted, marginBottom: 5 }}>{k}</div>
+            <div style={{ fontSize: 13.5, fontWeight: 500, color: theme.text }}>{v}</div>
+          </div>
+        ))}
+      </div>
+
+      {!failed && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '13px 16px', borderRadius: 12, border: `1px solid ${theme.border}`, margin: '22px 0' }}>
+          <button
+            onClick={togglePlay}
+            disabled={!audioUrl}
+            style={{
+              width: 38,
+              height: 38,
+              borderRadius: '50%',
+              border: 'none',
+              background: theme.accent,
+              color: theme.accentInk,
+              cursor: audioUrl ? 'pointer' : 'default',
+              opacity: audioUrl ? 1 : 0.5,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              flexShrink: 0
+            }}
+          >
+            {playing ? (
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="5" width="4" height="14" rx="1" /><rect x="14" y="5" width="4" height="14" rx="1" /></svg>
+            ) : (
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M6 4l14 8-14 8z" /></svg>
+            )}
+          </button>
+          <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 2, height: 34 }}>
+            {bars.map((h, bi) => (
+              <span
+                key={bi}
+                style={{
+                  flex: 1,
+                  height: h + 'px',
+                  background: bi / bars.length <= progress ? theme.accent : theme.borderHover,
+                  borderRadius: 2
+                }}
+              />
+            ))}
+          </div>
+          <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 12, color: theme.textMuted, flexShrink: 0 }}>
+            {fmtTime(current)} / {formatDuration(rec.duration)}
+          </span>
+          {audioUrl && (
+            <audio
+              ref={audioRef}
+              src={audioUrl}
+              onTimeUpdate={(e) => setCurrent(e.currentTarget.currentTime)}
+              onEnded={() => {
+                setPlaying(false)
+                setCurrent(0)
+              }}
+              style={{ display: 'none' }}
+            />
+          )}
+        </div>
+      )}
+
+      <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10.5, letterSpacing: '.16em', textTransform: 'uppercase', color: theme.textMuted, margin: failed ? '24px 0 10px' : '4px 0 10px' }}>
+        Transcription
+      </div>
+      <div style={{ fontSize: 14.5, color: failed ? theme.danger : theme.text, lineHeight: 1.7, whiteSpace: 'pre-wrap' }}>
+        {failed ? rec.error || 'Transcription failed.' : rec.transcription || 'No transcription available.'}
+      </div>
+
+      <div style={{ display: 'flex', gap: 8, marginTop: 26, flexWrap: 'wrap' }}>
+        {!failed && rec.transcription && (
+          <button
+            onClick={onCopy}
+            style={ghostBtn}
+            onMouseEnter={(e) => { e.currentTarget.style.borderColor = theme.accent; e.currentTarget.style.color = theme.text }}
+            onMouseLeave={(e) => { e.currentTarget.style.borderColor = theme.border; e.currentTarget.style.color = theme.textSecondary }}
+          >
+            {copied ? (
+              <span style={{ color: theme.success }}>{'✓'} Copied</span>
+            ) : (
+              <>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></svg>
+                Copy
+              </>
+            )}
+          </button>
+        )}
+        <button
+          onClick={onReprocess}
+          style={ghostBtn}
+          onMouseEnter={(e) => { e.currentTarget.style.borderColor = theme.accent; e.currentTarget.style.color = theme.text }}
+          onMouseLeave={(e) => { e.currentTarget.style.borderColor = theme.border; e.currentTarget.style.color = theme.textSecondary }}
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10" /><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" /></svg>
+          Re-transcribe
+        </button>
+        <button
+          onClick={onDelete}
+          style={{ ...ghostBtn, color: theme.danger }}
+          onMouseEnter={(e) => { e.currentTarget.style.borderColor = theme.danger; e.currentTarget.style.background = 'rgba(240,85,107,.08)' }}
+          onMouseLeave={(e) => { e.currentTarget.style.borderColor = theme.border; e.currentTarget.style.background = 'none' }}
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg>
+          Delete
+        </button>
       </div>
     </div>
   )
@@ -332,7 +638,7 @@ function makeStyles(theme: Theme) {
       fontWeight: 500,
       color: theme.textSecondary,
       cursor: 'pointer',
-      fontFamily: 'Inter, sans-serif',
+      fontFamily: 'IBM Plex Sans, sans-serif',
       display: 'flex',
       alignItems: 'center',
       gap: '6px',

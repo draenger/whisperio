@@ -4,6 +4,8 @@ import { join } from 'path'
 
 export type ProviderId = 'openai' | 'elevenlabs' | 'selfhosted'
 
+export type AccentColor = 'graphite' | 'blue' | 'teal' | 'emerald' | 'amber' | 'violet'
+
 export interface AppSettings {
   sttProvider: 'openai' | 'elevenlabs'
   providerChain: ProviderId[]
@@ -19,6 +21,7 @@ export interface AppSettings {
   dictationHotkey: string
   dictateAndSendHotkey: string
   theme: 'dark' | 'light'
+  accentColor: AccentColor
   inputDeviceId: string
   outputDeviceId: string
   saveRecordings: boolean
@@ -50,6 +53,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   dictationHotkey: '',
   dictateAndSendHotkey: '',
   theme: 'dark',
+  accentColor: 'blue',
   inputDeviceId: '',
   outputDeviceId: '',
   saveRecordings: true,

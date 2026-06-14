@@ -2,8 +2,26 @@ import { useState, useEffect, useCallback, useRef, type ReactElement } from 'rea
 import { useTheme } from '../../ThemeContext'
 import { TitleBar } from '../common/TitleBar'
 import type { Theme } from '../../theme'
+import { ACCENTS, ACCENT_ORDER, ACCENT_LABELS } from '../../theme'
+import { RecordingsView } from '../recordings/RecordingsPanel'
 
-type TabId = 'general' | 'providers' | 'models' | 'audio' | 'hotkeys'
+type TabId = 'general' | 'providers' | 'models' | 'audio' | 'hotkeys' | 'recordings'
+
+const TAB_ICONS: Record<string, string> = {
+  general: 'M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6',
+  providers: 'M12 2 2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5',
+  audio: 'M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3zM19 10v2a7 7 0 0 1-14 0v-2M12 19v3',
+  hotkeys: 'M3 5h18a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1zM6 9h.01M10 9h.01M14 9h.01M18 9h.01M6 13h.01M9 13h6M18 13h.01',
+  recordings: 'M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zM12 7v5l3 2'
+}
+
+function NavIcon({ d, size = 16 }: { d: string; size?: number }): ReactElement {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d={d} />
+    </svg>
+  )
+}
 
 interface MediaDeviceOption {
   deviceId: string
@@ -14,9 +32,23 @@ export function SettingsForm(): ReactElement {
   const { theme } = useTheme()
 
   // --- State ---
-  const [activeTab, setActiveTab] = useState<TabId>('general')
+  const validTabs: TabId[] = ['general', 'providers', 'audio', 'hotkeys', 'recordings']
+  const initialTab = ((): TabId => {
+    const h = window.location.hash.replace('#', '') as TabId
+    return validTabs.includes(h) ? h : 'general'
+  })()
+  const [activeTab, setActiveTab] = useState<TabId>(initialTab)
   const [loading, setLoading] = useState(true)
   const [saved, setSaved] = useState(false)
+
+  // Allow the tray / main process to switch tabs on an already-open window
+  useEffect(() => {
+    const off = window.api.settings.onSetTab((tab) => {
+      if (validTabs.includes(tab as TabId)) setActiveTab(tab as TabId)
+    })
+    return off
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // General
   const [launchAtStartup, setLaunchAtStartup] = useState(true)
@@ -145,124 +177,144 @@ export function SettingsForm(): ReactElement {
     { id: 'general', label: 'General' },
     { id: 'providers', label: 'Providers' },
     { id: 'audio', label: 'Audio' },
-    { id: 'hotkeys', label: 'Hotkeys' }
+    { id: 'hotkeys', label: 'Hotkeys' },
+    { id: 'recordings', label: 'Recordings' }
   ]
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', background: theme.bg }}>
-      <TitleBar title="Whisperio Settings" />
+      <TitleBar title={activeTab === 'recordings' ? 'Whisperio Recordings' : 'Whisperio Settings'} />
 
-      {/* Tab bar */}
-      <div style={s.tabBar}>
-        {tabs.map((tab) => (
-          <button
-            key={tab.id}
-            onClick={() => setActiveTab(tab.id)}
-            style={{
-              ...s.tabButton,
-              ...(activeTab === tab.id ? s.tabButtonActive : {})
-            }}
-            onMouseEnter={(e) => {
-              if (activeTab !== tab.id) {
-                e.currentTarget.style.color = theme.text
-                e.currentTarget.style.background = theme.bgTertiary
-              }
-            }}
-            onMouseLeave={(e) => {
-              if (activeTab !== tab.id) {
-                e.currentTarget.style.color = theme.textMuted
-                e.currentTarget.style.background = 'transparent'
-              }
-            }}
-          >
-            {tab.label}
-          </button>
-        ))}
-      </div>
+      <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
+        {/* Sidebar nav */}
+        <nav style={s.sidebar}>
+          <div style={s.sidebarLabel}>Settings</div>
+          {tabs.map((tab) => {
+            const active = activeTab === tab.id
+            return (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                style={{ ...s.navItem, ...(active ? s.navItemActive : {}) }}
+                onMouseEnter={(e) => {
+                  if (!active) {
+                    e.currentTarget.style.color = theme.text
+                    e.currentTarget.style.background = theme.bgTertiary
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (!active) {
+                    e.currentTarget.style.color = theme.textSecondary
+                    e.currentTarget.style.background = 'transparent'
+                  }
+                }}
+              >
+                <span style={{ display: 'flex', flexShrink: 0, color: active ? theme.accentLight : theme.textMuted }}>
+                  <NavIcon d={TAB_ICONS[tab.id]} />
+                </span>
+                {tab.label}
+              </button>
+            )
+          })}
+          <div style={{ flex: 1 }} />
+          <div style={s.versionBadge}>
+            <span style={{ width: 6, height: 6, borderRadius: '50%', background: theme.success }} />
+            v1.0.0
+          </div>
+        </nav>
 
-      {/* Tab content */}
-      <div style={s.scrollArea}>
-        <div style={s.container}>
-          {activeTab === 'general' && (
-            <GeneralTab
-              launchAtStartup={launchAtStartup}
-              setLaunchAtStartup={setLaunchAtStartup}
-              s={s}
-              theme={theme}
-            />
-          )}
+        {/* Content column */}
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+          {activeTab === 'recordings' ? (
+            <RecordingsView />
+          ) : (
+            <>
+              <div style={s.scrollArea}>
+                <div style={s.container}>
+                  {activeTab === 'general' && (
+                    <GeneralTab
+                      launchAtStartup={launchAtStartup}
+                      setLaunchAtStartup={setLaunchAtStartup}
+                      s={s}
+                      theme={theme}
+                    />
+                  )}
 
-          {activeTab === 'providers' && (
-            <ProvidersTab
-              providerChain={providerChain}
-              setProviderChain={setProviderChain}
-              apiKey={apiKey}
-              setApiKey={setApiKey}
-              openaiBaseUrl={openaiBaseUrl}
-              setOpenaiBaseUrl={setOpenaiBaseUrl}
-              whisperModel={whisperModel}
-              setWhisperModel={setWhisperModel}
-              elevenlabsApiKey={elevenlabsApiKey}
-              setElevenlabsApiKey={setElevenlabsApiKey}
-              transcriptionLanguage={transcriptionLanguage}
-              setTranscriptionLanguage={setTranscriptionLanguage}
-              prompt={prompt}
-              setPrompt={setPrompt}
-              vocabulary={vocabulary}
-              setVocabulary={setVocabulary}
-              aiPostProcessing={aiPostProcessing}
-              setAiPostProcessing={setAiPostProcessing}
-              s={s}
-              theme={theme}
-            />
-          )}
+                  {activeTab === 'providers' && (
+                    <ProvidersTab
+                      providerChain={providerChain}
+                      setProviderChain={setProviderChain}
+                      apiKey={apiKey}
+                      setApiKey={setApiKey}
+                      openaiBaseUrl={openaiBaseUrl}
+                      setOpenaiBaseUrl={setOpenaiBaseUrl}
+                      whisperModel={whisperModel}
+                      setWhisperModel={setWhisperModel}
+                      elevenlabsApiKey={elevenlabsApiKey}
+                      setElevenlabsApiKey={setElevenlabsApiKey}
+                      transcriptionLanguage={transcriptionLanguage}
+                      setTranscriptionLanguage={setTranscriptionLanguage}
+                      prompt={prompt}
+                      setPrompt={setPrompt}
+                      vocabulary={vocabulary}
+                      setVocabulary={setVocabulary}
+                      aiPostProcessing={aiPostProcessing}
+                      setAiPostProcessing={setAiPostProcessing}
+                      s={s}
+                      theme={theme}
+                    />
+                  )}
 
-          {activeTab === 'audio' && (
-            <AudioTab
-              inputDeviceId={inputDeviceId}
-              setInputDeviceId={setInputDeviceId}
-              outputDeviceId={outputDeviceId}
-              setOutputDeviceId={setOutputDeviceId}
-              saveRecordings={saveRecordings}
-              setSaveRecordings={setSaveRecordings}
-              inputDevices={inputDevices}
-              outputDevices={outputDevices}
-              s={s}
-              theme={theme}
-            />
-          )}
+                  {activeTab === 'audio' && (
+                    <AudioTab
+                      inputDeviceId={inputDeviceId}
+                      setInputDeviceId={setInputDeviceId}
+                      outputDeviceId={outputDeviceId}
+                      setOutputDeviceId={setOutputDeviceId}
+                      saveRecordings={saveRecordings}
+                      setSaveRecordings={setSaveRecordings}
+                      inputDevices={inputDevices}
+                      outputDevices={outputDevices}
+                      s={s}
+                      theme={theme}
+                    />
+                  )}
 
-          {activeTab === 'hotkeys' && (
-            <HotkeysTab
-              dictationHotkey={dictationHotkey}
-              setDictationHotkey={setDictationHotkey}
-              dictateAndSendHotkey={dictateAndSendHotkey}
-              setDictateAndSendHotkey={setDictateAndSendHotkey}
-              outputRecordingHotkey={outputRecordingHotkey}
-              setOutputRecordingHotkey={setOutputRecordingHotkey}
-              s={s}
-              theme={theme}
-            />
+                  {activeTab === 'hotkeys' && (
+                    <HotkeysTab
+                      dictationHotkey={dictationHotkey}
+                      setDictationHotkey={setDictationHotkey}
+                      dictateAndSendHotkey={dictateAndSendHotkey}
+                      setDictateAndSendHotkey={setDictateAndSendHotkey}
+                      outputRecordingHotkey={outputRecordingHotkey}
+                      setOutputRecordingHotkey={setOutputRecordingHotkey}
+                      s={s}
+                      theme={theme}
+                    />
+                  )}
+                </div>
+              </div>
+
+              {/* Save bar */}
+              <div style={s.saveBar}>
+                <button
+                  onClick={handleSave}
+                  style={s.button}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = theme.accentHover
+                    e.currentTarget.style.boxShadow = `0 0 20px ${theme.accentGlow}`
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = theme.accent
+                    e.currentTarget.style.boxShadow = 'none'
+                  }}
+                >
+                  {saved ? 'Saved!' : 'Save Settings'}
+                </button>
+              </div>
+            </>
           )}
         </div>
-      </div>
-
-      {/* Save bar */}
-      <div style={s.saveBar}>
-        <button
-          onClick={handleSave}
-          style={s.button}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.background = theme.accentHover
-            e.currentTarget.style.boxShadow = `0 0 20px ${theme.accentGlow}`
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.background = theme.accent
-            e.currentTarget.style.boxShadow = 'none'
-          }}
-        >
-          {saved ? 'Saved!' : 'Save Settings'}
-        </button>
       </div>
     </div>
   )
@@ -281,7 +333,7 @@ function GeneralTab({
   s: ReturnType<typeof makeStyles>
   theme: Theme
 }): ReactElement {
-  const { mode, toggleTheme } = useThemeHook()
+  const { mode, toggleTheme, accent, setAccent } = useThemeHook()
 
   return (
     <>
@@ -305,6 +357,46 @@ function GeneralTab({
           onChange={() => toggleTheme()}
           theme={theme}
         />
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 14,
+            paddingTop: 16,
+            marginTop: 14,
+            borderTop: `1px solid ${theme.border}`
+          }}
+        >
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 14, fontWeight: 500, color: theme.text }}>Accent color</div>
+            <div style={{ fontSize: 12.5, color: theme.textMuted, marginTop: 2 }}>
+              {ACCENT_LABELS[accent]}
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            {ACCENT_ORDER.map((key) => (
+              <button
+                key={key}
+                onClick={() => setAccent(key)}
+                title={ACCENT_LABELS[key]}
+                aria-label={ACCENT_LABELS[key]}
+                style={{
+                  width: 24,
+                  height: 24,
+                  borderRadius: '50%',
+                  cursor: 'pointer',
+                  padding: 0,
+                  background: ACCENTS[key].base,
+                  border: `2px solid ${accent === key ? theme.text : 'transparent'}`,
+                  boxShadow: accent === key ? `0 0 0 2px ${theme.bg}, 0 0 0 3px ${ACCENTS[key].base}` : 'none',
+                  transition: 'transform .15s, border-color .15s'
+                }}
+                onMouseEnter={(e) => (e.currentTarget.style.transform = 'scale(1.12)')}
+                onMouseLeave={(e) => (e.currentTarget.style.transform = 'scale(1)')}
+              />
+            ))}
+          </div>
+        </div>
       </div>
     </>
   )
@@ -371,14 +463,14 @@ function SelfhostedSettings({
       {/* Mode toggle */}
       <div style={{ display: 'flex', gap: '4px', marginBottom: '10px' }}>
         <button onClick={() => setMode('managed')} style={{
-          flex: 1, padding: '6px', fontSize: '11px', fontWeight: 600, fontFamily: 'Inter, sans-serif',
+          flex: 1, padding: '6px', fontSize: '11px', fontWeight: 600, fontFamily: 'IBM Plex Sans, sans-serif',
           background: mode === 'managed' ? theme.accent : theme.bgTertiary,
           color: mode === 'managed' ? '#fff' : theme.textMuted,
           border: `1px solid ${mode === 'managed' ? theme.accent : theme.border}`,
           borderRadius: '5px 0 0 5px', cursor: 'pointer'
         }}>Whisperio Server</button>
         <button onClick={() => setMode('manual')} style={{
-          flex: 1, padding: '6px', fontSize: '11px', fontWeight: 600, fontFamily: 'Inter, sans-serif',
+          flex: 1, padding: '6px', fontSize: '11px', fontWeight: 600, fontFamily: 'IBM Plex Sans, sans-serif',
           background: mode === 'manual' ? theme.accent : theme.bgTertiary,
           color: mode === 'manual' ? '#fff' : theme.textMuted,
           border: `1px solid ${mode === 'manual' ? theme.accent : theme.border}`,
@@ -413,7 +505,7 @@ function SelfhostedSettings({
               </div>
               {serverStatus.status === 'running' ? (
                 <button onClick={async () => { await window.api.server.stop(); refresh() }}
-                  style={{ background: 'transparent', border: `1px solid ${theme.border}`, borderRadius: '4px', padding: '3px 8px', fontSize: '10px', color: '#ef4444', cursor: 'pointer', fontFamily: 'Inter, sans-serif' }}>Stop</button>
+                  style={{ background: 'transparent', border: `1px solid ${theme.border}`, borderRadius: '4px', padding: '3px 8px', fontSize: '10px', color: '#ef4444', cursor: 'pointer', fontFamily: 'IBM Plex Sans, sans-serif' }}>Stop</button>
               ) : (
                 <select disabled={serverStarting || downloaded.length === 0}
                   onChange={async (e) => {
@@ -471,12 +563,12 @@ function SelfhostedSettings({
                   </div>
                   {isDown ? (
                     <button onClick={async () => { await window.api.models.delete(model.id); refresh() }}
-                      style={{ background: 'transparent', border: 'none', fontSize: '10px', color: theme.textMuted, cursor: 'pointer', fontFamily: 'Inter, sans-serif', padding: '2px 6px' }}>Remove</button>
+                      style={{ background: 'transparent', border: 'none', fontSize: '10px', color: theme.textMuted, cursor: 'pointer', fontFamily: 'IBM Plex Sans, sans-serif', padding: '2px 6px' }}>Remove</button>
                   ) : isActive ? (
                     <span style={{ fontSize: '10px', color: theme.accent }}>{progress}%</span>
                   ) : (
                     <button onClick={() => { setDownloading((p) => ({ ...p, [model.id]: 0 })); window.api.models.download(model.id) }}
-                      style={{ background: theme.accent, border: 'none', borderRadius: '4px', padding: '3px 8px', fontSize: '10px', color: '#fff', cursor: 'pointer', fontWeight: 500, fontFamily: 'Inter, sans-serif' }}>Get</button>
+                      style={{ background: theme.accent, border: 'none', borderRadius: '4px', padding: '3px 8px', fontSize: '10px', color: '#fff', cursor: 'pointer', fontWeight: 500, fontFamily: 'IBM Plex Sans, sans-serif' }}>Get</button>
                   )}
                 </div>
               )
@@ -612,9 +704,9 @@ function ProvidersTab({
                   {enabled && providerChain.length > 1 && (
                     <div style={{ display: 'flex', gap: '1px', flexShrink: 0 }}>
                       <button onClick={() => moveProvider(provider.id, -1)} disabled={idx === 0}
-                        style={{ background: 'transparent', border: 'none', cursor: idx === 0 ? 'default' : 'pointer', color: idx === 0 ? theme.border : theme.textMuted, fontSize: '9px', padding: '2px 3px', fontFamily: 'Inter, sans-serif' }}>▲</button>
+                        style={{ background: 'transparent', border: 'none', cursor: idx === 0 ? 'default' : 'pointer', color: idx === 0 ? theme.border : theme.textMuted, fontSize: '9px', padding: '2px 3px', fontFamily: 'IBM Plex Sans, sans-serif' }}>▲</button>
                       <button onClick={() => moveProvider(provider.id, 1)} disabled={idx === providerChain.length - 1}
-                        style={{ background: 'transparent', border: 'none', cursor: idx === providerChain.length - 1 ? 'default' : 'pointer', color: idx === providerChain.length - 1 ? theme.border : theme.textMuted, fontSize: '9px', padding: '2px 3px', fontFamily: 'Inter, sans-serif' }}>▼</button>
+                        style={{ background: 'transparent', border: 'none', cursor: idx === providerChain.length - 1 ? 'default' : 'pointer', color: idx === providerChain.length - 1 ? theme.border : theme.textMuted, fontSize: '9px', padding: '2px 3px', fontFamily: 'IBM Plex Sans, sans-serif' }}>▼</button>
                     </div>
                   )}
 
@@ -632,7 +724,7 @@ function ProvidersTab({
                       background: enabled ? theme.accent : theme.bgTertiary,
                       border: `1px solid ${enabled ? theme.accent : theme.border}`,
                       borderRadius: '5px', padding: '3px 8px', fontSize: '10px', fontWeight: 500,
-                      color: enabled ? '#fff' : theme.textMuted, cursor: 'pointer', fontFamily: 'Inter, sans-serif', flexShrink: 0
+                      color: enabled ? '#fff' : theme.textMuted, cursor: 'pointer', fontFamily: 'IBM Plex Sans, sans-serif', flexShrink: 0
                     }}>{enabled ? 'On' : 'Off'}</button>
                 </div>
 
@@ -794,7 +886,7 @@ function AudioTab({
               fontSize: '13px',
               color: theme.accent,
               cursor: 'pointer',
-              fontFamily: 'Inter, sans-serif',
+              fontFamily: 'IBM Plex Sans, sans-serif',
               fontWeight: 500,
               marginTop: '4px',
               transition: 'border-color 0.2s, background 0.2s'
@@ -1008,7 +1100,7 @@ function ModelsTab({
                         fontSize: '12px',
                         color: theme.textMuted,
                         cursor: 'pointer',
-                        fontFamily: 'Inter, sans-serif'
+                        fontFamily: 'IBM Plex Sans, sans-serif'
                       }}
                     >
                       Delete
@@ -1029,7 +1121,7 @@ function ModelsTab({
                         color: '#fff',
                         cursor: 'pointer',
                         fontWeight: 600,
-                        fontFamily: 'Inter, sans-serif'
+                        fontFamily: 'IBM Plex Sans, sans-serif'
                       }}
                     >
                       Download
@@ -1107,7 +1199,7 @@ function ModelsTab({
                     color: '#ef4444',
                     cursor: 'pointer',
                     fontWeight: 500,
-                    fontFamily: 'Inter, sans-serif'
+                    fontFamily: 'IBM Plex Sans, sans-serif'
                   }}
                 >Stop</button>
               ) : (
@@ -1230,7 +1322,7 @@ function ModelsTab({
                     fontSize: '12px',
                     color: theme.textMuted,
                     cursor: 'pointer',
-                    fontFamily: 'Inter, sans-serif'
+                    fontFamily: 'IBM Plex Sans, sans-serif'
                   }}
                 >
                   Delete
@@ -1320,7 +1412,7 @@ function HotkeyInput({
               cursor: 'pointer',
               color: theme.textMuted,
               fontSize: '16px',
-              fontFamily: 'Inter, sans-serif',
+              fontFamily: 'IBM Plex Sans, sans-serif',
               flexShrink: 0,
               transition: 'color 0.15s, border-color 0.15s'
             }}
@@ -1575,58 +1667,78 @@ function ToggleRow({
 function makeStyles(theme: Theme) {
   return {
     container: {
-      padding: '20px 24px 24px',
+      padding: '24px 26px 28px',
       display: 'flex',
       flexDirection: 'column' as const,
-      gap: '16px'
+      gap: '30px'
     },
     scrollArea: {
       flex: 1,
       overflowY: 'auto' as const,
       overflowX: 'hidden' as const
     },
-    tabBar: {
-      display: 'flex',
-      gap: '4px',
-      padding: '12px 24px 0',
-      borderBottom: `1px solid ${theme.border}`,
-      background: theme.bg,
-      flexShrink: 0
-    },
-    tabButton: {
-      background: 'transparent',
-      border: 'none',
-      borderBottom: '2px solid transparent',
-      padding: '8px 16px 10px',
-      fontSize: '13px',
-      fontWeight: 500,
-      color: theme.textMuted,
-      cursor: 'pointer',
-      fontFamily: 'Inter, sans-serif',
-      borderRadius: '8px 8px 0 0',
-      transition: 'color 0.15s, background 0.15s'
-    } as React.CSSProperties,
-    tabButtonActive: {
-      color: theme.accent,
-      borderBottomColor: theme.accent,
-      background: theme.bgSecondary,
-      boxShadow: `0 1px 6px ${theme.accentGlow}`
-    } as React.CSSProperties,
-    card: {
-      background: theme.bgSecondary,
-      border: `1px solid ${theme.border}`,
-      borderRadius: '12px',
-      padding: '20px',
+    sidebar: {
+      width: '184px',
+      flexShrink: 0,
+      borderRight: `1px solid ${theme.border}`,
+      padding: '14px 12px',
       display: 'flex',
       flexDirection: 'column' as const,
-      gap: '8px'
+      gap: '3px',
+      background: theme.bgSecondary
+    } as React.CSSProperties,
+    sidebarLabel: {
+      fontFamily: "'JetBrains Mono', monospace",
+      fontSize: '10px',
+      letterSpacing: '0.18em',
+      textTransform: 'uppercase' as const,
+      color: theme.textMuted,
+      padding: '2px 10px 10px'
+    } as React.CSSProperties,
+    navItem: {
+      display: 'flex',
+      alignItems: 'center',
+      gap: '11px',
+      width: '100%',
+      textAlign: 'left' as const,
+      cursor: 'pointer',
+      border: 'none',
+      borderRadius: '9px',
+      padding: '9px 11px',
+      fontFamily: "'IBM Plex Sans', sans-serif",
+      fontSize: '13.5px',
+      fontWeight: 600,
+      background: 'transparent',
+      color: theme.textSecondary,
+      transition: 'background 0.15s, color 0.15s'
+    } as React.CSSProperties,
+    navItemActive: {
+      background: theme.inputBg,
+      color: theme.text,
+      boxShadow: `inset 0 0 0 1px ${theme.border}`
+    } as React.CSSProperties,
+    versionBadge: {
+      display: 'flex',
+      alignItems: 'center',
+      gap: '8px',
+      padding: '8px 11px',
+      fontFamily: "'JetBrains Mono', monospace",
+      fontSize: '10.5px',
+      color: theme.textMuted
+    } as React.CSSProperties,
+    card: {
+      display: 'flex',
+      flexDirection: 'column' as const,
+      gap: '10px',
+      paddingBottom: '4px'
     },
     cardTitle: {
+      fontFamily: "'Space Grotesk', sans-serif",
       fontSize: '14px',
       fontWeight: 600,
       color: theme.text,
       marginBottom: '4px',
-      letterSpacing: '0.2px'
+      letterSpacing: '0.01em'
     },
     label: {
       fontSize: '12px',
@@ -1642,7 +1754,7 @@ function makeStyles(theme: Theme) {
       fontSize: '14px',
       color: theme.text,
       outline: 'none',
-      fontFamily: 'Inter, sans-serif',
+      fontFamily: 'IBM Plex Sans, sans-serif',
       width: '100%',
       transition: 'border-color 0.15s'
     } as React.CSSProperties,
@@ -1654,7 +1766,7 @@ function makeStyles(theme: Theme) {
       fontSize: '14px',
       color: theme.text,
       outline: 'none',
-      fontFamily: 'Inter, sans-serif',
+      fontFamily: 'IBM Plex Sans, sans-serif',
       width: '100%',
       resize: 'vertical' as const,
       minHeight: '60px',
@@ -1668,7 +1780,7 @@ function makeStyles(theme: Theme) {
       fontSize: '14px',
       color: theme.text,
       outline: 'none',
-      fontFamily: 'Inter, sans-serif',
+      fontFamily: 'IBM Plex Sans, sans-serif',
       width: '100%',
       cursor: 'pointer',
       transition: 'border-color 0.15s'
@@ -1688,14 +1800,14 @@ function makeStyles(theme: Theme) {
     },
     button: {
       background: theme.accent,
-      color: '#ffffff',
+      color: theme.accentInk,
       border: 'none',
       borderRadius: '8px',
       padding: '10px 28px',
       fontSize: '14px',
       fontWeight: 600,
       cursor: 'pointer',
-      fontFamily: 'Inter, sans-serif',
+      fontFamily: "'IBM Plex Sans', sans-serif",
       transition: 'background 0.2s, box-shadow 0.2s'
     } as React.CSSProperties
   }

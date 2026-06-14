@@ -2,7 +2,6 @@ import { Tray, Menu, nativeImage, app } from 'electron'
 import { join } from 'path'
 import { is } from '@electron-toolkit/utils'
 import { openSettingsWindow } from './settingsWindow'
-import { openRecordingsWindow } from './recordingsWindow'
 import { getActiveHotkey, getActiveSendHotkey } from './dictation/hotkeyManager'
 
 let tray: Tray | null = null
@@ -36,7 +35,7 @@ export function createTray(): Tray {
 
   const contextMenu = Menu.buildFromTemplate([
     { label: 'Settings', click: () => openSettingsWindow() },
-    { label: 'Recordings', click: () => openRecordingsWindow() },
+    { label: 'Recordings', click: () => openSettingsWindow('recordings') },
     { type: 'separator' },
     { label: 'Quit', click: () => app.quit() }
   ])

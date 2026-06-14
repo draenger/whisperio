@@ -1,0 +1,99 @@
+/* Whisperio — desktop app preview scene */
+*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+:root {
+  --font-display: 'Space Grotesk', system-ui, sans-serif;
+  --font: 'IBM Plex Sans', system-ui, -apple-system, sans-serif;
+  --mono: 'JetBrains Mono', ui-monospace, monospace;
+}
+html, body { height: 100%; }
+body {
+  font-family: var(--font);
+  -webkit-font-smoothing: antialiased;
+  min-height: 100vh;
+  display: flex; flex-direction: column;
+  background: #07060d;
+  overflow-x: hidden;
+}
+#root { flex: 1; display: flex; }
+
+/* scene backdrop */
+.scene {
+  flex: 1; position: relative;
+  display: flex; flex-direction: column; align-items: center;
+  padding: 64px 24px 120px;
+  --acRgb: 148,163,184; --acGrad: linear-gradient(118deg,#cbd5e1,#94a3b8); --acInk: #0b0e16;
+  background: #08070e;
+}
+.scene::before { display: none; }
+.scene.light {
+  background: #ecebf3;
+}
+
+/* preview toolbar (chrome above the window) */
+.ptoolbar {
+  display: flex; align-items: center; gap: 14px; flex-wrap: wrap; justify-content: center;
+  margin-bottom: 26px; position: relative; z-index: 2;
+}
+.pt-brand { display: flex; align-items: center; gap: 10px; }
+.pt-brand .gh { width: 26px; height: 26px; filter: none; }
+.pt-brand .nm { font-family: var(--font-display); font-weight: 600; font-size: 16px; color: #ECEBF4; }
+.scene.light .pt-brand .nm { color: #1b1830; }
+.pt-back {
+  font-size: 13px; text-decoration: none; color: #9d9bb4; display: inline-flex; align-items: center; gap: 6px;
+  padding: 7px 13px; border-radius: 9px; border: 1px solid rgba(255,255,255,.08); background: rgba(255,255,255,.03);
+  transition: color .15s, border-color .15s;
+}
+.pt-back:hover { color: #ECEBF4; border-color: rgba(var(--acRgb),.4); }
+.scene.light .pt-back { color: #5b5870; border-color: rgba(20,18,40,.1); background: rgba(255,255,255,.6); }
+
+.seg {
+  display: inline-flex; padding: 3px; border-radius: 11px; gap: 2px;
+  background: rgba(255,255,255,.05); border: 1px solid rgba(255,255,255,.08);
+}
+.scene.light .seg { background: rgba(255,255,255,.7); border-color: rgba(20,18,40,.08); }
+.seg button {
+  font-family: var(--font); font-size: 13px; font-weight: 600; cursor: pointer;
+  padding: 7px 16px; border-radius: 8px; border: none; background: transparent; color: #9d9bb4;
+  transition: background .15s, color .15s;
+}
+.scene.light .seg button { color: #5b5870; }
+.seg button.on { background: rgb(var(--acRgb)); color: var(--acInk); }
+
+.scene-caption {
+  position: relative; z-index: 2; margin-top: 26px; max-width: 560px; text-align: center;
+  font-size: 13.5px; line-height: 1.6; color: #6a6880; font-family: var(--mono);
+}
+.scene.light .scene-caption { color: #8a87a0; }
+
+@media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+
+/* system tray / menu bar */
+.menubar {
+  position: absolute; top: 0; left: 0; right: 0; height: 32px; z-index: 20;
+  display: flex; align-items: center; padding: 0 12px;
+  background: rgba(10,9,17,.55); backdrop-filter: blur(10px);
+  border-bottom: 1px solid rgba(255,255,255,.06);
+}
+.scene.light .menubar { background: rgba(255,255,255,.6); border-bottom-color: rgba(20,18,40,.07); }
+.menubar .mb-spacer { flex: 1; }
+.menubar .mb-right { display: flex; align-items: center; gap: 13px; }
+
+/* accent switcher */
+.acc-switch { display: inline-flex; align-items: center; gap: 6px; padding: 5px 8px; border-radius: 999px; background: rgba(255,255,255,.05); border: 1px solid rgba(255,255,255,.08); }
+.scene.light .acc-switch { background: rgba(255,255,255,.7); border-color: rgba(20,18,40,.08); }
+.acc-switch .sw { width: 18px; height: 18px; border-radius: 50%; cursor: pointer; border: 2px solid transparent; padding: 0; transition: transform .15s, border-color .15s; }
+.acc-switch .sw:hover { transform: scale(1.14); }
+.acc-switch .sw.on { border-color: #fff; }
+.scene.light .acc-switch .sw.on { border-color: #1b1830; }
+
+/* settings inputs — focus ring + custom select chevron */
+#root input:focus-visible, #root select:focus-visible, #root textarea:focus-visible {
+  outline: none;
+  border-color: rgba(var(--acRgb,148,163,184),.6) !important;
+  box-shadow: 0 0 0 3px rgba(var(--acRgb,148,163,184),.16) !important;
+}
+#root select {
+  -webkit-appearance: none; appearance: none;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%239d9bb4' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M6 9l6 6 6-6'/></svg>");
+  background-repeat: no-repeat; background-position: right 11px center; padding-right: 32px !important;
+}

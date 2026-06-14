@@ -67,6 +67,7 @@ export interface AppSettings {
   dictationHotkey: string
   dictateAndSendHotkey: string
   theme: 'dark' | 'light'
+  accentColor: 'graphite' | 'blue' | 'teal' | 'emerald' | 'amber' | 'violet'
   inputDeviceId: string
   outputDeviceId: string
   saveRecordings: boolean
@@ -79,6 +80,7 @@ export interface SettingsAPI {
   save: (settings: Partial<AppSettings>) => Promise<AppSettings>
   pauseHotkeys: () => void
   resumeHotkeys: () => void
+  onSetTab: (callback: (tab: string) => void) => () => void
 }
 
 export interface RecordingEntry {

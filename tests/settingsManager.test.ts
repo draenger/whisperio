@@ -35,6 +35,7 @@ const DEFAULT_SETTINGS = {
   dictationHotkey: '',
   dictateAndSendHotkey: '',
   theme: 'dark',
+  accentColor: 'blue',
   inputDeviceId: '',
   outputDeviceId: '',
   saveRecordings: true,

@@ -81,6 +81,7 @@ export interface SettingsAPI {
   save: (settings: Partial<AppSettings>) => Promise<AppSettings>
   pauseHotkeys: () => void
   resumeHotkeys: () => void
+  onSetTab: (callback: (tab: string) => void) => () => void
 }
 
 export interface RecordingEntry {
@@ -206,7 +207,14 @@ const settingsApi: SettingsAPI = {
   load: () => ipcRenderer.invoke('settings:load'),
   save: (settings) => ipcRenderer.invoke('settings:save', settings),
   pauseHotkeys: () => ipcRenderer.send('hotkeys:pause'),
-  resumeHotkeys: () => ipcRenderer.send('hotkeys:resume')
+  resumeHotkeys: () => ipcRenderer.send('hotkeys:resume'),
+  onSetTab: (callback) => {
+    const handler = (_e: unknown, tab: string): void => callback(tab)
+    ipcRenderer.on('settings:set-tab', handler)
+    return () => {
+      ipcRenderer.removeListener('settings:set-tab', handler)
+    }
+  }
 }
 
 const recordingsApi: RecordingsAPI = {
