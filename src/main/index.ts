@@ -218,6 +218,13 @@ app.whenReady().then(() => {
   console.log('[Whisperio] Ready — press hotkey to dictate')
 })
 
+// macOS: the app runs as a menubar/tray app with no persistent main window.
+// Clicking the Dock/Launchpad icon fires 'activate' — open Settings so the
+// user has a way to reach the UI (the tray menu is the only other entry point).
+app.on('activate', () => {
+  openSettingsWindow()
+})
+
 // Keep app alive when all windows close (tray holds it)
 app.on('window-all-closed', () => {
   // Do nothing — tray keeps the app running

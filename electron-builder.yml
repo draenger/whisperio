@@ -10,6 +10,8 @@ asarUnpack:
 extraResources:
   - from: icons/whisperio.ico
     to: icons/whisperio.ico
+  - from: icons/whisperio.png
+    to: icons/whisperio.png
 publish:
   provider: github
   owner: draenger
