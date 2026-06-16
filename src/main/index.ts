@@ -206,6 +206,9 @@ app.whenReady().then(() => {
     BrowserWindow.fromWebContents(event.sender)?.close()
   })
 
+  // Expose the real app version to the renderer (settings badge)
+  ipcMain.handle('app:getVersion', () => app.getVersion())
+
   // Initialize Whisperio dictation (overlay + hotkey)
   initDictation()
 
@@ -216,6 +219,13 @@ app.whenReady().then(() => {
   initAutoUpdater()
 
   console.log('[Whisperio] Ready — press hotkey to dictate')
+})
+
+// macOS: the app runs as a menubar/tray app with no persistent main window.
+// Clicking the Dock/Launchpad icon fires 'activate' — open Settings so the
+// user has a way to reach the UI (the tray menu is the only other entry point).
+app.on('activate', () => {
+  openSettingsWindow()
 })
 
 // Keep app alive when all windows close (tray holds it)

@@ -40,6 +40,12 @@ export function SettingsForm(): ReactElement {
   const [activeTab, setActiveTab] = useState<TabId>(initialTab)
   const [loading, setLoading] = useState(true)
   const [saved, setSaved] = useState(false)
+  const [appVersion, setAppVersion] = useState('')
+
+  // Show the real app version in the badge (from main process)
+  useEffect(() => {
+    window.api.window.getVersion().then(setAppVersion).catch(() => {})
+  }, [])
 
   // Allow the tray / main process to switch tabs on an already-open window
   useEffect(() => {
@@ -219,7 +225,7 @@ export function SettingsForm(): ReactElement {
           <div style={{ flex: 1 }} />
           <div style={s.versionBadge}>
             <span style={{ width: 6, height: 6, borderRadius: '50%', background: theme.success }} />
-            v1.0.0
+            {appVersion ? `v${appVersion}` : ''}
           </div>
         </nav>
 

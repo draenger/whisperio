@@ -127,6 +127,7 @@ export interface WindowAPI {
   minimize: () => void
   maximize: () => void
   close: () => void
+  getVersion: () => Promise<string>
 }
 
 export interface ServerStatus {
@@ -280,7 +281,8 @@ const serverApi: ServerAPI = {
 const windowApi: WindowAPI = {
   minimize: () => ipcRenderer.send('window:minimize'),
   maximize: () => ipcRenderer.send('window:maximize'),
-  close: () => ipcRenderer.send('window:close')
+  close: () => ipcRenderer.send('window:close'),
+  getVersion: () => ipcRenderer.invoke('app:getVersion')
 }
 
 contextBridge.exposeInMainWorld('api', {

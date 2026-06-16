@@ -126,6 +126,7 @@ export interface WindowAPI {
   minimize: () => void
   maximize: () => void
   close: () => void
+  getVersion: () => Promise<string>
 }
 
 export interface ServerStatus {

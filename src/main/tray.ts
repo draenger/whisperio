@@ -7,10 +7,22 @@ import { getActiveHotkey, getActiveSendHotkey } from './dictation/hotkeyManager'
 let tray: Tray | null = null
 
 function getIconPath(): string {
+  // macOS menubar can't render Windows .ico files (comes out blank/invisible),
+  // so use the PNG there; Windows keeps the .ico.
+  const file = process.platform === 'darwin' ? 'whisperio.png' : 'whisperio.ico'
   if (is.dev) {
-    return join(__dirname, '../../icons/whisperio.ico')
+    return join(__dirname, '../../icons', file)
   }
-  return join(process.resourcesPath, 'icons/whisperio.ico')
+  return join(process.resourcesPath, 'icons', file)
+}
+
+function getTrayIcon(): Electron.NativeImage {
+  const icon = nativeImage.createFromPath(getIconPath())
+  // The PNG is full-size; the macOS menubar needs a small icon.
+  if (process.platform === 'darwin' && !icon.isEmpty()) {
+    return icon.resize({ width: 18, height: 18 })
+  }
+  return icon
 }
 
 export function showTrayBalloon(title: string, content: string): void {
@@ -19,8 +31,7 @@ export function showTrayBalloon(title: string, content: string): void {
 }
 
 export function createTray(): Tray {
-  const iconPath = getIconPath()
-  const icon = nativeImage.createFromPath(iconPath)
+  const icon = getTrayIcon()
   tray = new Tray(icon)
 
   const hotkey = getActiveHotkey()
