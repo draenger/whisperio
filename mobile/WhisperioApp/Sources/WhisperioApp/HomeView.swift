@@ -1,0 +1,132 @@
+import SwiftUI
+
+// Recordings home — the settled "second brain" variant: day-grouped cards, search,
+// filter chips, and the gradient mic dock. Port of Home(variant:'brain') in wz-iphone.jsx.
+struct HomeView: View {
+    @Environment(\.wz) private var t
+    var openRec: (DemoRecording) -> Void
+    var openRecording: () -> Void
+    var openSettings: () -> Void
+
+    private let filters = ["All", "Keyboard", "Action", "Watch", "Cloud"]
+
+    var body: some View {
+        ScreenScaffold {
+            ZStack(alignment: .bottom) {
+                VStack(spacing: 0) {
+                    WHeader(title: "Whisperio") {
+                        SquareIconButton(icon: "settings", action: openSettings)
+                    }
+                    // search + filters
+                    VStack(spacing: 13) {
+                        HStack(spacing: 9) {
+                            WIcon("search", size: 17, weight: .regular)
+                            Text("Search transcripts").font(WZFont.ui(14.5))
+                            Spacer()
+                        }
+                        .foregroundStyle(t.faint)
+                        .padding(.horizontal, 13).padding(.vertical, 11)
+                        .background(t.surfaceUp, in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: 13, style: .continuous).stroke(t.line, lineWidth: 1))
+
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 7) {
+                                ForEach(Array(filters.enumerated()), id: \.offset) { idx, f in
+                                    let on = idx == 0
+                                    Text(f).font(WZFont.mono(11.5, .semibold))
+                                        .foregroundStyle(on ? .white : t.muted)
+                                        .padding(.horizontal, 13).padding(.vertical, 7)
+                                        .background(on ? t.accent : t.surfaceUp, in: Capsule())
+                                        .overlay(Capsule().stroke(on ? .clear : t.line, lineWidth: 1))
+                                }
+                            }
+                        }
+                    }
+                    .padding(.horizontal, 16).padding(.top, 4)
+
+                    ScrollView(showsIndicators: false) {
+                        VStack(spacing: 18) {
+                            brainGroup("Today", Array(WZSample.recordings.prefix(3)))
+                            brainGroup("Yesterday", Array(WZSample.recordings[3..<6]))
+                        }
+                        .padding(.horizontal, 16).padding(.top, 16).padding(.bottom, 140)
+                    }
+                }
+                micDock
+            }
+        }
+    }
+
+    private func brainGroup(_ label: String, _ recs: [DemoRecording]) -> some View {
+        VStack(alignment: .leading, spacing: 9) {
+            SectionLabel(text: label)
+            VStack(spacing: 0) {
+                ForEach(Array(recs.enumerated()), id: \.element.id) { idx, r in
+                    RecRow(r: r) { openRec(r) }
+                        .padding(.horizontal, 14)
+                    if idx < recs.count - 1 { Divider().overlay(t.lineSoft) }
+                }
+            }
+            .background(t.surface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(t.line, lineWidth: 1))
+        }
+    }
+
+    private var micDock: some View {
+        ZStack {
+            LinearGradient(colors: [t.bg, t.bg.opacity(0)], startPoint: .bottom, endPoint: .top)
+                .frame(height: 130).allowsHitTesting(false)
+            Button(action: openRecording) {
+                WIcon("mic", size: 28, weight: .bold).foregroundStyle(.white)
+                    .frame(width: 72, height: 72)
+                    .background(t.gradient, in: Circle())
+                    .overlay(Circle().stroke(t.accent.opacity(t.dark ? 0.12 : 0.08), lineWidth: 6))
+                    .shadow(color: t.accent.opacity(0.7), radius: 14, y: 16)
+            }
+            .buttonStyle(.plain)
+            .padding(.bottom, 40)
+        }
+        .frame(maxWidth: .infinity, alignment: .center)
+    }
+}
+
+// A recording row (port of RecRow).
+struct RecRow: View {
+    @Environment(\.wz) private var t
+    let r: DemoRecording
+    var onTap: () -> Void
+
+    private var srcIcon: String {
+        switch r.src {
+        case "watch": return "watch"; case "action": return "bolt"
+        case "backtap": return "command"; case "keyboard": return "keyboard"
+        default: return "mic"
+        }
+    }
+
+    var body: some View {
+        Button(action: onTap) {
+            HStack(alignment: .top, spacing: 13) {
+                WIcon(srcIcon, size: 17, weight: .regular).foregroundStyle(t.accentLite)
+                    .frame(width: 38, height: 38)
+                    .background(t.surfaceUp, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(t.line, lineWidth: 1))
+                VStack(alignment: .leading, spacing: 7) {
+                    Text(r.title).font(WZFont.ui(14.5, .medium)).foregroundStyle(t.text)
+                        .lineLimit(2).multilineTextAlignment(.leading).lineSpacing(2)
+                    HStack(spacing: 8) {
+                        Text(r.app).foregroundStyle(t.muted)
+                        Text("·"); Text(r.when); Text("·"); Text(r.dur)
+                        Spacer(minLength: 0)
+                        WIcon(r.engine == "cloud" ? "cloud" : "lock", size: 12, weight: .regular)
+                            .foregroundStyle(r.engine == "cloud" ? t.amber : t.green)
+                    }
+                    .font(WZFont.mono(11)).foregroundStyle(t.faint)
+                }
+                MiniWave(color: t.accent, n: 12, height: 20).padding(.top, 4)
+            }
+            .padding(.vertical, 13)
+        }
+        .buttonStyle(.plain)
+    }
+}

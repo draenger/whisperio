@@ -23,8 +23,50 @@ mobile/
       DictationStateMachine.swift  idle→recording→transcribing→cleaning→output→idle (pure reducer)
       Settings.swift         WhisperioSettings (mirrors desktop AppSettings; no baked secrets)
     Tests/WhisperioKitTests/   swift-testing unit tests for the chain, state machine, settings
-  WhisperioApp/          (next) SwiftUI app target — created in Xcode on the Mac
+  WhisperioApp/          SwiftUI iPhone app — implementation of the Claude Design "Apple Concept"
+    Sources/WhisperioApp/
+      Theme.swift            design tokens (wz() palette, dark+light) + fonts + Color(hex:)
+      Components.swift       PrivacyBadge, EngineChip, SourceBadge, buttons, toggle, segmented, waveforms, icons→SF Symbols
+      Shared.swift           ScreenScaffold, WHeader, section labels
+      EnginePrivacy.swift    EngineChain (settled Direction B) + Cloud ConsentSheet + FlowLine
+      OnboardingView.swift   5-slide privacy-first onboarding
+      HomeView.swift         recordings "second brain" + mic dock + RecRow
+      RecordingView.swift    live on-device transcript + waveform + "tidying up"
+      DetailView.swift       transcript detail (raw/cleaned, scrubber, copy/share/insert)
+      SettingsView.swift     engine chain + triggers + appearance + consent
+      ModelsView.swift       on-device model management
+      AppShell.swift         screen routing + toast + @main App + #Previews
+      SampleData.swift       UI demo data (real data comes from WhisperioKit later)
 ```
+
+## The iPhone app (implemented)
+
+`WhisperioApp` is a faithful SwiftUI translation of the Claude Design **"Whisperio Apple
+Concept"** handoff — the core iPhone surfaces: onboarding, recordings home, live recording,
+transcript detail, settings (engine chain + Cloud consent), on-device models. Dark + light.
+
+> **Authored on Windows — not yet compiled.** Verify on the Mac (`#Preview` in `AppShell.swift`
+> renders each screen). If anything doesn't build, send me the errors. Known wiring to finish
+> on the Mac (can't be done blind here):
+> - **Add to an Xcode app target** (iOS 17+/26): create an iOS App, drop these sources in, add
+>   the `WhisperioKit` package as a dependency.
+> - **Fonts:** add Space Grotesk / IBM Plex Sans / JetBrains Mono to the target + `UIAppFonts`
+>   (falls back to system until then).
+> - **Ghost asset:** add `WhisperioGhost` (template PNG/SVG from `icons/`) to the asset catalog
+>   (`WGhost` falls back to a tinted placeholder until then).
+> - Icons use **SF Symbols** mapped from the design's Lucide set (native idiom).
+
+### Deliberately deferred (concept-canvas scenes, later phases — not the first ship)
+Keyboard bounce, Action Button / Lock Screen / Back-Tap trigger scenes, Dynamic Island /
+Live Activity, iPad split view, Apple Watch, the 3 engine-selector directions, edge states,
+and the component/style kit are in the design but **not implemented yet** — they map to
+Phases 1.5–3 in `../docs/whisperio-mobile-implementation-plan.md`.
+
+### Wire it to real logic
+The screens currently use `SampleData`. Replace with `WhisperioKit` (`ProviderChain`,
+`DictationStateMachine`, `WhisperioSettings`, `Recording`) once the `AVAudioEngine` /
+`SpeechTranscriber` providers are written on the Mac. The UI was built so the domain core
+drops in underneath without changing the views.
 
 ## Build & test the core (on the Mac)
 
