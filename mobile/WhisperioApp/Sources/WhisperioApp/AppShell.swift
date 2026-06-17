@@ -80,12 +80,14 @@ struct WZPhoneView: View {
 struct WhisperioApp: App {
     var body: some Scene {
         WindowGroup {
-            // Start at onboarding on first run; swap to .home to preview the app directly.
-            WZPhoneView(initialScreen: .home, dark: true)
+            // The concept gallery is the root — it reaches the live app + every scene.
+            // To ship the app on its own, replace with `WZPhoneView(initialScreen: .home)`.
+            GalleryView()
         }
     }
 }
 
+#Preview("Concept gallery") { GalleryView() }
 #Preview("Home · dark") { WZPhoneView(initialScreen: .home, dark: true) }
 #Preview("Onboarding") { WZPhoneView(initialScreen: .onboarding, dark: true) }
 #Preview("Home · light") { WZPhoneView(initialScreen: .home, dark: false) }

@@ -56,11 +56,23 @@ transcript detail, settings (engine chain + Cloud consent), on-device models. Da
 >   (`WGhost` falls back to a tinted placeholder until then).
 > - Icons use **SF Symbols** mapped from the design's Lucide set (native idiom).
 
-### Deliberately deferred (concept-canvas scenes, later phases — not the first ship)
-Keyboard bounce, Action Button / Lock Screen / Back-Tap trigger scenes, Dynamic Island /
-Live Activity, iPad split view, Apple Watch, the 3 engine-selector directions, edge states,
-and the component/style kit are in the design but **not implemented yet** — they map to
-Phases 1.5–3 in `../docs/whisperio-mobile-implementation-plan.md`.
+### Full concept implemented — browse it via the gallery
+`@main` opens `GalleryView`, a single navigable hub (the equivalent of the design canvas)
+that reaches **every** surface in the concept:
+- **Core app:** onboarding, home, live recording, transcript detail, settings, models.
+- **Engine & privacy — 3 directions:** A (privacy radio), B (processing chain, settled),
+  C (privacy tier dial).
+- **Triggers:** custom keyboard "bounce" flow, Action Button / Lock Screen / Back-Tap →
+  clipboard, Dynamic Island / Live Activity.
+- **Other devices:** iPad split view, Apple Watch capture + sync.
+- **Edge states:** empty, offline, cloud-unreachable → on-device, older iPhone → cloud.
+- **Reference:** component & style kit.
+
+These are faithful **UI prototypes** (animated, interactive) using `SampleData`. They map
+to Phases 1–3 in `../docs/whisperio-mobile-implementation-plan.md`; the real platform
+integrations (actual keyboard extension, App Intents, Live Activity, watchOS target,
+WatchConnectivity) get wired on the Mac per that plan. The iPad/Watch frames are mocks
+inside the iOS app for previewing — not yet separate targets.
 
 ### Wire it to real logic
 The screens currently use `SampleData`. Replace with `WhisperioKit` (`ProviderChain`,
