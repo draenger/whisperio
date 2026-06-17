@@ -48,19 +48,21 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      # Guard: an unsigned macOS app gets killed by Gatekeeper on Apple Silicon
-      # (the "app bounces in the Dock / won't open" symptom). electron-builder
-      # ad-hoc signs by default; fail the build loudly if that ever regresses.
-      - name: Verify macOS code signature (ad-hoc OK)
+      # Diagnostic: report the macOS app's signing state. We intentionally ship
+      # UNSIGNED builds for now (see README — right-click→Open / xattr workaround),
+      # so this only WARNS; it must not block the release. Re-promote to a hard
+      # failure once real code-signing (Developer ID / ad-hoc) is wired up.
+      - name: Report macOS code signature (non-blocking)
         if: matrix.platform == 'mac'
         run: |
-          set -e
           for APP in dist/mac/Whisperio.app dist/mac-arm64/Whisperio.app; do
             [ -d "$APP" ] || continue
             echo "Checking signature: $APP"
-            codesign -dv "$APP" 2>&1 || { echo "::error::$APP is not code-signed"; exit 1; }
-            codesign --verify --deep --strict "$APP" 2>&1 || { echo "::error::$APP failed signature verification"; exit 1; }
-            echo "OK: $APP is signed"
+            if codesign -dv "$APP" 2>&1 && codesign --verify --deep --strict "$APP" 2>&1; then
+              echo "OK: $APP is signed"
+            else
+              echo "::warning::$APP is not code-signed — shipping unsigned (documented in README)"
+            fi
           done
 
       - name: Upload artifacts
