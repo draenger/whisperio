@@ -5,14 +5,97 @@ import type { Theme } from '../../theme'
 import { ACCENTS, ACCENT_ORDER, ACCENT_LABELS } from '../../theme'
 import { RecordingsView } from '../recordings/RecordingsPanel'
 
-type TabId = 'general' | 'providers' | 'models' | 'audio' | 'hotkeys' | 'recordings'
+// Derived from the global window.api typings (preload) without a cross-project import
+type UpdaterState = Awaited<ReturnType<Window['api']['updater']['getStatus']>>
+
+/** Subscribes to auto-update status from the main process. */
+function useUpdater(): UpdaterState | null {
+  const [state, setState] = useState<UpdaterState | null>(null)
+  useEffect(() => {
+    window.api.updater.getStatus().then(setState)
+    const off = window.api.updater.onStatus(setState)
+    return off
+  }, [])
+  return state
+}
+
+/** Full-width banner shown when an update is downloading / ready / failed. */
+function UpdateBanner({ state, theme }: { state: UpdaterState | null; theme: Theme }): ReactElement | null {
+  const [installing, setInstalling] = useState(false)
+
+  if (!state) return null
+  const { status, version, percent, error } = state
+  if (status === 'idle' || status === 'checking' || status === 'not-available') return null
+
+  const ready = status === 'downloaded'
+  const failed = status === 'error'
+  const accent = failed ? '#ef4444' : theme.accent
+
+  let message: string
+  if (ready) message = `Whisperio ${version} is ready to install.`
+  else if (status === 'downloading') message = `Downloading update ${version ? 'v' + version : ''}… ${percent ?? 0}%`
+  else if (status === 'available') message = `Update ${version ? 'v' + version : ''} found — downloading…`
+  else message = `Update failed: ${error ?? 'unknown error'}`
+
+  return (
+    <div style={{
+      display: 'flex',
+      alignItems: 'center',
+      gap: '12px',
+      padding: '10px 16px',
+      background: `${accent}14`,
+      borderBottom: `1px solid ${accent}40`,
+      flexShrink: 0
+    }}>
+      <div style={{
+        width: '8px', height: '8px', borderRadius: '50%', flexShrink: 0, background: accent,
+        boxShadow: ready ? `0 0 8px ${accent}` : 'none'
+      }} />
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: '13px', fontWeight: 600, color: theme.text }}>
+          {ready ? 'Update ready — restart to install' : failed ? 'Update problem' : 'Updating Whisperio'}
+        </div>
+        <div style={{ fontSize: '12px', color: theme.textMuted, marginTop: '1px' }}>{message}</div>
+        {status === 'downloading' && (
+          <div style={{ marginTop: '6px', height: '4px', borderRadius: '2px', background: theme.bgTertiary, overflow: 'hidden' }}>
+            <div style={{ height: '100%', width: `${percent ?? 0}%`, background: accent, borderRadius: '2px', transition: 'width 0.3s' }} />
+          </div>
+        )}
+      </div>
+      {ready && (
+        <button
+          onClick={async () => { setInstalling(true); await window.api.updater.install() }}
+          disabled={installing}
+          style={{
+            background: accent, border: 'none', borderRadius: '6px', padding: '7px 16px',
+            fontSize: '12px', fontWeight: 600, color: '#fff', cursor: installing ? 'default' : 'pointer',
+            fontFamily: 'IBM Plex Sans, sans-serif', flexShrink: 0, opacity: installing ? 0.6 : 1
+          }}
+        >{installing ? 'Restarting…' : 'Restart now'}</button>
+      )}
+      {failed && (
+        <button
+          onClick={() => window.api.updater.check()}
+          style={{
+            background: 'transparent', border: `1px solid ${theme.border}`, borderRadius: '6px',
+            padding: '7px 16px', fontSize: '12px', fontWeight: 500, color: theme.text, cursor: 'pointer',
+            fontFamily: 'IBM Plex Sans, sans-serif', flexShrink: 0
+          }}
+        >Retry</button>
+      )}
+    </div>
+  )
+}
+
+type TabId = 'general' | 'providers' | 'models' | 'audio' | 'hotkeys' | 'recordings' | 'updates'
 
 const TAB_ICONS: Record<string, string> = {
   general: 'M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6',
   providers: 'M12 2 2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5',
   audio: 'M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3zM19 10v2a7 7 0 0 1-14 0v-2M12 19v3',
   hotkeys: 'M3 5h18a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1zM6 9h.01M10 9h.01M14 9h.01M18 9h.01M6 13h.01M9 13h6M18 13h.01',
-  recordings: 'M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zM12 7v5l3 2'
+  recordings: 'M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zM12 7v5l3 2',
+  updates: 'M21 12a9 9 0 1 1-2.64-6.36M21 3v6h-6'
 }
 
 function NavIcon({ d, size = 16 }: { d: string; size?: number }): ReactElement {
@@ -28,11 +111,112 @@ interface MediaDeviceOption {
   label: string
 }
 
+/** Dedicated Updates settings tab. */
+function UpdatesTab({ state, s, theme }: { state: UpdaterState | null; s: ReturnType<typeof makeStyles>; theme: Theme }): ReactElement {
+  const [installing, setInstalling] = useState(false)
+  const status = state?.status ?? 'idle'
+  const checking = status === 'checking'
+  const downloading = status === 'downloading'
+  const ready = status === 'downloaded'
+  const failed = status === 'error'
+
+  const dotColor = ready ? theme.accent
+    : downloading || checking ? theme.accent
+    : failed ? '#ef4444'
+    : theme.success
+
+  let headline: string
+  let detail: string
+  if (ready) {
+    headline = 'Update ready to install'
+    detail = `Whisperio ${state?.version} has been downloaded. Restart to finish installing.`
+  } else if (downloading) {
+    headline = 'Downloading update…'
+    detail = `Whisperio ${state?.version ?? ''} — ${state?.percent ?? 0}%`
+  } else if (checking) {
+    headline = 'Checking for updates…'
+    detail = 'Contacting the update server.'
+  } else if (status === 'available') {
+    headline = 'Update found'
+    detail = `Whisperio ${state?.version ?? ''} is downloading in the background.`
+  } else if (failed) {
+    headline = 'Update check failed'
+    detail = state?.error ?? 'Unknown error.'
+  } else {
+    headline = "You're up to date"
+    detail = 'Whisperio is running the latest available version.'
+  }
+
+  return (
+    <>
+      <div style={s.card}>
+        <h3 style={s.cardTitle}>Software Updates</h3>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginTop: '4px' }}>
+          <div style={{
+            width: '10px', height: '10px', borderRadius: '50%', flexShrink: 0, background: dotColor,
+            boxShadow: ready ? `0 0 8px ${dotColor}` : 'none'
+          }} />
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: '14px', fontWeight: 600, color: theme.text }}>{headline}</div>
+            <div style={{ fontSize: '12.5px', color: theme.textMuted, marginTop: '2px' }}>{detail}</div>
+          </div>
+          {ready ? (
+            <button
+              onClick={async () => { setInstalling(true); await window.api.updater.install() }}
+              disabled={installing}
+              style={{
+                background: theme.accent, border: 'none', borderRadius: '8px', padding: '8px 18px',
+                fontSize: '13px', fontWeight: 600, color: '#fff', cursor: installing ? 'default' : 'pointer',
+                fontFamily: 'IBM Plex Sans, sans-serif', flexShrink: 0, opacity: installing ? 0.6 : 1
+              }}
+            >{installing ? 'Restarting…' : 'Restart now'}</button>
+          ) : (
+            <button
+              onClick={() => window.api.updater.check()}
+              disabled={checking || downloading}
+              style={{
+                background: 'transparent', border: `1px solid ${theme.border}`, borderRadius: '8px',
+                padding: '8px 18px', fontSize: '13px', fontWeight: 500,
+                color: checking || downloading ? theme.textMuted : theme.accent,
+                cursor: checking || downloading ? 'default' : 'pointer',
+                fontFamily: 'IBM Plex Sans, sans-serif', flexShrink: 0,
+                opacity: checking || downloading ? 0.6 : 1
+              }}
+            >{failed ? 'Retry' : 'Check now'}</button>
+          )}
+        </div>
+
+        {downloading && (
+          <div style={{ marginTop: '12px', height: '5px', borderRadius: '3px', background: theme.bgTertiary, overflow: 'hidden' }}>
+            <div style={{ height: '100%', width: `${state?.percent ?? 0}%`, background: theme.accent, borderRadius: '3px', transition: 'width 0.3s' }} />
+          </div>
+        )}
+
+        <div style={{ marginTop: '14px', paddingTop: '14px', borderTop: `1px solid ${theme.border}`, display: 'flex', justifyContent: 'space-between', fontSize: '12.5px' }}>
+          <span style={{ color: theme.textMuted }}>Installed version</span>
+          <span style={{ color: theme.text, fontWeight: 500 }}>v{state?.currentVersion ?? '—'}</span>
+        </div>
+      </div>
+
+      <div style={s.card}>
+        <h3 style={s.cardTitle}>How updates work</h3>
+        <span style={s.hint}>
+          Whisperio checks for updates automatically on launch and every 4 hours. New versions download
+          quietly in the background — you keep working while it downloads. When it's ready you'll see a
+          notification and a “Restart now” button here (and in the tray menu). The update installs the next
+          time Whisperio restarts.
+        </span>
+      </div>
+    </>
+  )
+}
+
 export function SettingsForm(): ReactElement {
   const { theme } = useTheme()
 
   // --- State ---
-  const validTabs: TabId[] = ['general', 'providers', 'audio', 'hotkeys', 'recordings']
+  const validTabs: TabId[] = ['general', 'providers', 'audio', 'hotkeys', 'updates', 'recordings']
   const initialTab = ((): TabId => {
     const h = window.location.hash.replace('#', '') as TabId
     return validTabs.includes(h) ? h : 'general'
@@ -41,6 +225,7 @@ export function SettingsForm(): ReactElement {
   const [loading, setLoading] = useState(true)
   const [saved, setSaved] = useState(false)
   const [appVersion, setAppVersion] = useState('')
+  const updater = useUpdater()
 
   // Show the real app version in the badge (from main process)
   useEffect(() => {
@@ -184,12 +369,15 @@ export function SettingsForm(): ReactElement {
     { id: 'providers', label: 'Providers' },
     { id: 'audio', label: 'Audio' },
     { id: 'hotkeys', label: 'Hotkeys' },
+    { id: 'updates', label: 'Updates' },
     { id: 'recordings', label: 'Recordings' }
   ]
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', background: theme.bg }}>
       <TitleBar title={activeTab === 'recordings' ? 'Whisperio Recordings' : 'Whisperio Settings'} />
+
+      <UpdateBanner state={updater} theme={theme} />
 
       <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
         {/* Sidebar nav */}
@@ -223,9 +411,31 @@ export function SettingsForm(): ReactElement {
             )
           })}
           <div style={{ flex: 1 }} />
-          <div style={s.versionBadge}>
-            <span style={{ width: 6, height: 6, borderRadius: '50%', background: theme.success }} />
-            {appVersion ? `v${appVersion}` : ''}
+          <div
+            style={{
+              ...s.versionBadge,
+              cursor: 'pointer',
+              color: updater?.status === 'downloaded' ? theme.accent : undefined
+            }}
+            title={
+              updater?.status === 'downloaded'
+                ? `Update ${updater.version} ready — click to restart & install`
+                : 'Click to check for updates'
+            }
+            onClick={() => {
+              if (updater?.status === 'downloaded') window.api.updater.install()
+              else window.api.updater.check()
+            }}
+          >
+            <span style={{
+              width: 6, height: 6, borderRadius: '50%',
+              background: updater?.status === 'downloaded' || updater?.status === 'downloading' || updater?.status === 'checking'
+                ? theme.accent
+                : theme.success
+            }} />
+            {(updater?.currentVersion ?? appVersion) ? `v${updater?.currentVersion ?? appVersion}` : ''}
+            {updater?.status === 'downloaded' && ' · update ready'}
+            {updater?.status === 'downloading' && ` · ${updater.percent ?? 0}%`}
           </div>
         </nav>
 
@@ -297,6 +507,10 @@ export function SettingsForm(): ReactElement {
                       s={s}
                       theme={theme}
                     />
+                  )}
+
+                  {activeTab === 'updates' && (
+                    <UpdatesTab state={updater} s={s} theme={theme} />
                   )}
                 </div>
               </div>

@@ -145,6 +145,31 @@ export interface ServerAPI {
   onStatusChanged: (callback: (status: ServerStatus) => void) => () => void
 }
 
+export type UpdaterStatus =
+  | 'idle'
+  | 'checking'
+  | 'not-available'
+  | 'available'
+  | 'downloading'
+  | 'downloaded'
+  | 'error'
+
+export interface UpdaterState {
+  status: UpdaterStatus
+  currentVersion: string
+  version?: string
+  percent?: number
+  bytesPerSecond?: number
+  error?: string
+}
+
+export interface UpdaterAPI {
+  getStatus: () => Promise<UpdaterState>
+  check: () => Promise<UpdaterState>
+  install: () => Promise<boolean>
+  onStatus: (callback: (state: UpdaterState) => void) => () => void
+}
+
 export interface WhisperioAPI {
   dictation: DictationAPI
   settings: SettingsAPI
@@ -153,6 +178,7 @@ export interface WhisperioAPI {
   server: ServerAPI
   errors: ErrorAPI
   window: WindowAPI
+  updater: UpdaterAPI
 }
 
 const dictationApi: DictationAPI = {
@@ -285,6 +311,21 @@ const windowApi: WindowAPI = {
   getVersion: () => ipcRenderer.invoke('app:getVersion')
 }
 
+const updaterApi: UpdaterAPI = {
+  getStatus: () => ipcRenderer.invoke('updater:getStatus'),
+  check: () => ipcRenderer.invoke('updater:check'),
+  install: () => ipcRenderer.invoke('updater:install'),
+  onStatus: (callback: (state: UpdaterState) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, state: UpdaterState): void => {
+      callback(state)
+    }
+    ipcRenderer.on('updater:status', handler)
+    return () => {
+      ipcRenderer.removeListener('updater:status', handler)
+    }
+  }
+}
+
 contextBridge.exposeInMainWorld('api', {
   dictation: dictationApi,
   settings: settingsApi,
@@ -293,4 +334,5 @@ contextBridge.exposeInMainWorld('api', {
   server: serverApi,
   errors: errorsApi,
   window: windowApi,
+  updater: updaterApi,
 })

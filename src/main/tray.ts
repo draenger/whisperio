@@ -5,6 +5,8 @@ import { openSettingsWindow } from './settingsWindow'
 import { getActiveHotkey, getActiveSendHotkey } from './dictation/hotkeyManager'
 
 let tray: Tray | null = null
+let updateReadyVersion: string | null = null
+let onInstallUpdate: (() => void) | null = null
 
 function getIconPath(): string {
   // macOS menubar can't render Windows .ico files (comes out blank/invisible),
@@ -44,14 +46,7 @@ export function createTray(): Tray {
   }
   tray.setToolTip(tooltip)
 
-  const contextMenu = Menu.buildFromTemplate([
-    { label: 'Settings', click: () => openSettingsWindow() },
-    { label: 'Recordings', click: () => openSettingsWindow('recordings') },
-    { type: 'separator' },
-    { label: 'Quit', click: () => app.quit() }
-  ])
-
-  tray.setContextMenu(contextMenu)
+  rebuildMenu()
   tray.on('click', () => openSettingsWindow())
 
   // Show balloon notification so user knows which hotkey to press
@@ -72,6 +67,31 @@ export function createTray(): Tray {
   }
 
   return tray
+}
+
+function rebuildMenu(): void {
+  if (!tray || tray.isDestroyed()) return
+  const items: Electron.MenuItemConstructorOptions[] = []
+  if (updateReadyVersion) {
+    items.push(
+      { label: `Restart to update (v${updateReadyVersion})`, click: () => onInstallUpdate?.() },
+      { type: 'separator' }
+    )
+  }
+  items.push(
+    { label: 'Settings', click: () => openSettingsWindow() },
+    { label: 'Recordings', click: () => openSettingsWindow('recordings') },
+    { type: 'separator' },
+    { label: 'Quit', click: () => app.quit() }
+  )
+  tray.setContextMenu(Menu.buildFromTemplate(items))
+}
+
+/** Called by the auto-updater when a downloaded update is ready to install. */
+export function setUpdateReady(version: string, onInstall: () => void): void {
+  updateReadyVersion = version
+  onInstallUpdate = onInstall
+  rebuildMenu()
 }
 
 export function destroyTray(): void {

@@ -33,7 +33,7 @@ import {
   stopServer,
   setServerStatusCallback
 } from './localServer'
-import { initAutoUpdater } from './autoUpdater'
+import { initAutoUpdater, getUpdateState, checkForUpdatesManual, installUpdate } from './autoUpdater'
 
 // Set app name and model ID so Windows notifications show "Whisperio"
 app.setName('Whisperio')
@@ -192,6 +192,14 @@ app.whenReady().then(() => {
     stopServer()
     return getServerStatus()
   })
+
+  // Auto-update IPC handlers
+  ipcMain.handle('updater:getStatus', () => getUpdateState())
+  ipcMain.handle('updater:check', () => {
+    checkForUpdatesManual()
+    return getUpdateState()
+  })
+  ipcMain.handle('updater:install', () => installUpdate())
 
   // Window control IPC handlers (for custom title bar)
   ipcMain.on('window:minimize', (event) => {
