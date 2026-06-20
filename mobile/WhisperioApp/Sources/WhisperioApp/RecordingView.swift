@@ -13,6 +13,7 @@ struct RecordingView: View {
     @EnvironmentObject private var recordings: RecordingsStore
     @StateObject private var recorder = AudioRecorder()
 
+    var fromKeyboard: Bool = false
     var onCancel: () -> Void
     var onDone: (Recording) -> Void
 
@@ -154,6 +155,9 @@ struct RecordingView: View {
 #if canImport(UIKit)
             UIPasteboard.general.string = text   // ready to paste anywhere immediately
 #endif
+            // Bounce-to-app from the keyboard: stash the transcript in the shared App Group
+            // so the keyboard can insert it via textDocumentProxy when the user swipes back.
+            if fromKeyboard { SharedStore.setPendingTranscript(text) }
             onDone(rec)
         case .failure(let err):
             phase = .error

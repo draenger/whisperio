@@ -42,6 +42,12 @@ final class SettingsStore: ObservableObject {
                 order.append(id)
             }
         }
+        // Cloud engines stay disabled until the user has granted explicit consent — even
+        // as a fallback. On-device (Apple Speech) never needs consent.
+        if !s.cloudConsentGranted {
+            order.removeAll { s.isCloud($0) }
+            if order.isEmpty { order = [.onDevice] }
+        }
         return ProviderChain(providers: order.map { provider(for: $0, s) })
     }
 

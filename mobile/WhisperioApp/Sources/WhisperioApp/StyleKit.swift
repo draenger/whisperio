@@ -34,10 +34,10 @@ struct StyleKitView: View {
                 }
                 block("Type") {
                     VStack(alignment: .leading, spacing: 10) {
-                        Text("Space Grotesk · display").font(WZFont.display(28)).foregroundStyle(t.text)
-                        Text("IBM Plex Sans · body & UI, the calm workhorse for transcripts.")
+                        Text("SF Pro Rounded · display").font(WZFont.display(28)).foregroundStyle(t.text)
+                        Text("SF Pro Text · body & UI, the calm workhorse for transcripts.")
                             .font(WZFont.ui(16)).foregroundStyle(t.muted)
-                        Text("JETBRAINS MONO · LABELS & META").font(WZFont.mono(12.5)).tracking(0.7).foregroundStyle(t.accentLite)
+                        Text("SF MONO · LABELS & META").font(WZFont.mono(12.5)).tracking(0.7).foregroundStyle(t.accentLite)
                     }
                 }
                 block("Privacy iconography") {

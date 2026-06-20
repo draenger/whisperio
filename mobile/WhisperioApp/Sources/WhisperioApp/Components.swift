@@ -231,15 +231,64 @@ struct MiniWave: View {
 }
 
 // MARK: - Ghost mascot
-// The detailed ghost SVG (wz-core.jsx) is shipped as an asset; reference it by name and
-// fall back to an SF Symbol tint until "WhisperioGhost" is added to the asset catalog.
+// The friendly ghost from wz-core.jsx, recreated as a pure SwiftUI vector so it always
+// renders (no bundled asset needed) and scales crisply at any size. The body is a domed
+// head with a softly-scalloped hem; two eyes + a little blush complete the face. Drawn in
+// a 100×100 space and scaled to `size`. `foregroundStyle` tints the body via `currentColor`.
+struct GhostShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        let s = min(rect.width, rect.height) / 100
+        func p(_ x: CGFloat, _ y: CGFloat) -> CGPoint {
+            CGPoint(x: rect.minX + x * s, y: rect.minY + y * s)
+        }
+        var path = Path()
+        // Domed head + sides
+        path.move(to: p(18, 78))
+        path.addLine(to: p(18, 46))
+        path.addCurve(to: p(50, 12), control1: p(18, 27), control2: p(32, 12))
+        path.addCurve(to: p(82, 46), control1: p(68, 12), control2: p(82, 27))
+        path.addLine(to: p(82, 78))
+        // Scalloped hem (three soft bumps), right → left
+        path.addCurve(to: p(66, 78), control1: p(78, 90), control2: p(70, 90))
+        path.addCurve(to: p(50, 78), control1: p(62, 70), control2: p(54, 70))
+        path.addCurve(to: p(34, 78), control1: p(46, 86), control2: p(38, 86))
+        path.addCurve(to: p(18, 78), control1: p(30, 70), control2: p(22, 70))
+        path.closeSubpath()
+        return path
+    }
+}
+
 struct WGhost: View {
     @Environment(\.wz) private var t
     var size: CGFloat = 26
+    /// Override the body color (e.g. white on a gradient chip). Defaults to theme accent.
+    var tint: Color? = nil
+
+    private var bodyColor: Color { tint ?? t.accentLite }
+    private var eyeColor: Color {
+        // Punch eyes out dark against a light body, light against a dark body.
+        (tint != nil) ? t.accent : (t.dark ? Color.hex(0x1a1530) : .white)
+    }
+
     var body: some View {
-        Image("WhisperioGhost")
-            .resizable().renderingMode(.template).scaledToFit()
+        GhostShape()
+            .fill(bodyColor)
             .frame(width: size, height: size)
-            .foregroundStyle(t.accentLite)
+            .overlay {
+                // Face: two eyes + a blush, sized relative to the ghost.
+                let eye = size * 0.085
+                HStack(spacing: size * 0.16) {
+                    ForEach(0..<2, id: \.self) { _ in
+                        Capsule().fill(eyeColor)
+                            .frame(width: eye, height: eye * 1.45)
+                    }
+                }
+                .offset(y: -size * 0.07)
+                .overlay(alignment: .bottom) {
+                    Capsule().fill(t.accent.opacity(0.45))
+                        .frame(width: size * 0.10, height: size * 0.045)
+                        .offset(y: -size * 0.30)
+                }
+            }
     }
 }

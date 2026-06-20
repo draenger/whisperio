@@ -1,10 +1,11 @@
 import SwiftUI
 import Combine
+import WhisperioKit
 
 // App shell — custom screen routing + toast, mirroring WZPhone() in wz-iphone.jsx.
 // (The concept uses a bespoke transition shell rather than NavigationStack.)
 
-enum WZScreen { case onboarding, home, recording, detail, settings, models }
+enum WZScreen { case onboarding, home, recording, detail, settings, models, keyboardSetup }
 
 struct WZPhoneView: View {
     @Environment(\.scenePhase) private var scenePhase
@@ -12,6 +13,11 @@ struct WZPhoneView: View {
     @State private var screen: WZScreen = .home
     @State private var rec: DemoRecording = WZSample.recordings[0]
     @State private var toastMsg: String?
+    // True when the current dictation was launched from the keyboard (bounce-to-app flow):
+    // its transcript is written to the App Group and a swipe-back explainer is shown.
+    @State private var fromKeyboard = false
+    @State private var showSwipeBack = false
+    @AppStorage("whisperio.swipeBackExplainerSeen") private var swipeBackSeen = false
 
     private var t: WZTheme { .of(dark) }
 
@@ -30,6 +36,10 @@ struct WZPhoneView: View {
                     .frame(maxHeight: .infinity, alignment: .bottom)
                     .padding(.bottom, 48)
             }
+            if showSwipeBack {
+                SwipeBackExplainer { withAnimation { showSwipeBack = false } }
+                    .transition(.opacity)
+            }
         }
         .environment(\.wz, t)
         .preferredColorScheme(dark ? .dark : .light)
@@ -37,9 +47,20 @@ struct WZPhoneView: View {
         .onReceive(NotificationCenter.default.publisher(for: .whisperioStartDictation)) { _ in
             go(.recording)
         }
-        .onAppear { consumePending() }
+        .onAppear { SharedStore.recordAppHeartbeat(); consumePending() }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active { consumePending() }
+        }
+        .onOpenURL { url in handle(url) }
+    }
+
+    // whisperio://dictate?return=keyboard — the keyboard's bounce-to-app entry point.
+    private func handle(_ url: URL) {
+        guard url.scheme == "whisperio" else { return }
+        if url.host == "dictate" {
+            let comps = URLComponents(url: url, resolvingAgainstBaseURL: false)
+            fromKeyboard = comps?.queryItems?.first { $0.name == "return" }?.value == "keyboard"
+            go(.recording)
         }
     }
 
@@ -57,14 +78,30 @@ struct WZPhoneView: View {
         case .onboarding:
             OnboardingView { go(.home) }
         case .recording:
-            RecordingView(onCancel: { go(.home) },
-                          onDone: { r in rec = DemoRecording(r); go(.detail) })
+            RecordingView(fromKeyboard: fromKeyboard,
+                          onCancel: { fromKeyboard = false; go(.home) },
+                          onDone: { r in
+                              if fromKeyboard {
+                                  fromKeyboard = false
+                                  if !swipeBackSeen {
+                                      swipeBackSeen = true
+                                      withAnimation { showSwipeBack = true }
+                                  }
+                                  go(.home)
+                              } else {
+                                  rec = DemoRecording(r); go(.detail)
+                              }
+                          })
         case .detail:
             DetailView(r: rec, onBack: { go(.home) }, toast: showToast)
         case .settings:
-            SettingsView(onBack: { go(.home) }, dark: $dark, openModels: { go(.models) })
+            SettingsView(onBack: { go(.home) }, dark: $dark,
+                         openModels: { go(.models) },
+                         openKeyboardSetup: { go(.keyboardSetup) })
         case .models:
             ModelsView(onBack: { go(.settings) })
+        case .keyboardSetup:
+            KeyboardSetupView(onBack: { go(.settings) })
         case .home:
             HomeView(openRec: { rec = $0; go(.detail) },
                      openRecording: { go(.recording) },

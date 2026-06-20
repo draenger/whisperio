@@ -22,6 +22,10 @@ public struct WhisperioSettings: Codable, Sendable, Equatable {
     public var fallbackEnabled: Bool     // try the other configured engines if the primary fails
     public var saveRecordings: Bool
 
+    /// Explicit, persisted consent that audio may leave the device for a cloud provider.
+    /// On-device (Apple Speech) never needs this; cloud providers stay disabled until granted.
+    public var cloudConsentGranted: Bool
+
     public init(
         providerChain: [ProviderID] = [.onDevice],
         openAIKey: String = "",
@@ -33,7 +37,8 @@ public struct WhisperioSettings: Codable, Sendable, Equatable {
         transcriptionPrompt: String = "",
         cleanupEnabled: Bool = false,
         fallbackEnabled: Bool = false,
-        saveRecordings: Bool = true
+        saveRecordings: Bool = true,
+        cloudConsentGranted: Bool = false
     ) {
         self.providerChain = providerChain
         self.openAIKey = openAIKey
@@ -46,6 +51,7 @@ public struct WhisperioSettings: Codable, Sendable, Equatable {
         self.cleanupEnabled = cleanupEnabled
         self.fallbackEnabled = fallbackEnabled
         self.saveRecordings = saveRecordings
+        self.cloudConsentGranted = cloudConsentGranted
     }
 
     // Tolerant decoding — missing keys (older persisted settings, or future-added fields)
@@ -64,7 +70,11 @@ public struct WhisperioSettings: Codable, Sendable, Equatable {
         cleanupEnabled = try c.decodeIfPresent(Bool.self, forKey: .cleanupEnabled) ?? d.cleanupEnabled
         fallbackEnabled = try c.decodeIfPresent(Bool.self, forKey: .fallbackEnabled) ?? d.fallbackEnabled
         saveRecordings = try c.decodeIfPresent(Bool.self, forKey: .saveRecordings) ?? d.saveRecordings
+        cloudConsentGranted = try c.decodeIfPresent(Bool.self, forKey: .cloudConsentGranted) ?? d.cloudConsentGranted
     }
+
+    /// Whether the given engine requires (and currently has) cloud consent to run.
+    public func isCloud(_ id: ProviderID) -> Bool { id == .openAI || id == .elevenLabs }
 
     /// Vocabulary parsed into trimmed, non-empty terms.
     public var vocabularyTerms: [String] {

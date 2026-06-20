@@ -43,18 +43,21 @@ struct WZTheme {
 }
 
 // MARK: - Fonts
-// Display = Space Grotesk, UI = IBM Plex Sans, Mono = JetBrains Mono.
-// These custom fonts must be bundled in the app target's Info.plist (UIAppFonts);
-// `.custom` falls back to the system font if they aren't present yet.
+// The concept uses Space Grotesk (display) / IBM Plex Sans (UI) / JetBrains Mono (meta).
+// For a stable release we map these to their closest *system* faces — no font files to
+// bundle, nothing to break the build, and they render identically on every device:
+//   • display → SF Pro Rounded (geometric, friendly — matches Space Grotesk's character)
+//   • UI      → SF Pro Text (the calm body workhorse)
+//   • mono    → SF Mono (labels & meta)
 enum WZFont {
     static func display(_ size: CGFloat, _ weight: Font.Weight = .semibold) -> Font {
-        .custom("Space Grotesk", size: size).weight(weight)
+        .system(size: size, weight: weight, design: .rounded)
     }
     static func ui(_ size: CGFloat, _ weight: Font.Weight = .regular) -> Font {
-        .custom("IBM Plex Sans", size: size).weight(weight)
+        .system(size: size, weight: weight, design: .default)
     }
     static func mono(_ size: CGFloat, _ weight: Font.Weight = .regular) -> Font {
-        .custom("JetBrains Mono", size: size).weight(weight)
+        .system(size: size, weight: weight, design: .monospaced)
     }
 }
 

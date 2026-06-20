@@ -31,7 +31,7 @@ struct WatchView: View {
     private var home: some View {
         VStack(spacing: 9) {
             HStack {
-                HStack(spacing: 5) { WGhost(size: 15); Text("Whisperio").font(WZFont.display(13)).foregroundStyle(.white) }
+                HStack(spacing: 5) { WGhost(size: 15, tint: .white); Text("Whisperio").font(WZFont.display(13)).foregroundStyle(.white) }
                 Spacer()
                 Text("9:41").font(WZFont.mono(10)).foregroundStyle(t.green)
             }

@@ -52,7 +52,7 @@ struct DynamicIslandScene: View {
                 HStack(spacing: 14) {
                     ZStack {
                         Circle().fill(t.gradient).frame(width: 40, height: 40)
-                            .overlay(WGhost(size: 22).foregroundStyle(.white))
+                            .overlay(WGhost(size: 22, tint: .white))
                     }
                     VStack(alignment: .leading, spacing: 6) {
                         HStack(spacing: 7) {

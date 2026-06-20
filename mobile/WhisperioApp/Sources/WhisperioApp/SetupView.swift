@@ -10,6 +10,7 @@ struct SetupView: View {
     @State private var selected: ProviderID = .onDevice
     @State private var openAIKey = ""
     @State private var elevenKey = ""
+    @State private var consentProvider: ProviderID?
 
     private var keyNeeded: Bool { selected == .openAI || selected == .elevenLabs }
     private var canContinue: Bool {
@@ -72,7 +73,17 @@ struct SetupView: View {
                 .animation(.easeInOut(duration: 0.2), value: selected)
             }
         }
+        .sheet(item: Binding(get: { consentProvider.map { ConsentTarget(id: $0) } },
+                             set: { consentProvider = $0?.id })) { target in
+            CloudConsentSheet(provider: target.id,
+                              onAccept: { finish(consent: true) },
+                              onCancel: { consentProvider = nil })
+                .environment(\.wz, t)
+                .presentationDetents([.medium, .large])
+        }
     }
+
+    private struct ConsentTarget: Identifiable { let id: ProviderID }
 
     private func engineCard(_ id: ProviderID, title: String, sub: String, icon: String) -> some View {
         let on = selected == id
@@ -99,11 +110,22 @@ struct SetupView: View {
     }
 
     private func complete() {
+        // Cloud requires explicit consent first; on-device proceeds straight away.
+        if settings.settings.isCloud(selected) && !settings.settings.cloudConsentGranted {
+            consentProvider = selected
+        } else {
+            finish(consent: settings.settings.cloudConsentGranted)
+        }
+    }
+
+    private func finish(consent: Bool) {
         var s = settings.settings
         s.providerChain = [selected]
+        if consent { s.cloudConsentGranted = true }
         if selected == .openAI { s.openAIKey = openAIKey.trimmingCharacters(in: .whitespaces) }
         if selected == .elevenLabs { s.elevenLabsKey = elevenKey.trimmingCharacters(in: .whitespaces) }
         settings.settings = s
+        consentProvider = nil
         settings.didCompleteSetup = true
     }
 }

@@ -10,6 +10,9 @@ struct SettingsView: View {
     var onBack: () -> Void
     @Binding var dark: Bool
     var openModels: () -> Void
+    var openKeyboardSetup: () -> Void = {}
+
+    @State private var consentProvider: ProviderID?   // non-nil → consent sheet is up
 
     private var engine: ProviderID { settings.settings.providerChain.first ?? .onDevice }
 
@@ -40,7 +43,12 @@ struct SettingsView: View {
                 ScrollView(showsIndicators: false) {
                     VStack(alignment: .leading, spacing: 18) {
                         VStack(alignment: .leading, spacing: 9) {
-                            SectionLabel(text: "Transcription engine").padding(.leading, 4)
+                            HStack {
+                                SectionLabel(text: "Transcription engine")
+                                Spacer()
+                                PrivacyBadge(mode: settings.settings.isCloud(engine) ? .cloud : .device, small: true)
+                            }
+                            .padding(.leading, 4)
                             VStack(spacing: 10) {
                                 engineRow(.onDevice, "Apple — on-device", "Free · private · offline", "cpu")
                                 engineRow(.openAI, "OpenAI", "Cloud · Whisper API", "globe")
@@ -65,6 +73,12 @@ struct SettingsView: View {
                             .padding(16)
                             .background(t.surface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
                             .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(t.line, lineWidth: 1))
+                        }
+
+                        SettGroup(title: "Keyboard") {
+                            SettRow(icon: "keyboard", label: "Whisperio keyboard",
+                                    sub: "Dictate from any app — install & setup", last: true,
+                                    onTap: openKeyboardSetup)
                         }
 
                         SettGroup(title: "Transcription") {
@@ -143,14 +157,48 @@ struct SettingsView: View {
                 }
             }
         }
+        .sheet(item: Binding(get: { consentProvider.map { ConsentTarget(id: $0) } },
+                             set: { consentProvider = $0?.id })) { target in
+            CloudConsentSheet(provider: target.id,
+                              onAccept: { grantCloud(target.id) },
+                              onCancel: { consentProvider = nil })
+                .environment(\.wz, t)
+                .presentationDetents([.medium, .large])
+        }
+    }
+
+    // Wrap a ProviderID so it can drive `.sheet(item:)`.
+    private struct ConsentTarget: Identifiable { let id: ProviderID }
+
+    /// Cloud providers require explicit, persisted consent before they can be selected.
+    private func selectEngine(_ id: ProviderID) {
+        if settings.settings.isCloud(id) && !settings.settings.cloudConsentGranted {
+            consentProvider = id   // ask first; only switch on accept
+        } else {
+            applyEngine(id)
+        }
+    }
+
+    private func applyEngine(_ id: ProviderID) {
+        var s = settings.settings
+        s.providerChain = [id]
+        settings.settings = s
+    }
+
+    private func grantCloud(_ id: ProviderID) {
+        var s = settings.settings
+        s.cloudConsentGranted = true
+        s.providerChain = [id]
+        settings.settings = s
+        consentProvider = nil
     }
 
     private func engineRow(_ id: ProviderID, _ title: String, _ sub: String, _ icon: String) -> some View {
         let on = engine == id
+        let cloud = settings.settings.isCloud(id)
+        let needsConsent = cloud && !settings.settings.cloudConsentGranted
         return Button {
-            var s = settings.settings
-            s.providerChain = [id]
-            settings.settings = s
+            selectEngine(id)
         } label: {
             HStack(spacing: 13) {
                 WIcon(icon, size: 17).foregroundStyle(on ? t.accent : t.muted)
@@ -161,6 +209,9 @@ struct SettingsView: View {
                     Text(sub).font(WZFont.mono(11)).foregroundStyle(t.faint)
                 }
                 Spacer(minLength: 0)
+                if needsConsent {
+                    WIcon("lock", size: 13).foregroundStyle(t.amber)
+                }
                 WIcon(on ? "check" : "", size: 18).foregroundStyle(t.accent)
             }
             .padding(13)
@@ -264,5 +315,68 @@ struct SettRow<Right: View>: View {
 extension SettRow where Right == EmptyView {
     init(icon: String, label: String, sub: String? = nil, last: Bool = false, onTap: (() -> Void)? = nil) {
         self.init(icon: icon, label: label, sub: sub, last: last, onTap: onTap) { EmptyView() }
+    }
+}
+
+// MARK: - Cloud consent sheet
+// Plain-words, explicit opt-in before any audio leaves the device. Accepting persists
+// `cloudConsentGranted`; on-device (Apple Speech) never reaches this.
+struct CloudConsentSheet: View {
+    @Environment(\.wz) private var t
+    let provider: ProviderID
+    var onAccept: () -> Void
+    var onCancel: () -> Void
+
+    private var name: String { provider == .openAI ? "OpenAI" : "ElevenLabs" }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                PrivacyBadge(mode: .cloud)
+                Spacer()
+                Button(action: onCancel) {
+                    WIcon("x", size: 16).foregroundStyle(t.muted)
+                        .frame(width: 34, height: 34)
+                        .background(t.surfaceUp, in: Circle())
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.bottom, 18)
+
+            WIcon("cloud", size: 26).foregroundStyle(.white)
+                .frame(width: 56, height: 56)
+                .background(t.amber.opacity(0.9), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .padding(.bottom, 16)
+
+            Text("Turn on cloud transcription?")
+                .font(WZFont.display(21)).foregroundStyle(t.text).padding(.bottom, 10)
+
+            Text("To use \(name), your audio will leave this device and be sent to \(name)’s servers to be transcribed. That’s the only way a cloud engine can work.")
+                .font(WZFont.ui(14.5)).foregroundStyle(t.muted).lineSpacing(4)
+                .fixedSize(horizontal: false, vertical: true).padding(.bottom, 16)
+
+            VStack(alignment: .leading, spacing: 11) {
+                bullet("lock", "Prefer privacy? Apple’s on-device engine is free, works in airplane mode, and never uploads anything.")
+                bullet("shield", "You can switch back to on-device any time. Your saved transcripts stay on this device.")
+            }
+            .padding(.bottom, 22)
+
+            GradButton(title: "I understand — enable \(name)", icon: "cloud", action: onAccept)
+                .padding(.bottom, 10)
+            GhostButton(title: "Keep audio on-device", action: onCancel)
+
+            Spacer(minLength: 0)
+        }
+        .padding(24)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(t.bg.ignoresSafeArea())
+    }
+
+    private func bullet(_ icon: String, _ text: String) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            WIcon(icon, size: 15, weight: .regular).foregroundStyle(t.accentLite).padding(.top, 1)
+            Text(text).font(WZFont.ui(13)).foregroundStyle(t.muted).lineSpacing(3)
+                .fixedSize(horizontal: false, vertical: true)
+        }
     }
 }
