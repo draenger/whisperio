@@ -43,10 +43,24 @@ jobs:
       - name: Build Electron app
         run: npm run build
 
+      - name: Prepare macOS notary key
+        if: matrix.platform == 'mac'
+        run: |
+          mkdir -p "$RUNNER_TEMP/notary"
+          echo "${{ secrets.APPLE_API_KEY_BASE64 }}" | base64 --decode > "$RUNNER_TEMP/notary/AuthKey.p8"
+          echo "APPLE_API_KEY=$RUNNER_TEMP/notary/AuthKey.p8" >> "$GITHUB_ENV"
+
       - name: Package installer
         run: npx electron-builder --${{ matrix.platform }} --config electron-builder.yml
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # macOS Developer ID signing — only set on the mac runner (a mac .p12 must
+          # never be fed to the Windows/Linux signers).
+          CSC_LINK: ${{ matrix.platform == 'mac' && secrets.CSC_LINK || '' }}
+          CSC_KEY_PASSWORD: ${{ matrix.platform == 'mac' && secrets.CSC_KEY_PASSWORD || '' }}
+          # Notarization via App Store Connect API key (APPLE_API_KEY path set above).
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
 
       # Diagnostic: report the macOS app's signing state. We intentionally ship
       # UNSIGNED builds for now (see README — right-click→Open / xattr workaround),

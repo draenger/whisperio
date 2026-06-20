@@ -34,6 +34,10 @@ nsis:
 
 mac:
   icon: build/icon.png
+  # Sign with Developer ID + notarize so macOS auto-update validates (Squirrel.Mac
+  # rejects ad-hoc/unsigned updates). Credentials come from CI env / GitHub Secrets.
+  notarize:
+    teamId: "953Q6T2WTB"
   target:
     # zip is REQUIRED for auto-update on macOS (Squirrel.Mac can't update from a .dmg).
     # latest-mac.yml then references the zip and electron-updater downloads it.
