@@ -29,7 +29,7 @@ for exploring a **native Apple-ecosystem mobile version** (iPhone, iPad, Apple W
   means audio never leaves the device. This is a core differentiator, not a niche toggle.
 - **Stay out of the way.** Lives in the tray/background, minimal overlay, no bloat.
   The interface is mostly *invisible* — the magic is that it works everywhere.
-- **Open source, MIT.** Hackable, self-hostable, no walled garden.
+- **Source-available, noncommercial (PolyForm NC).** Hackable, self-hostable, no walled garden — just not for resale.
 
 The spiritual target for mobile: something that feels like **Obsidian for voice** — a
 fast, local-first, low-friction capture tool you trust with your raw thoughts, that

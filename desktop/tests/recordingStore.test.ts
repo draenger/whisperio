@@ -72,14 +72,22 @@ describe('recordingStore', () => {
 
   describe('getRecordings', () => {
     it('returns sorted list by timestamp descending', () => {
+      // Pin Date.now so the three recordings get distinct, increasing timestamps —
+      // otherwise same-millisecond saves collide and the sort order is undefined (flaky).
+      const nowSpy = vi.spyOn(Date, 'now')
+      nowSpy.mockReturnValue(1_000)
       const entry1 = saveRecording(Buffer.from('a'), { duration: 1, provider: 'openai' })
+      nowSpy.mockReturnValue(2_000)
       const entry2 = saveRecording(Buffer.from('b'), { duration: 2, provider: 'elevenlabs' })
+      nowSpy.mockReturnValue(3_000)
       const entry3 = saveRecording(Buffer.from('c'), { duration: 3, provider: 'openai' })
+      nowSpy.mockRestore()
 
       const list = getRecordings()
       expect(list).toHaveLength(3)
       // Most recent first
       expect(list[0].id).toBe(entry3.id)
+      expect(list[1].id).toBe(entry2.id)
       expect(list[2].id).toBe(entry1.id)
     })
 

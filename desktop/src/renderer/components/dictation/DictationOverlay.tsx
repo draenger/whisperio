@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import type { JSX } from 'react'
 import { useDictation } from '../../hooks/useDictation'
 
 type OverlayState = 'idle' | 'recording' | 'transcribing' | 'pasting'

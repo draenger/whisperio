@@ -25,4 +25,4 @@ Whisperio handles API keys and audio data. Security issues we care about:
 
 ## Disclaimer
 
-This software is provided as-is under the MIT license. Use at your own risk. We don't guarantee timely fixes, ongoing maintenance, or support for every platform or configuration.
+This software is provided as-is under the [PolyForm Noncommercial License 1.0.0](LICENSE.md). Use at your own risk. We don't guarantee timely fixes, ongoing maintenance, or support for every platform or configuration.

@@ -3,7 +3,7 @@
 *Apple (iOS / iPadOS / watchOS) + Android / Wear OS*
 *Companion to the feasibility report. Written June 2026. Targets the shipping OS generation: iOS/watchOS **26**, Android **13–16** (API 33–36).*
 
-> Doc is in English on purpose — it's full of API names and is meant to live next to code / a public MIT repo. Say the word and I'll flip it to PL.
+> Doc is in English on purpose — it's full of API names and is meant to live next to code / a public source-available repo. Say the word and I'll flip it to PL.
 
 ---
 

@@ -14,3 +14,6 @@ dist/
 **/.build/
 **/.swiftpm/
 DerivedData/
+# Xcode build output (scoped to mobile so it never touches desktop/build,
+# which is tracked electron-builder buildResources)
+mobile/**/build/

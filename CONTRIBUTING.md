@@ -46,17 +46,32 @@ Use the [feature request template](https://github.com/draenger/whisperio/issues/
 ## Project structure
 
 ```
-src/
-  main/           Electron main process
-    dictation/      Hotkey state machine, overlay, auto-paste
-    transcribe.ts   OpenAI & ElevenLabs STT
-    modelManager.ts Local model downloads
-    settingsManager.ts Settings persistence
-  renderer/       React UI
-  preload/        IPC bridge (index.ts + index.d.ts)
-tests/            Vitest unit tests
+desktop/          Electron app (Windows/macOS/Linux)
+  src/
+    main/           Electron main process
+      dictation/      Hotkey state machine, overlay, auto-paste
+      transcribe.ts   OpenAI & ElevenLabs STT
+      modelManager.ts Local model downloads
+      settingsManager.ts Settings persistence
+    renderer/       React UI
+    preload/        IPC bridge (index.ts + index.d.ts)
+  tests/          Vitest unit tests
+mobile/           iOS + Apple Watch app (Swift) + WhisperioKit
+docs/             Project website (GitHub Pages)
 ```
+
+Desktop commands run from `desktop/` (`cd desktop && npm install`).
 
 ## License
 
-By contributing, you agree that your contributions will be licensed under the [MIT License](LICENSE).
+By contributing, you agree that your contributions are licensed under the
+[PolyForm Noncommercial License 1.0.0](LICENSE.md) — the same license as the
+project. You also grant Daniel Kasprzyk (the maintainer) a perpetual,
+irrevocable, worldwide license to use, modify, and relicense your contributions,
+**including under a commercial license**. This lets the project offer commercial
+licenses on request while keeping the public source noncommercial. You confirm
+you have the right to contribute the code (it's yours, or you're permitted to
+submit it).
+
+Please don't add dependencies under licenses incompatible with noncommercial
+distribution without flagging it first.

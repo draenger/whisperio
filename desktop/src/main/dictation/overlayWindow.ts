@@ -110,6 +110,16 @@ function createOverlayForDisplay(display: Electron.Display): BrowserWindow {
     }
   })
 
+  // macOS: the overlay must float above EVERYTHING, including apps in native
+  // fullscreen. A fullscreen app lives on its own Space, so a plain always-on-top
+  // window stays behind on the original Space and becomes invisible. The fix is to
+  // mark the window visible on all Spaces *including* fullscreen, paired with a
+  // high window level. showInactive() (used below) avoids stealing focus / Space.
+  if (process.platform === 'darwin') {
+    win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
+    win.setAlwaysOnTop(true, 'screen-saver')
+  }
+
   // Position at bottom-center of this display's work area
   positionOverlayOnDisplay(win, display)
 
@@ -210,6 +220,11 @@ export function showOverlay(): void {
     // above everything. moveTop forces a repaint on Windows.
     win.showInactive()
     win.setAlwaysOnTop(true, 'screen-saver')
+    // macOS: re-assert fullscreen visibility every show — if the window was ever
+    // recreated or the level reset, this keeps it above maximized/fullscreen apps.
+    if (process.platform === 'darwin') {
+      win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
+    }
     win.moveTop()
   }
 }

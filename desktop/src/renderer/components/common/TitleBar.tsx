@@ -33,7 +33,7 @@ export function TitleBar({ title }: TitleBarProps): ReactElement {
         : 'rgba(248, 248, 252, 0.92)',
       borderBottom: `1px solid ${theme.border}`,
       boxShadow: `0 1px 8px ${theme.accentGlow}`,
-      WebkitAppRegion: 'drag' as unknown as string,
+      WebkitAppRegion: 'drag',
       userSelect: 'none',
       flexShrink: 0,
       paddingLeft: isMac ? '78px' : '14px',
@@ -67,7 +67,7 @@ export function TitleBar({ title }: TitleBarProps): ReactElement {
         onClick={toggleTheme}
         title={mode === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
         style={{
-          WebkitAppRegion: 'no-drag' as unknown as string,
+          WebkitAppRegion: 'no-drag',
           background: 'transparent',
           border: 'none',
           cursor: 'pointer',
@@ -117,7 +117,7 @@ export function TitleBar({ title }: TitleBarProps): ReactElement {
         alignItems: 'center',
         gap: '2px',
         marginLeft: '4px',
-        WebkitAppRegion: 'no-drag' as unknown as string
+        WebkitAppRegion: 'no-drag'
       }}>
         {/* Minimize */}
         <button

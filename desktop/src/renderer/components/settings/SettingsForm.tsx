@@ -29,14 +29,13 @@ function UpdateBanner({ state, theme }: { state: UpdaterState | null; theme: The
   if (status === 'idle' || status === 'checking' || status === 'not-available' || status === 'error') return null
 
   const ready = status === 'downloaded'
-  const failed = status === 'error'
-  const accent = failed ? '#ef4444' : theme.accent
+  const accent = theme.accent
 
-  let message: string
+  // After the guard above, status is one of: downloaded | downloading | available.
+  let message = ''
   if (ready) message = `Whisperio ${version} is ready to install.`
   else if (status === 'downloading') message = `Downloading update ${version ? 'v' + version : ''}… ${percent ?? 0}%`
   else if (status === 'available') message = `Update ${version ? 'v' + version : ''} found — downloading…`
-  else message = `Update failed: ${error ?? 'unknown error'}`
 
   return (
     <div style={{
@@ -54,7 +53,7 @@ function UpdateBanner({ state, theme }: { state: UpdaterState | null; theme: The
       }} />
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontSize: '13px', fontWeight: 600, color: theme.text }}>
-          {ready ? 'Update ready — restart to install' : failed ? 'Update problem' : 'Updating Whisperio'}
+          {ready ? 'Update ready — restart to install' : 'Updating Whisperio'}
         </div>
         <div style={{ fontSize: '12px', color: theme.textMuted, marginTop: '1px' }}>{message}</div>
         {status === 'downloading' && (
@@ -73,16 +72,6 @@ function UpdateBanner({ state, theme }: { state: UpdaterState | null; theme: The
             fontFamily: 'IBM Plex Sans, sans-serif', flexShrink: 0, opacity: installing ? 0.6 : 1
           }}
         >{installing ? 'Restarting…' : 'Restart now'}</button>
-      )}
-      {failed && (
-        <button
-          onClick={() => window.api.updater.check()}
-          style={{
-            background: 'transparent', border: `1px solid ${theme.border}`, borderRadius: '6px',
-            padding: '7px 16px', fontSize: '12px', fontWeight: 500, color: theme.text, cursor: 'pointer',
-            fontFamily: 'IBM Plex Sans, sans-serif', flexShrink: 0
-          }}
-        >Retry</button>
       )}
     </div>
   )

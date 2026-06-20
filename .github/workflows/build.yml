@@ -7,20 +7,22 @@ on:
 permissions:
   contents: write
 
-jobs:
-  build:
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: windows-latest
-            platform: win
-          - os: macos-latest
-            platform: mac
-          - os: ubuntu-latest
-            platform: linux
+# A newer push to `release` cancels an in-progress run for the same ref — no
+# duplicate (expensive) macOS builds piling up and burning Actions minutes.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
 
-    runs-on: ${{ matrix.os }}
+jobs:
+  # Cheap gate (Ubuntu = 1x minutes). Typecheck + tests with coverage thresholds.
+  # The expensive build matrix only runs if this passes, so broken code never
+  # reaches the macOS runner (billed at 10x).
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    defaults:
+      run:
+        working-directory: desktop
     steps:
       - uses: actions/checkout@v4
 
@@ -28,6 +30,48 @@ jobs:
         with:
           node-version: 20
           cache: npm
+          cache-dependency-path: desktop/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Test + coverage gate
+        run: npm run test:coverage
+
+  build:
+    needs: test
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            platform: win
+            timeout: 20
+          - os: macos-latest
+            platform: mac
+            timeout: 25
+          - os: ubuntu-latest
+            platform: linux
+            timeout: 15
+
+    runs-on: ${{ matrix.os }}
+    # Hard cap per platform. The macOS cap is the safety net for a hung Apple
+    # notarization — it auto-kills instead of running for hours at 10x billing.
+    timeout-minutes: ${{ matrix.timeout }}
+    defaults:
+      run:
+        working-directory: desktop
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
 
       - name: Read version from package.json
         id: version
@@ -52,7 +96,7 @@ jobs:
           echo "APPLE_API_KEY=$RUNNER_TEMP/notary/AuthKey.p8" >> "$GITHUB_ENV"
 
       - name: Package installer
-        run: npx electron-builder --${{ matrix.platform }} --config electron-builder.yml
+        run: npx electron-builder --${{ matrix.platform }} --config ../.devops/electron-builder.yml
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # macOS Developer ID signing — only set on the mac runner (a mac .p12 must
@@ -60,13 +104,77 @@ jobs:
           CSC_LINK: ${{ matrix.platform == 'mac' && secrets.CSC_LINK || '' }}
           CSC_KEY_PASSWORD: ${{ matrix.platform == 'mac' && secrets.CSC_KEY_PASSWORD || '' }}
           # Notarization via App Store Connect API key (APPLE_API_KEY path set above).
+          # Team ID goes in APPLE_TEAM_ID (electron-builder deprecated notarize.teamId).
           APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          # Team ID is not sensitive (it was already hardcoded in electron-builder.yml).
+          APPLE_TEAM_ID: "953Q6T2WTB"
 
-      # Diagnostic: report the macOS app's signing state. We intentionally ship
-      # UNSIGNED builds for now (see README — right-click→Open / xattr workaround),
-      # so this only WARNS; it must not block the release. Re-promote to a hard
-      # failure once real code-signing (Developer ID / ad-hoc) is wired up.
+      # Real gate (not just "it compiled"): launch the freshly built AppImage
+      # headlessly and confirm the app process survives a few seconds without
+      # crashing. Catches missing shared libs / runtime startup crashes that a
+      # pure electron-builder packaging step can't. Ubuntu = 1x billing, and the
+      # whole thing is wrapped in `timeout 60` so it can never hang the runner.
+      - name: Smoke test (Linux launch)
+        if: matrix.platform == 'linux'
+        shell: bash
+        # working-directory is already `desktop`, so dist/*.AppImage resolves here.
+        env:
+          # No FUSE / no GPU sandbox available on the runner.
+          ELECTRON_DISABLE_SANDBOX: "1"
+        run: |
+          set -euo pipefail
+
+          # xvfb gives the Electron app a virtual X display to render into.
+          if ! command -v xvfb-run >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y xvfb
+          fi
+
+          # Locate the AppImage electron-builder just produced.
+          APPIMAGE=$(ls dist/*.AppImage 2>/dev/null | head -n1 || true)
+          if [ -z "$APPIMAGE" ]; then
+            echo "::error::No AppImage found in desktop/dist — smoke test cannot run"
+            ls -la dist || true
+            exit 1
+          fi
+          echo "Smoke-testing: $APPIMAGE"
+          chmod +x "$APPIMAGE"
+
+          LOG="$RUNNER_TEMP/smoke.log"
+
+          # --appimage-extract-and-run: no FUSE on CI runners.
+          # --no-sandbox: Chromium sandbox needs privileges the runner lacks.
+          # `timeout 60` is a hard ceiling so a wedged app can't burn minutes.
+          # Launch in the background under a virtual display, then check liveness.
+          set +e
+          timeout 60 xvfb-run -a "$APPIMAGE" --appimage-extract-and-run --no-sandbox \
+            >"$LOG" 2>&1 &
+          APP_PID=$!
+
+          # Give it time to fully initialize (or crash on startup).
+          sleep 12
+
+          if kill -0 "$APP_PID" 2>/dev/null; then
+            echo "App is still running after startup window — launch OK."
+            # Clean shutdown of the launcher (and any children it spawned).
+            kill "$APP_PID" 2>/dev/null
+            wait "$APP_PID" 2>/dev/null
+            echo "----- app output (tail) -----"
+            tail -n 50 "$LOG" || true
+            exit 0
+          fi
+
+          # Process died early — that's a real launch failure. Surface diagnostics.
+          wait "$APP_PID"
+          EXIT_CODE=$?
+          echo "::error::AppImage crashed on launch (exit code: $EXIT_CODE)"
+          echo "----- app output -----"
+          cat "$LOG" || true
+          exit 1
+
+      # Diagnostic: report the macOS app's signing state. Non-blocking — a signing
+      # hiccup should never wedge the release.
       - name: Report macOS code signature (non-blocking)
         if: matrix.platform == 'mac'
         run: |
@@ -76,7 +184,7 @@ jobs:
             if codesign -dv "$APP" 2>&1 && codesign --verify --deep --strict "$APP" 2>&1; then
               echo "OK: $APP is signed"
             else
-              echo "::warning::$APP is not code-signed — shipping unsigned (documented in README)"
+              echo "::warning::$APP is not code-signed"
             fi
           done
 
@@ -84,26 +192,29 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: Whisperio-${{ matrix.platform }}-${{ steps.version.outputs.version }}
+          # upload-artifact paths are relative to the workspace root, not the job's
+          # working-directory — so they're prefixed with desktop/.
           path: |
-            dist/*.exe
-            dist/*.dmg
-            dist/*.zip
-            dist/*.AppImage
-            dist/*.deb
-            dist/latest.yml
-            dist/latest-mac.yml
-            dist/latest-linux.yml
+            desktop/dist/*.exe
+            desktop/dist/*.dmg
+            desktop/dist/*.zip
+            desktop/dist/*.AppImage
+            desktop/dist/*.deb
+            desktop/dist/latest.yml
+            desktop/dist/latest-mac.yml
+            desktop/dist/latest-linux.yml
 
   release:
     needs: build
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
 
       - name: Read version from package.json
         id: version
         run: |
-          VERSION=$(node -p "require('./package.json').version")
+          VERSION=$(node -p "require('./desktop/package.json').version")
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
 
       - uses: actions/download-artifact@v4
