@@ -1,9 +1,14 @@
 import SwiftUI
+import WhisperioKit
+#if canImport(UIKit)
+import UIKit
+#endif
 
 // Recordings home — the settled "second brain" variant: day-grouped cards, search,
 // filter chips, and the gradient mic dock. Port of Home(variant:'brain') in wz-iphone.jsx.
 struct HomeView: View {
     @Environment(\.wz) private var t
+    @EnvironmentObject private var recordings: RecordingsStore
     var openRec: (DemoRecording) -> Void
     var openRecording: () -> Void
     var openSettings: () -> Void
@@ -44,12 +49,18 @@ struct HomeView: View {
                     }
                     .padding(.horizontal, 16).padding(.top, 4)
 
-                    ScrollView(showsIndicators: false) {
-                        VStack(spacing: 18) {
-                            brainGroup("Today", Array(WZSample.recordings.prefix(3)))
-                            brainGroup("Yesterday", Array(WZSample.recordings[3..<6]))
+                    if recordings.items.isEmpty {
+                        emptyState
+                    } else {
+                        ScrollView(showsIndicators: false) {
+                            VStack(spacing: 18) {
+                                let today = recordings.items.filter { Calendar.current.isDateInToday($0.timestamp) }
+                                let earlier = recordings.items.filter { !Calendar.current.isDateInToday($0.timestamp) }
+                                if !today.isEmpty { brainGroup("Today", today) }
+                                if !earlier.isEmpty { brainGroup("Earlier", earlier) }
+                            }
+                            .padding(.horizontal, 16).padding(.top, 16).padding(.bottom, 140)
                         }
-                        .padding(.horizontal, 16).padding(.top, 16).padding(.bottom, 140)
                     }
                 }
                 micDock
@@ -57,12 +68,13 @@ struct HomeView: View {
         }
     }
 
-    private func brainGroup(_ label: String, _ recs: [DemoRecording]) -> some View {
+    private func brainGroup(_ label: String, _ recs: [Recording]) -> some View {
         VStack(alignment: .leading, spacing: 9) {
             SectionLabel(text: label)
             VStack(spacing: 0) {
-                ForEach(Array(recs.enumerated()), id: \.element.id) { idx, r in
-                    RecRow(r: r) { openRec(r) }
+                ForEach(Array(recs.enumerated()), id: \.element.id) { idx, item in
+                    let demo = DemoRecording(item)
+                    RecRow(r: demo, onTap: { openRec(demo) }, onDelete: { recordings.delete(item) })
                         .padding(.horizontal, 14)
                     if idx < recs.count - 1 { Divider().overlay(t.lineSoft) }
                 }
@@ -70,6 +82,19 @@ struct HomeView: View {
             .background(t.surface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(t.line, lineWidth: 1))
         }
+    }
+
+    private var emptyState: some View {
+        VStack(spacing: 12) {
+            Spacer()
+            WIcon("mic", size: 34, weight: .regular).foregroundStyle(t.faint)
+            Text("No recordings yet").font(WZFont.ui(16, .semibold)).foregroundStyle(t.text)
+            Text("Tap the mic to dictate your first note.")
+                .font(WZFont.ui(13.5)).foregroundStyle(t.muted)
+            Spacer()
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(.bottom, 120)
     }
 
     private var micDock: some View {
@@ -95,6 +120,8 @@ struct RecRow: View {
     @Environment(\.wz) private var t
     let r: DemoRecording
     var onTap: () -> Void
+    var onDelete: (() -> Void)? = nil
+    @State private var copied = false
 
     private var srcIcon: String {
         switch r.src {
@@ -105,27 +132,59 @@ struct RecRow: View {
     }
 
     var body: some View {
-        Button(action: onTap) {
-            HStack(alignment: .top, spacing: 13) {
-                WIcon(srcIcon, size: 17, weight: .regular).foregroundStyle(t.accentLite)
-                    .frame(width: 38, height: 38)
-                    .background(t.surfaceUp, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(t.line, lineWidth: 1))
-                VStack(alignment: .leading, spacing: 7) {
-                    Text(r.title).font(WZFont.ui(14.5, .medium)).foregroundStyle(t.text)
-                        .lineLimit(2).multilineTextAlignment(.leading).lineSpacing(2)
-                    HStack(spacing: 8) {
-                        Text(r.app).foregroundStyle(t.muted)
-                        Text("·"); Text(r.when); Text("·"); Text(r.dur)
-                        Spacer(minLength: 0)
-                        WIcon(r.engine == "cloud" ? "cloud" : "lock", size: 12, weight: .regular)
-                            .foregroundStyle(r.engine == "cloud" ? t.amber : t.green)
+        HStack(alignment: .top, spacing: 11) {
+            Button(action: onTap) {
+                HStack(alignment: .top, spacing: 13) {
+                    WIcon(srcIcon, size: 17, weight: .regular).foregroundStyle(t.accentLite)
+                        .frame(width: 38, height: 38)
+                        .background(t.surfaceUp, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(t.line, lineWidth: 1))
+                    VStack(alignment: .leading, spacing: 7) {
+                        Text(r.title).font(WZFont.ui(14.5, .medium)).foregroundStyle(t.text)
+                            .lineLimit(2).multilineTextAlignment(.leading).lineSpacing(2)
+                        HStack(spacing: 8) {
+                            Text(r.app).foregroundStyle(t.muted)
+                            Text("·"); Text(r.when); Text("·"); Text(r.dur)
+                            Spacer(minLength: 0)
+                            WIcon(r.engine == "cloud" ? "cloud" : "lock", size: 12, weight: .regular)
+                                .foregroundStyle(r.engine == "cloud" ? t.amber : t.green)
+                        }
+                        .font(WZFont.mono(11)).foregroundStyle(t.faint)
                     }
-                    .font(WZFont.mono(11)).foregroundStyle(t.faint)
                 }
-                MiniWave(color: t.accent, n: 12, height: 20).padding(.top, 4)
             }
-            .padding(.vertical, 13)
+            .buttonStyle(.plain)
+            copyButton
+        }
+        .padding(.vertical, 13)
+        .contextMenu {
+            Button {
+#if canImport(UIKit)
+                UIPasteboard.general.string = r.title
+#endif
+            } label: { Label("Copy", systemImage: "doc.on.doc") }
+            if let onDelete {
+                Button(role: .destructive, action: onDelete) {
+                    Label("Delete", systemImage: "trash")
+                }
+            }
+        }
+    }
+
+    private var copyButton: some View {
+        Button {
+#if canImport(UIKit)
+            UIPasteboard.general.string = r.title
+            UINotificationFeedbackGenerator().notificationOccurred(.success)
+#endif
+            copied = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { copied = false }
+        } label: {
+            WIcon(copied ? "check" : "copy", size: 16, weight: .regular)
+                .foregroundStyle(copied ? t.green : t.accentLite)
+                .frame(width: 36, height: 36)
+                .background(t.surfaceUp, in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 11, style: .continuous).stroke(t.line, lineWidth: 1))
         }
         .buttonStyle(.plain)
     }

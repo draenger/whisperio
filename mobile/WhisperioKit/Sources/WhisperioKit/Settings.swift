@@ -18,7 +18,8 @@ public struct WhisperioSettings: Codable, Sendable, Equatable {
     public var transcriptionPrompt: String
 
     // Behavior.
-    public var cleanupEnabled: Bool      // on-device AI cleanup pass when available
+    public var cleanupEnabled: Bool      // tidy punctuation/casing/spacing after transcription
+    public var fallbackEnabled: Bool     // try the other configured engines if the primary fails
     public var saveRecordings: Bool
 
     public init(
@@ -31,6 +32,7 @@ public struct WhisperioSettings: Codable, Sendable, Equatable {
         customVocabulary: String = "",
         transcriptionPrompt: String = "",
         cleanupEnabled: Bool = false,
+        fallbackEnabled: Bool = false,
         saveRecordings: Bool = true
     ) {
         self.providerChain = providerChain
@@ -42,7 +44,26 @@ public struct WhisperioSettings: Codable, Sendable, Equatable {
         self.customVocabulary = customVocabulary
         self.transcriptionPrompt = transcriptionPrompt
         self.cleanupEnabled = cleanupEnabled
+        self.fallbackEnabled = fallbackEnabled
         self.saveRecordings = saveRecordings
+    }
+
+    // Tolerant decoding — missing keys (older persisted settings, or future-added fields)
+    // fall back to defaults instead of throwing, so a stored API key is never lost.
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let d = WhisperioSettings()
+        providerChain = try c.decodeIfPresent([ProviderID].self, forKey: .providerChain) ?? d.providerChain
+        openAIKey = try c.decodeIfPresent(String.self, forKey: .openAIKey) ?? d.openAIKey
+        openAIBaseURL = try c.decodeIfPresent(String.self, forKey: .openAIBaseURL) ?? d.openAIBaseURL
+        whisperModel = try c.decodeIfPresent(String.self, forKey: .whisperModel) ?? d.whisperModel
+        elevenLabsKey = try c.decodeIfPresent(String.self, forKey: .elevenLabsKey) ?? d.elevenLabsKey
+        language = try c.decodeIfPresent(String.self, forKey: .language) ?? d.language
+        customVocabulary = try c.decodeIfPresent(String.self, forKey: .customVocabulary) ?? d.customVocabulary
+        transcriptionPrompt = try c.decodeIfPresent(String.self, forKey: .transcriptionPrompt) ?? d.transcriptionPrompt
+        cleanupEnabled = try c.decodeIfPresent(Bool.self, forKey: .cleanupEnabled) ?? d.cleanupEnabled
+        fallbackEnabled = try c.decodeIfPresent(Bool.self, forKey: .fallbackEnabled) ?? d.fallbackEnabled
+        saveRecordings = try c.decodeIfPresent(Bool.self, forKey: .saveRecordings) ?? d.saveRecordings
     }
 
     /// Vocabulary parsed into trimmed, non-empty terms.

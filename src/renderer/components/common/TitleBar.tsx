@@ -7,6 +7,9 @@ interface TitleBarProps {
 
 export function TitleBar({ title }: TitleBarProps): ReactElement {
   const { mode, theme, toggleTheme } = useTheme()
+  // macOS shows native traffic-light controls on the left, so hide our custom
+  // window buttons and leave room for them.
+  const isMac = typeof navigator !== 'undefined' && /Mac/i.test(navigator.platform)
 
   const handleMinimize = (): void => {
     window.api.window.minimize()
@@ -33,8 +36,8 @@ export function TitleBar({ title }: TitleBarProps): ReactElement {
       WebkitAppRegion: 'drag' as unknown as string,
       userSelect: 'none',
       flexShrink: 0,
-      paddingLeft: '14px',
-      paddingRight: '4px',
+      paddingLeft: isMac ? '78px' : '14px',
+      paddingRight: isMac ? '10px' : '4px',
       zIndex: 100
     }}>
       {/* App icon — Whisperio logo */}
@@ -107,7 +110,8 @@ export function TitleBar({ title }: TitleBarProps): ReactElement {
         )}
       </button>
 
-      {/* Window controls */}
+      {/* Window controls — Windows/Linux only; macOS uses native traffic lights */}
+      {!isMac && (
       <div style={{
         display: 'flex',
         alignItems: 'center',
@@ -167,6 +171,7 @@ export function TitleBar({ title }: TitleBarProps): ReactElement {
           </svg>
         </button>
       </div>
+      )}
     </div>
   )
 }

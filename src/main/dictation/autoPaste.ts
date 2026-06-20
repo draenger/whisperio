@@ -1,4 +1,4 @@
-import { clipboard } from 'electron'
+import { clipboard, systemPreferences, Notification } from 'electron'
 import { execFile } from 'child_process'
 
 function isWindows(): boolean {
@@ -41,7 +41,11 @@ if (isWindows()) {
     const script = vk === 'paste'
       ? 'tell application "System Events" to keystroke "v" using command down'
       : 'tell application "System Events" to key code 36'
-    execFile('osascript', ['-e', script])
+    execFile('osascript', ['-e', script], (err, _stdout, stderr) => {
+      if (err || stderr) {
+        console.error('[Whisperio] keystroke failed (Accessibility permission?):', stderr || err?.message)
+      }
+    })
   }
 } else {
   // Linux — xdotool
@@ -49,6 +53,14 @@ if (isWindows()) {
     const key = vk === 'paste' ? 'ctrl+v' : 'Return'
     execFile('xdotool', ['key', key])
   }
+}
+
+// macOS: synthesizing ⌘V via System Events requires Accessibility permission.
+// Returns true if granted. With prompt=true the first call adds Whisperio to the
+// Accessibility list and shows the system prompt.
+export function ensureAccessibilityPermission(prompt = false): boolean {
+  if (!isMac()) return true
+  return systemPreferences.isTrustedAccessibilityClient(prompt)
 }
 
 export function captureTargetWindow(): void {
@@ -62,6 +74,17 @@ export function restoreTargetWindow(): void {
 export async function autoPaste(text: string): Promise<void> {
   console.log(`[Whisperio] autoPaste: "${text.substring(0, 80)}..."`)
   clipboard.writeText(text)
+
+  // macOS: without Accessibility permission the ⌘V keystroke silently no-ops.
+  // Leave the text on the clipboard and tell the user how to enable auto-paste.
+  if (isMac() && !ensureAccessibilityPermission(true)) {
+    console.warn('[Whisperio] No Accessibility permission — text left on clipboard, auto-paste skipped')
+    new Notification({
+      title: 'Whisperio — enable auto-paste',
+      body: 'Your text is on the clipboard (press ⌘V). To paste automatically, enable Whisperio in System Settings → Privacy & Security → Accessibility.'
+    }).show()
+    return
+  }
 
   // Wait for modifier keys from hotkey to release
   await new Promise((r) => setTimeout(r, 300))

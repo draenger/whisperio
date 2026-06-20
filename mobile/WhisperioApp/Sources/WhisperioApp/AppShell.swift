@@ -1,4 +1,5 @@
 import SwiftUI
+import Combine
 
 // App shell — custom screen routing + toast, mirroring WZPhone() in wz-iphone.jsx.
 // (The concept uses a bespoke transition shell rather than NavigationStack.)
@@ -6,6 +7,7 @@ import SwiftUI
 enum WZScreen { case onboarding, home, recording, detail, settings, models }
 
 struct WZPhoneView: View {
+    @Environment(\.scenePhase) private var scenePhase
     @State private var dark = true
     @State private var screen: WZScreen = .home
     @State private var rec: DemoRecording = WZSample.recordings[0]
@@ -32,6 +34,22 @@ struct WZPhoneView: View {
         .environment(\.wz, t)
         .preferredColorScheme(dark ? .dark : .light)
         .animation(.easeInOut(duration: 0.28), value: screen)
+        .onReceive(NotificationCenter.default.publisher(for: .whisperioStartDictation)) { _ in
+            go(.recording)
+        }
+        .onAppear { consumePending() }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active { consumePending() }
+        }
+    }
+
+    // Pick up a command left by a trigger (widget / Back Tap / Siri), incl. cold launch.
+    private func consumePending() {
+        switch DictationLaunch.consume() {
+        case .start: go(.recording)
+        case .stop: NotificationCenter.default.post(name: .whisperioStopDictation, object: nil)
+        case .none: break
+        }
     }
 
     @ViewBuilder private var content: some View {
@@ -40,7 +58,7 @@ struct WZPhoneView: View {
             OnboardingView { go(.home) }
         case .recording:
             RecordingView(onCancel: { go(.home) },
-                          onDone: { rec = WZSample.recordings[0]; go(.detail) })
+                          onDone: { r in rec = DemoRecording(r); go(.detail) })
         case .detail:
             DetailView(r: rec, onBack: { go(.home) }, toast: showToast)
         case .settings:
@@ -78,11 +96,31 @@ struct WZPhoneView: View {
 
 @main
 struct WhisperioApp: App {
+    @StateObject private var settings = SettingsStore()
+    @StateObject private var recordings = RecordingsStore()
     var body: some Scene {
         WindowGroup {
-            // The concept gallery is the root — it reaches the live app + every scene.
-            // To ship the app on its own, replace with `WZPhoneView(initialScreen: .home)`.
-            GalleryView()
+            RootView()
+                .environmentObject(settings)
+                .environmentObject(recordings)
+                .onAppear {
+                    PhoneConnectivity.shared.recordings = recordings
+                    PhoneConnectivity.shared.activate()
+                }
+        }
+    }
+}
+
+// Gate: first run shows the engine picker; afterwards the app.
+private struct RootView: View {
+    @EnvironmentObject private var settings: SettingsStore
+    var body: some View {
+        if settings.didCompleteSetup {
+            WZPhoneView(initialScreen: .home)
+        } else {
+            SetupView()
+                .environment(\.wz, WZTheme.of(true))
+                .preferredColorScheme(.dark)
         }
     }
 }

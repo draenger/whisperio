@@ -22,13 +22,16 @@ export function openSettingsWindow(initialTab?: string): void {
 
   const icon = nativeImage.createFromPath(getIconPath())
 
+  const isMac = process.platform === 'darwin'
   settingsWin = new BrowserWindow({
     width: 760,
     height: 780,
     minWidth: 660,
     minHeight: 600,
     resizable: true,
-    frame: false,
+    // macOS: keep the native traffic-light controls (hidden title bar, inset buttons);
+    // Windows/Linux: fully frameless with our own controls in TitleBar.
+    ...(isMac ? { titleBarStyle: 'hiddenInset' as const } : { frame: false }),
     icon,
     title: 'Whisperio Settings',
     webPreferences: {

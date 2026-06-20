@@ -19,13 +19,14 @@ export function openRecordingsWindow(): void {
 
   const icon = nativeImage.createFromPath(getIconPath())
 
+  const isMac = process.platform === 'darwin'
   recordingsWin = new BrowserWindow({
     width: 700,
     height: 600,
     minWidth: 500,
     minHeight: 400,
     resizable: true,
-    frame: false,
+    ...(isMac ? { titleBarStyle: 'hiddenInset' as const } : { frame: false }),
     icon,
     title: 'Whisperio Recordings',
     webPreferences: {

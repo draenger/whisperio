@@ -6,3 +6,11 @@ dist/
 .claude/
 .mcp.json
 .playwright-mcp/
+
+# macOS / Xcode / SwiftPM build artifacts
+.DS_Store
+**/xcuserdata/
+*.xcuserstate
+**/.build/
+**/.swiftpm/
+DerivedData/

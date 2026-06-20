@@ -1,91 +1,211 @@
 import SwiftUI
+import AppIntents
+import WhisperioKit
 
-// Settings — engine chain (with Cloud consent), trigger status, appearance.
-// Port of Settings() in wz-iphone.jsx.
+// Settings — real, backed by SettingsStore: pick the transcription engine, enter
+// cloud keys, toggle AI cleanup. Appearance + models below.
 struct SettingsView: View {
     @Environment(\.wz) private var t
+    @EnvironmentObject private var settings: SettingsStore
     var onBack: () -> Void
     @Binding var dark: Bool
     var openModels: () -> Void
 
-    @State private var cloud = false
-    @State private var cleanup = true
-    @State private var backtap = "double"
-    @State private var sheet = false
+    private var engine: ProviderID { settings.settings.providerChain.first ?? .onDevice }
+
+    private var appVersion: String {
+        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "—"
+    }
+
+    private let languages: [(name: String, code: String)] = [
+        ("Auto-detect", "auto"), ("English", "en"), ("Polski", "pl"), ("Deutsch", "de"),
+        ("Español", "es"), ("Français", "fr"), ("Italiano", "it"), ("Português", "pt"),
+        ("Nederlands", "nl"), ("Русский", "ru"), ("Українська", "uk")
+    ]
+
+    private var currentLanguageName: String {
+        languages.first { $0.code == settings.settings.language }?.name ?? settings.settings.language
+    }
+
+    private func setLanguage(_ code: String) {
+        var s = settings.settings
+        s.language = code
+        settings.settings = s
+    }
 
     var body: some View {
         ScreenScaffold {
-            ZStack(alignment: .bottom) {
-                VStack(spacing: 0) {
-                    WHeader(title: "Settings", onBack: onBack)
-                    ScrollView(showsIndicators: false) {
-                        VStack(alignment: .leading, spacing: 18) {
-                            // engine & privacy
-                            VStack(alignment: .leading, spacing: 10) {
-                                SectionLabel(text: "Engine & privacy").padding(.leading, 4)
-                                EngineChain(cleanup: $cleanup, cloud: $cloud) { sheet = true }
-                                    .padding(16)
-                                    .background(t.surface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-                                    .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(t.line, lineWidth: 1))
+            VStack(spacing: 0) {
+                WHeader(title: "Settings", onBack: onBack)
+                ScrollView(showsIndicators: false) {
+                    VStack(alignment: .leading, spacing: 18) {
+                        VStack(alignment: .leading, spacing: 9) {
+                            SectionLabel(text: "Transcription engine").padding(.leading, 4)
+                            VStack(spacing: 10) {
+                                engineRow(.onDevice, "Apple — on-device", "Free · private · offline", "cpu")
+                                engineRow(.openAI, "OpenAI", "Cloud · Whisper API", "globe")
+                                engineRow(.elevenLabs, "ElevenLabs", "Cloud · Scribe", "globe")
                             }
-
-                            SettGroup(title: "On-device models") {
-                                SettRow(icon: "download", label: "Manage models",
-                                        sub: "Apple Speech · 1 Whisper model added",
-                                        last: true, onTap: openModels)
+                            if engine == .openAI {
+                                keyField("OpenAI API key", binding(\.openAIKey))
+                                plainField("Base URL (optional, self-hosted)", "https://api.openai.com/v1", binding(\.openAIBaseURL))
+                                plainField("Model (optional)", "whisper-1", binding(\.whisperModel))
                             }
-
-                            SettGroup(title: "Triggers") {
-                                SettRow(icon: "keyboard", label: "Whisperio keyboard",
-                                        sub: "Enabled · Full Access on") {
-                                    WIcon("check", size: 18).foregroundStyle(t.green)
-                                }
-                                SettRow(icon: "bolt", label: "Action Button",
-                                        sub: "Hold to dictate → clipboard") {
-                                    Text("Hold").font(WZFont.mono(12)).foregroundStyle(t.muted)
-                                }
-                                SettRow(icon: "command", label: "Back-Tap",
-                                        sub: "Accessibility gesture", last: true) {
-                                    HStack(spacing: 4) {
-                                        ForEach(["double", "triple"], id: \.self) { o in
-                                            Button { backtap = o } label: {
-                                                Text(o.capitalized).font(WZFont.mono(11, .semibold))
-                                                    .foregroundStyle(backtap == o ? .white : t.muted)
-                                                    .padding(.horizontal, 9).padding(.vertical, 4)
-                                                    .background(backtap == o ? t.accent : .clear,
-                                                                in: RoundedRectangle(cornerRadius: 7, style: .continuous))
-                                            }
-                                            .buttonStyle(.plain)
-                                        }
-                                    }
-                                    .padding(3)
-                                    .background(t.surfaceUp, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
-                                    .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous).stroke(t.line, lineWidth: 1))
-                                }
-                            }
-
-                            SettGroup(title: "Appearance") {
-                                SettRow(icon: dark ? "moon" : "sun", label: "Dark mode",
-                                        sub: "Match Whisperio’s look", last: true) {
-                                    WToggle(on: $dark)
-                                }
-                            }
-
-                            Text("Whisperio 1.0 · open-source · on-device")
-                                .font(WZFont.mono(11)).foregroundStyle(t.faint)
-                                .frame(maxWidth: .infinity, alignment: .center)
+                            if engine == .elevenLabs { keyField("ElevenLabs API key", binding(\.elevenLabsKey)) }
                         }
-                        .padding(.horizontal, 16).padding(.top, 6).padding(.bottom, 28)
+
+                        VStack(alignment: .leading, spacing: 11) {
+                            SectionLabel(text: "Quick dictation").padding(.leading, 4)
+                            VStack(alignment: .leading, spacing: 12) {
+                                Text("Say “Dictate with Whisperio” to Siri — or add the shortcut, then assign it to Back Tap (Settings → Accessibility → Touch → Back Tap → Run Shortcut).")
+                                    .font(WZFont.ui(13)).foregroundStyle(t.muted).lineSpacing(3)
+                                SiriTipView(intent: DictateIntent()).tint(t.accent)
+                                ShortcutsLink().tint(t.accent)
+                            }
+                            .padding(16)
+                            .background(t.surface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                            .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(t.line, lineWidth: 1))
+                        }
+
+                        SettGroup(title: "Transcription") {
+                            SettRow(icon: "spark", label: "Cleanup",
+                                    sub: "Tidy punctuation, casing & spacing") {
+                                WToggle(on: boolBinding(\.cleanupEnabled))
+                            }
+                            SettRow(icon: "cloud", label: "Fallback engines",
+                                    sub: "If the chosen engine fails, try the others", last: true) {
+                                WToggle(on: boolBinding(\.fallbackEnabled))
+                            }
+                        }
+
+                        VStack(alignment: .leading, spacing: 9) {
+                            SectionLabel(text: "Language & vocabulary").padding(.leading, 4)
+                            VStack(spacing: 0) {
+                                Menu {
+                                    ForEach(languages, id: \.code) { lang in
+                                        Button(lang.name) { setLanguage(lang.code) }
+                                    }
+                                } label: {
+                                    HStack(spacing: 13) {
+                                        WIcon("globe", size: 17, weight: .regular).foregroundStyle(t.accentLite)
+                                            .frame(width: 34, height: 34)
+                                            .background(t.surfaceUp, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                                        VStack(alignment: .leading, spacing: 1) {
+                                            Text("Language").font(WZFont.ui(14.5, .medium)).foregroundStyle(t.text)
+                                            Text("Spoken language for transcription").font(WZFont.ui(12)).foregroundStyle(t.muted)
+                                        }
+                                        Spacer(minLength: 0)
+                                        Text(currentLanguageName).font(WZFont.ui(13)).foregroundStyle(t.accentLite)
+                                        WIcon("chevR", size: 16, weight: .regular).foregroundStyle(t.faint)
+                                    }
+                                    .padding(.vertical, 13)
+                                }
+                                .overlay(alignment: .bottom) { Rectangle().fill(t.lineSoft).frame(height: 1) }
+
+                                VStack(alignment: .leading, spacing: 7) {
+                                    Text("Custom words").font(WZFont.ui(13, .semibold)).foregroundStyle(t.muted)
+                                    TextField("git, GitHub, Next.js, kubectl…",
+                                              text: binding(\.customVocabulary), axis: .vertical)
+                                        .lineLimit(2...4)
+                                        .font(WZFont.ui(13.5))
+                                        .textInputAutocapitalization(.never)
+                                        .padding(.horizontal, 11).padding(.vertical, 9)
+                                        .background(t.surfaceUp, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                                        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(t.line, lineWidth: 1))
+                                    Text("Comma-separated — helps spell names, brands & jargon.")
+                                        .font(WZFont.mono(11)).foregroundStyle(t.faint)
+                                }
+                                .padding(.vertical, 13)
+                            }
+                            .padding(.horizontal, 16)
+                            .background(t.surface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                            .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(t.line, lineWidth: 1))
+                        }
+
+                        SettGroup(title: "On-device models") {
+                            SettRow(icon: "download", label: "Manage models",
+                                    sub: "Apple Speech + Whisper", last: true, onTap: openModels)
+                        }
+
+                        SettGroup(title: "Appearance") {
+                            SettRow(icon: dark ? "moon" : "sun", label: "Dark mode",
+                                    sub: "Match Whisperio’s look", last: true) {
+                                WToggle(on: $dark)
+                            }
+                        }
+
+                        Text("Whisperio \(appVersion) · on-device")
+                            .font(WZFont.mono(11)).foregroundStyle(t.faint)
+                            .frame(maxWidth: .infinity, alignment: .center)
                     }
-                }
-                if sheet {
-                    ConsentSheet(onClose: { withAnimation { sheet = false } },
-                                 onConfirm: { withAnimation { cloud = true; sheet = false } })
-                    .transition(.opacity)
+                    .padding(.horizontal, 16).padding(.top, 6).padding(.bottom, 28)
+                    .animation(.easeInOut(duration: 0.2), value: engine)
                 }
             }
-            .animation(.spring(response: 0.3, dampingFraction: 0.85), value: sheet)
         }
+    }
+
+    private func engineRow(_ id: ProviderID, _ title: String, _ sub: String, _ icon: String) -> some View {
+        let on = engine == id
+        return Button {
+            var s = settings.settings
+            s.providerChain = [id]
+            settings.settings = s
+        } label: {
+            HStack(spacing: 13) {
+                WIcon(icon, size: 17).foregroundStyle(on ? t.accent : t.muted)
+                    .frame(width: 38, height: 38)
+                    .background(t.surfaceUp, in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title).font(WZFont.ui(14.5, .semibold)).foregroundStyle(t.text)
+                    Text(sub).font(WZFont.mono(11)).foregroundStyle(t.faint)
+                }
+                Spacer(minLength: 0)
+                WIcon(on ? "check" : "", size: 18).foregroundStyle(t.accent)
+            }
+            .padding(13)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(t.surface, in: RoundedRectangle(cornerRadius: 15, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 15, style: .continuous)
+                .stroke(on ? t.accent : t.line, lineWidth: on ? 2 : 1))
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func keyField(_ label: String, _ text: Binding<String>) -> some View {
+        VStack(alignment: .leading, spacing: 7) {
+            SectionLabel(text: label).padding(.leading, 4)
+            SecureField("paste key…", text: text)
+                .textInputAutocapitalization(.never).autocorrectionDisabled()
+                .font(WZFont.mono(13))
+                .padding(.horizontal, 13).padding(.vertical, 12)
+                .background(t.surfaceUp, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(t.line, lineWidth: 1))
+        }
+        .padding(.top, 2)
+    }
+
+    private func plainField(_ label: String, _ placeholder: String, _ text: Binding<String>) -> some View {
+        VStack(alignment: .leading, spacing: 7) {
+            SectionLabel(text: label).padding(.leading, 4)
+            TextField(placeholder, text: text)
+                .textInputAutocapitalization(.never).autocorrectionDisabled()
+                .keyboardType(.URL)
+                .font(WZFont.mono(13))
+                .padding(.horizontal, 13).padding(.vertical, 12)
+                .background(t.surfaceUp, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(t.line, lineWidth: 1))
+        }
+        .padding(.top, 2)
+    }
+
+    private func binding(_ keyPath: WritableKeyPath<WhisperioSettings, String>) -> Binding<String> {
+        Binding(get: { settings.settings[keyPath: keyPath] },
+                set: { var s = settings.settings; s[keyPath: keyPath] = $0; settings.settings = s })
+    }
+    private func boolBinding(_ keyPath: WritableKeyPath<WhisperioSettings, Bool>) -> Binding<Bool> {
+        Binding(get: { settings.settings[keyPath: keyPath] },
+                set: { var s = settings.settings; s[keyPath: keyPath] = $0; settings.settings = s })
     }
 }
 
