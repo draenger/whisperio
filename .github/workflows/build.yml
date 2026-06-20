@@ -47,7 +47,8 @@ jobs:
         if: matrix.platform == 'mac'
         run: |
           mkdir -p "$RUNNER_TEMP/notary"
-          echo "${{ secrets.APPLE_API_KEY_BASE64 }}" | base64 --decode > "$RUNNER_TEMP/notary/AuthKey.p8"
+          # The .p8 is a plain-text PEM key — store it raw (no base64), much less fragile.
+          printf '%s\n' "${{ secrets.APPLE_API_KEY_P8 }}" > "$RUNNER_TEMP/notary/AuthKey.p8"
           echo "APPLE_API_KEY=$RUNNER_TEMP/notary/AuthKey.p8" >> "$GITHUB_ENV"
 
       - name: Package installer
