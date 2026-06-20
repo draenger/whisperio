@@ -25,7 +25,8 @@ function UpdateBanner({ state, theme }: { state: UpdaterState | null; theme: The
 
   if (!state) return null
   const { status, version, percent, error } = state
-  if (status === 'idle' || status === 'checking' || status === 'not-available') return null
+  // Never banner an update problem at the user — only progress/ready states.
+  if (status === 'idle' || status === 'checking' || status === 'not-available' || status === 'error') return null
 
   const ready = status === 'downloaded'
   const failed = status === 'error'
@@ -122,7 +123,7 @@ function UpdatesTab({ state, s, theme }: { state: UpdaterState | null; s: Return
 
   const dotColor = ready ? theme.accent
     : downloading || checking ? theme.accent
-    : failed ? '#ef4444'
+    : failed ? theme.textMuted
     : theme.success
 
   let headline: string
@@ -140,8 +141,9 @@ function UpdatesTab({ state, s, theme }: { state: UpdaterState | null; s: Return
     headline = 'Update found'
     detail = `Whisperio ${state?.version ?? ''} is downloading in the background.`
   } else if (failed) {
-    headline = 'Update check failed'
-    detail = state?.error ?? 'Unknown error.'
+    // Never show the raw updater error — keep it calm and non-blocking.
+    headline = "Couldn't check right now"
+    detail = "No problem — keep using Whisperio. It'll check again automatically later."
   } else {
     headline = "You're up to date"
     detail = 'Whisperio is running the latest available version.'
@@ -183,7 +185,7 @@ function UpdatesTab({ state, s, theme }: { state: UpdaterState | null; s: Return
                 fontFamily: 'IBM Plex Sans, sans-serif', flexShrink: 0,
                 opacity: checking || downloading ? 0.6 : 1
               }}
-            >{failed ? 'Retry' : 'Check now'}</button>
+            >Check now</button>
           )}
         </div>
 
