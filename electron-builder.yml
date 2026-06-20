@@ -28,10 +28,19 @@ nsis:
   allowToChangeInstallationDirectory: true
   installerIcon: build/icon.ico
   uninstallerIcon: build/icon.ico
+  # No spaces — GitHub rewrites spaces to dots in asset names, which breaks the
+  # filename match in latest.yml and makes auto-update 404 ("exec not found").
+  artifactName: ${productName}-Setup-${version}.${ext}
 
 mac:
   icon: build/icon.png
   target:
+    # zip is REQUIRED for auto-update on macOS (Squirrel.Mac can't update from a .dmg).
+    # latest-mac.yml then references the zip and electron-updater downloads it.
+    - target: zip
+      arch:
+        - x64
+        - arm64
     - target: dmg
       arch:
         - x64

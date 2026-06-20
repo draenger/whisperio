@@ -51,7 +51,10 @@ export function checkForUpdatesManual(): void {
   if (!autoUpdater.isUpdaterActive()) return
   setState({ status: 'checking', error: undefined })
   autoUpdater.checkForUpdates().catch((err) => {
-    setState({ status: 'error', error: err?.message ?? String(err) })
+    // Fail soft — a failed check / missing artifact must never throw a raw error at
+    // the user. Log the detail, show "no update available".
+    console.error('[Whisperio] Update check failed:', err?.message ?? String(err))
+    setState({ status: 'not-available', version: undefined, percent: undefined, error: undefined })
   })
 }
 
@@ -117,8 +120,10 @@ export function initAutoUpdater(): void {
   })
 
   autoUpdater.on('error', (err) => {
-    console.error('[Whisperio] Auto-update error:', err.message)
-    setState({ status: 'error', error: err.message })
+    // Fail soft: log for debugging, but surface it as "no update" rather than a
+    // scary error in the UI (covers 404 / missing artifact / offline).
+    console.error('[Whisperio] Auto-update error:', err?.message ?? String(err))
+    setState({ status: 'not-available', version: undefined, percent: undefined, error: undefined })
   })
 
   // Check for updates after 10s, then every 4 hours
