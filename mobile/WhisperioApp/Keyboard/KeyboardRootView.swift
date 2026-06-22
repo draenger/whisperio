@@ -1,62 +1,7 @@
 import SwiftUI
 
-// MARK: - Brand ghost (silhouette + eyes + blush) — mirrors WGhost from the app.
-// The keyboard extension can't link the app target, so the shape is duplicated here.
-// Eyes are what make it read as *our* ghost rather than a generic emoji.
-
-private struct KBGhostShape: Shape {
-    func path(in rect: CGRect) -> Path {
-        let s = min(rect.width, rect.height) / 100
-        func p(_ x: CGFloat, _ y: CGFloat) -> CGPoint {
-            CGPoint(x: rect.minX + x * s, y: rect.minY + y * s)
-        }
-        var path = Path()
-        path.move(to: p(18, 78))
-        path.addLine(to: p(18, 46))
-        path.addCurve(to: p(50, 12), control1: p(18, 27), control2: p(32, 12))
-        path.addCurve(to: p(82, 46), control1: p(68, 12), control2: p(82, 27))
-        path.addLine(to: p(82, 78))
-        path.addCurve(to: p(66, 78), control1: p(78, 90), control2: p(70, 90))
-        path.addCurve(to: p(50, 78), control1: p(62, 70), control2: p(54, 70))
-        path.addCurve(to: p(34, 78), control1: p(46, 86), control2: p(38, 86))
-        path.addCurve(to: p(18, 78), control1: p(30, 70), control2: p(22, 70))
-        path.closeSubpath()
-        return path
-    }
-}
-
-private struct KBGhost: View {
-    var size: CGFloat = 20
-    var bodyColor: Color
-    var eyeColor: Color
-
-    var body: some View {
-        KBGhostShape()
-            .fill(bodyColor)
-            .frame(width: size, height: size)
-            .overlay {
-                let eye = size * 0.11
-                HStack(spacing: size * 0.18) {
-                    ForEach(0..<2, id: \.self) { _ in
-                        Capsule().fill(eyeColor)
-                            .frame(width: eye, height: eye * 1.5)
-                    }
-                }
-                .offset(y: -size * 0.06)
-                .overlay(alignment: .bottom) {
-                    Capsule().fill(bodyColor.opacity(0.0001)) // keep layout; blush below
-                }
-            }
-            .overlay(alignment: .center) {
-                Capsule()
-                    .fill(eyeColor.opacity(0.35))
-                    .frame(width: size * 0.11, height: size * 0.05)
-                    .offset(y: size * 0.10)
-            }
-    }
-}
-
-// MARK: - Keyboard surface
+// Native iOS keyboard replica + a single branded add-on: the real Whisperio logo
+// (bundled image "WhisperioLogo") with a mic, sitting in the predictive bar.
 
 private enum KBPlane { case letters, numbers, symbols }
 
@@ -101,6 +46,7 @@ struct KeyboardRootView: View {
     var body: some View {
         VStack(spacing: 0) {
             topBar
+            if model.showFullAccessHint && !model.hasFullAccess { fullAccessBanner }
             VStack(spacing: 11) {
                 row1
                 row2
@@ -115,15 +61,21 @@ struct KeyboardRootView: View {
         .background(kbBg)
     }
 
-    // MARK: - Top (predictive) bar with the Whisperio dictation button
+    // MARK: - Predictive bar: Whisperio logo button + live suggestions
 
     private var topBar: some View {
         HStack(spacing: 0) {
             Button(action: { model.mic() }) {
                 HStack(spacing: 5) {
-                    KBGhost(size: 20,
-                            bodyColor: model.hasFullAccess ? accent : .secondary,
-                            eyeColor: dark ? Color(red: 0.11, green: 0.11, blue: 0.12) : .white)
+                    Image("WhisperioLogo")
+                        .resizable()
+                        .frame(width: 26, height: 26)
+                        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                .stroke(Color.primary.opacity(0.15), lineWidth: 0.5)
+                        )
+                        .saturation(model.hasFullAccess ? 1 : 0.2)
                     Image(systemName: "mic.fill")
                         .font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(model.hasFullAccess ? accent : Color.secondary)
@@ -133,29 +85,49 @@ struct KeyboardRootView: View {
                             .foregroundStyle(.green)
                     }
                 }
-                .padding(.horizontal, 11).padding(.vertical, 6)
-                .background(specialBg.opacity(dark ? 0.9 : 0.55),
-                            in: Capsule())
+                .padding(.horizontal, 9).padding(.vertical, 5)
+                .background(specialBg.opacity(dark ? 0.9 : 0.55), in: Capsule())
                 .contentShape(Capsule())
             }
             .buttonStyle(.plain)
             .padding(.leading, 6)
 
-            Spacer(minLength: 0)
-
-            // Blank native-style suggestion slots
-            HStack(spacing: 0) {
-                ForEach(0..<2, id: \.self) { i in
-                    Rectangle().fill(Color.primary.opacity(0.16)).frame(width: 0.5, height: 20)
-                    Color.clear.frame(width: 86, height: 40)
-                    if i == 1 { Rectangle().fill(Color.primary.opacity(0.16)).frame(width: 0.5, height: 20) }
+            // Live suggestions (offline, from UITextChecker). Empty when there's nothing to predict.
+            if model.suggestions.isEmpty {
+                Spacer(minLength: 0)
+            } else {
+                HStack(spacing: 0) {
+                    ForEach(Array(model.suggestions.prefix(3).enumerated()), id: \.offset) { i, word in
+                        if i > 0 {
+                            Rectangle().fill(Color.primary.opacity(0.16)).frame(width: 0.5, height: 22)
+                        }
+                        Button(action: { model.pickSuggestion(word) }) {
+                            Text(word)
+                                .font(.system(size: 16))
+                                .foregroundStyle(keyText)
+                                .lineLimit(1)
+                                .frame(maxWidth: .infinity, minHeight: 40)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(KBPressStyle())
+                    }
                 }
+                .padding(.horizontal, 4)
             }
         }
         .frame(height: 46)
         .overlay(alignment: .bottom) {
             Rectangle().fill(Color.primary.opacity(0.10)).frame(height: 0.5)
         }
+    }
+
+    private var fullAccessBanner: some View {
+        Text("Włącz „Pełny dostęp” w Ustawieniach › Klawiatury, aby dyktować.")
+            .font(.system(size: 12, weight: .medium))
+            .foregroundStyle(accent)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 12).padding(.vertical, 7)
+            .background(accent.opacity(0.12))
     }
 
     // MARK: - Rows (plane-aware)

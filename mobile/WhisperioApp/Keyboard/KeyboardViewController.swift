@@ -54,6 +54,13 @@ final class KeyboardViewController: UIInputViewController {
         // Coming back from the app (the bounce flow): pick up and insert the transcript.
         insertPendingTranscriptIfAny()
         refreshState()
+        updateSuggestions()
+    }
+
+    // Recompute predictions whenever the document text changes.
+    override func textDidChange(_ textInput: UITextInput?) {
+        super.textDidChange(textInput)
+        updateSuggestions()
     }
 
     // MARK: - State shared with the SwiftUI surface
@@ -78,21 +85,74 @@ final class KeyboardViewController: UIInputViewController {
     func insertReturn() { textDocumentProxy.insertText("\n") }
     func advanceToNextKeyboard() { super.advanceToNextInputMode() }
 
+    // MARK: - Predictive suggestions (offline, via UITextChecker)
+
+    private let checker = UITextChecker()
+
+    /// The partial word currently being typed (trailing run of letters before the caret).
+    private func currentPartialWord() -> String {
+        let ctx = textDocumentProxy.documentContextBeforeInput ?? ""
+        let trailing = ctx.reversed().prefix { $0.isLetter }
+        return String(trailing.reversed())
+    }
+
+    func updateSuggestions() {
+        let word = currentPartialWord()
+        guard word.count >= 1 else { model.suggestions = []; return }
+        let lang = textDocumentProxy.documentInputMode?.primaryLanguage ?? "en_US"
+        let nsword = word as NSString
+        let range = NSRange(location: 0, length: nsword.length)
+        // Completions extend the partial word; guesses fix likely misspellings.
+        var out = checker.completions(forPartialWordRange: range, in: word, language: lang) ?? []
+        if out.isEmpty {
+            out = checker.guesses(forWordRange: range, in: word, language: lang) ?? []
+        }
+        model.suggestions = Array(out.prefix(3))
+    }
+
+    /// Replace the current partial word with the chosen suggestion + a trailing space.
+    func applySuggestion(_ word: String) {
+        let partial = currentPartialWord()
+        for _ in 0..<partial.count { textDocumentProxy.deleteBackward() }
+        textDocumentProxy.insertText(word + " ")
+        model.shifted = false
+        updateSuggestions()
+    }
+
     /// The mic key: open the app to dictate. Only possible with Full Access.
     func startDictation() {
-        guard hasFullAccess else { model.showFullAccessHint = true; return }
+        guard hasFullAccess else {
+            // No Full Access → we physically can't open the app. Surface why.
+            model.showFullAccessHint = true
+            return
+        }
         SharedStore.swipeBackExplainerShown = true
-        openURL(SharedStore.dictateURL)
+        if !openURL(SharedStore.dictateURL) {
+            // Opening failed despite Full Access — tell the user instead of failing silently.
+            model.showFullAccessHint = true
+        }
     }
 
     // MARK: - Helpers
 
-    /// Opening a URL from a keyboard extension requires walking the responder chain to find
-    /// an object that implements `openURL:` (UIApplication isn't directly available here).
+    /// Open a URL from the keyboard extension. The only way is to walk the responder chain
+    /// to the host `UIApplication` and call the modern `open(_:options:completionHandler:)`.
+    /// (The old single-arg `openURL:` selector was removed from UIKit, so `responds(to:)`
+    /// against it now fails and nothing happens — that was the "button does nothing" bug.)
     @discardableResult
     private func openURL(_ url: URL) -> Bool {
         var responder: UIResponder? = self
+        while let r = responder {
+            if let app = r as? UIApplication {
+                app.open(url, options: [:], completionHandler: nil)
+                return true
+            }
+            responder = r.next
+        }
+        // Fallback for OS versions where UIApplication isn't reachable in the chain:
+        // try the legacy selector as a last resort.
         let sel = sel_registerName("openURL:")
+        responder = self
         while let r = responder {
             if r.responds(to: sel) {
                 _ = r.perform(sel, with: url)
