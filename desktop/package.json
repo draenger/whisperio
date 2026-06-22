@@ -4,6 +4,11 @@
   "author": "Daniel Kasprzyk <daniel@danielkasprzyk.com>",
   "license": "PolyForm-Noncommercial-1.0.0",
   "description": "Whisperio — Global dictation with hotkey, overlay, and auto-paste. Press hotkey to record, press again to transcribe and paste.",
+  "homepage": "https://whisperio.danielkasprzyk.com",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/draenger/whisperio.git"
+  },
   "main": "./out/main/index.js",
   "scripts": {
     "dev": "electron-vite dev",
