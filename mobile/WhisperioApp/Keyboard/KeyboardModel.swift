@@ -17,6 +17,8 @@ final class KeyboardModel: ObservableObject {
         controller?.insert(shifted ? ch.uppercased() : ch)
         if shifted { shifted = false }   // one-shot shift, like the system keyboard
     }
+    /// Insert a literal character (numbers / symbols plane — no shift transform).
+    func type(_ ch: String) { controller?.insert(ch) }
     func space() { controller?.insertSpace() }
     func returnKey() { controller?.insertReturn() }
     func backspace() { controller?.deleteBackward() }
