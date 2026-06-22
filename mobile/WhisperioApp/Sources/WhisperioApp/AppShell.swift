@@ -18,12 +18,15 @@ struct WZPhoneView: View {
     @State private var fromKeyboard = false
     @State private var showSwipeBack = false
     @AppStorage("whisperio.swipeBackExplainerSeen") private var swipeBackSeen = false
+    // Incoming URL binding — set at App level so it fires even before setup completes.
+    @Binding private var incomingURL: URL?
 
     private var t: WZTheme { .of(dark) }
 
-    init(initialScreen: WZScreen = .home, dark: Bool = true) {
+    init(initialScreen: WZScreen = .home, dark: Bool = true, incomingURL: Binding<URL?> = .constant(nil)) {
         _screen = State(initialValue: initialScreen)
         _dark = State(initialValue: dark)
+        _incomingURL = incomingURL
     }
 
     var body: some View {
@@ -47,11 +50,17 @@ struct WZPhoneView: View {
         .onReceive(NotificationCenter.default.publisher(for: .whisperioStartDictation)) { _ in
             go(.recording)
         }
-        .onAppear { SharedStore.recordAppHeartbeat(); consumePending() }
+        .onAppear {
+            SharedStore.recordAppHeartbeat()
+            consumePending()
+            if let url = incomingURL { handle(url); incomingURL = nil }
+        }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active { consumePending() }
         }
-        .onOpenURL { url in handle(url) }
+        .onChange(of: incomingURL) { _, url in
+            if let url { handle(url); incomingURL = nil }
+        }
     }
 
     // whisperio://dictate?return=keyboard — the keyboard's bounce-to-app entry point.
@@ -135,25 +144,31 @@ struct WZPhoneView: View {
 struct WhisperioApp: App {
     @StateObject private var settings = SettingsStore()
     @StateObject private var recordings = RecordingsStore()
+    @State private var incomingURL: URL?
+
     var body: some Scene {
         WindowGroup {
-            RootView()
+            RootView(incomingURL: $incomingURL)
                 .environmentObject(settings)
                 .environmentObject(recordings)
                 .onAppear {
                     PhoneConnectivity.shared.recordings = recordings
                     PhoneConnectivity.shared.activate()
                 }
+                .onOpenURL { incomingURL = $0 }
         }
     }
 }
 
 // Gate: first run shows the engine picker; afterwards the app.
+// incomingURL is stored here so a deep link that arrives during setup is not dropped.
 private struct RootView: View {
     @EnvironmentObject private var settings: SettingsStore
+    @Binding var incomingURL: URL?
+
     var body: some View {
         if settings.didCompleteSetup {
-            WZPhoneView(initialScreen: .home)
+            WZPhoneView(initialScreen: .home, incomingURL: $incomingURL)
         } else {
             SetupView()
                 .environment(\.wz, WZTheme.of(true))

@@ -109,10 +109,6 @@ final class WatchConnector: NSObject, ObservableObject, WCSessionDelegate {
 
     // MARK: WCSessionDelegate
     nonisolated func session(_ session: WCSession, activationDidCompleteWith state: WCSessionActivationState, error: Error?) {}
-#if targetEnvironment(simulator)
-    nonisolated func sessionDidBecomeInactive(_ session: WCSession) {}
-    nonisolated func sessionDidDeactivate(_ session: WCSession) { session.activate() }
-#endif
 
     // Phone sends the finished transcript back here.
     nonisolated func session(_ session: WCSession, didReceiveMessage message: [String: Any]) {
