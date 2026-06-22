@@ -3,7 +3,9 @@ out/
 dist/
 .node/
 .env
-.claude/
+# .claude/ (kept for project-local commands)
+.claude/settings.local.json
+.claude/cache/
 .mcp.json
 .playwright-mcp/
 
@@ -17,3 +19,8 @@ DerivedData/
 # Xcode build output (scoped to mobile so it never touches desktop/build,
 # which is tracked electron-builder buildResources)
 mobile/**/build/
+# Apex (per-machine state; signals/research/loops/tasks ARE tracked)
+.apex/.lock
+.apex/*.lock
+.apex/dry-run-*.md
+.apex/*.tmp
