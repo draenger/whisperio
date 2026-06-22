@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Privacy Policy — Whisperio</title>
+  <meta name="description" content="Privacy policy for Whisperio — a privacy-first dictation app. No accounts, no telemetry, no data collection by the app itself. Audio is sent only to the speech-to-text provider you configure.">
+  <meta name="author" content="Daniel Kasprzyk">
+  <meta name="robots" content="index, follow">
+  <meta name="theme-color" content="#4a8cf7">
+  <link rel="canonical" href="https://whisperio.danielkasprzyk.com/privacy.html">
+
+  <meta property="og:type" content="article">
+  <meta property="og:url" content="https://whisperio.danielkasprzyk.com/privacy.html">
+  <meta property="og:title" content="Privacy Policy — Whisperio">
+  <meta property="og:description" content="No accounts, no telemetry, no data collection. Audio goes only to the provider you choose.">
+  <meta property="og:image" content="https://whisperio.danielkasprzyk.com/og-image.png">
+  <meta property="og:site_name" content="Whisperio">
+
+  <link rel="icon" type="image/png" href="favicon.png">
+  <link rel="apple-touch-icon" href="favicon.png">
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/whisperio.css">
+
+  <style>
+    .legal-wrap { max-width: 760px; margin: 0 auto; padding: 96px 24px 64px; position: relative; z-index: 1; }
+    .legal-wrap .eyebrow { font-family: var(--mono); font-size: 12px; letter-spacing: .12em; text-transform: uppercase; color: var(--acc-light); margin-bottom: 12px; }
+    .legal-wrap h1 { font-family: var(--font-display); font-size: clamp(36px, 5vw, 52px); line-height: 1.08; margin-bottom: 12px; }
+    .legal-wrap .updated { color: var(--muted); font-size: 14px; margin-bottom: 40px; }
+    .legal-wrap h2 { font-family: var(--font-display); font-size: 22px; margin: 40px 0 12px; color: var(--text); }
+    .legal-wrap h3 { font-family: var(--font-display); font-size: 17px; margin: 24px 0 8px; color: var(--acc-light); }
+    .legal-wrap p, .legal-wrap li { color: var(--text); opacity: .92; font-size: 16px; line-height: 1.65; margin-bottom: 12px; }
+    .legal-wrap ul { padding-left: 22px; margin-bottom: 16px; }
+    .legal-wrap a { color: var(--acc-light); text-decoration: underline; text-decoration-color: rgba(var(--acc-rgb), .45); text-underline-offset: 3px; }
+    .legal-wrap a:hover { color: #fff; text-decoration-color: var(--acc-light); }
+    .legal-wrap code { font-family: var(--mono); font-size: 14px; background: var(--surface-2); padding: 2px 7px; border-radius: 6px; border: 1px solid var(--line); }
+    .legal-wrap .summary { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 20px 22px; margin: 24px 0 32px; }
+    .legal-wrap .summary p { margin: 0; }
+    .legal-wrap .back { display: inline-flex; align-items: center; gap: 8px; color: var(--muted); font-size: 14px; text-decoration: none; margin-bottom: 32px; }
+    .legal-wrap .back:hover { color: var(--acc-light); }
+  </style>
+</head>
+<body>
+
+  <div class="backdrop" aria-hidden="true">
+    <div class="aurora"></div>
+  </div>
+
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <symbol id="ghost" viewBox="0 0 1024 1024">
+      <path d="M602 157c0.66 0.34 1.31 0.69 1.99 1.04 52.7 27.6 86.2 78.55 104.13 134.02 1.34 4.3 2.61 8.61 3.88 12.94 0.47 1.57 0.47 1.57 0.94 3.17 12.61 43.08 21.34 90.05 25.06 134.83 2.3 0.8 3.56 1.15 5.9 0.34 0.65-0.37 1.3-0.74 1.97-1.11 0.73-0.41 1.46-0.82 2.22-1.24 0.77-0.45 1.55-0.9 2.34-1.36 0.8-0.46 1.6-0.92 2.43-1.39 20.13-11.64 39.72-27.06 54.38-45.24 6.62-7.66 16.54-14.72 26.75-16 9.22-0.3 16.15 3 23 9 9.05 11.73 11.99 23.56 10.38 38.19-1.25 8.24-3.57 15.98-6.38 23.81-0.37 1.04-0.74 2.08-1.12 3.15-6.65 17.15-18.05 33.07-30.59 46.41-1.95 2.07-3.78 4.19-5.6 6.38-13.64 15.57-30.93 27.68-48.69 38.06-0.62 0.36-1.23 0.72-1.87 1.09-9.96 5.74-20.35 9.95-31.13 13.9-0.07 0.87-0.13 1.74-0.2 2.63-2.7 35.16-9.23 68.64-22.8 101.37-0.32 0.76-0.63 1.53-0.96 2.31-14 33.48-33.5 63.57-57.94 90.37-1.83 2.01-3.59 4.06-5.35 6.13-7.63 8.73-15.93 16.83-25.03 24.02-1.86 1.48-3.68 3-5.48 4.55-16.76 14.52-38.96 29.89-62.16 28.9-6.74-0.92-11.74-2.85-16.09-8.29-1.76-5.27-1.92-10.69 0.44-15.81 2.02-3.65 4.57-6.84 7.13-10.13 4.75-6.21 7.44-11.07 7.44-18.94-0.71-3.21-0.71-3.21-3.09-4.8-8.45-3.87-20.17-1.7-28.63 1.29-15.08 6.36-27.05 15.7-39.39 26.27-5.79 4.94-11.82 9.53-17.89 14.11-0.68 0.53-1.36 1.06-2.07 1.61-19.84 15.29-42.33 28.88-66.93 34.39-1.18 0.29-1.18 0.29-2.39 0.58-19.07 3.08-39.8-1.39-55.6-12.58-4.16-4.19-6.88-9-7.15-14.98 0.83-11.06 8.51-17.46 15.98-24.8 20.19-19.4 20.19-19.4 28.48-45.17 0.04-1.04 0.08-2.08 0.11-3.15-0.53-3.63-1.54-4.72-4.42-6.91-11.45-3.05-23.92 2.66-34.85 5.99-17.74 5.37-33.38 8.24-51.9 8.38-0.7 0.01-1.4 0.01-2.12 0.02-17.62 0.16-35.29-2.81-49.13-14.4-2.22-2.2-4.16-4.48-6-7-0.58-0.76-1.16-1.53-1.75-2.31-3.76-8.07-4.33-16.98-1.27-25.36 4.53-9.87 11.35-13.21 20.9-17.52 31.32-14.58 57.62-35.08 70.05-68.28 2.43-7.27 4.42-16.03 2.07-23.52-1.28 0.82-1.28 0.82-2.58 1.65-27.45 17.23-61.8 30.32-94.5 23.39-8.71-2.12-16.44-6.9-21.92-14.04-5.28-8.76-6.45-17.65-4.46-27.76 4.77-13.93 16.95-21.08 29.4-27.23 2.02-0.97 4.04-1.93 6.06-2.88 1.04-0.5 2.07-1 3.14-1.51 7.6-3.62 7.6-3.62 9.86-3.62 0.33-0.66 0.66-1.32 1-2 1.65-0.7 3.32-1.36 5-2 24.52-12.85 43.29-31.37 51.97-57.96 4.34-15.27 1.1-30.82-0.97-46.23-0.43-3.23-0.86-6.47-1.28-9.7-0.26-2-0.53-4-0.8-6-0.8-6.08-1.07-11.99-0.92-18.12-0.66-0.33-1.32-0.66-2-1-3.04-56.54-3.04-56.54 1-83 0.22-1.46 0.22-1.46 0.44-2.95 5.69-36.53 19.59-68.26 42.56-97.05 1.11-1.42 1.11-1.42 2.25-2.87 5.42-6.81 11.22-13.35 17.75-19.13 0.66 0 1.32 0 2 0 0-0.66 0-1.32 0-2 2.02-1.78 4.05-3.43 6.19-5.06 0.64-0.49 1.27-0.99 1.93-1.5 66.93-51.24 151.89-60.62 226.81-20.41z" fill="currentColor"/>
+    </symbol>
+  </svg>
+
+  <main class="legal-wrap">
+
+    <a href="index.html" class="back">← Back to Whisperio</a>
+
+    <div class="eyebrow">Legal</div>
+    <h1>Privacy Policy</h1>
+    <p class="updated">Last updated: June 17, 2026</p>
+
+    <div class="summary">
+      <p><strong>TL;DR.</strong> Whisperio runs locally on your computer. We — the developers of Whisperio — do not run any server, do not collect any data, and do not see your recordings, transcripts, or settings. Your audio is sent only to the speech-to-text provider <em>you choose</em> in Settings (e.g. OpenAI, ElevenLabs, or your own self-hosted server). No account, no login, no telemetry.</p>
+    </div>
+
+    <h2>1. Who we are</h2>
+    <p>Whisperio is an open-source desktop dictation app developed by Daniel Kasprzyk. The source code is published at <a href="https://github.com/draenger/whisperio" target="_blank" rel="noopener">github.com/draenger/whisperio</a> under the MIT license.</p>
+    <p>This policy describes how the Whisperio desktop application (and its TestFlight beta) handles data on your device. It does not cover the websites or APIs of third-party providers you choose to use through Whisperio.</p>
+
+    <h2>2. Data Whisperio does <em>not</em> collect</h2>
+    <p>Whisperio has no backend server operated by us. We do not have, see, or store:</p>
+    <ul>
+      <li>Your audio recordings</li>
+      <li>Your transcripts</li>
+      <li>Your settings, hotkeys, or vocabulary</li>
+      <li>Your API keys</li>
+      <li>Your IP address or device identifiers</li>
+      <li>Crash reports, usage analytics, or telemetry of any kind</li>
+    </ul>
+    <p>There is no account, no login, and no registration. We have no way to contact you or identify you unless you contact us directly.</p>
+
+    <h2>3. Data that stays on your device</h2>
+    <p>The following information is stored locally on your computer only:</p>
+    <ul>
+      <li><strong>Settings</strong> — hotkeys, theme, provider choice, custom vocabulary, output preferences. Stored in the app's local config directory.</li>
+      <li><strong>API keys</strong> — keys you enter for OpenAI, ElevenLabs, or other providers. Stored using the operating system's secure credential store (Keychain on macOS, Credential Manager on Windows, libsecret on Linux) where available; otherwise in the app's local config directory.</li>
+      <li><strong>Recording history</strong> — if you enable it, past recordings and their transcripts are stored locally so you can replay or re-transcribe them. You can delete individual entries or clear the entire history at any time from the app.</li>
+    </ul>
+    <p>You can locate and remove this data manually:</p>
+    <ul>
+      <li><strong>iOS / iPadOS / Apple Watch</strong>: data lives inside the app's sandbox container — deleting the app from the device removes it completely. Recording history can also be cleared from the in-app Settings.</li>
+      <li><strong>macOS</strong>: <code>~/Library/Application Support/Whisperio</code></li>
+      <li><strong>Windows</strong>: <code>%APPDATA%\Whisperio</code></li>
+      <li><strong>Linux</strong>: <code>~/.config/Whisperio</code></li>
+    </ul>
+
+    <h2>4. Data sent to third parties</h2>
+    <p>When you press the dictation hotkey, Whisperio sends your recorded audio to the speech-to-text provider you configured in Settings, so the provider can return a transcript. Whisperio does not send your audio anywhere else.</p>
+    <p>Possible destinations (whichever you choose):</p>
+    <ul>
+      <li><strong>OpenAI</strong> — see the <a href="https://openai.com/policies/privacy-policy" target="_blank" rel="noopener">OpenAI Privacy Policy</a> and <a href="https://openai.com/policies/api-data-usage-policies" target="_blank" rel="noopener">API Data Usage Policies</a>. By default, OpenAI does not use data submitted through the API to train its models.</li>
+      <li><strong>ElevenLabs</strong> — see the <a href="https://elevenlabs.io/privacy" target="_blank" rel="noopener">ElevenLabs Privacy Policy</a>.</li>
+      <li><strong>A self-hosted or third-party OpenAI-compatible server</strong> (e.g. whisper.cpp, faster-whisper, LocalAI, Ollama, or another provider you point Whisperio at) — data is sent only to the URL you configured. The privacy of that server is governed by whoever operates it (which may be you).</li>
+    </ul>
+    <p>If you optionally enable the AI post-processing step (LLM cleanup of technical terms), your transcript is also sent to the LLM provider you configured for that feature, subject to that provider's privacy policy.</p>
+
+    <h2>5. Updates and GitHub</h2>
+    <p>Whisperio checks for new releases by contacting GitHub's public release endpoint. This request includes only what a normal HTTPS request reveals (your IP address, user agent, app version) and is handled by GitHub under GitHub's own privacy policy. Whisperio does not transmit any personal data, recordings, or settings during this check.</p>
+    <p>You can disable update checks in Settings.</p>
+
+    <h2>6. TestFlight beta</h2>
+    <p>While Whisperio is distributed through Apple TestFlight, Apple may collect crash logs, device information, and feedback you submit through TestFlight itself. This data flows directly to Apple under <a href="https://www.apple.com/legal/privacy/" target="_blank" rel="noopener">Apple's Privacy Policy</a> and is shown to the Whisperio developer in aggregate form to help fix crashes. Whisperio does not add any analytics SDK of its own.</p>
+
+    <h2>7. Children</h2>
+    <p>Whisperio is not directed at children under 13 and we do not knowingly collect any data from anyone, regardless of age.</p>
+
+    <h2>8. Your rights</h2>
+    <p>Because Whisperio does not store your personal data on any server we control, requests for access, correction, or deletion of personal data under GDPR, CCPA, or similar laws are limited to data held by the third-party providers you configured. Please contact those providers directly to exercise your rights with respect to data they hold.</p>
+    <p>For data stored locally on your device, you have full control: you can view, edit, export, or delete it through the app or by removing the files listed in section 3.</p>
+
+    <h2>9. Changes to this policy</h2>
+    <p>If this policy changes materially, the "Last updated" date at the top will change and a notice will appear in the app's release notes. Older versions are visible in the project's Git history at <a href="https://github.com/draenger/whisperio" target="_blank" rel="noopener">github.com/draenger/whisperio</a>.</p>
+
+    <h2>10. Contact</h2>
+    <p>Questions, concerns, or bug reports about privacy: <a href="mailto:daniel@danielkasprzyk.com">daniel@danielkasprzyk.com</a> or file an issue at <a href="https://github.com/draenger/whisperio/issues" target="_blank" rel="noopener">github.com/draenger/whisperio/issues</a>.</p>
+
+  </main>
+
+  <footer class="wrap">
+    <div class="foot-grid">
+      <a class="brand" href="index.html">
+        <svg class="ghost"><use href="#ghost"></use></svg>
+        <span class="name">Whisperio</span>
+      </a>
+      <div class="foot-links">
+        <a href="index.html#features">Features</a>
+        <a href="index.html#offline">Offline</a>
+        <a href="app.html">App preview</a>
+        <a href="privacy.html">Privacy</a>
+        <a href="https://github.com/draenger/whisperio" target="_blank" rel="noopener">GitHub</a>
+        <a href="https://github.com/draenger/whisperio/releases" target="_blank" rel="noopener">Releases</a>
+      </div>
+      <span class="foot-copy">© 2026 <a href="https://danielkasprzyk.com" target="_blank" rel="noopener">Daniel Kasprzyk</a> · MIT</span>
+    </div>
+  </footer>
+
+</body>
+</html>
