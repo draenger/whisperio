@@ -36,6 +36,15 @@ final class KeyboardViewController: UIInputViewController {
             host.view.topAnchor.constraint(equalTo: view.topAnchor),
             host.view.bottomAnchor.constraint(equalTo: view.bottomAnchor)
         ])
+
+        // Custom keyboards have NO intrinsic height — without an explicit constraint the
+        // input view collapses (often to ~0pt) and the keyboard renders invisible/blank
+        // even though it's enabled in Settings. Pin a concrete height; priority 999 so it
+        // yields gracefully to the system's own input-view constraints instead of conflicting.
+        let heightConstraint = view.heightAnchor.constraint(equalToConstant: 300)
+        heightConstraint.priority = UILayoutPriority(999)
+        heightConstraint.isActive = true
+
         self.hosting = host
         refreshState()
     }
