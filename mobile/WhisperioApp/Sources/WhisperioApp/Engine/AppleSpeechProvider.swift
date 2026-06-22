@@ -1,5 +1,5 @@
 import Foundation
-import Speech
+@preconcurrency import Speech
 import WhisperioKit
 
 // On-device transcription via Apple's Speech framework (free, private, no network).
