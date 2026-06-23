@@ -138,27 +138,74 @@ struct KeyboardSetupView: View {
 
 // One-time explainer shown after the first keyboard-initiated dictation, telling the user
 // to swipe back to the keyboard so the transcript gets inserted.
-struct SwipeBackExplainer: View {
+// Shown after a keyboard-initiated dictation finishes. Mirrors how Wispr Flow returns
+// you to the app you were typing in: the transcript is staged + on the clipboard, and a
+// persistent, animated "swipe right along the bottom bar" cue tells you exactly how to
+// get back. The keyboard inserts the text on its next `viewWillAppear`.
+struct KeyboardReturnView: View {
     @Environment(\.wz) private var t
-    var onDismiss: () -> Void
+    var text: String
+    var onClose: () -> Void
+    @State private var arrowShift = false
 
     var body: some View {
-        ZStack {
-            Color.black.opacity(0.62).ignoresSafeArea().onTapGesture(perform: onDismiss)
-            VStack(spacing: 16) {
-                WIcon("arrowUR", size: 26).foregroundStyle(.white)
-                    .frame(width: 56, height: 56)
-                    .background(t.gradient, in: Circle())
-                Text("Swipe back to insert").font(WZFont.display(19)).foregroundStyle(t.text)
-                Text("Your text is ready. Swipe back to the keyboard (or switch to the app you were typing in) and Whisperio drops it right where your cursor was.")
+        ScreenScaffold(bg: t.bg) {
+            VStack(spacing: 0) {
+                Spacer(minLength: 18)
+
+                WGhost(size: 58).padding(.bottom, 16)
+                Text("Gotowe — tekst czeka")
+                    .font(WZFont.display(22, .semibold)).foregroundStyle(t.text)
+                Text("Przesuń palcem **w prawo po dolnym pasku**, aby wrócić do poprzedniej aplikacji — Whisperio wklei tekst tam, gdzie był kursor.")
                     .font(WZFont.ui(14)).foregroundStyle(t.muted)
                     .multilineTextAlignment(.center).lineSpacing(3)
-                GradButton(title: "Got it", icon: "check", action: onDismiss)
+                    .padding(.horizontal, 30).padding(.top, 8)
+
+                if !text.isEmpty {
+                    ScrollView {
+                        Text(text).font(WZFont.ui(15)).foregroundStyle(t.text)
+                            .frame(maxWidth: .infinity, alignment: .leading).lineSpacing(4)
+                    }
+                    .frame(maxHeight: 150)
+                    .padding(16)
+                    .background(t.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(t.line, lineWidth: 1))
+                    .padding(.horizontal, 22).padding(.top, 20)
+
+                    HStack(spacing: 6) {
+                        WIcon("check", size: 12).foregroundStyle(t.green)
+                        Text("Skopiowane do schowka — możesz też wkleić ręcznie")
+                            .font(WZFont.ui(12)).foregroundStyle(t.muted)
+                    }.padding(.top, 12)
+                }
+
+                Spacer()
+
+                // Animated swipe-right hint sitting over a faux home indicator.
+                VStack(spacing: 16) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "chevron.right").opacity(0.4)
+                        Image(systemName: "chevron.right").opacity(0.7)
+                        Image(systemName: "chevron.right")
+                    }
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(t.accentLite)
+                    .offset(x: arrowShift ? 14 : -8)
+
+                    Capsule().fill(t.text.opacity(0.55)).frame(width: 140, height: 5)
+                }
+                .padding(.bottom, 8)
+
+                Button(action: onClose) {
+                    Text("Zostań w Whisperio").font(WZFont.ui(13, .medium)).foregroundStyle(t.muted)
+                }
+                .padding(.top, 6).padding(.bottom, 16)
             }
-            .padding(24)
-            .background(t.surface, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).stroke(t.line, lineWidth: 1))
-            .padding(.horizontal, 32)
+        }
+        .onAppear {
+            withAnimation(.easeInOut(duration: 0.85).repeatForever(autoreverses: true)) {
+                arrowShift = true
+            }
         }
     }
 }
