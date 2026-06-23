@@ -5,7 +5,7 @@ import WhisperioKit
 // App shell — custom screen routing + toast, mirroring WZPhone() in wz-iphone.jsx.
 // (The concept uses a bespoke transition shell rather than NavigationStack.)
 
-enum WZScreen { case onboarding, home, recording, detail, settings, models, keyboardSetup }
+enum WZScreen { case onboarding, home, recording, detail, settings, models, keyboardSetup, keyboardReturn }
 
 struct WZPhoneView: View {
     @Environment(\.scenePhase) private var scenePhase
@@ -16,8 +16,8 @@ struct WZPhoneView: View {
     // True when the current dictation was launched from the keyboard (bounce-to-app flow):
     // its transcript is written to the App Group and a swipe-back explainer is shown.
     @State private var fromKeyboard = false
-    @State private var showSwipeBack = false
-    @AppStorage("whisperio.swipeBackExplainerSeen") private var swipeBackSeen = false
+    // Transcript awaiting the user's swipe back to the previous app (keyboard bounce flow).
+    @State private var returnText = ""
     // Incoming URL binding — set at App level so it fires even before setup completes.
     @Binding private var incomingURL: URL?
 
@@ -38,10 +38,6 @@ struct WZPhoneView: View {
                 toast(toastMsg)
                     .frame(maxHeight: .infinity, alignment: .bottom)
                     .padding(.bottom, 48)
-            }
-            if showSwipeBack {
-                SwipeBackExplainer { withAnimation { showSwipeBack = false } }
-                    .transition(.opacity)
             }
         }
         .environment(\.wz, t)
@@ -92,11 +88,8 @@ struct WZPhoneView: View {
                           onDone: { r in
                               if fromKeyboard {
                                   fromKeyboard = false
-                                  if !swipeBackSeen {
-                                      swipeBackSeen = true
-                                      withAnimation { showSwipeBack = true }
-                                  }
-                                  go(.home)
+                                  returnText = r.transcription ?? ""
+                                  go(.keyboardReturn)
                               } else {
                                   rec = DemoRecording(r); go(.detail)
                               }
@@ -111,6 +104,8 @@ struct WZPhoneView: View {
             ModelsView(onBack: { go(.settings) })
         case .keyboardSetup:
             KeyboardSetupView(onBack: { go(.settings) })
+        case .keyboardReturn:
+            KeyboardReturnView(text: returnText, onClose: { go(.home) })
         case .home:
             HomeView(openRec: { rec = $0; go(.detail) },
                      openRecording: { go(.recording) },
