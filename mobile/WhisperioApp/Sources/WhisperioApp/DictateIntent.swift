@@ -13,9 +13,22 @@ enum DictationCommand: String {
 
 enum DictationLaunch {
     private static let key = "whisperio.pendingCommand"
-    static func set(_ c: DictationCommand) { UserDefaults.standard.set(c.rawValue, forKey: key) }
+    // Use the shared App Group, NOT UserDefaults.standard: when Shortcuts / Back Tap runs
+    // the intent, iOS may execute perform() in a separate intent-handling process whose
+    // standard defaults are a different container than the main app's — so the flag would
+    // be written where the app never reads it (this is why Back Tap "suddenly" stopped
+    // starting dictation). The App Group suite is shared across processes.
+    private static let appGroupID = "group.ai.whisperio.mobile"
+    private static var store: UserDefaults { UserDefaults(suiteName: appGroupID) ?? .standard }
+
+    static func set(_ c: DictationCommand) {
+        store.set(c.rawValue, forKey: key)
+        UserDefaults.standard.set(c.rawValue, forKey: key)   // same-process fast path
+    }
     static func consume() -> DictationCommand? {
-        guard let raw = UserDefaults.standard.string(forKey: key) else { return nil }
+        let raw = store.string(forKey: key) ?? UserDefaults.standard.string(forKey: key)
+        guard let raw else { return nil }
+        store.removeObject(forKey: key)
         UserDefaults.standard.removeObject(forKey: key)
         return DictationCommand(rawValue: raw)
     }
