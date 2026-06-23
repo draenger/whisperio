@@ -53,6 +53,10 @@ struct WZPhoneView: View {
         }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active { consumePending() }
+            // Don't leave the app parked on the post-dictation return screen: once the
+            // user leaves (backgrounds the app to go paste / swipe back), drop to home so
+            // re-opening — or a Back Tap — lands on a fresh state instead of a dead end.
+            else if phase == .background, screen == .keyboardReturn { screen = .home }
         }
         .onChange(of: incomingURL) { _, url in
             if let url { handle(url); incomingURL = nil }
