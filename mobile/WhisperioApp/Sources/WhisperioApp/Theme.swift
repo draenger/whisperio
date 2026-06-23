@@ -43,21 +43,29 @@ struct WZTheme {
 }
 
 // MARK: - Fonts
-// The concept uses Space Grotesk (display) / IBM Plex Sans (UI) / JetBrains Mono (meta).
-// For a stable release we map these to their closest *system* faces — no font files to
-// bundle, nothing to break the build, and they render identically on every device:
-//   • display → SF Pro Rounded (geometric, friendly — matches Space Grotesk's character)
-//   • UI      → SF Pro Text (the calm body workhorse)
-//   • mono    → SF Mono (labels & meta)
+// The exact concept faces, bundled (all SIL OFL — fine for a noncommercial app):
+//   • display → Space Grotesk   (Regular / Medium / Bold)
+//   • UI      → IBM Plex Sans    (Regular / Medium / SemiBold)
+//   • mono    → JetBrains Mono   (Regular / Medium / SemiBold)
+// Font files live in Sources/WhisperioApp/Fonts and are registered via AppInfo.plist
+// (UIAppFonts). `Font.custom` falls back to the system face if a name is ever missing,
+// so a bad name degrades gracefully rather than crashing.
 enum WZFont {
     static func display(_ size: CGFloat, _ weight: Font.Weight = .semibold) -> Font {
-        .system(size: size, weight: weight, design: .rounded)
+        .custom(["SpaceGrotesk-Regular", "SpaceGrotesk-Medium", "SpaceGrotesk-Bold"][bucket(weight)], size: size)
     }
     static func ui(_ size: CGFloat, _ weight: Font.Weight = .regular) -> Font {
-        .system(size: size, weight: weight, design: .default)
+        .custom(["IBMPlexSans", "IBMPlexSans-Medm", "IBMPlexSans-SmBld"][bucket(weight)], size: size)
     }
     static func mono(_ size: CGFloat, _ weight: Font.Weight = .regular) -> Font {
-        .system(size: size, weight: weight, design: .monospaced)
+        .custom(["JetBrainsMono-Regular", "JetBrainsMono-Medium", "JetBrainsMono-SemiBold"][bucket(weight)], size: size)
+    }
+
+    // Map a requested weight onto the three bundled static weights we ship.
+    private static func bucket(_ w: Font.Weight) -> Int {
+        if w == .medium { return 1 }
+        if w == .semibold || w == .bold || w == .heavy || w == .black { return 2 }
+        return 0
     }
 }
 
