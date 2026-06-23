@@ -138,25 +138,39 @@ struct KeyboardSetupView: View {
 
 // One-time explainer shown after the first keyboard-initiated dictation, telling the user
 // to swipe back to the keyboard so the transcript gets inserted.
-// Shown after a keyboard-initiated dictation finishes. Mirrors how Wispr Flow returns
-// you to the app you were typing in: the transcript is staged + on the clipboard, and a
-// persistent, animated "swipe right along the bottom bar" cue tells you exactly how to
-// get back. The keyboard inserts the text on its next `viewWillAppear`.
+// Shown after a keyboard-initiated dictation finishes. iOS does NOT let an app return
+// to the previous one programmatically, and the bottom-bar swipe is unreliable — so the
+// transcript is ALWAYS put on the clipboard (guaranteed paste) and the screen leads with
+// the two dependable ways back: the system "← [app]" pill (top-left, appears after a URL
+// launch) and a manual paste. The keyboard also auto-inserts on its next viewWillAppear.
 struct KeyboardReturnView: View {
     @Environment(\.wz) private var t
     var text: String
     var onClose: () -> Void
-    @State private var arrowShift = false
+    @State private var nudge = false
 
     var body: some View {
         ScreenScaffold(bg: t.bg) {
             VStack(spacing: 0) {
-                Spacer(minLength: 18)
+                // Arrow pointing at the top-left, where iOS shows the "← [app]" back pill.
+                HStack(spacing: 8) {
+                    Image(systemName: "arrow.up.left")
+                        .font(.system(size: 15, weight: .bold))
+                        .foregroundStyle(t.accentLite)
+                        .offset(x: nudge ? -4 : 2, y: nudge ? -4 : 2)
+                    Text("Wróć przez „← \(Text("nazwa apki").italic())” w lewym górnym rogu")
+                        .font(WZFont.ui(12.5, .medium)).foregroundStyle(t.muted)
+                    Spacer(minLength: 0)
+                }
+                .padding(.horizontal, 18).padding(.top, 4)
 
-                WGhost(size: 58).padding(.bottom, 16)
-                Text("Gotowe — tekst czeka")
+                Spacer(minLength: 14)
+
+                WGhost(size: 56).padding(.bottom, 14)
+                Text("Gotowe — tekst w schowku")
                     .font(WZFont.display(22, .semibold)).foregroundStyle(t.text)
-                Text("Przesuń palcem **w prawo po dolnym pasku**, aby wrócić do poprzedniej aplikacji — Whisperio wklei tekst tam, gdzie był kursor.")
+                    .multilineTextAlignment(.center)
+                Text("Wróć do swojej aplikacji — Whisperio wklei tekst sam. Jeśli nie, **przytrzymaj pole → Wklej** (tekst jest w schowku).")
                     .font(WZFont.ui(14)).foregroundStyle(t.muted)
                     .multilineTextAlignment(.center).lineSpacing(3)
                     .padding(.horizontal, 30).padding(.top, 8)
@@ -166,33 +180,27 @@ struct KeyboardReturnView: View {
                         Text(text).font(WZFont.ui(15)).foregroundStyle(t.text)
                             .frame(maxWidth: .infinity, alignment: .leading).lineSpacing(4)
                     }
-                    .frame(maxHeight: 150)
+                    .frame(maxHeight: 140)
                     .padding(16)
                     .background(t.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                     .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(t.line, lineWidth: 1))
-                    .padding(.horizontal, 22).padding(.top, 20)
+                    .padding(.horizontal, 22).padding(.top, 18)
 
                     HStack(spacing: 6) {
                         WIcon("check", size: 12).foregroundStyle(t.green)
-                        Text("Skopiowane do schowka — możesz też wkleić ręcznie")
-                            .font(WZFont.ui(12)).foregroundStyle(t.muted)
+                        Text("W schowku — gotowe do wklejenia")
+                            .font(WZFont.mono(11.5)).foregroundStyle(t.green)
                     }.padding(.top, 12)
                 }
 
                 Spacer()
 
-                // Animated swipe-right hint sitting over a faux home indicator.
-                VStack(spacing: 16) {
-                    HStack(spacing: 8) {
-                        Image(systemName: "chevron.right").opacity(0.4)
-                        Image(systemName: "chevron.right").opacity(0.7)
-                        Image(systemName: "chevron.right")
-                    }
-                    .font(.system(size: 17, weight: .semibold))
-                    .foregroundStyle(t.accentLite)
-                    .offset(x: arrowShift ? 14 : -8)
-
-                    Capsule().fill(t.text.opacity(0.55)).frame(width: 140, height: 5)
+                // Last-resort hint: the (flaky) bottom-bar swipe, over a faux home indicator.
+                VStack(spacing: 12) {
+                    Text("albo przesuń w prawo po dolnym pasku ↓")
+                        .font(WZFont.ui(11.5)).foregroundStyle(t.faint)
+                    Capsule().fill(t.text.opacity(0.5)).frame(width: 140, height: 5)
+                        .offset(x: nudge ? 10 : -6)
                 }
                 .padding(.bottom, 8)
 
@@ -203,9 +211,7 @@ struct KeyboardReturnView: View {
             }
         }
         .onAppear {
-            withAnimation(.easeInOut(duration: 0.85).repeatForever(autoreverses: true)) {
-                arrowShift = true
-            }
+            withAnimation(.easeInOut(duration: 0.85).repeatForever(autoreverses: true)) { nudge = true }
         }
     }
 }
