@@ -258,37 +258,20 @@ struct GhostShape: Shape {
     }
 }
 
+// The brand mascot — the exact concept ghost (smiling, eyes, waving arm), bundled as
+// transparent imagesets rendered from `mobile/wz-core.jsx`'s WGhost SVG. Two variants:
+// the default violet body, and a white body for use on the accent gradient.
 struct WGhost: View {
-    @Environment(\.wz) private var t
     var size: CGFloat = 26
-    /// Override the body color (e.g. white on a gradient chip). Defaults to theme accent.
+    /// When set (e.g. on a gradient chip) the white-bodied ghost is used.
     var tint: Color? = nil
 
-    private var bodyColor: Color { tint ?? t.accentLite }
-    private var eyeColor: Color {
-        // Punch eyes out dark against a light body, light against a dark body.
-        (tint != nil) ? t.accent : (t.dark ? Color.hex(0x1a1530) : .white)
-    }
-
     var body: some View {
-        GhostShape()
-            .fill(bodyColor)
+        Image(tint != nil ? "WZGhostWhite" : "WZGhostViolet")
+            .resizable()
+            .interpolation(.high)
+            .aspectRatio(contentMode: .fit)
             .frame(width: size, height: size)
-            .overlay {
-                // Face: two eyes + a blush, sized relative to the ghost.
-                let eye = size * 0.085
-                HStack(spacing: size * 0.16) {
-                    ForEach(0..<2, id: \.self) { _ in
-                        Capsule().fill(eyeColor)
-                            .frame(width: eye, height: eye * 1.45)
-                    }
-                }
-                .offset(y: -size * 0.07)
-                .overlay(alignment: .bottom) {
-                    Capsule().fill(t.accent.opacity(0.45))
-                        .frame(width: size * 0.10, height: size * 0.045)
-                        .offset(y: -size * 0.30)
-                }
-            }
+            .accessibilityHidden(true)
     }
 }
