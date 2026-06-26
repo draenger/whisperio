@@ -82,6 +82,10 @@ struct SettingsView: View {
                         }
 
                         SettGroup(title: "Transcription") {
+                            SettRow(icon: "mic", label: "Live transcription",
+                                    sub: "See text as you speak · on-device, free") {
+                                WToggle(on: boolBinding(\.liveTranscriptionEnabled))
+                            }
                             SettRow(icon: "spark", label: "Cleanup",
                                     sub: "Tidy punctuation, casing & spacing") {
                                 WToggle(on: boolBinding(\.cleanupEnabled))
