@@ -25,11 +25,13 @@ final class LiveDictation: ObservableObject, @unchecked Sendable {
     private var fileURL: URL?
     private var startedAt: Date?
 
-    /// True when live, private, on-device dictation is possible for this language — the
-    /// gate RecordingView uses to decide between the live path and file-then-transcribe.
-    static func isSupported(language: String) -> Bool {
+    /// True when live dictation is possible for this language — the gate RecordingView uses
+    /// to decide between the live path and file-then-transcribe. In on-device mode it also
+    /// requires local recognition support; when Apple online is allowed, availability alone
+    /// is enough (Apple streams partials from its servers too).
+    static func isSupported(language: String, requireOnDevice: Bool) -> Bool {
         guard let r = SFSpeechRecognizer(locale: localeFor(language)), r.isAvailable else { return false }
-        return r.supportsOnDeviceRecognition
+        return requireOnDevice ? r.supportsOnDeviceRecognition : true
     }
 
     private static func localeFor(_ language: String) -> Locale {
@@ -37,9 +39,12 @@ final class LiveDictation: ObservableObject, @unchecked Sendable {
     }
 
     /// Begin streaming dictation. `transcript` then updates live until `finish()`/`cancel()`.
-    func start(language: String, vocabulary: [String]) throws {
+    func start(language: String, vocabulary: [String], requireOnDevice: Bool) throws {
         let recognizer = SFSpeechRecognizer(locale: Self.localeFor(language))
-        guard let recognizer, recognizer.isAvailable, recognizer.supportsOnDeviceRecognition else {
+        guard let recognizer, recognizer.isAvailable else {
+            throw err("Dictation isn't available for \(Self.localeFor(language).identifier).")
+        }
+        if requireOnDevice && !recognizer.supportsOnDeviceRecognition {
             throw err("On-device dictation isn't available for \(Self.localeFor(language).identifier).")
         }
         self.recognizer = recognizer
@@ -50,7 +55,7 @@ final class LiveDictation: ObservableObject, @unchecked Sendable {
 
         let request = SFSpeechAudioBufferRecognitionRequest()
         request.shouldReportPartialResults = true
-        request.requiresOnDeviceRecognition = true       // keep the "audio never leaves" promise
+        request.requiresOnDeviceRecognition = requireOnDevice   // on = "audio never leaves"
         if !vocabulary.isEmpty { request.contextualStrings = vocabulary }
         self.request = request
 

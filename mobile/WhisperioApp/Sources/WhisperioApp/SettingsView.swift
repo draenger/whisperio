@@ -86,6 +86,10 @@ struct SettingsView: View {
                                     sub: "See text as you speak · on-device, free") {
                                 WToggle(on: boolBinding(\.liveTranscriptionEnabled))
                             }
+                            SettRow(icon: "globe", label: "Apple online speech",
+                                    sub: "Use Apple’s servers when on-device isn’t available · audio leaves the device") {
+                                WToggle(on: boolBinding(\.appleAllowOnline))
+                            }
                             SettRow(icon: "spark", label: "Cleanup",
                                     sub: "Tidy punctuation, casing & spacing") {
                                 WToggle(on: boolBinding(\.cleanupEnabled))
