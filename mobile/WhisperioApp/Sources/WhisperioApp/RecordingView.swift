@@ -18,11 +18,13 @@ struct RecordingView: View {
     var onCancel: () -> Void
     var onDone: (Recording) -> Void
 
-    // Live partials are possible only with the on-device engine; gated by the user setting.
+    // Live partials run on the Apple Speech engine; gated by the user setting. On-device is
+    // required unless the user allowed Apple online recognition.
     private var useLive: Bool {
         settings.settings.liveTranscriptionEnabled
             && (settings.settings.providerChain.first ?? .onDevice) == .onDevice
-            && LiveDictation.isSupported(language: settings.settings.language)
+            && LiveDictation.isSupported(language: settings.settings.language,
+                                         requireOnDevice: !settings.settings.appleAllowOnline)
     }
 
     @State private var phase: Phase = .starting
@@ -151,7 +153,9 @@ struct RecordingView: View {
         startedLive = useLive
         do {
             if startedLive {
-                try live.start(language: settings.settings.language, vocabulary: settings.settings.vocabularyTerms)
+                try live.start(language: settings.settings.language,
+                               vocabulary: settings.settings.vocabularyTerms,
+                               requireOnDevice: !settings.settings.appleAllowOnline)
             } else {
                 try recorder.start()
             }

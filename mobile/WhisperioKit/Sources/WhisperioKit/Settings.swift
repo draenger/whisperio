@@ -25,6 +25,10 @@ public struct WhisperioSettings: Codable, Sendable, Equatable {
     /// (and free) — when off, or when a cloud engine is primary, dictation transcribes once
     /// after you stop.
     public var liveTranscriptionEnabled: Bool
+    /// Let the Apple Speech engine fall back to Apple's online recognition when on-device
+    /// isn't available for the language/device. Off by default — keeps the "audio never
+    /// leaves the device" guarantee; when on, audio may be sent to Apple so STT still works.
+    public var appleAllowOnline: Bool
 
     /// Explicit, persisted consent that audio may leave the device for a cloud provider.
     /// On-device (Apple Speech) never needs this; cloud providers stay disabled until granted.
@@ -43,6 +47,7 @@ public struct WhisperioSettings: Codable, Sendable, Equatable {
         fallbackEnabled: Bool = false,
         saveRecordings: Bool = true,
         liveTranscriptionEnabled: Bool = true,
+        appleAllowOnline: Bool = false,
         cloudConsentGranted: Bool = false
     ) {
         self.providerChain = providerChain
@@ -57,6 +62,7 @@ public struct WhisperioSettings: Codable, Sendable, Equatable {
         self.fallbackEnabled = fallbackEnabled
         self.saveRecordings = saveRecordings
         self.liveTranscriptionEnabled = liveTranscriptionEnabled
+        self.appleAllowOnline = appleAllowOnline
         self.cloudConsentGranted = cloudConsentGranted
     }
 
@@ -77,6 +83,7 @@ public struct WhisperioSettings: Codable, Sendable, Equatable {
         fallbackEnabled = try c.decodeIfPresent(Bool.self, forKey: .fallbackEnabled) ?? d.fallbackEnabled
         saveRecordings = try c.decodeIfPresent(Bool.self, forKey: .saveRecordings) ?? d.saveRecordings
         liveTranscriptionEnabled = try c.decodeIfPresent(Bool.self, forKey: .liveTranscriptionEnabled) ?? d.liveTranscriptionEnabled
+        appleAllowOnline = try c.decodeIfPresent(Bool.self, forKey: .appleAllowOnline) ?? d.appleAllowOnline
         cloudConsentGranted = try c.decodeIfPresent(Bool.self, forKey: .cloudConsentGranted) ?? d.cloudConsentGranted
     }
 

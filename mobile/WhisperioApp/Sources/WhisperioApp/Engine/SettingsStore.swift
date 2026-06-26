@@ -54,7 +54,8 @@ final class SettingsStore: ObservableObject {
     private func provider(for id: ProviderID, _ s: WhisperioSettings) -> any TranscriptionProvider {
         switch id {
         case .onDevice:
-            return AppleSpeechProvider(language: s.language, vocabulary: s.vocabularyTerms)
+            return AppleSpeechProvider(language: s.language, vocabulary: s.vocabularyTerms,
+                                       requireOnDevice: !s.appleAllowOnline)
         case .openAI:
             return OpenAIProvider(apiKey: s.openAIKey, baseURL: s.openAIBaseURL,
                                   model: s.whisperModel, language: s.language,
