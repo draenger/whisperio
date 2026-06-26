@@ -12,15 +12,24 @@ struct RecordingView: View {
     @EnvironmentObject private var settings: SettingsStore
     @EnvironmentObject private var recordings: RecordingsStore
     @StateObject private var recorder = AudioRecorder()
+    @StateObject private var live = LiveDictation()
 
     var fromKeyboard: Bool = false
     var onCancel: () -> Void
     var onDone: (Recording) -> Void
 
+    // Live partials are possible only with the on-device engine; gated by the user setting.
+    private var useLive: Bool {
+        settings.settings.liveTranscriptionEnabled
+            && (settings.settings.providerChain.first ?? .onDevice) == .onDevice
+            && LiveDictation.isSupported(language: settings.settings.language)
+    }
+
     @State private var phase: Phase = .starting
     @State private var secs = 0
     @State private var errorMsg = ""
     @State private var done = false   // guards against stop firing after cancel/stop
+    @State private var startedLive = false   // which path begin() actually took
 
     private enum Phase { case starting, listening, processing, error }
     private let tick = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
@@ -57,11 +66,12 @@ struct RecordingView: View {
 
                 VStack(alignment: .leading, spacing: 14) {
                     SectionLabel(text: statusLabel)
-                    Text(phase == .error ? errorMsg : hint)
+                    Text(mainText)
                         .font(WZFont.display(23, .medium))
-                        .foregroundStyle(phase == .error ? t.red : t.muted)
+                        .foregroundStyle(phase == .error ? t.red : (showingLive ? t.text : t.muted))
                         .lineSpacing(6).frame(minHeight: 140, alignment: .topLeading)
                         .frame(maxWidth: .infinity, alignment: .leading)
+                        .animation(.easeOut(duration: 0.15), value: live.transcript)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
                 .padding(.horizontal, 24)
@@ -113,6 +123,15 @@ struct RecordingView: View {
         }
     }
 
+    // While live dictation is running we render the growing transcript itself; before the
+    // first words (or on the file path) we fall back to the hint.
+    private var showingLive: Bool { startedLive && phase == .listening && !live.transcript.isEmpty }
+    private var mainText: String {
+        if phase == .error { return errorMsg }
+        if startedLive && phase == .listening { return live.transcript.isEmpty ? hint : live.transcript }
+        return hint
+    }
+
     private func circleButton(icon: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             WIcon(icon, size: 22, weight: .regular).foregroundStyle(t.muted)
@@ -129,16 +148,46 @@ struct RecordingView: View {
             errorMsg = "Microphone access denied. Enable it in Settings → Whisperio → Microphone."
             return
         }
-        do { try recorder.start(); phase = .listening }
-        catch { phase = .error; errorMsg = error.localizedDescription }
+        startedLive = useLive
+        do {
+            if startedLive {
+                try live.start(language: settings.settings.language, vocabulary: settings.settings.vocabularyTerms)
+            } else {
+                try recorder.start()
+            }
+            phase = .listening
+        } catch {
+            phase = .error; errorMsg = error.localizedDescription
+        }
     }
 
     private func stop() {
         guard phase == .listening, !done else { return }
         done = true
         phase = .processing
-        let clip = recorder.stop()
-        Task { await transcribe(clip) }
+        if startedLive {
+            let (text, clip) = live.finish()
+            Task { await finalizeLive(text, clip) }
+        } else {
+            let clip = recorder.stop()
+            Task { await transcribe(clip) }
+        }
+    }
+
+    // Finalize the on-device live path: the streamed transcript IS the result (no second pass).
+    private func finalizeLive(_ raw: String, _ clip: AudioClip?) async {
+        let text = settings.cleanup(raw).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else {
+            phase = .error; errorMsg = "Nothing was transcribed — try again and speak clearly."; return
+        }
+        let rec = Recording(filename: clip?.filename ?? "", duration: clip?.duration ?? 0,
+                            status: .completed, provider: .onDevice, transcription: text)
+        if settings.settings.saveRecordings, clip != nil { recordings.add(rec) }
+#if canImport(UIKit)
+        UIPasteboard.general.string = text
+#endif
+        if fromKeyboard { SharedStore.setPendingTranscript(text) }
+        onDone(rec)
     }
 
     private func transcribe(_ clip: AudioClip?) async {
@@ -172,7 +221,7 @@ struct RecordingView: View {
 
     private func cancel() {
         done = true
-        recorder.cancel()
+        if startedLive { live.cancel() } else { recorder.cancel() }
         onCancel()
     }
 }

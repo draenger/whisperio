@@ -21,6 +21,10 @@ public struct WhisperioSettings: Codable, Sendable, Equatable {
     public var cleanupEnabled: Bool      // tidy punctuation/casing/spacing after transcription
     public var fallbackEnabled: Bool     // try the other configured engines if the primary fails
     public var saveRecordings: Bool
+    /// Stream on-device partial results so text appears live as you speak. On-device only
+    /// (and free) — when off, or when a cloud engine is primary, dictation transcribes once
+    /// after you stop.
+    public var liveTranscriptionEnabled: Bool
 
     /// Explicit, persisted consent that audio may leave the device for a cloud provider.
     /// On-device (Apple Speech) never needs this; cloud providers stay disabled until granted.
@@ -38,6 +42,7 @@ public struct WhisperioSettings: Codable, Sendable, Equatable {
         cleanupEnabled: Bool = false,
         fallbackEnabled: Bool = false,
         saveRecordings: Bool = true,
+        liveTranscriptionEnabled: Bool = true,
         cloudConsentGranted: Bool = false
     ) {
         self.providerChain = providerChain
@@ -51,6 +56,7 @@ public struct WhisperioSettings: Codable, Sendable, Equatable {
         self.cleanupEnabled = cleanupEnabled
         self.fallbackEnabled = fallbackEnabled
         self.saveRecordings = saveRecordings
+        self.liveTranscriptionEnabled = liveTranscriptionEnabled
         self.cloudConsentGranted = cloudConsentGranted
     }
 
@@ -70,6 +76,7 @@ public struct WhisperioSettings: Codable, Sendable, Equatable {
         cleanupEnabled = try c.decodeIfPresent(Bool.self, forKey: .cleanupEnabled) ?? d.cleanupEnabled
         fallbackEnabled = try c.decodeIfPresent(Bool.self, forKey: .fallbackEnabled) ?? d.fallbackEnabled
         saveRecordings = try c.decodeIfPresent(Bool.self, forKey: .saveRecordings) ?? d.saveRecordings
+        liveTranscriptionEnabled = try c.decodeIfPresent(Bool.self, forKey: .liveTranscriptionEnabled) ?? d.liveTranscriptionEnabled
         cloudConsentGranted = try c.decodeIfPresent(Bool.self, forKey: .cloudConsentGranted) ?? d.cloudConsentGranted
     }
 
