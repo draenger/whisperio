@@ -361,10 +361,15 @@ describe('localServer', () => {
     beforeEach(() => {
       setPlatform('win32')
       mockExistsSync.mockReturnValue(true)
-      // createWriteStream returns a fake stream
+      // createWriteStream returns a fake stream (write returns true so the
+      // backpressure pause/resume path is not exercised; on/once/destroy are
+      // present because the implementation attaches an 'error' listener).
       mockCreateWriteStream.mockImplementation(() => ({
-        write: vi.fn(),
-        end: vi.fn((cb?: () => void) => cb && cb())
+        write: vi.fn(() => true),
+        end: vi.fn((cb?: () => void) => cb && cb()),
+        on: vi.fn(),
+        once: vi.fn(),
+        destroy: vi.fn()
       }))
       // powershell extract execFile calls its callback with no error
       mockExecFile.mockImplementation((cmd: string, _args: unknown[], cb?: (err: Error | null) => void) => {
