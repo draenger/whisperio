@@ -51,8 +51,13 @@ export function getErrorMessage(category: ErrorCategory, fallback?: string): str
 export function parseApiError(error: Error): { statusCode: number | null, responseBody: string } {
   const message = error.message || ''
 
-  // Match patterns like "OpenAI API error 401: {...}" or "ElevenLabs API error 403: {...}"
-  const statusMatch = message.match(/API error (\d+):\s*(.*)/)
+  // Match patterns like "OpenAI API error 401", "OpenAI API error 401: {...}"
+  // or "ElevenLabs API error 403: {...}". The colon + body is OPTIONAL: the
+  // privacy hardening in transcribe.ts now throws bodiless messages
+  // ("OpenAI API error 401") to keep raw provider responses out of the error,
+  // so a status-only message must still parse — otherwise every HTTP failure
+  // (401/402/429) was miscategorized as UNKNOWN.
+  const statusMatch = message.match(/API error (\d+)(?::\s*(.*))?/)
   if (statusMatch) {
     return {
       statusCode: parseInt(statusMatch[1], 10),

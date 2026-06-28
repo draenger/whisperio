@@ -10,11 +10,13 @@ vi.mock('electron', () => ({
 const mockExistsSync = vi.fn()
 const mockReadFileSync = vi.fn()
 const mockWriteFileSync = vi.fn()
+const mockRenameSync = vi.fn()
 
 vi.mock('fs', () => ({
   existsSync: (...args: unknown[]) => mockExistsSync(...args),
   readFileSync: (...args: unknown[]) => mockReadFileSync(...args),
-  writeFileSync: (...args: unknown[]) => mockWriteFileSync(...args)
+  writeFileSync: (...args: unknown[]) => mockWriteFileSync(...args),
+  renameSync: (...args: unknown[]) => mockRenameSync(...args)
 }))
 
 import { loadSettings, saveSettings, getSetting } from '../src/main/settingsManager'
@@ -84,11 +86,15 @@ describe('settingsManager', () => {
         openaiApiKey: 'sk-old',
         transcriptionPrompt: 'New prompt'
       })
-      expect(mockWriteFileSync).toHaveBeenCalledWith(
-        SETTINGS_PATH,
-        JSON.stringify(result, null, 2),
-        'utf-8'
-      )
+      // Atomic write: content is written to a temp file then renamed over the
+      // real settings.json so a crash mid-write can't corrupt it.
+      expect(mockWriteFileSync).toHaveBeenCalledTimes(1)
+      const [tmpPath, content, enc] = mockWriteFileSync.mock.calls[0]
+      expect(String(tmpPath).startsWith(`${SETTINGS_PATH}.`)).toBe(true)
+      expect(String(tmpPath).endsWith('.tmp')).toBe(true)
+      expect(content).toBe(JSON.stringify(result, null, 2))
+      expect(enc).toBe('utf-8')
+      expect(mockRenameSync).toHaveBeenCalledWith(tmpPath, SETTINGS_PATH)
     })
   })
 

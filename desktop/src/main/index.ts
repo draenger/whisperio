@@ -66,31 +66,78 @@ async function reprocessRecording(id: string) {
   }
 }
 
+// Whisperio only ever loads its own bundled renderer HTML: a file:// URL in a
+// packaged build, or the Vite dev-server URL (ELECTRON_RENDERER_URL) in dev.
+// Anything else (remote http(s), an injected iframe, an OAuth redirect) is
+// untrusted and must NOT silently receive microphone/device permissions.
+function isInternalUrl(url: string | undefined | null): boolean {
+  if (!url) return false
+  if (url.startsWith('file://')) return true
+  const devUrl = process.env['ELECTRON_RENDERER_URL']
+  if (devUrl && url.startsWith(devUrl)) return true
+  return false
+}
+
 app.whenReady().then(() => {
-  // Grant media (microphone) permissions for the overlay window
-  session.defaultSession.setPermissionRequestHandler((_webContents, permission, callback) => {
-    if (permission === 'media') {
+  // Grant media (microphone) permission ONLY to our own renderer windows.
+  // Fail closed for any other origin so a future remote/iframe navigation can't
+  // silently obtain mic access.
+  session.defaultSession.setPermissionRequestHandler((webContents, permission, callback) => {
+    if (permission === 'media' && isInternalUrl(webContents?.getURL())) {
       callback(true)
     } else {
       callback(false)
     }
   })
 
-  session.defaultSession.setPermissionCheckHandler((_webContents, permission) => {
-    return permission === 'media'
+  session.defaultSession.setPermissionCheckHandler((webContents, permission, requestingOrigin) => {
+    if (permission !== 'media') return false
+    // Prefer the live webContents URL; fall back to the requesting origin.
+    const url = webContents?.getURL() || requestingOrigin
+    return isInternalUrl(url)
   })
 
-  session.defaultSession.setDevicePermissionHandler(() => true)
+  // The app uses no WebHID/WebSerial/WebUSB — deny all device permissions
+  // rather than the previous fail-open `() => true`.
+  session.defaultSession.setDevicePermissionHandler(() => false)
+
+  // Block any attempt to navigate a window to an external origin, or to open a
+  // new window — defence in depth so untrusted content can never gain a
+  // foothold (and thus never reach the permission grants above).
+  app.on('web-contents-created', (_event, contents) => {
+    contents.on('will-navigate', (event, navigationUrl) => {
+      if (!isInternalUrl(navigationUrl)) {
+        event.preventDefault()
+        console.warn(`[Whisperio] Blocked navigation to external URL: ${navigationUrl}`)
+      }
+    })
+    contents.setWindowOpenHandler(({ url }) => {
+      console.warn(`[Whisperio] Blocked window.open to: ${url}`)
+      return { action: 'deny' }
+    })
+  })
 
   // Allow getDisplayMedia to capture system audio without a picker dialog
   session.defaultSession.setDisplayMediaRequestHandler((_request, callback) => {
-    desktopCapturer.getSources({ types: ['screen'] }).then((sources) => {
-      if (sources.length > 0) {
-        callback({ video: sources[0], audio: 'loopback' })
-      } else {
+    desktopCapturer
+      .getSources({ types: ['screen'] })
+      .then((sources) => {
+        if (sources.length > 0) {
+          callback({ video: sources[0], audio: 'loopback' })
+        } else {
+          callback({})
+        }
+      })
+      .catch((err) => {
+        // getSources can reject (Wayland, denied screen-recording permission on
+        // macOS, transient failures). Without this catch the renderer's
+        // getDisplayMedia promise never settles and the overlay hangs in
+        // "recording" until the 60s safety timer fires, plus an
+        // UnhandledPromiseRejection is logged. Hand back an empty response so
+        // the dictation state machine fails fast with a clear error instead.
+        console.error('[Whisperio] desktopCapturer.getSources failed:', err)
         callback({})
-      }
-    })
+      })
   })
 
   // Apply auto-launch setting (uses Windows Registry HKCU\...\Run)
