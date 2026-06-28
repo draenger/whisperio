@@ -110,7 +110,7 @@ describe('transcribeAudio', () => {
     mockNetRequest.mockReturnValue(mockReq)
 
     await expect(transcribeAudio(Buffer.from('audio'), 'test.webm')).rejects.toThrow(
-      'Failed to parse response'
+      'Failed to parse transcription response'
     )
   })
 
@@ -194,7 +194,7 @@ describe('transcribeAudio', () => {
     mockNetRequest.mockReturnValue(mockReq)
 
     await expect(transcribeAudio(Buffer.from('audio'), 'test.webm')).rejects.toThrow(
-      'Failed to parse response'
+      'Failed to parse transcription response'
     )
   })
 

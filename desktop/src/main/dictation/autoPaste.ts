@@ -1,5 +1,16 @@
-import { clipboard, systemPreferences, Notification } from 'electron'
+import { clipboard, systemPreferences, Notification, app } from 'electron'
 import { execFile } from 'child_process'
+
+// True only in unpackaged (development) builds; gates logging of dictated
+// content so user speech never reaches production stdout. Guarded so it
+// degrades to `false` (no content logging) if `app` is unavailable.
+function isDev(): boolean {
+  try {
+    return !app.isPackaged
+  } catch {
+    return false
+  }
+}
 
 function isWindows(): boolean {
   return process.platform === 'win32'
@@ -72,7 +83,12 @@ export function restoreTargetWindow(): void {
 }
 
 export async function autoPaste(text: string): Promise<void> {
-  console.log(`[Whisperio] autoPaste: "${text.substring(0, 80)}..."`)
+  // Never log dictated content in production (privacy); log length only.
+  if (isDev()) {
+    console.log(`[Whisperio] autoPaste: "${text.substring(0, 80)}..."`)
+  } else {
+    console.log(`[Whisperio] autoPaste: ${text.length} chars`)
+  }
   clipboard.writeText(text)
 
   // macOS: without Accessibility permission the ⌘V keystroke silently no-ops.

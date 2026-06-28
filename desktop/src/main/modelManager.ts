@@ -1,6 +1,6 @@
 import { app, net } from 'electron'
 import { existsSync, mkdirSync, unlinkSync, readdirSync, statSync, createWriteStream } from 'fs'
-import { join } from 'path'
+import { join, basename, resolve, sep } from 'path'
 
 export interface ModelInfo {
   id: string
@@ -94,6 +94,25 @@ function getModelsDir(): string {
     mkdirSync(dir, { recursive: true })
   }
   return dir
+}
+
+/**
+ * Resolve a renderer-supplied model filename/id to an absolute path that is
+ * provably confined to the models directory. Rejects anything that is not a
+ * plain `.bin` basename (no separators, no `..`) to prevent path traversal.
+ * Accepts an optional `custom:` id prefix used by the renderer.
+ */
+function resolveModelFile(name: string): string {
+  const filename = name.startsWith('custom:') ? name.slice('custom:'.length) : name
+  if (!filename || filename !== basename(filename) || !/^[\w.-]+\.bin$/.test(filename)) {
+    throw new Error(`Invalid model filename: ${name}`)
+  }
+  const dir = resolve(getModelsDir())
+  const filepath = resolve(dir, filename)
+  if (filepath !== join(dir, filename) || !(filepath === dir || filepath.startsWith(dir + sep))) {
+    throw new Error(`Model path escapes models directory: ${name}`)
+  }
+  return filepath
 }
 
 export function getAvailableModels(): ModelInfo[] {
@@ -234,12 +253,39 @@ function handleDownloadResponse(
     ? parseInt(Array.isArray(contentLength) ? contentLength[0] : contentLength, 10)
     : 0
 
+  // Electron's IncomingMessage is a Node Readable at runtime but its typings
+  // don't surface pause/resume; cast for backpressure control.
+  const readable = response as unknown as NodeJS.ReadableStream
   const writeStream = createWriteStream(tempPath)
   let downloadedBytes = 0
   let lastProgressTime = 0
+  let failed = false
+
+  // Tear down on any failure (disk full / unwritable path / network error).
+  // Without this, a WriteStream 'error' has no listener and crashes the whole
+  // Electron main process, killing the tray app mid-download.
+  const fail = (err: unknown): void => {
+    if (failed) return
+    failed = true
+    writeStream.destroy()
+    activeDownloads.delete(modelId)
+    try { unlinkSync(tempPath) } catch { /* ignore */ }
+    reject(err instanceof Error ? err : new Error(String(err)))
+  }
+
+  writeStream.on('error', fail)
 
   response.on('data', (chunk: Buffer) => {
-    writeStream.write(chunk)
+    if (failed) return
+    // Honor backpressure: if the OS write buffer is full, pause the network
+    // stream until it drains so multi-GB models don't balloon RSS / OOM.
+    const ok = writeStream.write(chunk)
+    if (!ok) {
+      readable.pause()
+      writeStream.once('drain', () => {
+        if (!failed) readable.resume()
+      })
+    }
     downloadedBytes += chunk.length
 
     const now = Date.now()
@@ -251,7 +297,10 @@ function handleDownloadResponse(
   })
 
   response.on('end', () => {
+    if (failed) return
+    // Resolve only after the bytes are actually flushed to disk (finish).
     writeStream.end(() => {
+      if (failed) return
       activeDownloads.delete(modelId)
       try {
         if (existsSync(filepath)) unlinkSync(filepath)
@@ -260,17 +309,12 @@ function handleDownloadResponse(
         progressCallback?.({ modelId, percent: 100, downloadedBytes, totalBytes })
         resolve(filepath)
       } catch (err) {
-        reject(err instanceof Error ? err : new Error(String(err)))
+        fail(err)
       }
     })
   })
 
-  response.on('error', (err: Error) => {
-    writeStream.end()
-    activeDownloads.delete(modelId)
-    try { unlinkSync(tempPath) } catch { /* ignore */ }
-    reject(err)
-  })
+  response.on('error', fail)
 }
 
 export function cancelDownload(modelId: string): boolean {
@@ -286,8 +330,14 @@ export function cancelDownload(modelId: string): boolean {
 export function deleteModel(modelId: string): boolean {
   const model = MODELS.find((m) => m.id === modelId)
   if (!model) {
-    // Try deleting as custom model filename
-    const filepath = join(getModelsDir(), modelId)
+    // Try deleting as a custom model filename — validate/confine the path
+    // first so a malicious renderer can't delete arbitrary files via `..`.
+    let filepath: string
+    try {
+      filepath = resolveModelFile(modelId)
+    } catch {
+      return false
+    }
     try {
       if (existsSync(filepath)) {
         unlinkSync(filepath)
@@ -307,7 +357,24 @@ export function deleteModel(modelId: string): boolean {
 }
 
 export function downloadCustomModel(url: string, filename: string): Promise<string> {
-  const filepath = join(getModelsDir(), filename)
+  // Validate the renderer-supplied filename and confine it to the models dir
+  // before building any filesystem path (prevents path traversal).
+  let filepath: string
+  try {
+    filepath = resolveModelFile(filename)
+  } catch (err) {
+    return Promise.reject(err instanceof Error ? err : new Error(String(err)))
+  }
+  // Only allow http(s) downloads — reject file:, etc.
+  try {
+    const proto = new URL(url).protocol
+    if (proto !== 'http:' && proto !== 'https:') {
+      return Promise.reject(new Error(`Unsupported download URL protocol: ${proto}`))
+    }
+  } catch {
+    return Promise.reject(new Error('Invalid download URL'))
+  }
+
   const tempPath = filepath + '.downloading'
   const customId = `custom:${filename}`
 

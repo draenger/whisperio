@@ -49,9 +49,9 @@ describe('recordingStore', () => {
   })
 
   describe('saveRecording', () => {
-    it('creates file on disk and adds to index', () => {
+    it('creates file on disk and adds to index', async () => {
       const audio = Buffer.from('fake-audio-data')
-      const entry = saveRecording(audio, { duration: 5, provider: 'openai' })
+      const entry = await saveRecording(audio, { duration: 5, provider: 'openai' })
 
       expect(entry.id).toMatch(/^rec-\d+-[a-z0-9]{4}$/)
       expect(entry.filename).toMatch(/^recording-\d{4}-\d{2}-\d{2}-\d{6}\.webm$/)
@@ -71,16 +71,16 @@ describe('recordingStore', () => {
   })
 
   describe('getRecordings', () => {
-    it('returns sorted list by timestamp descending', () => {
+    it('returns sorted list by timestamp descending', async () => {
       // Pin Date.now so the three recordings get distinct, increasing timestamps —
       // otherwise same-millisecond saves collide and the sort order is undefined (flaky).
       const nowSpy = vi.spyOn(Date, 'now')
       nowSpy.mockReturnValue(1_000)
-      const entry1 = saveRecording(Buffer.from('a'), { duration: 1, provider: 'openai' })
+      const entry1 = await saveRecording(Buffer.from('a'), { duration: 1, provider: 'openai' })
       nowSpy.mockReturnValue(2_000)
-      const entry2 = saveRecording(Buffer.from('b'), { duration: 2, provider: 'elevenlabs' })
+      const entry2 = await saveRecording(Buffer.from('b'), { duration: 2, provider: 'elevenlabs' })
       nowSpy.mockReturnValue(3_000)
-      const entry3 = saveRecording(Buffer.from('c'), { duration: 3, provider: 'openai' })
+      const entry3 = await saveRecording(Buffer.from('c'), { duration: 3, provider: 'openai' })
       nowSpy.mockRestore()
 
       const list = getRecordings()
@@ -97,8 +97,8 @@ describe('recordingStore', () => {
   })
 
   describe('getRecording', () => {
-    it('returns a single recording by id', () => {
-      const entry = saveRecording(Buffer.from('data'), { duration: 10, provider: 'openai' })
+    it('returns a single recording by id', async () => {
+      const entry = await saveRecording(Buffer.from('data'), { duration: 10, provider: 'openai' })
       const found = getRecording(entry.id)
       expect(found).not.toBeNull()
       expect(found!.id).toBe(entry.id)
@@ -110,10 +110,10 @@ describe('recordingStore', () => {
   })
 
   describe('updateRecording', () => {
-    it('merges updates into existing entry', () => {
-      const entry = saveRecording(Buffer.from('data'), { duration: 5, provider: 'openai' })
+    it('merges updates into existing entry', async () => {
+      const entry = await saveRecording(Buffer.from('data'), { duration: 5, provider: 'openai' })
 
-      const updated = updateRecording(entry.id, {
+      const updated = await updateRecording(entry.id, {
         status: 'completed',
         transcription: 'Hello world'
       })
@@ -130,34 +130,34 @@ describe('recordingStore', () => {
       expect(persisted!.transcription).toBe('Hello world')
     })
 
-    it('returns null for nonexistent id', () => {
-      expect(updateRecording('rec-nonexistent-0000', { status: 'failed' })).toBeNull()
+    it('returns null for nonexistent id', async () => {
+      expect(await updateRecording('rec-nonexistent-0000', { status: 'failed' })).toBeNull()
     })
   })
 
   describe('deleteRecording', () => {
-    it('removes file and index entry', () => {
-      const entry = saveRecording(Buffer.from('data'), { duration: 5, provider: 'openai' })
+    it('removes file and index entry', async () => {
+      const entry = await saveRecording(Buffer.from('data'), { duration: 5, provider: 'openai' })
       expect(existsSync(entry.filepath)).toBe(true)
 
-      const result = deleteRecording(entry.id)
+      const result = await deleteRecording(entry.id)
       expect(result).toBe(true)
       expect(existsSync(entry.filepath)).toBe(false)
       expect(getRecording(entry.id)).toBeNull()
       expect(getRecordings()).toHaveLength(0)
     })
 
-    it('returns false for nonexistent id', () => {
-      expect(deleteRecording('rec-nonexistent-0000')).toBe(false)
+    it('returns false for nonexistent id', async () => {
+      expect(await deleteRecording('rec-nonexistent-0000')).toBe(false)
     })
   })
 
   describe('deleteAllRecordings', () => {
-    it('clears everything', () => {
-      const entry1 = saveRecording(Buffer.from('a'), { duration: 1, provider: 'openai' })
-      const entry2 = saveRecording(Buffer.from('b'), { duration: 2, provider: 'openai' })
+    it('clears everything', async () => {
+      const entry1 = await saveRecording(Buffer.from('a'), { duration: 1, provider: 'openai' })
+      const entry2 = await saveRecording(Buffer.from('b'), { duration: 2, provider: 'openai' })
 
-      deleteAllRecordings()
+      await deleteAllRecordings()
 
       expect(existsSync(entry1.filepath)).toBe(false)
       expect(existsSync(entry2.filepath)).toBe(false)
@@ -166,16 +166,16 @@ describe('recordingStore', () => {
   })
 
   describe('deleteRecordingsByDate', () => {
-    it('filters correctly and only deletes recordings from specified date', () => {
-      const entry1 = saveRecording(Buffer.from('a'), { duration: 1, provider: 'openai' })
+    it('filters correctly and only deletes recordings from specified date', async () => {
+      const entry1 = await saveRecording(Buffer.from('a'), { duration: 1, provider: 'openai' })
 
       // Manually set timestamp to a different date
       const yesterday = new Date('2025-01-15T10:00:00Z').getTime()
-      updateRecording(entry1.id, { timestamp: yesterday })
+      await updateRecording(entry1.id, { timestamp: yesterday })
 
-      const entry2 = saveRecording(Buffer.from('b'), { duration: 2, provider: 'openai' })
+      const entry2 = await saveRecording(Buffer.from('b'), { duration: 2, provider: 'openai' })
 
-      deleteRecordingsByDate('2025-01-15')
+      await deleteRecordingsByDate('2025-01-15')
 
       const remaining = getRecordings()
       expect(remaining).toHaveLength(1)
@@ -184,9 +184,9 @@ describe('recordingStore', () => {
   })
 
   describe('getRecordingAudio', () => {
-    it('reads file back from disk', () => {
+    it('reads file back from disk', async () => {
       const audio = Buffer.from('test-audio-content-12345')
-      const entry = saveRecording(audio, { duration: 3, provider: 'openai' })
+      const entry = await saveRecording(audio, { duration: 3, provider: 'openai' })
 
       const retrieved = getRecordingAudio(entry.id)
       expect(retrieved).not.toBeNull()
@@ -231,14 +231,14 @@ describe('recordingStore', () => {
   })
 
   describe('ID generation format', () => {
-    it('generates IDs matching the expected pattern', () => {
-      const entry = saveRecording(Buffer.from('x'), { duration: 1, provider: 'openai' })
+    it('generates IDs matching the expected pattern', async () => {
+      const entry = await saveRecording(Buffer.from('x'), { duration: 1, provider: 'openai' })
       expect(entry.id).toMatch(/^rec-\d+-[a-z0-9]{4}$/)
     })
 
-    it('generates unique IDs', () => {
-      const entry1 = saveRecording(Buffer.from('a'), { duration: 1, provider: 'openai' })
-      const entry2 = saveRecording(Buffer.from('b'), { duration: 1, provider: 'openai' })
+    it('generates unique IDs', async () => {
+      const entry1 = await saveRecording(Buffer.from('a'), { duration: 1, provider: 'openai' })
+      const entry2 = await saveRecording(Buffer.from('b'), { duration: 1, provider: 'openai' })
       expect(entry1.id).not.toBe(entry2.id)
     })
   })
