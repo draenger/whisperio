@@ -24,3 +24,7 @@ mobile/**/build/
 .apex/*.lock
 .apex/dry-run-*.md
 .apex/*.tmp
+
+# test coverage artifacts (do not track)
+desktop/coverage/
+coverage/
