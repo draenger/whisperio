@@ -52,6 +52,10 @@ struct WZPhoneView: View {
             if let url = incomingURL { handle(url); incomingURL = nil }
         }
         .onChange(of: scenePhase) { _, phase in
+            // Drop any stale keyboard-handoff transcript on every transition so dictated text
+            // isn't retained in the shared container past its freshness window (a fresh one
+            // awaiting swipe-back is kept).
+            SharedStore.purgeStalePendingTranscript()
             if phase == .active { consumePending() }
             // Don't leave the app parked on the post-dictation return screen: once the
             // user leaves (backgrounds the app to go paste / swipe back), drop to home so

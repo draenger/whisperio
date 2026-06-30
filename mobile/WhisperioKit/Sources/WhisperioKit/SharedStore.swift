@@ -28,6 +28,10 @@ public enum SharedStore {
 
     // MARK: - Transcript handoff (app → keyboard)
 
+    /// How long a pending transcript is considered fresh. Past this it is treated as stale and
+    /// eagerly cleared, so dictated text is never retained in the shared container indefinitely.
+    public static let pendingTranscriptMaxAge: TimeInterval = 600
+
     /// Called by the app after a keyboard-initiated dictation finishes.
     public static func setPendingTranscript(_ text: String) {
         guard let d = defaults else { return }
@@ -37,20 +41,43 @@ public enum SharedStore {
 
     /// Called by the keyboard when it reappears; returns the transcript once, then clears it.
     /// `maxAge` guards against inserting a stale transcript from a much earlier session.
-    public static func consumePendingTranscript(maxAge: TimeInterval = 600) -> String? {
+    public static func consumePendingTranscript(maxAge: TimeInterval = pendingTranscriptMaxAge) -> String? {
         guard let d = defaults,
               let text = d.string(forKey: Key.pendingTranscript), !text.isEmpty else { return nil }
         let created = d.double(forKey: Key.pendingCreatedAt)
-        defer {
-            d.removeObject(forKey: Key.pendingTranscript)
-            d.removeObject(forKey: Key.pendingCreatedAt)
-        }
+        defer { clearPendingTranscript() }
         if created > 0, Date().timeIntervalSince1970 - created > maxAge { return nil }
         return text
     }
 
+    /// Unconditionally drop any pending transcript from the shared container.
+    public static func clearPendingTranscript() {
+        guard let d = defaults else { return }
+        d.removeObject(forKey: Key.pendingTranscript)
+        d.removeObject(forKey: Key.pendingCreatedAt)
+    }
+
+    /// Eagerly remove a pending transcript once it is older than `maxAge` (or carries no
+    /// timestamp). Safe to call on every app foreground/background — a *fresh* transcript that
+    /// is still awaiting the user's swipe back to the keyboard is preserved. This is what
+    /// bounds the on-disk lifetime instead of relying on a future `consume` that may never come.
+    public static func purgeStalePendingTranscript(maxAge: TimeInterval = pendingTranscriptMaxAge) {
+        guard let d = defaults, d.object(forKey: Key.pendingTranscript) != nil else { return }
+        let created = d.double(forKey: Key.pendingCreatedAt)
+        if created <= 0 || Date().timeIntervalSince1970 - created > maxAge {
+            clearPendingTranscript()
+        }
+    }
+
     public static var hasPendingTranscript: Bool {
-        (defaults?.string(forKey: Key.pendingTranscript)?.isEmpty == false)
+        guard let d = defaults,
+              let text = d.string(forKey: Key.pendingTranscript), !text.isEmpty else { return false }
+        let created = d.double(forKey: Key.pendingCreatedAt)
+        if created <= 0 || Date().timeIntervalSince1970 - created > pendingTranscriptMaxAge {
+            clearPendingTranscript()   // read-time TTL: a stale transcript is gone, not just hidden
+            return false
+        }
+        return true
     }
 
     // MARK: - Heartbeats (install / full-access detection)

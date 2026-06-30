@@ -16,17 +16,39 @@ final class SettingsStore: ObservableObject {
 
     init() {
         let d = UserDefaults.standard
+        var loaded = WhisperioSettings()
         if let data = d.data(forKey: Self.key),
            let s = try? JSONDecoder().decode(WhisperioSettings.self, from: data) {
-            settings = s
-        } else {
-            settings = WhisperioSettings()
+            loaded = s
         }
         didCompleteSetup = d.bool(forKey: Self.setupKey)
+
+        // API secrets live in the Keychain, not in the UserDefaults blob. Prefer the Keychain
+        // copy; fall back to any legacy plaintext key still embedded in the blob (pre-Keychain
+        // installs) so a stored key is never lost across the upgrade.
+        let legacyOpenAI = loaded.openAIKey
+        let legacyEleven = loaded.elevenLabsKey
+        loaded.openAIKey = Keychain.get(.openAIKey) ?? legacyOpenAI
+        loaded.elevenLabsKey = Keychain.get(.elevenLabsKey) ?? legacyEleven
+        settings = loaded
+
+        // Migrate + scrub: if the persisted blob carried a plaintext secret, move it into the
+        // Keychain and rewrite the blob without it. (Property observers don't fire in init,
+        // so call save() explicitly.)
+        if !legacyOpenAI.isEmpty || !legacyEleven.isEmpty {
+            save()
+        }
     }
 
     private func save() {
-        if let data = try? JSONEncoder().encode(settings) {
+        // Secrets go to the Keychain only; everything else is persisted to UserDefaults with
+        // the key fields blanked so no API secret is ever written in plaintext.
+        Keychain.set(settings.openAIKey, for: .openAIKey)
+        Keychain.set(settings.elevenLabsKey, for: .elevenLabsKey)
+        var sanitized = settings
+        sanitized.openAIKey = ""
+        sanitized.elevenLabsKey = ""
+        if let data = try? JSONEncoder().encode(sanitized) {
             UserDefaults.standard.set(data, forKey: Self.key)
         }
     }
