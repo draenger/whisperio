@@ -6,6 +6,10 @@ import WhisperioKit
 @MainActor
 final class RecordingsStore: ObservableObject {
     @Published private(set) var items: [Recording] = []
+    // Live, session-level category assignments keyed by the display id (DemoRecording.id).
+    // Categories are demo metadata over the recordings, so they live here rather than in the
+    // persisted WhisperioKit Recording — reassigning one in Detail updates Home immediately.
+    @Published private var categoryOverrides: [Int: String] = [:]
     private let fileURL: URL
 
     init() {
@@ -16,6 +20,19 @@ final class RecordingsStore: ObservableObject {
 
     func add(_ r: Recording) { items.insert(r, at: 0); save() }
     func delete(_ r: Recording) { items.removeAll { $0.id == r.id }; save() }
+
+    // MARK: - Categories (session state)
+
+    /// The category id currently assigned to a display recording — an explicit override if the
+    /// user reassigned it this session, otherwise the recording's own default.
+    func categoryId(for demo: DemoRecording) -> String {
+        categoryOverrides[demo.id] ?? demo.category
+    }
+
+    /// Reassign a recording's category live (reflected everywhere it's displayed).
+    func setCategory(_ id: String, for demo: DemoRecording) {
+        categoryOverrides[demo.id] = id
+    }
 
     private func load() {
         if let data = try? Data(contentsOf: fileURL),
@@ -39,15 +56,17 @@ extension DemoRecording {
         case .failed:    title = r.error.map { "Failed: \($0)" } ?? "Transcription failed"
         case .pending:   title = "Transcribing…"
         }
+        let demoId = abs(hash % 1_000_000_000)
         self.init(
-            id: abs(hash % 1_000_000_000),
+            id: demoId,
             title: title,
             src: "app",
             app: "Whisperio",
             dur: DemoRecording.formatDuration(r.duration),
             when: DemoRecording.relativeWhen(r.timestamp),
             words: (r.transcription ?? "").split(whereSeparator: { $0 == " " || $0 == "\n" }).count,
-            engine: r.provider == .onDevice ? "on-device" : "cloud"
+            engine: r.provider == .onDevice ? "on-device" : "cloud",
+            category: WZCategories.default(for: demoId)
         )
     }
 

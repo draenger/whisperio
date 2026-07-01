@@ -12,6 +12,8 @@ struct WZTheme {
     let gradient: LinearGradient
     let green, red, amber, cyan: Color
 
+    // The primary CTA gradient carries the desktop identity: teal → indigo, warmed with a
+    // touch of accent violet at the mid-stop so it reads as one family with the violet accent.
     static let darkTheme = WZTheme(
         dark: true,
         bg: .hex(0x0a0911), bg2: .hex(0x07060d), surface: .hex(0x15121f),
@@ -20,8 +22,11 @@ struct WZTheme {
         hair: Color(red: 167/255, green: 139/255, blue: 250/255).opacity(0.22),
         text: .hex(0xECEBF4), muted: .hex(0x9d9bb4), faint: .hex(0x6a6880),
         accent: .hex(0x8b5cf6), accentLite: .hex(0xa78bfa),
-        gradient: LinearGradient(colors: [.hex(0xa78bfa), .hex(0x6366f1)],
-                                 startPoint: .topLeading, endPoint: .bottomTrailing),
+        gradient: LinearGradient(stops: [
+            .init(color: .hex(0x2dd4bf), location: 0.0),
+            .init(color: .hex(0x7c8cf8), location: 0.52),
+            .init(color: .hex(0x6366f1), location: 1.0),
+        ], startPoint: .topLeading, endPoint: .bottomTrailing),
         green: .hex(0x34d399), red: .hex(0xf0556b), amber: .hex(0xfbbf24), cyan: .hex(0x2dd4bf)
     )
 
@@ -34,8 +39,11 @@ struct WZTheme {
         hair: Color(red: 124/255, green: 58/255, blue: 237/255).opacity(0.20),
         text: .hex(0x1b1830), muted: .hex(0x5b5870), faint: .hex(0x9b98ad),
         accent: .hex(0x7c3aed), accentLite: .hex(0x8b5cf6),
-        gradient: LinearGradient(colors: [.hex(0x8b5cf6), .hex(0x6366f1)],
-                                 startPoint: .topLeading, endPoint: .bottomTrailing),
+        gradient: LinearGradient(stops: [
+            .init(color: .hex(0x14b8a6), location: 0.0),
+            .init(color: .hex(0x6d78ea), location: 0.52),
+            .init(color: .hex(0x6366f1), location: 1.0),
+        ], startPoint: .topLeading, endPoint: .bottomTrailing),
         green: .hex(0x16a34a), red: .hex(0xdc2626), amber: .hex(0xd97706), cyan: .hex(0x0d9488)
     )
 
