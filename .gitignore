@@ -24,3 +24,6 @@ mobile/**/build/
 .apex/*.lock
 .apex/dry-run-*.md
 .apex/*.tmp
+
+# Claude Code workflow worktrees
+.claude/worktrees/
