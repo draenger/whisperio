@@ -120,7 +120,14 @@ struct GradButton: View {
             .frame(maxWidth: .infinity)
             .padding(.vertical, 13).padding(.horizontal, 20)
             .background(t.gradient, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-            .shadow(color: Color.hex(0x7c3aed).opacity(0.55), radius: 11, y: 8)
+            // A hair-thin inner highlight along the top gives the teal→indigo fill a lit,
+            // glassy edge; the glow leans indigo to sit under the CTA rather than shout.
+            .overlay(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .stroke(.white.opacity(0.22), lineWidth: 1)
+                    .blendMode(.overlay)
+            )
+            .shadow(color: Color.hex(0x6366f1).opacity(0.50), radius: 12, y: 8)
         }
         .buttonStyle(.plain)
     }
