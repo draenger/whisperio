@@ -13,6 +13,7 @@ struct SettingsView: View {
     var openKeyboardSetup: () -> Void = {}
 
     @State private var consentProvider: ProviderID?   // non-nil → consent sheet is up
+    @State private var showTriggerGuides = false      // presents the trigger onboarding hub
 
     private var engine: ProviderID { settings.settings.providerChain.first ?? .onDevice }
 
@@ -75,7 +76,10 @@ struct SettingsView: View {
                             .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(t.line, lineWidth: 1))
                         }
 
-                        SettGroup(title: "Keyboard") {
+                        SettGroup(title: "Dictate from anywhere") {
+                            SettRow(icon: "zap", label: "Set up dictation triggers",
+                                    sub: "Action Button, Back Tap, keyboard, widgets & more — step by step",
+                                    onTap: { showTriggerGuides = true })
                             SettRow(icon: "keyboard", label: "Whisperio keyboard",
                                     sub: "Dictate from any app — install & setup", last: true,
                                     onTap: openKeyboardSetup)
@@ -172,6 +176,11 @@ struct SettingsView: View {
                               onCancel: { consentProvider = nil })
                 .environment(\.wz, t)
                 .presentationDetents([.medium, .large])
+        }
+        .fullScreenCover(isPresented: $showTriggerGuides) {
+            TriggerGuidesView(onBack: { showTriggerGuides = false })
+                .environment(\.wz, t)
+                .preferredColorScheme(t.dark ? .dark : .light)
         }
     }
 
