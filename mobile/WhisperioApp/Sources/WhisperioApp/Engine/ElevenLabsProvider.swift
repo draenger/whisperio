@@ -27,30 +27,21 @@ struct ElevenLabsProvider: TranscriptionProvider {
         var req = URLRequest(url: url)
         req.httpMethod = "POST"
         req.setValue(apiKey, forHTTPHeaderField: "xi-api-key")
-        let boundary = "----whisperio-\(UUID().uuidString)"
-        req.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
 
-        var body = Data()
-        func field(_ name: String, _ value: String) {
-            body.appendString("--\(boundary)\r\n")
-            body.appendString("Content-Disposition: form-data; name=\"\(name)\"\r\n\r\n")
-            body.appendString("\(value)\r\n")
-        }
+        var body = MultipartBody()
+        req.setValue(body.contentType, forHTTPHeaderField: "Content-Type")
         let terms = cleanKeyterms
-        field("model_id", terms.isEmpty ? "scribe_v1" : "scribe_v2")
-        if !languageCode.isEmpty && languageCode != "auto" { field("language_code", languageCode) }
+        body.field("model_id", terms.isEmpty ? "scribe_v1" : "scribe_v2")
+        if !languageCode.isEmpty && languageCode != "auto" { body.field("language_code", languageCode) }
         if !terms.isEmpty, let data = try? JSONEncoder().encode(terms),
            let json = String(data: data, encoding: .utf8) {
-            field("keyterms", json)
+            body.field("keyterms", json)
         }
-        body.appendString("--\(boundary)\r\n")
-        body.appendString("Content-Disposition: form-data; name=\"file\"; filename=\"\(clip.filename)\"\r\n")
-        body.appendString("Content-Type: application/octet-stream\r\n\r\n")
-        body.append(clip.data)
-        body.appendString("\r\n--\(boundary)--\r\n")
-        req.httpBody = body
+        body.file(name: "file", filename: clip.filename,
+                  contentType: "application/octet-stream", data: clip.data)
+        req.httpBody = body.finalize()
 
-        let (data, resp) = try await URLSession.shared.data(for: req)
+        let (data, resp) = try await MultipartBody.uploadSession.data(for: req)
         guard let http = resp as? HTTPURLResponse else { throw Self.err("No response from ElevenLabs.") }
         guard (200..<300).contains(http.statusCode) else {
             throw Self.err("ElevenLabs error \(http.statusCode): \(String(data: data, encoding: .utf8) ?? "")")
