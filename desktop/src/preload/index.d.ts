@@ -7,11 +7,11 @@ export interface OverlayInfo {
 export interface DictationAPI {
   onActivate: (callback: () => void) => () => void
   onActivateOutput: (callback: () => void) => () => void
-  onDeactivate: (callback: () => void) => () => void
+  onDeactivate: (callback: (sessionId: number) => void) => () => void
   onCancel: (callback: () => void) => () => void
   onStateChanged: (callback: (state: string) => void) => () => void
   onOverlayInfo: (callback: (info: OverlayInfo) => void) => () => void
-  sendResult: (text: string) => Promise<void>
+  sendResult: (text: string, sessionId?: number) => Promise<void>
   transcribe: (audioData: ArrayBuffer, filename: string) => Promise<string>
   notifyRecordingStarted: () => void
 }

@@ -35,7 +35,7 @@ interface UseDictationReturn {
   isRecording: boolean
   startRecording: () => Promise<void>
   startOutputRecording: () => Promise<void>
-  stopAndTranscribe: () => Promise<void>
+  stopAndTranscribe: (sessionId?: number) => Promise<void>
   cancelRecording: () => void
 }
 
@@ -153,13 +153,16 @@ export function useDictation(): UseDictationReturn {
     }
   }, [])
 
-  const stopAndTranscribe = useCallback(async () => {
+  const stopAndTranscribe = useCallback(async (sessionId?: number) => {
     console.log('[Whisperio] stopAndTranscribe called')
+    // Hoisted so the catch can mark a saved recording as failed instead of
+    // leaving it stuck on 'pending' (rendered forever as "Processing...").
+    let savedRecordingId: string | null = null
     try {
       const recorder = mediaRecorderRef.current
       if (!recorder || recorder.state === 'inactive') {
         console.warn('[Whisperio] No active recorder — sending empty result to reset state')
-        await window.api.dictation.sendResult('')
+        await window.api.dictation.sendResult('', sessionId)
         return
       }
 
@@ -189,7 +192,7 @@ export function useDictation(): UseDictationReturn {
 
       if (audioBlob.size < 1000) {
         console.warn('[Whisperio] Audio too short, sending empty result')
-        await window.api.dictation.sendResult('')
+        await window.api.dictation.sendResult('', sessionId)
         return
       }
 
@@ -197,7 +200,6 @@ export function useDictation(): UseDictationReturn {
       const arrayBuffer = await audioBlob.arrayBuffer()
 
       // Save recording to disk before transcription
-      let savedRecordingId: string | null = null
       try {
         const settings = await window.api.settings.load()
         const savedRecording = await window.api.recordings.save(
@@ -240,11 +242,24 @@ export function useDictation(): UseDictationReturn {
         }
       }
 
-      await window.api.dictation.sendResult(text || '')
+      await window.api.dictation.sendResult(text || '', sessionId)
     } catch (err) {
       console.error('[Whisperio] stopAndTranscribe error:', err)
+      // Mark the saved recording as failed so the Recordings UI stops showing
+      // it as "Processing..." forever, and surface the error text.
+      if (savedRecordingId) {
+        const message = err instanceof Error ? err.message : String(err)
+        try {
+          await window.api.recordings.update(savedRecordingId, {
+            status: 'failed' as const,
+            error: message
+          })
+        } catch (updateErr) {
+          console.error('[Whisperio] Failed to mark recording as failed:', updateErr)
+        }
+      }
       try {
-        await window.api.dictation.sendResult('')
+        await window.api.dictation.sendResult('', sessionId)
       } catch (sendErr) {
         console.error('[Whisperio] Failed to send empty result:', sendErr)
       }

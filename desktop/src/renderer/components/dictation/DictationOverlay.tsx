@@ -49,8 +49,8 @@ export function DictationOverlay(): JSX.Element {
     const unsubActivateOutput = window.api.dictation.onActivateOutput(() => {
       startOutputRecording()
     })
-    const unsubDeactivate = window.api.dictation.onDeactivate(() => {
-      stopAndTranscribe().catch((err) => {
+    const unsubDeactivate = window.api.dictation.onDeactivate((sessionId) => {
+      stopAndTranscribe(sessionId).catch((err) => {
         console.error('[Whisperio] onDeactivate error:', err)
       })
     })

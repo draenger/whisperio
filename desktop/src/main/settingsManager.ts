@@ -1,5 +1,5 @@
 import { app } from 'electron'
-import { readFileSync, writeFileSync, existsSync } from 'fs'
+import { readFileSync, writeFileSync, existsSync, renameSync } from 'fs'
 import { join } from 'path'
 
 export type ProviderId = 'openai' | 'elevenlabs' | 'selfhosted'
@@ -74,7 +74,21 @@ export function loadSettings(): AppSettings {
     const raw = readFileSync(filePath, 'utf-8')
     const parsed = JSON.parse(raw) as Partial<AppSettings>
     return { ...DEFAULT_SETTINGS, ...parsed }
-  } catch {
+  } catch (err) {
+    // A corrupt settings.json (e.g. truncated by a crash/power-loss mid-write)
+    // must not silently wipe the user's API keys + config. Preserve the bad
+    // file as `.corrupt` so the loss is visible and recoverable, then fall back
+    // to defaults.
+    try {
+      const backupPath = `${filePath}.corrupt`
+      renameSync(filePath, backupPath)
+      console.error(
+        `[Whisperio] settings.json was unreadable (${err instanceof Error ? err.message : String(err)}); ` +
+        `backed up to ${backupPath} and reset to defaults.`
+      )
+    } catch (backupErr) {
+      console.error('[Whisperio] Failed to back up corrupt settings.json:', backupErr)
+    }
     return { ...DEFAULT_SETTINGS }
   }
 }
@@ -83,7 +97,13 @@ export function saveSettings(settings: Partial<AppSettings>): AppSettings {
   const current = loadSettings()
   const merged = { ...current, ...settings }
   const filePath = getSettingsPath()
-  writeFileSync(filePath, JSON.stringify(merged, null, 2), 'utf-8')
+  // Atomic write: serialize to a temp file then rename over settings.json
+  // (atomic on the same volume). A crash mid-write leaves the previous, valid
+  // settings.json intact instead of a truncated/corrupt file. Mirrors
+  // recordingStore.saveIndex.
+  const tmpPath = `${filePath}.${process.pid}.${Date.now()}.tmp`
+  writeFileSync(tmpPath, JSON.stringify(merged, null, 2), 'utf-8')
+  renameSync(tmpPath, filePath)
   return merged
 }
 

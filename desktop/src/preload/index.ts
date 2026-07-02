@@ -9,11 +9,11 @@ export interface OverlayInfo {
 export interface DictationAPI {
   onActivate: (callback: () => void) => () => void
   onActivateOutput: (callback: () => void) => () => void
-  onDeactivate: (callback: () => void) => () => void
+  onDeactivate: (callback: (sessionId: number) => void) => () => void
   onCancel: (callback: () => void) => () => void
   onStateChanged: (callback: (state: string) => void) => () => void
   onOverlayInfo: (callback: (info: OverlayInfo) => void) => () => void
-  sendResult: (text: string) => Promise<void>
+  sendResult: (text: string, sessionId?: number) => Promise<void>
   transcribe: (audioData: ArrayBuffer, filename: string) => Promise<string>
   notifyRecordingStarted: () => void
 }
@@ -194,10 +194,13 @@ const dictationApi: DictationAPI = {
       ipcRenderer.removeListener('dictation:activate-output', callback)
     }
   },
-  onDeactivate: (callback: () => void) => {
-    ipcRenderer.on('dictation:deactivate', callback)
+  onDeactivate: (callback: (sessionId: number) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, sessionId: number): void => {
+      callback(sessionId)
+    }
+    ipcRenderer.on('dictation:deactivate', handler)
     return () => {
-      ipcRenderer.removeListener('dictation:deactivate', callback)
+      ipcRenderer.removeListener('dictation:deactivate', handler)
     }
   },
   onCancel: (callback: () => void) => {
@@ -224,7 +227,8 @@ const dictationApi: DictationAPI = {
       ipcRenderer.removeListener('dictation:overlay-info', handler)
     }
   },
-  sendResult: (text: string) => ipcRenderer.invoke('dictation:result', text),
+  sendResult: (text: string, sessionId?: number) =>
+    ipcRenderer.invoke('dictation:result', text, sessionId),
   transcribe: (audioData: ArrayBuffer, filename: string) =>
     ipcRenderer.invoke('dictation:transcribe', Buffer.from(audioData), filename),
   notifyRecordingStarted: () => ipcRenderer.send('dictation:recording-started')
