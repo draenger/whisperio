@@ -10,33 +10,53 @@ import WhisperioKit
 /// `AVAudioEngine` tap feeds both the speech recognizer (running transcript) and an audio
 /// file, so the clip can still be saved. iOS on-device only; cloud engines stay file-based.
 ///
-/// Not `@MainActor`: the mic tap fires on the audio thread, so state is plain and every
-/// `@Published` mutation hops to main explicitly (mirrors the Husar recognizer).
+/// Threading model: the mic tap fires on the audio thread and recognition callbacks arrive
+/// on an arbitrary Speech queue, so all recognition state (`request`/`task`/`committed`/…)
+/// is confined to a private serial `stateQueue`. The `AVAudioEngine` itself (and `fileURL`)
+/// stays main-confined — `start()`/`finish()`/`cancel()` are `@MainActor`. Every `@Published`
+/// mutation hops to main explicitly (mirrors the Husar recognizer).
 final class LiveDictation: ObservableObject, @unchecked Sendable {
     @Published private(set) var transcript: String = ""
     @Published private(set) var level: CGFloat = 0
     @Published private(set) var isRunning = false
+    /// Non-nil once dictation has died mid-session (e.g. repeated recognizer errors). The
+    /// UI observes this to leave the listening state instead of spinning forever.
+    @Published private(set) var failure: String?
 
     private let audioEngine = AVAudioEngine()
+    private var fileURL: URL?
+    private var startedAt: Date?
+
+    /// Serial queue guarding all recognition state below. The audio tap and the Speech
+    /// callbacks both hop through it, so segment swaps can never race a buffer append.
+    private let stateQueue = DispatchQueue(label: "whisperio.dictation")
+
+    // MARK: state confined to `stateQueue`
     private var recognizer: SFSpeechRecognizer?
     private var request: SFSpeechAudioBufferRecognitionRequest?
     private var task: SFSpeechRecognitionTask?
     private var file: AVAudioFile?
-    private var fileURL: URL?
-    private var startedAt: Date?
-
     // Config captured at start(), so a segment restart can rebuild the request identically.
     private var requireOnDevice = true
     private var vocabulary: [String] = []
-    /// Synchronous stop flag read on the recognition callback queue. `isRunning` is @Published
-    /// and only flips on main (async), which would let a callback restart a segment *after*
-    /// teardown; this plain bool is cleared synchronously in teardown so that can't happen.
+    /// Synchronous stop flag: cleared inside `stateQueue` on teardown so a trailing
+    /// recognition callback can never restart a segment after we stopped.
     private var active = false
     /// Text of segments already finalized in THIS dictation. SFSpeech finalizes (and stops)
     /// a segment on a pause, and the next segment's transcript starts empty — so we keep the
     /// committed text here and always display `committed + current partial`. Without this a
-    /// pause wipes everything said before it. Only mutated on the recognition callback queue.
+    /// pause wipes everything said before it.
     private var committed: String = ""
+    /// Latest partial text of the in-flight segment — kept callback-side so `finish()` can
+    /// fold the tail in even if the last `@Published transcript` hop hasn't landed yet.
+    private var currentSegment: String = ""
+    /// Errors handled back-to-back without any interleaved result. Caps the error→restart
+    /// loop so a persistently failing recognizer surfaces `failure` instead of spinning hot.
+    private var consecutiveErrorRestarts = 0
+    private static let maxConsecutiveErrorRestarts = 3
+    /// Set while `finish()` waits for the recognizer to flush the tail of the last segment;
+    /// signaled from the callback on the segment's final result (or trailing error).
+    private var finishSignal: DispatchSemaphore?
 
     /// True when live dictation is possible for this language — the gate RecordingView uses
     /// to decide between the live path and file-then-transcribe. In on-device mode it also
@@ -52,6 +72,7 @@ final class LiveDictation: ObservableObject, @unchecked Sendable {
     }
 
     /// Begin streaming dictation. `transcript` then updates live until `finish()`/`cancel()`.
+    @MainActor
     func start(language: String, vocabulary: [String], requireOnDevice: Bool) throws {
         let recognizer = SFSpeechRecognizer(locale: Self.localeFor(language))
         guard let recognizer, recognizer.isAvailable else {
@@ -60,10 +81,6 @@ final class LiveDictation: ObservableObject, @unchecked Sendable {
         if requireOnDevice && !recognizer.supportsOnDeviceRecognition {
             throw err("On-device dictation isn't available for \(Self.localeFor(language).identifier).")
         }
-        self.recognizer = recognizer
-        self.requireOnDevice = requireOnDevice
-        self.vocabulary = vocabulary
-        self.committed = ""
 
         let session = AVAudioSession.sharedInstance()
         try session.setCategory(.playAndRecord, mode: .measurement, options: [.duckOthers, .defaultToSpeaker])
@@ -75,14 +92,29 @@ final class LiveDictation: ObservableObject, @unchecked Sendable {
         // Persist audio alongside recognition so a saved recording still has its clip.
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("whisperio-\(UUID().uuidString).caf")
-        file = try AVAudioFile(forWriting: url, settings: format.settings)
+        let audioFile = try AVAudioFile(forWriting: url, settings: format.settings)
         fileURL = url
+
+        stateQueue.sync {
+            self.recognizer = recognizer
+            self.requireOnDevice = requireOnDevice
+            self.vocabulary = vocabulary
+            self.committed = ""
+            self.currentSegment = ""
+            self.consecutiveErrorRestarts = 0
+            self.finishSignal = nil
+            self.file = audioFile
+            self.active = true
+        }
 
         input.removeTap(onBus: 0)
         input.installTap(onBus: 0, bufferSize: 1024, format: format) { [weak self] buffer, _ in
             guard let self else { return }
-            self.request?.append(buffer)
-            try? self.file?.write(from: buffer)
+            // Snapshot the live request/file under the lock so a segment swap on
+            // `stateQueue` can never race this append.
+            let (request, file) = self.stateQueue.sync { (self.request, self.file) }
+            request?.append(buffer)
+            try? file?.write(from: buffer)
             let lvl = Self.rms(buffer)
             DispatchQueue.main.async { self.level = lvl }
         }
@@ -91,45 +123,92 @@ final class LiveDictation: ObservableObject, @unchecked Sendable {
         try audioEngine.start()
 
         transcript = ""
+        failure = nil
         startedAt = Date()
-        active = true
         isRunning = true
 
-        startRecognitionSegment()
+        stateQueue.sync { startRecognitionSegmentLocked() }
     }
 
     /// (Re)start a recognition request over the live audio engine. Called once at start and
     /// again every time a segment finalizes on a pause, so dictation continues across pauses
     /// instead of stopping — the audio tap keeps feeding whatever `self.request` currently is.
-    private func startRecognitionSegment() {
-        guard let recognizer else { return }
+    /// Must run on `stateQueue`.
+    private func startRecognitionSegmentLocked() {
+        guard let recognizer, active else { return }
         let request = SFSpeechAudioBufferRecognitionRequest()
         request.shouldReportPartialResults = true
         request.requiresOnDeviceRecognition = requireOnDevice   // on = "audio never leaves"
         if !vocabulary.isEmpty { request.contextualStrings = vocabulary }
+
+        // Retire the previous segment before swapping in the new one; its trailing callback
+        // (cancellation error) is dropped by the identity guard in handleRecognitionLocked.
+        task?.cancel()
         self.request = request
+        currentSegment = ""
 
         task = recognizer.recognitionTask(with: request) { [weak self] result, error in
             guard let self else { return }
-            if let result {
-                let segment = result.bestTranscription.formattedString
-                // Live view = everything committed so far + this in-progress segment.
-                let live = Self.join(self.committed, segment)
-                DispatchQueue.main.async { self.transcript = live }
+            self.stateQueue.async {
+                self.handleRecognitionLocked(for: request, result: result, error: error)
+            }
+        }
+    }
 
-                if result.isFinal {
-                    // Pause detected: bank this segment and open a fresh one so the next
-                    // words append instead of replacing what came before.
-                    self.committed = live
-                    if self.active { self.startRecognitionSegment() }
-                    return
+    /// Recognition callback body — runs on `stateQueue`.
+    private func handleRecognitionLocked(for request: SFSpeechAudioBufferRecognitionRequest,
+                                         result: SFSpeechRecognitionResult?,
+                                         error: Error?) {
+        // A finished/cancelled segment still fires one trailing callback (usually an error).
+        // Only the segment that currently owns `self.request` may mutate state — otherwise a
+        // stale callback would restart a second, orphaned task alongside the live one.
+        guard self.request === request else { return }
+
+        if let result {
+            consecutiveErrorRestarts = 0
+            currentSegment = result.bestTranscription.formattedString
+            // Live view = everything committed so far + this in-progress segment.
+            let live = Self.join(committed, currentSegment)
+            DispatchQueue.main.async { self.transcript = live }
+
+            if result.isFinal {
+                // Pause detected: bank this segment and open a fresh one so the next
+                // words append instead of replacing what came before.
+                committed = live
+                currentSegment = ""
+                if let signal = finishSignal {
+                    // finish() is waiting on the tail — it's banked now, let it proceed.
+                    finishSignal = nil
+                    signal.signal()
+                } else if active {
+                    startRecognitionSegmentLocked()
                 }
+                return
+            }
+        }
+
+        if error != nil {
+            if let signal = finishSignal {
+                // The tail segment ended in an error (common at endAudio); whatever partial
+                // text we captured in `currentSegment` is the best we'll get — release finish().
+                finishSignal = nil
+                signal.signal()
+                return
             }
             // On-device recognition often reports the end-of-segment as an error right after
             // it finalizes. While we're still recording, treat that as a segment boundary and
-            // keep going rather than letting dictation die on the first pause.
-            if error != nil, self.active {
-                self.startRecognitionSegment()
+            // keep going — but cap back-to-back failures so a broken recognizer (asset gone,
+            // service wedged) doesn't turn this into a hot restart loop.
+            guard active else { return }
+            if consecutiveErrorRestarts < Self.maxConsecutiveErrorRestarts {
+                consecutiveErrorRestarts += 1
+                startRecognitionSegmentLocked()
+            } else {
+                teardownStateLocked()
+                DispatchQueue.main.async {
+                    self.stopEngineOnMain()
+                    self.failure = "Dictation stopped unexpectedly — please try again."
+                }
             }
         }
     }
@@ -144,10 +223,46 @@ final class LiveDictation: ObservableObject, @unchecked Sendable {
     }
 
     /// Stop and hand back the final transcript + the captured clip (for saving).
-    func finish() -> (text: String, clip: AudioClip?) {
+    /// Waits briefly for the recognizer to flush the tail of the last segment, so the final
+    /// words spoken right before stop aren't dropped.
+    @MainActor
+    func finish() async -> (text: String, clip: AudioClip?) {
         let duration = startedAt.map { Date().timeIntervalSince($0) } ?? 0
-        let text = transcript
-        teardown()
+
+        // 1. Stop capturing first (engine is main-confined; tap removed before endAudio so
+        //    no buffer arrives after the request is closed).
+        if audioEngine.isRunning { audioEngine.stop() }
+        audioEngine.inputNode.removeTap(onBus: 0)
+
+        let semaphore = DispatchSemaphore(value: 0)
+        stateQueue.sync {
+            if active, task != nil {
+                finishSignal = semaphore
+                request?.endAudio()
+            } else {
+                semaphore.signal()   // nothing in flight — don't wait
+            }
+        }
+
+        // 2. Give the recognizer up to ~1s to deliver the segment's final result; if it never
+        //    fires we fall through and use whatever partial we already have.
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            DispatchQueue.global(qos: .userInitiated).async {
+                _ = semaphore.wait(timeout: .now() + 1.0)
+                continuation.resume()
+            }
+        }
+
+        // 3. Read the final text from callback-side state (not the possibly-stale @Published
+        //    transcript) and tear down.
+        let text: String = stateQueue.sync {
+            finishSignal = nil
+            let final = Self.join(committed, currentSegment)
+            teardownStateLocked()
+            return final
+        }
+        stopEngineOnMain()
+
         var clip: AudioClip?
         if let url = fileURL, let data = try? Data(contentsOf: url) {
             clip = AudioClip(data: data, filename: url.lastPathComponent, duration: duration)
@@ -157,23 +272,38 @@ final class LiveDictation: ObservableObject, @unchecked Sendable {
         return (text, clip)
     }
 
+    @MainActor
     func cancel() {
-        teardown()
-        if let url = fileURL { try? FileManager.default.removeItem(at: url) }
-        fileURL = nil
-        DispatchQueue.main.async { self.transcript = "" }
-    }
-
-    private func teardown() {
-        active = false   // synchronous: block any in-flight callback from restarting a segment
         if audioEngine.isRunning { audioEngine.stop() }
         audioEngine.inputNode.removeTap(onBus: 0)
+        stateQueue.sync { teardownStateLocked() }
+        stopEngineOnMain()
+        if let url = fileURL { try? FileManager.default.removeItem(at: url) }
+        fileURL = nil
+        transcript = ""
+    }
+
+    /// Drop all recognition state. Must run on `stateQueue`. Never touches the audio engine
+    /// (main-confined) — callers pair this with `stopEngineOnMain()`.
+    private func teardownStateLocked() {
+        active = false
         request?.endAudio()
         task?.cancel()
         request = nil
         task = nil
         file = nil
-        DispatchQueue.main.async { self.isRunning = false; self.level = 0 }
+        committed = ""
+        currentSegment = ""
+        consecutiveErrorRestarts = 0
+        if let signal = finishSignal { finishSignal = nil; signal.signal() }
+    }
+
+    /// Engine + session + UI-state teardown. Must run on main.
+    private func stopEngineOnMain() {
+        if audioEngine.isRunning { audioEngine.stop() }
+        audioEngine.inputNode.removeTap(onBus: 0)
+        isRunning = false
+        level = 0
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
     }
 

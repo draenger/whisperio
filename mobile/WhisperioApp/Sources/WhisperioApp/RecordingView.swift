@@ -114,6 +114,15 @@ struct RecordingView: View {
         .onReceive(NotificationCenter.default.publisher(for: .whisperioStopDictation)) { _ in
             stop()   // triple-tap / "stop" shortcut ends recording + transcribes
         }
+        .onReceive(live.$failure) { message in
+            // Live dictation died mid-session (e.g. the recognizer kept erroring) — surface
+            // it instead of leaving the screen stuck on "Listening…".
+            if let message, startedLive, phase == .listening, !done {
+                done = true
+                phase = .error
+                errorMsg = message
+            }
+        }
         .task { await begin() }
     }
 
@@ -170,8 +179,12 @@ struct RecordingView: View {
         done = true
         phase = .processing
         if startedLive {
-            let (text, clip) = live.finish()
-            Task { await finalizeLive(text, clip) }
+            Task {
+                // finish() waits briefly for the recognizer to flush the tail of the last
+                // segment, so the words spoken right before stop make it into the result.
+                let (text, clip) = await live.finish()
+                await finalizeLive(text, clip)
+            }
         } else {
             let clip = recorder.stop()
             Task { await transcribe(clip) }
