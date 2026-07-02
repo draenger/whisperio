@@ -199,7 +199,9 @@ struct RecordingView: View {
         }
         let rec = Recording(filename: clip?.filename ?? "", duration: clip?.duration ?? 0,
                             status: .completed, provider: .onDevice, transcription: text)
-        if settings.settings.saveRecordings, clip != nil { recordings.add(rec) }
+        // Save even when the clip is missing — the live transcript is the result, and losing
+        // it from history just because the audio file failed to persist would be worse.
+        if settings.settings.saveRecordings { recordings.add(rec) }
 #if canImport(UIKit)
         UIPasteboard.general.string = text
 #endif

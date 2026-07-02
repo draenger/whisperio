@@ -1,5 +1,6 @@
 import Foundation
 import Combine
+import os
 import WhisperioKit
 
 // Real, persisted recordings (replaces SampleData). Saved as JSON in Documents.
@@ -34,12 +35,37 @@ final class RecordingsStore: ObservableObject {
         save()
     }
 
+    private static let log = Logger(subsystem: "ai.whisperio", category: "RecordingsStore")
+
     private func load() {
-        if let data = try? Data(contentsOf: fileURL),
-           let arr = try? JSONDecoder().decode([Recording].self, from: data) { items = arr }
+        // Missing file is the normal first-run path — nothing to report.
+        guard FileManager.default.fileExists(atPath: fileURL.path) else { return }
+        let data: Data
+        do {
+            data = try Data(contentsOf: fileURL)
+        } catch {
+            Self.log.error("Failed to read recordings.json: \(error.localizedDescription)")
+            return
+        }
+        do {
+            items = try JSONDecoder().decode([Recording].self, from: data)
+        } catch {
+            // Don't let a truncated write or schema drift silently erase history: park the
+            // corrupt file aside so the next save() doesn't clobber the only copy.
+            Self.log.error("Failed to decode recordings.json: \(error.localizedDescription) — backing up corrupt file")
+            let backup = fileURL.appendingPathExtension("bak")
+            try? FileManager.default.removeItem(at: backup)
+            try? FileManager.default.copyItem(at: fileURL, to: backup)
+        }
     }
+
     private func save() {
-        if let data = try? JSONEncoder().encode(items) { try? data.write(to: fileURL) }
+        do {
+            let data = try JSONEncoder().encode(items)
+            try data.write(to: fileURL, options: [.atomic])
+        } catch {
+            Self.log.error("Failed to save recordings.json: \(error.localizedDescription)")
+        }
     }
 }
 
