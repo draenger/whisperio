@@ -1,0 +1,78 @@
+{
+  "standard": "apex/standards/repo-knowledge-structure.md",
+  "generatedBy": "/apex:document",
+  "generatedAt": "2026-07-02",
+  "sourceCommit": "815a82563eff989e1dab6f3c03998ef3fc71cb2d",
+  "documents": [
+    "docs/README.md",
+    "docs/architecture.md",
+    "docs/features/dictation.md",
+    "docs/features/transcription-providers.md",
+    "docs/features/local-models.md",
+    "docs/features/recording-history.md",
+    "docs/features/settings.md",
+    "docs/features/auto-update.md",
+    "docs/features/mobile-app.md",
+    "docs/runbook.md",
+    "docs/testing.md"
+  ],
+  "consolidatedSources": [
+    {
+      "original": "ARCHITECTURE.md",
+      "movedTo": "docs/_legacy/ARCHITECTURE.md",
+      "absorbedInto": ["docs/architecture.md"],
+      "note": "Its 'API keys live in OS secure store' invariant is NOT true in current code (plain settings.json); flagged as a divergence in docs/architecture.md."
+    },
+    {
+      "original": "testflight-info.md",
+      "movedTo": "docs/_legacy/testflight-info.md",
+      "absorbedInto": ["docs/runbook.md", "docs/features/mobile-app.md"],
+      "note": "App Store Connect copy-paste material; operational bits (privacy URL, review-key, encryption flag) absorbed into the runbook."
+    },
+    {
+      "original": "docs/whisperio-mobile-context.md",
+      "movedTo": "docs/_legacy/whisperio-mobile-context.md",
+      "absorbedInto": ["docs/architecture.md", "docs/features/mobile-app.md"]
+    },
+    {
+      "original": "docs/whisperio-mobile-research.md",
+      "movedTo": "docs/_legacy/whisperio-mobile-research.md",
+      "absorbedInto": ["docs/features/mobile-app.md"]
+    },
+    {
+      "original": "docs/whisperio-mobile-implementation-plan.md",
+      "movedTo": "docs/_legacy/whisperio-mobile-implementation-plan.md",
+      "absorbedInto": ["docs/features/mobile-app.md"],
+      "note": "Plan targeted iOS 26 SpeechAnalyzer/SpeechTranscriber; shipped code uses SFSpeechRecognizer — docs follow the code."
+    },
+    {
+      "original": "docs/whisperio-mobile-design-prompt.md",
+      "movedTo": "docs/_legacy/whisperio-mobile-design-prompt.md",
+      "absorbedInto": [],
+      "note": "Design-brief prompt, historical only."
+    },
+    {
+      "original": "mobile/README.md",
+      "movedTo": "docs/_legacy/mobile-README.md",
+      "absorbedInto": ["docs/features/mobile-app.md", "docs/runbook.md", "docs/testing.md"],
+      "note": "Was partly stale (“authored on Windows, not yet compiled”, GalleryView as @main); current @main is WhisperioApp in AppShell.swift."
+    },
+    {
+      "original": ".devops/README.md",
+      "movedTo": "docs/_legacy/devops-README.md",
+      "absorbedInto": ["docs/runbook.md", "docs/architecture.md"]
+    },
+    {
+      "original": "README.md (repo root)",
+      "movedTo": null,
+      "absorbedInto": ["docs/architecture.md", "docs/runbook.md", "docs/features/dictation.md", "docs/features/transcription-providers.md"],
+      "note": "Kept in place as the GitHub landing page per the standard; content absorbed, not moved."
+    }
+  ],
+  "skipped": [
+    "docs/ website assets (index.html, app.html, privacy.html, app-ui.jsx, assets/) — GitHub Pages site, documented but not consolidated",
+    "Renderer component internals (SettingsForm.tsx / RecordingsPanel.tsx / DictationOverlay.tsx) documented at feature level only",
+    "mobile SwiftUI screen files documented at surface level only",
+    ".apex/ harness files and .claude/commands/pr.md — conventions linked, not duplicated"
+  ]
+}
