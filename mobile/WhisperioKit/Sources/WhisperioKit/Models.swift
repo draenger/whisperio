@@ -54,6 +54,9 @@ public struct Recording: Identifiable, Codable, Sendable, Equatable {
     public var provider: ProviderID?
     public var transcription: String?
     public var error: String?
+    /// User-assigned category id (see the app's category taxonomy). Optional so recordings
+    /// persisted before categories existed keep decoding — nil means "never assigned".
+    public var category: String?
 
     public init(
         id: UUID = UUID(),
@@ -63,7 +66,8 @@ public struct Recording: Identifiable, Codable, Sendable, Equatable {
         status: Status = .pending,
         provider: ProviderID? = nil,
         transcription: String? = nil,
-        error: String? = nil
+        error: String? = nil,
+        category: String? = nil
     ) {
         self.id = id
         self.filename = filename
@@ -73,5 +77,6 @@ public struct Recording: Identifiable, Codable, Sendable, Equatable {
         self.provider = provider
         self.transcription = transcription
         self.error = error
+        self.category = category
     }
 }

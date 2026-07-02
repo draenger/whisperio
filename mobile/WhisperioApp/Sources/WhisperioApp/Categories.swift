@@ -5,9 +5,9 @@ import SwiftUI
 // Symbol in Components.swift) plus one of the theme's accent hues, so chips and labels
 // stay on-palette in both dark and light mode.
 //
-// Categories are display metadata over the existing recordings: DemoRecording carries a
-// category id, RecordingsStore holds live per-recording overrides for the session, and the
-// Home filter row + Detail menu read/write through those. Nothing here touches WhisperioKit.
+// Categories are metadata over the existing recordings: the persisted WhisperioKit
+// Recording carries an optional category id, DemoRecording mirrors it for display, and the
+// Home filter row + Detail menu read/write through RecordingsStore (which saves changes).
 
 struct WZCategory: Identifiable, Hashable {
     let id: String       // stable key, also what DemoRecording stores
@@ -35,12 +35,6 @@ enum WZCategories {
 
     /// Look up a category by id, falling back to Work so callers always get a value.
     static func of(_ id: String) -> WZCategory { byId[id] ?? work }
-
-    /// A stable default category for a real (non-sample) recording, so mapped recordings
-    /// land in a sensible bucket instead of all clumping together.
-    static func `default`(for demoId: Int) -> String {
-        all[abs(demoId) % all.count].id
-    }
 }
 
 // MARK: - UI

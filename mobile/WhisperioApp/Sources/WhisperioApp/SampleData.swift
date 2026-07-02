@@ -14,6 +14,7 @@ struct DemoRecording: Identifiable {
     let words: Int
     let engine: String    // on-device | cloud
     var category: String = WZCategories.work.id   // WZCategory id (see Categories.swift)
+    var sourceId: UUID? = nil   // backing Recording.id for real rows; nil for sample data
 }
 
 enum WZSample {
