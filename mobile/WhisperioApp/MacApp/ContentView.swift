@@ -17,8 +17,10 @@ struct ContentView: View {
     @State private var config = MacConfig.load()
     @State private var selection: UUID?
 
-    init() {
-        _store = StateObject(wrappedValue: ContentView.makeStore())
+    // The store is created once at app launch (MacAppModel) and injected here so the window's
+    // history and the dictation controller share one instance — a saved dictation appears live.
+    init(store: RecordingSyncStore) {
+        _store = StateObject(wrappedValue: store)
     }
 
     var body: some View {
@@ -36,17 +38,6 @@ struct ContentView: View {
     private var selectedRecording: Recording? {
         guard let id = selection else { return nil }
         return store.items.first { $0.id == id }
-    }
-
-    // Prefer the shared CloudKit-backed store; fall back to an in-memory store so the window
-    // still renders on an unsigned dev build with no iCloud container available.
-    @MainActor
-    private static func makeStore() -> RecordingSyncStore {
-        if let cloud = try? RecordingSyncStore() { return cloud }
-        let memory = ModelConfiguration(isStoredInMemoryOnly: true)
-        // An in-memory container has no external failure mode, so this can't realistically throw.
-        return (try? RecordingSyncStore(configuration: memory))
-            ?? { fatalError("Failed to build in-memory RecordingSyncStore") }()
     }
 }
 

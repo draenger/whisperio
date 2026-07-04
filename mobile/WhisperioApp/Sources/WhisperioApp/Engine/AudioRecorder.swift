@@ -17,9 +17,14 @@ final class AudioRecorder: NSObject, ObservableObject {
 
     // Ask for mic (+ speech, used by the on-device engine) permissions up front.
     func requestPermissions() async -> Bool {
+        #if os(iOS)
         let mic = await withCheckedContinuation { (c: CheckedContinuation<Bool, Never>) in
             AVAudioApplication.requestRecordPermission { c.resume(returning: $0) }
         }
+        #else
+        // macOS has no AVAudioApplication permission API — the mic gate is AVCaptureDevice's TCC.
+        let mic = await AVCaptureDevice.requestAccess(for: .audio)
+        #endif
         _ = await withCheckedContinuation { (c: CheckedContinuation<Bool, Never>) in
             SFSpeechRecognizer.requestAuthorization { c.resume(returning: $0 == .authorized) }
         }
@@ -27,9 +32,11 @@ final class AudioRecorder: NSObject, ObservableObject {
     }
 
     func start() throws {
+        #if os(iOS)
         let session = AVAudioSession.sharedInstance()
         try session.setCategory(.playAndRecord, mode: .default, options: [.duckOthers, .defaultToSpeaker])
         try session.setActive(true)
+        #endif
 
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("whisperio-\(UUID().uuidString).m4a")
@@ -42,7 +49,9 @@ final class AudioRecorder: NSObject, ObservableObject {
         let rec = try AVAudioRecorder(url: url, settings: settings)
         rec.isMeteringEnabled = true
         guard rec.record() else {
+            #if os(iOS)
             try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+            #endif
             throw NSError(domain: "Whisperio.Recorder", code: 1,
                           userInfo: [NSLocalizedDescriptionKey: "Couldn't start recording. Check the microphone isn't in use."])
         }
@@ -74,7 +83,9 @@ final class AudioRecorder: NSObject, ObservableObject {
         recorder = nil
         isRecording = false
         level = 0
+        #if os(iOS)
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        #endif
 
         let clip = (try? Data(contentsOf: url)).map {
             AudioClip(data: $0, filename: url.lastPathComponent, duration: duration)
@@ -90,6 +101,8 @@ final class AudioRecorder: NSObject, ObservableObject {
         recorder = nil
         isRecording = false
         level = 0
+        #if os(iOS)
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        #endif
     }
 }

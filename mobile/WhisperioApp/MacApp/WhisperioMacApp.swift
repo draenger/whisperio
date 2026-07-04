@@ -1,5 +1,7 @@
 #if os(macOS)
 import SwiftUI
+import SwiftData
+import WhisperioKit
 
 // Native macOS entry point. This lives as source-only under MacApp/ and is NOT yet wired into
 // an Xcode target — adding a "Whisperio (macOS)" app target that compiles these files (plus
@@ -7,9 +9,16 @@ import SwiftUI
 // guarded by `#if os(macOS)` so the folder can be dropped into a target without further edits.
 @main
 struct WhisperioMacApp: App {
+    // One app-lifetime model: owns the shared recordings store, the dictation controller, and the
+    // global hotkey. The store instance is shared with `ContentView` so a saved dictation shows up
+    // in the window's history live.
+    @StateObject private var model = MacAppModel()
+
     var body: some Scene {
         WindowGroup("Whisperio", id: WhisperioWindow.main.rawValue) {
-            ContentView()
+            ContentView(store: model.store)
+                .environmentObject(model.controller)
+                .onAppear { model.activate() }
         }
         .defaultSize(width: 720, height: 520)
 
@@ -28,6 +37,55 @@ struct WhisperioMacApp: App {
             Label("Whisperio", systemImage: "waveform")
         }
         .menuBarExtraStyle(.menu)
+    }
+}
+
+// MARK: - App model (store + dictation + hotkey wiring)
+
+// Assembles the dictation stack: hotkey → controller → overlay → save. The Carbon hotkey and the
+// tray's "Dictate" item both funnel through `MacDictationController.toggle()`, so ⌃⇧Space and the
+// menu behave identically. `activate()` is idempotent and runs from the window's `.onAppear` (the
+// first moment a real run loop + app instance exist to register the Carbon handler against).
+@available(macOS 14, *)
+@MainActor
+final class MacAppModel: ObservableObject {
+    let store: RecordingSyncStore
+    let controller: MacDictationController
+    private var hotkey: HotkeyManager?
+    private var toggleObserver: NSObjectProtocol?
+
+    init() {
+        let store = MacAppModel.makeStore()
+        self.store = store
+        self.controller = MacDictationController(store: store)
+    }
+
+    func activate() {
+        guard hotkey == nil else { return }
+        let controller = self.controller
+        let hk = HotkeyManager { controller.toggle() }
+        hk.register()
+        hotkey = hk
+        // The tray "Dictate" item posts this; route it through the same toggle.
+        toggleObserver = NotificationCenter.default.addObserver(
+            forName: .wzDictateToggle, object: nil, queue: .main
+        ) { _ in
+            Task { @MainActor in controller.toggle() }
+        }
+    }
+
+    deinit {
+        if let toggleObserver { NotificationCenter.default.removeObserver(toggleObserver) }
+    }
+
+    // Prefer the shared CloudKit-backed store; fall back to in-memory so the app still runs on an
+    // unsigned dev build with no iCloud container. Mirrors ContentView's former private factory.
+    @MainActor
+    private static func makeStore() -> RecordingSyncStore {
+        if let cloud = try? RecordingSyncStore() { return cloud }
+        let memory = ModelConfiguration(isStoredInMemoryOnly: true)
+        return (try? RecordingSyncStore(configuration: memory))
+            ?? { fatalError("Failed to build in-memory RecordingSyncStore") }()
     }
 }
 

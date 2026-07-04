@@ -82,9 +82,11 @@ final class LiveDictation: ObservableObject, @unchecked Sendable {
             throw err("On-device dictation isn't available for \(Self.localeFor(language).identifier).")
         }
 
+        #if os(iOS)
         let session = AVAudioSession.sharedInstance()
         try session.setCategory(.playAndRecord, mode: .measurement, options: [.duckOthers, .defaultToSpeaker])
         try session.setActive(true, options: .notifyOthersOnDeactivation)
+        #endif
 
         let input = audioEngine.inputNode
         let format = input.outputFormat(forBus: 0)
@@ -304,7 +306,9 @@ final class LiveDictation: ObservableObject, @unchecked Sendable {
         audioEngine.inputNode.removeTap(onBus: 0)
         isRunning = false
         level = 0
+        #if os(iOS)
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        #endif
     }
 
     private static func rms(_ buffer: AVAudioPCMBuffer) -> CGFloat {
