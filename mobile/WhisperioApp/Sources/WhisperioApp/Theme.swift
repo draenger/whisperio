@@ -48,6 +48,26 @@ struct WZTheme {
     )
 
     static func of(_ dark: Bool) -> WZTheme { dark ? .darkTheme : .lightTheme }
+
+    // Rezme teal — the macOS desktop identity. Dark-first, built around the Rezme
+    // signature teal #1cc8b4 (accent) with a lighter #4fe0cf tint for hover/lite states.
+    // The CTA gradient stays in-family: bright teal → deep teal-cyan, no violet.
+    // Reachable on macOS (this file is pure SwiftUI); the Mac window applies it via `\.wz`.
+    static let rezmeTheme = WZTheme(
+        dark: true,
+        bg: .hex(0x061512), bg2: .hex(0x030b0a), surface: .hex(0x0c211d),
+        surfaceUp: .hex(0x123029), elevated: .hex(0x173a31),
+        line: .white.opacity(0.08), lineSoft: .white.opacity(0.05),
+        hair: Color(red: 28/255, green: 200/255, blue: 180/255).opacity(0.22),
+        text: .hex(0xEAF6F3), muted: .hex(0x93b3ac), faint: .hex(0x5f807a),
+        accent: .hex(0x1cc8b4), accentLite: .hex(0x4fe0cf),
+        gradient: LinearGradient(stops: [
+            .init(color: .hex(0x1cc8b4), location: 0.0),
+            .init(color: .hex(0x14b8a6), location: 0.52),
+            .init(color: .hex(0x0d9488), location: 1.0),
+        ], startPoint: .topLeading, endPoint: .bottomTrailing),
+        green: .hex(0x34d399), red: .hex(0xf0556b), amber: .hex(0xfbbf24), cyan: .hex(0x1cc8b4)
+    )
 }
 
 // MARK: - Fonts
