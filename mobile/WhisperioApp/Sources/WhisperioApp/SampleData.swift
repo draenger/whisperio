@@ -15,6 +15,8 @@ struct DemoRecording: Identifiable {
     let engine: String    // on-device | cloud
     var category: String = WZCategories.work.id   // WZCategory id (see Categories.swift)
     var sourceId: UUID? = nil   // backing Recording.id for real rows; nil for sample data
+    var render: String? = nil          // persisted AI rewrite (see RecordingsStore.setRender)
+    var renderPresetID: String? = nil  // id of the preset that produced `render`
 }
 
 enum WZSample {

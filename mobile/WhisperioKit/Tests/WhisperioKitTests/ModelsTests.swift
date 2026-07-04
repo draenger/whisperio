@@ -32,4 +32,37 @@ struct ModelsTests {
         #expect(decoded.category == "ideas")
         #expect(decoded == rec)
     }
+
+    // The AI-rewrite fields (render + renderPresetID) survive an encode/decode roundtrip.
+    @Test func renderFieldsRoundtrip() throws {
+        var rec = Recording(filename: "clip.caf", duration: 1, status: .completed,
+                            provider: .onDevice, transcription: "hi there")
+        rec.render = "Hi there!"
+        rec.renderPresetID = "email"
+        let data = try JSONEncoder().encode(rec)
+        let decoded = try JSONDecoder().decode(Recording.self, from: data)
+        #expect(decoded.render == "Hi there!")
+        #expect(decoded.renderPresetID == "email")
+        #expect(decoded == rec)
+    }
+
+    // Recordings persisted before the render fields existed must keep decoding — the fields
+    // are optional, so a legacy blob simply yields nil (no migration required).
+    @Test func legacyRecordingWithoutRenderDecodes() throws {
+        let legacy = """
+        {
+            "id": "6F1A2B3C-4D5E-6F70-8192-A3B4C5D6E7F8",
+            "filename": "clip.caf",
+            "timestamp": 700000000,
+            "duration": 4.2,
+            "status": "completed",
+            "provider": "ondevice",
+            "transcription": "hello world"
+        }
+        """.data(using: .utf8)!
+        let r = try JSONDecoder().decode(Recording.self, from: legacy)
+        #expect(r.render == nil)
+        #expect(r.renderPresetID == nil)
+        #expect(r.transcription == "hello world")
+    }
 }

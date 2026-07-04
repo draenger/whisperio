@@ -57,6 +57,12 @@ public struct Recording: Identifiable, Codable, Sendable, Equatable {
     /// User-assigned category id (see the app's category taxonomy). Optional so recordings
     /// persisted before categories existed keep decoding — nil means "never assigned".
     public var category: String?
+    /// The AI-rewritten output for this recording. Optional so recordings persisted before
+    /// rewrite existed keep decoding — nil means "never rewritten".
+    public var render: String?
+    /// Id of the rewrite preset that produced `render`. Optional for the same reason — nil
+    /// means "no render, or produced before presets were tracked".
+    public var renderPresetID: String?
 
     public init(
         id: UUID = UUID(),
@@ -67,7 +73,9 @@ public struct Recording: Identifiable, Codable, Sendable, Equatable {
         provider: ProviderID? = nil,
         transcription: String? = nil,
         error: String? = nil,
-        category: String? = nil
+        category: String? = nil,
+        render: String? = nil,
+        renderPresetID: String? = nil
     ) {
         self.id = id
         self.filename = filename
@@ -78,5 +86,7 @@ public struct Recording: Identifiable, Codable, Sendable, Equatable {
         self.transcription = transcription
         self.error = error
         self.category = category
+        self.render = render
+        self.renderPresetID = renderPresetID
     }
 }

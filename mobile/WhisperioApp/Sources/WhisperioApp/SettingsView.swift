@@ -7,13 +7,19 @@ import WhisperioKit
 struct SettingsView: View {
     @Environment(\.wz) private var t
     @EnvironmentObject private var settings: SettingsStore
+    @EnvironmentObject private var presets: PresetStore
     var onBack: () -> Void
     @Binding var dark: Bool
     var openModels: () -> Void
     var openKeyboardSetup: () -> Void = {}
+    // Open the rewrite-preset editor — nil means "new template".
+    var openPresetEditor: (RewritePreset?) -> Void = { _ in }
+    var openGitHubSync: () -> Void = {}
+    var toast: (String) -> Void = { _ in }
 
     @State private var consentProvider: ProviderID?   // non-nil → consent sheet is up
     @State private var showTriggerGuides = false      // presents the trigger onboarding hub
+    @State private var showRestoreConfirm = false     // confirm before restoring seed templates
 
     private var engine: ProviderID { settings.settings.providerChain.first ?? .onDevice }
 
@@ -148,6 +154,43 @@ struct SettingsView: View {
                             .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(t.line, lineWidth: 1))
                         }
 
+                        VStack(alignment: .leading, spacing: 8) {
+                            SectionLabel(text: "Rewrite presets").padding(.leading, 4)
+                            VStack(spacing: 0) {
+                                ForEach(presets.presets) { p in
+                                    SettRow(icon: p.icon, label: p.name,
+                                            sub: p.isMeta ? "Builds new templates from your voice" : nil,
+                                            onTap: { openPresetEditor(p) })
+                                }
+                                SettRow(icon: "plus", label: "New template",
+                                        sub: "Add your own rewrite instruction", last: true,
+                                        onTap: { openPresetEditor(nil) })
+                            }
+                            .padding(.horizontal, 16)
+                            .background(t.surface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                            .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(t.line, lineWidth: 1))
+                            GhostButton(title: "Restore default templates", icon: "sync") {
+                                showRestoreConfirm = true
+                            }
+                            .padding(.top, 2)
+                        }
+
+                        SettGroup(title: "Journaling") {
+                            SettRow(icon: "book", label: "Auto-journaling",
+                                    sub: settings.settings.cloudConsentGranted
+                                        ? "Group & summarize each day’s notes with AI · uses the cloud text model"
+                                        : "Groups & summarizes each day’s notes · turn on cloud transcription first",
+                                    last: true) {
+                                WToggle(on: boolBinding(\.autoDailyDigest))
+                            }
+                        }
+
+                        SettGroup(title: "Sync") {
+                            SettRow(icon: "sync", label: "Sync to GitHub",
+                                    sub: "Mirror transcripts, renders & daily summaries to a Git repo",
+                                    last: true, onTap: openGitHubSync)
+                        }
+
                         SettGroup(title: "On-device models") {
                             SettRow(icon: "download", label: "Manage models",
                                     sub: "Apple Speech + Whisper", last: true, onTap: openModels)
@@ -181,6 +224,15 @@ struct SettingsView: View {
             TriggerGuidesView(onBack: { showTriggerGuides = false })
                 .environment(\.wz, t)
                 .preferredColorScheme(t.dark ? .dark : .light)
+        }
+        .alert("Restore default templates?", isPresented: $showRestoreConfirm) {
+            Button("Restore", role: .destructive) {
+                presets.restoreDefaults()
+                toast("Templates restored")
+            }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("This brings back the built-in templates and undoes your edits to them. Your own templates are kept.")
         }
     }
 

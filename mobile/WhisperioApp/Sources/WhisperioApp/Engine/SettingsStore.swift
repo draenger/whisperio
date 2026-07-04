@@ -28,14 +28,16 @@ final class SettingsStore: ObservableObject {
         // installs) so a stored key is never lost across the upgrade.
         let legacyOpenAI = loaded.openAIKey
         let legacyEleven = loaded.elevenLabsKey
+        let legacyGitHub = loaded.githubToken
         loaded.openAIKey = Keychain.get(.openAIKey) ?? legacyOpenAI
         loaded.elevenLabsKey = Keychain.get(.elevenLabsKey) ?? legacyEleven
+        loaded.githubToken = Keychain.get(.githubToken) ?? legacyGitHub
         settings = loaded
 
         // Migrate + scrub: if the persisted blob carried a plaintext secret, move it into the
         // Keychain and rewrite the blob without it. (Property observers don't fire in init,
         // so call save() explicitly.)
-        if !legacyOpenAI.isEmpty || !legacyEleven.isEmpty {
+        if !legacyOpenAI.isEmpty || !legacyEleven.isEmpty || !legacyGitHub.isEmpty {
             save()
         }
     }
@@ -45,9 +47,11 @@ final class SettingsStore: ObservableObject {
         // the key fields blanked so no API secret is ever written in plaintext.
         Keychain.set(settings.openAIKey, for: .openAIKey)
         Keychain.set(settings.elevenLabsKey, for: .elevenLabsKey)
+        Keychain.set(settings.githubToken, for: .githubToken)
         var sanitized = settings
         sanitized.openAIKey = ""
         sanitized.elevenLabsKey = ""
+        sanitized.githubToken = ""
         if let data = try? JSONEncoder().encode(sanitized) {
             UserDefaults.standard.set(data, forKey: Self.key)
         }
@@ -73,6 +77,40 @@ final class SettingsStore: ObservableObject {
         return ProviderChain(providers: order.map { provider(for: $0, s) })
     }
 
+    // Build the text-LLM client for rewrite (render presets) + journaling. Gated the same
+    // way makeChain() gates cloud STT: the client only reports isConfigured when the user has
+    // granted cloud consent AND pasted an OpenAI key — otherwise callers see an unconfigured
+    // client (empty key) and skip/surface accordingly.
+    func makeChatClient() -> ChatLLM {
+        let s = settings
+        let ready = s.cloudConsentGranted && !s.openAIKey.trimmingCharacters(in: .whitespaces).isEmpty
+        return OpenAIChatClient(apiKey: ready ? s.openAIKey : "", baseURL: s.openAIBaseURL)
+    }
+
+    // Build the runner that applies a rewrite (render) preset to a transcript. Wraps the shared
+    // chat client — so it inherits the same cloud-consent + key gate via `isConfigured` — with
+    // the user's configured chat model. Callers guard on `isConfigured` and surface the consent
+    // sheet / Settings rather than failing silently.
+    func makeRewriter() -> Rewriter {
+        Rewriter(client: makeChatClient(), model: settings.chatModel)
+    }
+
+    // Build the GitHub sync client from the token (Keychain-backed) + repo config. Returns nil when
+    // the token, owner, or repo is missing — so callers keep the "Sync now" action disabled and
+    // never fire an unconfigured request. Mirrors the house HTTP style: the client owns a dedicated
+    // ephemeral URLSession with real timeouts + Bearer auth (see `GitHubURLSessionTransport`).
+    func makeGitHubSync() -> GitHubClient? {
+        let s = settings
+        let token = s.githubToken.trimmingCharacters(in: .whitespaces)
+        let owner = s.githubOwner.trimmingCharacters(in: .whitespaces)
+        let repo = s.githubRepo.trimmingCharacters(in: .whitespaces)
+        guard !token.isEmpty, !owner.isEmpty, !repo.isEmpty else { return nil }
+        let branch = s.githubBranch.trimmingCharacters(in: .whitespaces)
+        return GitHubClient(owner: owner, repo: repo,
+                            branch: branch.isEmpty ? "main" : branch,
+                            transport: GitHubURLSessionTransport(token: token))
+    }
+
     private func provider(for id: ProviderID, _ s: WhisperioSettings) -> any TranscriptionProvider {
         switch id {
         case .onDevice:
@@ -91,5 +129,31 @@ final class SettingsStore: ObservableObject {
     // Tidy a transcript when cleanup is enabled (deterministic, works on every device).
     func cleanup(_ text: String) -> String {
         settings.cleanupEnabled ? TextCleaner.tidy(text) : text
+    }
+}
+
+// Runs a rewrite preset against a transcript through the shared chat client. `isConfigured`
+// mirrors the client's gate (cloud consent granted + OpenAI key present) so a caller can guard
+// and route to consent/Settings instead of firing an unconfigured request. Temperature is pinned
+// to 0 for stable, deterministic rewrites (ported from the desktop post-processing shape).
+struct Rewriter {
+    let client: ChatLLM
+    let model: String
+
+    var isConfigured: Bool { client.isConfigured }
+
+    /// Apply `preset` to `transcript`, returning the trimmed rewritten text. Throws on an empty
+    /// transcript (nothing to rewrite) or any client failure so the caller can surface it.
+    func run(preset: RewritePreset, transcript: String) async throws -> String {
+        let m = RewritePromptBuilder.messages(preset: preset, transcript: transcript)
+        guard !m.user.isEmpty else { throw Self.err("There's nothing to rewrite.") }
+        let messages = [ChatMessage(role: "system", content: m.system),
+                        ChatMessage(role: "user", content: m.user)]
+        let out = try await client.complete(messages: messages, model: model, temperature: 0)
+        return out.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    static func err(_ m: String) -> NSError {
+        NSError(domain: "Whisperio.Rewriter", code: 1, userInfo: [NSLocalizedDescriptionKey: m])
     }
 }
