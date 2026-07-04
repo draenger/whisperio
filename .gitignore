@@ -27,3 +27,6 @@ mobile/**/build/
 
 # Claude Code workflow worktrees
 .claude/worktrees/
+# test coverage artifacts (do not track)
+desktop/coverage/
+coverage/
