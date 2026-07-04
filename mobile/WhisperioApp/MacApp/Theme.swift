@@ -1,5 +1,6 @@
 #if os(macOS)
 import SwiftUI
+import AppKit
 
 // Self-contained design tokens for the macOS target.
 //
@@ -56,6 +57,34 @@ extension EnvironmentValues {
     var wz: WZTheme {
         get { self[WZThemeKey.self] }
         set { self[WZThemeKey.self] = newValue }
+    }
+}
+
+// MARK: - Hover affordance
+//
+// Custom `.plain`-styled buttons (sidebar rows, tab rail, engine picker) lose the system's
+// pointer/press feedback, so a click target reads as dead text. `.wzHover()` restores that
+// affordance uniformly: the pointing-hand cursor plus a subtle lift on hover — one modifier so
+// every custom control on the Mac target feels the same.
+private struct WZHover: ViewModifier {
+    @State private var hovering = false
+    var lift: CGFloat
+
+    func body(content: Content) -> some View {
+        content
+            .brightness(hovering ? lift : 0)
+            .animation(.easeOut(duration: 0.12), value: hovering)
+            .onHover { inside in
+                hovering = inside
+                if inside { NSCursor.pointingHand.push() } else { NSCursor.pop() }
+            }
+    }
+}
+
+extension View {
+    /// Pointer cursor + a faint brightness lift while hovered. Use on custom (`.plain`) buttons.
+    func wzHover(lift: CGFloat = 0.05) -> some View {
+        modifier(WZHover(lift: lift))
     }
 }
 #endif

@@ -404,6 +404,17 @@ final class MacDictationController: ObservableObject {
             transcription: trimmed
         )
         store.add(recording)
+
+        // Deliver the transcript to wherever the user was typing. Always lands on the pasteboard;
+        // auto-pastes into the focused app when enabled + Accessibility-trusted (AutoPaste.deliver).
+        switch AutoPaste.deliver(trimmed) {
+        case .pasted:
+            break
+        case .copiedOnly:
+            statusMessage = "Copied to clipboard — press ⌘V to paste."
+        case .needsAccessibility:
+            statusMessage = "Copied to clipboard. Enable Whisperio in System Settings › Privacy & Security › Accessibility to paste automatically."
+        }
     }
 
     private func transition(_ event: DictationEvent) {

@@ -159,6 +159,7 @@ struct SettingsWindow: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .wzHover(lift: 0.03)
         .padding(.horizontal, 10)
     }
 
@@ -383,6 +384,7 @@ private struct ProvidersPane: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .wzHover(lift: 0.03)
     }
 
     private func keyField(_ label: String, _ text: Binding<String>) -> some View {
@@ -475,6 +477,10 @@ private struct AudioPane: View {
 @available(macOS 14, *)
 private struct HotkeysPane: View {
     @Environment(\.wz) private var t
+    @AppStorage(AutoPaste.enabledDefaultsKey) private var autoPaste = true
+    /// Re-checked whenever the pane appears (TCC grants can't be observed) so the status row
+    /// reflects the real Accessibility trust state without a restart.
+    @State private var accessibilityGranted = AutoPaste.hasAccessibilityPermission()
 
     private let rows: [(icon: String, label: String, sub: String, keys: String)] = [
         ("mic.fill", "Toggle dictation", "Start / stop recording from anywhere", "⌃ ⇧ Space"),
@@ -493,6 +499,15 @@ private struct HotkeysPane: View {
             }
         }
 
+        SettGroup(title: "Auto-paste") {
+            SettRow(icon: "doc.on.clipboard", label: "Paste after dictation",
+                    sub: "Type the transcript straight into the focused app", last: true) {
+                Toggle("", isOn: $autoPaste).labelsHidden().toggleStyle(.switch).tint(t.accent)
+            }
+        }
+
+        if autoPaste { accessibilityCard }
+
         HStack(alignment: .top, spacing: 9) {
             Image(systemName: "info.circle").font(.system(size: 12)).foregroundStyle(t.accentLite).padding(.top, 1)
             Text("Rebinding lands with the global-hotkey engine. These defaults are shown for reference.")
@@ -502,6 +517,50 @@ private struct HotkeysPane: View {
         .padding(14)
         .background(t.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(t.line, lineWidth: 1))
+    }
+
+    // First-run Accessibility explainer + grant control. macOS requires Accessibility trust before
+    // an app may post keystrokes into other apps; without it Whisperio still copies the transcript
+    // to the clipboard, but can't press ⌘V for you.
+    private var accessibilityCard: some View {
+        let granted = accessibilityGranted
+        return HStack(alignment: .top, spacing: 12) {
+            Image(systemName: granted ? "checkmark.shield.fill" : "hand.raised.fill")
+                .font(.system(size: 16))
+                .foregroundStyle(granted ? t.green : t.amber)
+                .frame(width: 34, height: 34)
+                .background(t.surfaceUp, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            VStack(alignment: .leading, spacing: 3) {
+                Text(granted ? "Accessibility access granted" : "Accessibility access needed")
+                    .font(.system(size: 14, weight: .semibold)).foregroundStyle(t.text)
+                Text(granted
+                     ? "Whisperio can paste your dictation into the app you're typing in."
+                     : "To paste automatically, allow Whisperio under System Settings › Privacy & Security › Accessibility. Until then your transcript is copied to the clipboard — press ⌘V to paste.")
+                    .font(.system(size: 12)).foregroundStyle(t.muted).lineSpacing(3)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 0)
+            if !granted {
+                Button {
+                    // Prompts the one-time system dialog and registers Whisperio in the list.
+                    _ = AutoPaste.hasAccessibilityPermission(prompt: true)
+                    NSWorkspace.shared.open(URL(string:
+                        "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!)
+                } label: {
+                    Text("Grant access").font(.system(size: 12.5, weight: .semibold))
+                        .foregroundStyle(.white).padding(.horizontal, 13).padding(.vertical, 8)
+                        .background(t.gradient, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+                }
+                .buttonStyle(.plain)
+                .wzHover()
+            }
+        }
+        .padding(14)
+        .background((granted ? t.green : t.amber).opacity(0.10),
+                    in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
+            .stroke((granted ? t.green : t.amber).opacity(0.32), lineWidth: 1))
+        .onAppear { accessibilityGranted = AutoPaste.hasAccessibilityPermission() }
     }
 
     private func keyCap(_ text: String) -> some View {
@@ -558,6 +617,7 @@ private struct UpdatesPane: View {
                 .background(t.gradient, in: RoundedRectangle(cornerRadius: 11, style: .continuous))
             }
             .buttonStyle(.plain)
+            .wzHover()
             if !status.isEmpty {
                 Text(status).font(.system(size: 12)).foregroundStyle(t.muted)
             }
@@ -595,6 +655,7 @@ private struct MacCloudConsentSheet: View {
                         .background(t.surfaceUp, in: Circle())
                 }
                 .buttonStyle(.plain)
+                .wzHover()
             }
             .padding(.bottom, 16)
 
@@ -625,6 +686,7 @@ private struct MacCloudConsentSheet: View {
                 .background(t.gradient, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
             }
             .buttonStyle(.plain)
+            .wzHover()
             .padding(.bottom, 8)
 
             Button(action: onCancel) {
@@ -634,6 +696,7 @@ private struct MacCloudConsentSheet: View {
                     .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(t.line, lineWidth: 1))
             }
             .buttonStyle(.plain)
+            .wzHover()
         }
         .padding(22)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)

@@ -68,6 +68,7 @@ private struct Sidebar: View {
                                 SidebarRow(recording: rec, selected: selection == rec.id)
                             }
                             .buttonStyle(.plain)
+                            .wzHover(lift: 0.03)
                         }
                     }
                     .padding(.horizontal, 10)
