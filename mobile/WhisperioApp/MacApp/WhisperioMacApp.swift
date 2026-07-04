@@ -12,6 +12,11 @@ struct WhisperioMacApp: App {
             ContentView()
         }
         .defaultSize(width: 720, height: 520)
+
+        // Standard macOS Settings window (⌘,) — the tabbed 760-wide teal panes.
+        Settings {
+            SettingsWindow()
+        }
     }
 }
 #endif
