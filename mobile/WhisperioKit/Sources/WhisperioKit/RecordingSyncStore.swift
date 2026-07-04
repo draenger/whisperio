@@ -48,11 +48,20 @@ public final class RecordingSyncStore: ObservableObject {
     /// container id; the entitlement must list the same identifier.
     public static let cloudKitContainerID = "iCloud.ai.whisperio.mobile"
 
-    /// Build the store against the app's private CloudKit database.
+    /// Build the store, syncing through CloudKit only when an iCloud account is actually available.
+    /// Without a signed-in account (simulator, signed-out user, or an unsigned build) a
+    /// CloudKit-backed `ModelContainer` FAULTS at creation — SwiftData's CloudKit mirroring needs a
+    /// live account + the `remote-notification` background mode + a provisioned container — and that
+    /// fault is not catchable, so it would crash the app on launch. In that case we persist locally
+    /// (plain on-disk SwiftData, no CloudKit) so history still works and sync silently resumes once
+    /// the user signs in and a fresh launch upgrades to the CloudKit configuration.
     public convenience init() throws {
-        let config = ModelConfiguration(
-            cloudKitDatabase: .private(RecordingSyncStore.cloudKitContainerID)
-        )
+        let config: ModelConfiguration
+        if FileManager.default.ubiquityIdentityToken != nil {
+            config = ModelConfiguration(cloudKitDatabase: .private(RecordingSyncStore.cloudKitContainerID))
+        } else {
+            config = ModelConfiguration()
+        }
         try self.init(configuration: config)
     }
 
