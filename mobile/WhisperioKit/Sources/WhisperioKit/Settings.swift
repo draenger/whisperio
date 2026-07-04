@@ -11,6 +11,9 @@ public struct WhisperioSettings: Codable, Sendable, Equatable {
     public var openAIBaseURL: String
     public var whisperModel: String
     public var elevenLabsKey: String
+    /// Chat model for the text-LLM (rewrite render presets + journaling summary) — one
+    /// configurable value both flows share, ported from the desktop's 'gpt-4o-mini' default.
+    public var chatModel: String
 
     // Transcription tuning.
     public var language: String          // "auto" or an ISO code
@@ -40,6 +43,7 @@ public struct WhisperioSettings: Codable, Sendable, Equatable {
         openAIBaseURL: String = "",
         whisperModel: String = "",
         elevenLabsKey: String = "",
+        chatModel: String = "gpt-4o-mini",
         language: String = "auto",
         customVocabulary: String = "",
         transcriptionPrompt: String = "",
@@ -55,6 +59,7 @@ public struct WhisperioSettings: Codable, Sendable, Equatable {
         self.openAIBaseURL = openAIBaseURL
         self.whisperModel = whisperModel
         self.elevenLabsKey = elevenLabsKey
+        self.chatModel = chatModel
         self.language = language
         self.customVocabulary = customVocabulary
         self.transcriptionPrompt = transcriptionPrompt
@@ -76,6 +81,7 @@ public struct WhisperioSettings: Codable, Sendable, Equatable {
         openAIBaseURL = try c.decodeIfPresent(String.self, forKey: .openAIBaseURL) ?? d.openAIBaseURL
         whisperModel = try c.decodeIfPresent(String.self, forKey: .whisperModel) ?? d.whisperModel
         elevenLabsKey = try c.decodeIfPresent(String.self, forKey: .elevenLabsKey) ?? d.elevenLabsKey
+        chatModel = try c.decodeIfPresent(String.self, forKey: .chatModel) ?? d.chatModel
         language = try c.decodeIfPresent(String.self, forKey: .language) ?? d.language
         customVocabulary = try c.decodeIfPresent(String.self, forKey: .customVocabulary) ?? d.customVocabulary
         transcriptionPrompt = try c.decodeIfPresent(String.self, forKey: .transcriptionPrompt) ?? d.transcriptionPrompt

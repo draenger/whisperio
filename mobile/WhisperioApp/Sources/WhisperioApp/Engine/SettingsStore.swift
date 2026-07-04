@@ -73,6 +73,16 @@ final class SettingsStore: ObservableObject {
         return ProviderChain(providers: order.map { provider(for: $0, s) })
     }
 
+    // Build the text-LLM client for rewrite (render presets) + journaling. Gated the same
+    // way makeChain() gates cloud STT: the client only reports isConfigured when the user has
+    // granted cloud consent AND pasted an OpenAI key — otherwise callers see an unconfigured
+    // client (empty key) and skip/surface accordingly.
+    func makeChatClient() -> ChatLLM {
+        let s = settings
+        let ready = s.cloudConsentGranted && !s.openAIKey.trimmingCharacters(in: .whitespaces).isEmpty
+        return OpenAIChatClient(apiKey: ready ? s.openAIKey : "", baseURL: s.openAIBaseURL)
+    }
+
     private func provider(for id: ProviderID, _ s: WhisperioSettings) -> any TranscriptionProvider {
         switch id {
         case .onDevice:
