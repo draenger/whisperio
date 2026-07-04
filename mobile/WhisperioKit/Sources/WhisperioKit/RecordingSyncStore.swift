@@ -48,20 +48,24 @@ public final class RecordingSyncStore: ObservableObject {
     /// container id; the entitlement must list the same identifier.
     public static let cloudKitContainerID = "iCloud.ai.whisperio.mobile"
 
-    /// Build the store, syncing through CloudKit only when an iCloud account is actually available.
-    /// Without a signed-in account (simulator, signed-out user, or an unsigned build) a
-    /// CloudKit-backed `ModelContainer` FAULTS at creation — SwiftData's CloudKit mirroring needs a
-    /// live account + the `remote-notification` background mode + a provisioned container — and that
-    /// fault is not catchable, so it would crash the app on launch. In that case we persist locally
-    /// (plain on-disk SwiftData, no CloudKit) so history still works and sync silently resumes once
-    /// the user signs in and a fresh launch upgrades to the CloudKit configuration.
+    /// MASTER SWITCH for CloudKit sync. Keep **false** until the CloudKit container
+    /// `iCloud.ai.whisperio.mobile` is actually registered in the Apple Developer portal AND the
+    /// shipped build carries the iCloud entitlement. A CloudKit-backed `ModelContainer` FAULTS
+    /// (uncatchable → crash on launch) when the container/entitlement are missing but an iCloud
+    /// account is present — which is exactly a normal user's device. Because the App Store build
+    /// currently ships with the iCloud entitlement stripped (no container yet), attempting CloudKit
+    /// crashed build 21 on launch. Flip to `true` in the same change that ships the entitlement +
+    /// registered container. Until then we persist locally (no data loss, just no cross-device sync).
+    public static let cloudKitEnabled = false
+
+    /// Build the store. Uses CloudKit only when it is enabled AND an iCloud account is present;
+    /// otherwise a plain on-disk SwiftData store, which never touches CloudKit and so can't fault.
     public convenience init() throws {
-        let config: ModelConfiguration
-        if FileManager.default.ubiquityIdentityToken != nil {
-            config = ModelConfiguration(cloudKitDatabase: .private(RecordingSyncStore.cloudKitContainerID))
-        } else {
-            config = ModelConfiguration()
-        }
+        let useCloudKit = RecordingSyncStore.cloudKitEnabled
+            && FileManager.default.ubiquityIdentityToken != nil
+        let config = useCloudKit
+            ? ModelConfiguration(cloudKitDatabase: .private(RecordingSyncStore.cloudKitContainerID))
+            : ModelConfiguration()
         try self.init(configuration: config)
     }
 
