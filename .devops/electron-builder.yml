@@ -34,6 +34,12 @@ nsis:
 
 mac:
   icon: build/icon.png
+  # Custom entitlements: the electron-builder default omits the microphone entitlement,
+  # which the hardened runtime requires. Without it getUserMedia returns a SILENT stream
+  # (no prompt, no error) so recordings are empty and every transcription comes back "".
+  # The inherit file carries the mic entitlement into Chromium's audio child process.
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.inherit.plist
   # Sign with Developer ID + notarize so macOS auto-update validates (Squirrel.Mac
   # rejects ad-hoc/unsigned updates). Credentials come from CI env / GitHub Secrets;
   # the Team ID is passed via the APPLE_TEAM_ID env var (electron-builder deprecated

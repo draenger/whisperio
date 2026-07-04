@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Electron defaults (required for the hardened runtime electron-builder enables when
+	     signing + notarizing). Keep these — omitting them breaks V8/JIT under hardened runtime. -->
+	<key>com.apple.security.cs.allow-jit</key>
+	<true/>
+	<key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+	<true/>
+	<key>com.apple.security.cs.disable-library-validation</key>
+	<true/>
+	<!-- Microphone. Without this entitlement the hardened runtime blocks audio capture, so
+	     getUserMedia yields a SILENT stream (no prompt, no error) — recordings come out empty
+	     and every transcription returns "". NSMicrophoneUsageDescription alone is not enough. -->
+	<key>com.apple.security.device.audio-input</key>
+	<true/>
+</dict>
+</plist>
