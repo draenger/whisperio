@@ -11,6 +11,7 @@ public enum Keychain {
     public enum Item: String {
         case openAIKey = "whisperio.key.openai"
         case elevenLabsKey = "whisperio.key.elevenlabs"
+        case githubToken = "whisperio.key.github"
     }
 
     private static let service = "ai.whisperio.mobile.secrets"

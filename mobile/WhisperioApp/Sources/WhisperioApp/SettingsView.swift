@@ -14,6 +14,7 @@ struct SettingsView: View {
     var openKeyboardSetup: () -> Void = {}
     // Open the rewrite-preset editor — nil means "new template".
     var openPresetEditor: (RewritePreset?) -> Void = { _ in }
+    var openGitHubSync: () -> Void = {}
     var toast: (String) -> Void = { _ in }
 
     @State private var consentProvider: ProviderID?   // non-nil → consent sheet is up
@@ -182,6 +183,12 @@ struct SettingsView: View {
                                     last: true) {
                                 WToggle(on: boolBinding(\.autoDailyDigest))
                             }
+                        }
+
+                        SettGroup(title: "Sync") {
+                            SettRow(icon: "sync", label: "Sync to GitHub",
+                                    sub: "Mirror transcripts, renders & daily summaries to a Git repo",
+                                    last: true, onTap: openGitHubSync)
                         }
 
                         SettGroup(title: "On-device models") {

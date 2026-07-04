@@ -28,14 +28,16 @@ final class SettingsStore: ObservableObject {
         // installs) so a stored key is never lost across the upgrade.
         let legacyOpenAI = loaded.openAIKey
         let legacyEleven = loaded.elevenLabsKey
+        let legacyGitHub = loaded.githubToken
         loaded.openAIKey = Keychain.get(.openAIKey) ?? legacyOpenAI
         loaded.elevenLabsKey = Keychain.get(.elevenLabsKey) ?? legacyEleven
+        loaded.githubToken = Keychain.get(.githubToken) ?? legacyGitHub
         settings = loaded
 
         // Migrate + scrub: if the persisted blob carried a plaintext secret, move it into the
         // Keychain and rewrite the blob without it. (Property observers don't fire in init,
         // so call save() explicitly.)
-        if !legacyOpenAI.isEmpty || !legacyEleven.isEmpty {
+        if !legacyOpenAI.isEmpty || !legacyEleven.isEmpty || !legacyGitHub.isEmpty {
             save()
         }
     }
@@ -45,9 +47,11 @@ final class SettingsStore: ObservableObject {
         // the key fields blanked so no API secret is ever written in plaintext.
         Keychain.set(settings.openAIKey, for: .openAIKey)
         Keychain.set(settings.elevenLabsKey, for: .elevenLabsKey)
+        Keychain.set(settings.githubToken, for: .githubToken)
         var sanitized = settings
         sanitized.openAIKey = ""
         sanitized.elevenLabsKey = ""
+        sanitized.githubToken = ""
         if let data = try? JSONEncoder().encode(sanitized) {
             UserDefaults.standard.set(data, forKey: Self.key)
         }
@@ -89,6 +93,22 @@ final class SettingsStore: ObservableObject {
     // sheet / Settings rather than failing silently.
     func makeRewriter() -> Rewriter {
         Rewriter(client: makeChatClient(), model: settings.chatModel)
+    }
+
+    // Build the GitHub sync client from the token (Keychain-backed) + repo config. Returns nil when
+    // the token, owner, or repo is missing — so callers keep the "Sync now" action disabled and
+    // never fire an unconfigured request. Mirrors the house HTTP style: the client owns a dedicated
+    // ephemeral URLSession with real timeouts + Bearer auth (see `GitHubURLSessionTransport`).
+    func makeGitHubSync() -> GitHubClient? {
+        let s = settings
+        let token = s.githubToken.trimmingCharacters(in: .whitespaces)
+        let owner = s.githubOwner.trimmingCharacters(in: .whitespaces)
+        let repo = s.githubRepo.trimmingCharacters(in: .whitespaces)
+        guard !token.isEmpty, !owner.isEmpty, !repo.isEmpty else { return nil }
+        let branch = s.githubBranch.trimmingCharacters(in: .whitespaces)
+        return GitHubClient(owner: owner, repo: repo,
+                            branch: branch.isEmpty ? "main" : branch,
+                            transport: GitHubURLSessionTransport(token: token))
     }
 
     private func provider(for id: ProviderID, _ s: WhisperioSettings) -> any TranscriptionProvider {

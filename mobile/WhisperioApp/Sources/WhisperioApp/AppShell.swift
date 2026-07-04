@@ -5,7 +5,7 @@ import WhisperioKit
 // App shell — custom screen routing + toast, mirroring WZPhone() in wz-iphone.jsx.
 // (The concept uses a bespoke transition shell rather than NavigationStack.)
 
-enum WZScreen { case onboarding, home, recording, detail, settings, models, keyboardSetup, keyboardReturn, presetEditor, journal, digestDay }
+enum WZScreen { case onboarding, home, recording, detail, settings, models, keyboardSetup, keyboardReturn, presetEditor, journal, digestDay, githubSync }
 
 struct WZPhoneView: View {
     @Environment(\.scenePhase) private var scenePhase
@@ -121,6 +121,7 @@ struct WZPhoneView: View {
                          openModels: { go(.models) },
                          openKeyboardSetup: { go(.keyboardSetup) },
                          openPresetEditor: { openEditor($0 ?? Self.newPreset(), from: .settings) },
+                         openGitHubSync: { go(.githubSync) },
                          toast: showToast)
         case .models:
             ModelsView(onBack: { go(.settings) })
@@ -128,6 +129,8 @@ struct WZPhoneView: View {
             PresetEditorView(preset: editorPreset, onBack: { go(editorReturn) }, toast: showToast)
         case .keyboardSetup:
             KeyboardSetupView(onBack: { go(.settings) })
+        case .githubSync:
+            GitHubSyncView(onBack: { go(.settings) }, toast: showToast)
         case .keyboardReturn:
             KeyboardReturnView(text: returnText, onClose: { go(.home) })
         case .home:

@@ -42,6 +42,19 @@ public struct WhisperioSettings: Codable, Sendable, Equatable {
     /// it stays gated behind the same cloud consent + key as rewrite.
     public var autoDailyDigest: Bool
 
+    // GitHub sync — mirror transcripts/renders/daily syntheses into a Git repo as Markdown.
+    // Off by default; the personal access token itself lives in the Keychain (see
+    // `Keychain.Item.githubToken`), never in this blob, so it stays out of plaintext backups.
+    public var githubSyncEnabled: Bool
+    public var githubOwner: String       // repo owner (user or org login)
+    public var githubRepo: String        // repository name
+    public var githubBranch: String      // branch to commit onto
+    public var githubPathPrefix: String  // optional folder prefix inside the repo
+    /// Personal access token (BYO). Empty until the user pastes one at runtime. Like the cloud
+    /// keys, the persisted copy lives in the Keychain — SettingsStore scrubs this out of the
+    /// UserDefaults blob before writing, so it never sits in plaintext backups.
+    public var githubToken: String
+
     public init(
         providerChain: [ProviderID] = [.onDevice],
         openAIKey: String = "",
@@ -58,7 +71,13 @@ public struct WhisperioSettings: Codable, Sendable, Equatable {
         liveTranscriptionEnabled: Bool = true,
         appleAllowOnline: Bool = false,
         cloudConsentGranted: Bool = false,
-        autoDailyDigest: Bool = false
+        autoDailyDigest: Bool = false,
+        githubSyncEnabled: Bool = false,
+        githubOwner: String = "",
+        githubRepo: String = "",
+        githubBranch: String = "main",
+        githubPathPrefix: String = "",
+        githubToken: String = ""
     ) {
         self.providerChain = providerChain
         self.openAIKey = openAIKey
@@ -76,6 +95,12 @@ public struct WhisperioSettings: Codable, Sendable, Equatable {
         self.appleAllowOnline = appleAllowOnline
         self.cloudConsentGranted = cloudConsentGranted
         self.autoDailyDigest = autoDailyDigest
+        self.githubSyncEnabled = githubSyncEnabled
+        self.githubOwner = githubOwner
+        self.githubRepo = githubRepo
+        self.githubBranch = githubBranch
+        self.githubPathPrefix = githubPathPrefix
+        self.githubToken = githubToken
     }
 
     // Tolerant decoding — missing keys (older persisted settings, or future-added fields)
@@ -99,6 +124,12 @@ public struct WhisperioSettings: Codable, Sendable, Equatable {
         appleAllowOnline = try c.decodeIfPresent(Bool.self, forKey: .appleAllowOnline) ?? d.appleAllowOnline
         cloudConsentGranted = try c.decodeIfPresent(Bool.self, forKey: .cloudConsentGranted) ?? d.cloudConsentGranted
         autoDailyDigest = try c.decodeIfPresent(Bool.self, forKey: .autoDailyDigest) ?? d.autoDailyDigest
+        githubSyncEnabled = try c.decodeIfPresent(Bool.self, forKey: .githubSyncEnabled) ?? d.githubSyncEnabled
+        githubOwner = try c.decodeIfPresent(String.self, forKey: .githubOwner) ?? d.githubOwner
+        githubRepo = try c.decodeIfPresent(String.self, forKey: .githubRepo) ?? d.githubRepo
+        githubBranch = try c.decodeIfPresent(String.self, forKey: .githubBranch) ?? d.githubBranch
+        githubPathPrefix = try c.decodeIfPresent(String.self, forKey: .githubPathPrefix) ?? d.githubPathPrefix
+        githubToken = try c.decodeIfPresent(String.self, forKey: .githubToken) ?? d.githubToken
     }
 
     /// Whether the given engine requires (and currently has) cloud consent to run.
