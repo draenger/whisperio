@@ -56,7 +56,7 @@ public final class RecordingSyncStore: ObservableObject {
     /// currently ships with the iCloud entitlement stripped (no container yet), attempting CloudKit
     /// crashed build 21 on launch. Flip to `true` in the same change that ships the entitlement +
     /// registered container. Until then we persist locally (no data loss, just no cross-device sync).
-    public static let cloudKitEnabled = false
+    public static let cloudKitEnabled = true
 
     /// Build the store. Uses CloudKit only when it is enabled AND an iCloud account is present;
     /// otherwise a plain on-disk SwiftData store, which never touches CloudKit and so can't fault.
