@@ -12,6 +12,7 @@ struct HomeView: View {
     var openRec: (DemoRecording) -> Void
     var openRecording: () -> Void
     var openSettings: () -> Void
+    var openJournal: () -> Void = {}
 
     // nil → the "All" filter (show every category).
     @State private var selectedCategory: String? = nil
@@ -21,7 +22,10 @@ struct HomeView: View {
             ZStack(alignment: .bottom) {
                 VStack(spacing: 0) {
                     WHeader(title: "Whisperio") {
-                        SquareIconButton(icon: "settings", action: openSettings)
+                        HStack(spacing: 9) {
+                            SquareIconButton(icon: "book", action: openJournal)
+                            SquareIconButton(icon: "settings", action: openSettings)
+                        }
                     }
                     // search + filters
                     VStack(spacing: 13) {

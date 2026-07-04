@@ -174,6 +174,16 @@ struct SettingsView: View {
                             .padding(.top, 2)
                         }
 
+                        SettGroup(title: "Journaling") {
+                            SettRow(icon: "book", label: "Auto-journaling",
+                                    sub: settings.settings.cloudConsentGranted
+                                        ? "Group & summarize each day’s notes with AI · uses the cloud text model"
+                                        : "Groups & summarizes each day’s notes · turn on cloud transcription first",
+                                    last: true) {
+                                WToggle(on: boolBinding(\.autoDailyDigest))
+                            }
+                        }
+
                         SettGroup(title: "On-device models") {
                             SettRow(icon: "download", label: "Manage models",
                                     sub: "Apple Speech + Whisper", last: true, onTap: openModels)

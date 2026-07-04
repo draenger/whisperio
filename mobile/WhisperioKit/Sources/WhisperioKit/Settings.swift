@@ -37,6 +37,11 @@ public struct WhisperioSettings: Codable, Sendable, Equatable {
     /// On-device (Apple Speech) never needs this; cloud providers stay disabled until granted.
     public var cloudConsentGranted: Bool
 
+    /// Auto-journaling: when on, prior days' notes are classified + summarized in the background
+    /// (once/day) via the cloud text-LLM. Off by default — it sends transcripts to the cloud, so
+    /// it stays gated behind the same cloud consent + key as rewrite.
+    public var autoDailyDigest: Bool
+
     public init(
         providerChain: [ProviderID] = [.onDevice],
         openAIKey: String = "",
@@ -52,7 +57,8 @@ public struct WhisperioSettings: Codable, Sendable, Equatable {
         saveRecordings: Bool = true,
         liveTranscriptionEnabled: Bool = true,
         appleAllowOnline: Bool = false,
-        cloudConsentGranted: Bool = false
+        cloudConsentGranted: Bool = false,
+        autoDailyDigest: Bool = false
     ) {
         self.providerChain = providerChain
         self.openAIKey = openAIKey
@@ -69,6 +75,7 @@ public struct WhisperioSettings: Codable, Sendable, Equatable {
         self.liveTranscriptionEnabled = liveTranscriptionEnabled
         self.appleAllowOnline = appleAllowOnline
         self.cloudConsentGranted = cloudConsentGranted
+        self.autoDailyDigest = autoDailyDigest
     }
 
     // Tolerant decoding — missing keys (older persisted settings, or future-added fields)
@@ -91,6 +98,7 @@ public struct WhisperioSettings: Codable, Sendable, Equatable {
         liveTranscriptionEnabled = try c.decodeIfPresent(Bool.self, forKey: .liveTranscriptionEnabled) ?? d.liveTranscriptionEnabled
         appleAllowOnline = try c.decodeIfPresent(Bool.self, forKey: .appleAllowOnline) ?? d.appleAllowOnline
         cloudConsentGranted = try c.decodeIfPresent(Bool.self, forKey: .cloudConsentGranted) ?? d.cloudConsentGranted
+        autoDailyDigest = try c.decodeIfPresent(Bool.self, forKey: .autoDailyDigest) ?? d.autoDailyDigest
     }
 
     /// Whether the given engine requires (and currently has) cloud consent to run.

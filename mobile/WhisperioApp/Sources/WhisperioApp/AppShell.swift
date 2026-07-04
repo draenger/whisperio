@@ -5,13 +5,18 @@ import WhisperioKit
 // App shell — custom screen routing + toast, mirroring WZPhone() in wz-iphone.jsx.
 // (The concept uses a bespoke transition shell rather than NavigationStack.)
 
-enum WZScreen { case onboarding, home, recording, detail, settings, models, keyboardSetup, keyboardReturn, presetEditor }
+enum WZScreen { case onboarding, home, recording, detail, settings, models, keyboardSetup, keyboardReturn, presetEditor, journal, digestDay }
 
 struct WZPhoneView: View {
     @Environment(\.scenePhase) private var scenePhase
+    @EnvironmentObject private var settings: SettingsStore
+    @EnvironmentObject private var recordings: RecordingsStore
+    @EnvironmentObject private var digests: DigestStore
     @State private var dark = true
     @State private var screen: WZScreen = .home
     @State private var rec: DemoRecording = WZSample.recordings[0]
+    // The day the journal detail screen is showing (.digestDay).
+    @State private var digestDay: Date = Date()
     @State private var toastMsg: String?
     // True when the current dictation was launched from the keyboard (bounce-to-app flow):
     // its transcript is written to the App Group and a swipe-back explainer is shown.
@@ -53,6 +58,7 @@ struct WZPhoneView: View {
         .onAppear {
             SharedStore.recordAppHeartbeat()
             consumePending()
+            runAutoJournaling()
             if let url = incomingURL { handle(url); incomingURL = nil }
         }
         .onChange(of: scenePhase) { _, phase in
@@ -60,7 +66,7 @@ struct WZPhoneView: View {
             // isn't retained in the shared container past its freshness window (a fresh one
             // awaiting swipe-back is kept).
             SharedStore.purgeStalePendingTranscript()
-            if phase == .active { consumePending() }
+            if phase == .active { consumePending(); runAutoJournaling() }
             // Don't leave the app parked on the post-dictation return screen: once the
             // user leaves (backgrounds the app to go paste / swipe back), drop to home so
             // re-opening — or a Back Tap — lands on a fresh state instead of a dead end.
@@ -127,7 +133,30 @@ struct WZPhoneView: View {
         case .home:
             HomeView(openRec: { rec = $0; go(.detail) },
                      openRecording: { go(.recording) },
-                     openSettings: { go(.settings) })
+                     openSettings: { go(.settings) },
+                     openJournal: { go(.journal) })
+        case .journal:
+            JournalView(onBack: { go(.home) },
+                        openDay: { digestDay = $0; go(.digestDay) })
+        case .digestDay:
+            DigestDayView(day: digestDay,
+                          onBack: { go(.journal) },
+                          openRec: { rec = $0; go(.detail) },
+                          openSettings: { go(.settings) },
+                          toast: showToast)
+        }
+    }
+
+    // Auto-journaling: when enabled (and the cloud client is configured), backfill summaries for
+    // prior days once per day. Runs off the same foreground hook as consumePending().
+    private func runAutoJournaling() {
+        guard settings.settings.autoDailyDigest else { return }
+        let client = settings.makeChatClient()
+        guard client.isConfigured else { return }
+        let model = settings.settings.chatModel
+        Task {
+            await digests.backfillIfNeeded(recordings: recordings, categories: WZCategories.all,
+                                           using: client, model: model)
         }
     }
 
@@ -170,6 +199,7 @@ struct WhisperioApp: App {
     @StateObject private var settings = SettingsStore()
     @StateObject private var recordings = RecordingsStore()
     @StateObject private var presets = PresetStore()
+    @StateObject private var digests = DigestStore()
     @State private var incomingURL: URL?
 
     var body: some Scene {
@@ -178,6 +208,7 @@ struct WhisperioApp: App {
                 .environmentObject(settings)
                 .environmentObject(recordings)
                 .environmentObject(presets)
+                .environmentObject(digests)
                 .onAppear {
                     PhoneConnectivity.shared.recordings = recordings
                     PhoneConnectivity.shared.activate()
