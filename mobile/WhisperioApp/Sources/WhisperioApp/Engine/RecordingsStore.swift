@@ -35,6 +35,19 @@ final class RecordingsStore: ObservableObject {
         save()
     }
 
+    // MARK: - Render (AI rewrite)
+
+    /// Persist an AI-rewritten render + the preset that produced it onto the backing Recording —
+    /// mirrors setCategory: survives relaunches and reflects everywhere it's displayed. No-op for
+    /// sample rows (no sourceId).
+    func setRender(_ text: String, presetID: String, for demo: DemoRecording) {
+        guard let sourceId = demo.sourceId,
+              let idx = items.firstIndex(where: { $0.id == sourceId }) else { return }
+        items[idx].render = text
+        items[idx].renderPresetID = presetID
+        save()
+    }
+
     private static let log = Logger(subsystem: "ai.whisperio", category: "RecordingsStore")
 
     private func load() {
@@ -93,7 +106,9 @@ extension DemoRecording {
             words: (r.transcription ?? "").split(whereSeparator: { $0 == " " || $0 == "\n" }).count,
             engine: r.provider == .onDevice ? "on-device" : "cloud",
             category: r.category ?? WZCategories.work.id,
-            sourceId: r.id
+            sourceId: r.id,
+            render: r.render,
+            renderPresetID: r.renderPresetID
         )
     }
 

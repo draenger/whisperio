@@ -5,7 +5,7 @@ import WhisperioKit
 // App shell — custom screen routing + toast, mirroring WZPhone() in wz-iphone.jsx.
 // (The concept uses a bespoke transition shell rather than NavigationStack.)
 
-enum WZScreen { case onboarding, home, recording, detail, settings, models, keyboardSetup, keyboardReturn }
+enum WZScreen { case onboarding, home, recording, detail, settings, models, keyboardSetup, keyboardReturn, presetEditor }
 
 struct WZPhoneView: View {
     @Environment(\.scenePhase) private var scenePhase
@@ -18,6 +18,10 @@ struct WZPhoneView: View {
     @State private var fromKeyboard = false
     // Transcript awaiting the user's swipe back to the previous app (keyboard bounce flow).
     @State private var returnText = ""
+    // The preset the editor screen is editing (a fresh draft for "new"), and the screen to
+    // return to when the editor closes (Settings, or Detail for the Template Builder flow).
+    @State private var editorPreset: RewritePreset = RewritePresetCatalog.seeds[0]
+    @State private var editorReturn: WZScreen = .settings
     // Incoming URL binding — set at App level so it fires even before setup completes.
     @Binding private var incomingURL: URL?
 
@@ -103,13 +107,19 @@ struct WZPhoneView: View {
                               }
                           })
         case .detail:
-            DetailView(r: rec, onBack: { go(.home) }, toast: showToast)
+            DetailView(r: rec, onBack: { go(.home) }, toast: showToast,
+                       openSettings: { go(.settings) },
+                       openPresetEditor: { openEditor($0, from: .detail) })
         case .settings:
             SettingsView(onBack: { go(.home) }, dark: $dark,
                          openModels: { go(.models) },
-                         openKeyboardSetup: { go(.keyboardSetup) })
+                         openKeyboardSetup: { go(.keyboardSetup) },
+                         openPresetEditor: { openEditor($0 ?? Self.newPreset(), from: .settings) },
+                         toast: showToast)
         case .models:
             ModelsView(onBack: { go(.settings) })
+        case .presetEditor:
+            PresetEditorView(preset: editorPreset, onBack: { go(editorReturn) }, toast: showToast)
         case .keyboardSetup:
             KeyboardSetupView(onBack: { go(.settings) })
         case .keyboardReturn:
@@ -122,6 +132,18 @@ struct WZPhoneView: View {
     }
 
     private func go(_ s: WZScreen) { withAnimation { screen = s } }
+
+    // Open the rewrite-preset editor on `preset`, remembering where to return to on close.
+    private func openEditor(_ preset: RewritePreset, from origin: WZScreen) {
+        editorPreset = preset
+        editorReturn = origin
+        go(.presetEditor)
+    }
+
+    // A fresh, empty draft for the "New template" create flow.
+    private static func newPreset() -> RewritePreset {
+        RewritePreset(id: UUID().uuidString, name: "", prompt: "", icon: "spark")
+    }
 
     private func showToast(_ m: String) {
         withAnimation { toastMsg = m }
@@ -147,6 +169,7 @@ struct WZPhoneView: View {
 struct WhisperioApp: App {
     @StateObject private var settings = SettingsStore()
     @StateObject private var recordings = RecordingsStore()
+    @StateObject private var presets = PresetStore()
     @State private var incomingURL: URL?
 
     var body: some Scene {
@@ -154,6 +177,7 @@ struct WhisperioApp: App {
             RootView(incomingURL: $incomingURL)
                 .environmentObject(settings)
                 .environmentObject(recordings)
+                .environmentObject(presets)
                 .onAppear {
                     PhoneConnectivity.shared.recordings = recordings
                     PhoneConnectivity.shared.activate()

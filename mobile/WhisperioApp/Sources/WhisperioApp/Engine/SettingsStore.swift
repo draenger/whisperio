@@ -83,6 +83,14 @@ final class SettingsStore: ObservableObject {
         return OpenAIChatClient(apiKey: ready ? s.openAIKey : "", baseURL: s.openAIBaseURL)
     }
 
+    // Build the runner that applies a rewrite (render) preset to a transcript. Wraps the shared
+    // chat client — so it inherits the same cloud-consent + key gate via `isConfigured` — with
+    // the user's configured chat model. Callers guard on `isConfigured` and surface the consent
+    // sheet / Settings rather than failing silently.
+    func makeRewriter() -> Rewriter {
+        Rewriter(client: makeChatClient(), model: settings.chatModel)
+    }
+
     private func provider(for id: ProviderID, _ s: WhisperioSettings) -> any TranscriptionProvider {
         switch id {
         case .onDevice:
@@ -101,5 +109,31 @@ final class SettingsStore: ObservableObject {
     // Tidy a transcript when cleanup is enabled (deterministic, works on every device).
     func cleanup(_ text: String) -> String {
         settings.cleanupEnabled ? TextCleaner.tidy(text) : text
+    }
+}
+
+// Runs a rewrite preset against a transcript through the shared chat client. `isConfigured`
+// mirrors the client's gate (cloud consent granted + OpenAI key present) so a caller can guard
+// and route to consent/Settings instead of firing an unconfigured request. Temperature is pinned
+// to 0 for stable, deterministic rewrites (ported from the desktop post-processing shape).
+struct Rewriter {
+    let client: ChatLLM
+    let model: String
+
+    var isConfigured: Bool { client.isConfigured }
+
+    /// Apply `preset` to `transcript`, returning the trimmed rewritten text. Throws on an empty
+    /// transcript (nothing to rewrite) or any client failure so the caller can surface it.
+    func run(preset: RewritePreset, transcript: String) async throws -> String {
+        let m = RewritePromptBuilder.messages(preset: preset, transcript: transcript)
+        guard !m.user.isEmpty else { throw Self.err("There's nothing to rewrite.") }
+        let messages = [ChatMessage(role: "system", content: m.system),
+                        ChatMessage(role: "user", content: m.user)]
+        let out = try await client.complete(messages: messages, model: model, temperature: 0)
+        return out.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    static func err(_ m: String) -> NSError {
+        NSError(domain: "Whisperio.Rewriter", code: 1, userInfo: [NSLocalizedDescriptionKey: m])
     }
 }
