@@ -155,8 +155,11 @@ public final class RecordingSyncStore: ObservableObject {
     // MARK: - Migration
 
     /// One-time import of the legacy `Documents/recordings.json` history into SwiftData.
-    /// Idempotent on id (so a re-run can't duplicate), gated on the `migratedV2` flag, and
-    /// it renames the JSON aside on success so it's never re-imported.
+    /// Idempotent on id (so a re-run can't duplicate) and gated on the `migratedV2` flag. The
+    /// legacy `recordings.json` is deliberately LEFT IN PLACE as a durable local backup: if the
+    /// CloudKit-backed container later fails to init (e.g. the user signs out of iCloud) the store
+    /// falls back to the JSON backend, which must still find the history. The flag — not deleting
+    /// the file — is what prevents a re-import.
     private func migrateLegacyJSONIfNeeded() {
         let defaults = UserDefaults.standard
         guard !defaults.bool(forKey: RecordingSync.migratedFlagKey) else { return }
@@ -178,15 +181,8 @@ public final class RecordingSyncStore: ObservableObject {
         for r in legacy { upsert(r) }
         save()
 
+        // The flag (not deleting the file) prevents re-import; recordings.json stays as the
+        // JSON-backend fallback's durable copy.
         defaults.set(true, forKey: RecordingSync.migratedFlagKey)
-
-        // Park the JSON aside so a future first-run check can't re-import it.
-        let migratedURL = jsonURL.appendingPathExtension("migrated")
-        try? fm.removeItem(at: migratedURL)
-        do {
-            try fm.moveItem(at: jsonURL, to: migratedURL)
-        } catch {
-            Self.log.error("Migration: failed to rename recordings.json aside: \(error.localizedDescription)")
-        }
     }
 }

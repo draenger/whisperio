@@ -1,14 +1,16 @@
 import Foundation
 
-/// Pure path derivation for the GitHub mirror. All timestamps are formatted in UTC so the repo
-/// layout is stable regardless of the device's time zone (mirrors the digest day-bucketing).
+/// Pure path derivation for the GitHub mirror. Timestamps are formatted in the device's LOCAL
+/// time zone so the mirrored day matches the digest/journal, which bucket days with
+/// `Calendar.current` — otherwise a note captured near midnight would land in the app under one
+/// day but its `-summary.md` file under the previous (UTC) day.
 ///
 /// Layout (under an optional `<prefix>`):
 ///   `<prefix>/<category>/<YYYY-MM-DD_HH-mm-xxxxxxxx>/transcript.md` (and `render.md`)
 ///   `<prefix>/<YYYY-MM-DD>-summary.md`  (daily synthesis)
 public enum GitHubPaths {
-    /// Fixed UTC time zone for every path component.
-    public static let timeZone = TimeZone(identifier: "UTC")!
+    /// Local time zone for every path component — kept in sync with the digest's `Calendar.current`.
+    public static let timeZone = TimeZone.current
 
     private static func formatter(_ format: String) -> DateFormatter {
         let f = DateFormatter()

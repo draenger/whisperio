@@ -113,17 +113,17 @@ struct GitHubSyncView: View {
             .map(SyncItem.init)
         let syntheses = digests.digests.compactMap(DailySynthesis.init)
         let prefix = settings.settings.githubPathPrefix
-        let known = manifest.blobShas
         syncing = true
         Task {
             do {
                 let head = try await client.headOid()
-                var remote = known
-                for (path, sha) in try await client.remoteBlobShas(prefix: prefix) { remote[path] = sha }
+                // The live repo tree is the authoritative idempotency source — do NOT seed from the
+                // local manifest, or a stale sha would shadow a file that was deleted on the remote
+                // and SyncPlan would never re-upload it (silent mirror data loss).
+                let remote = try await client.remoteBlobShas(prefix: prefix)
                 let changes = SyncPlan.build(items: items, syntheses: syntheses,
                                              prefix: prefix, remoteBlobShas: remote)
                 if changes.isEmpty {
-                    for c in changes { remote[c.path] = c.blobSha }
                     finish(status: .upToDate, shas: remote, message: "Already up to date")
                     return
                 }
@@ -171,7 +171,7 @@ struct GitHubSyncView: View {
     private static func describe(_ error: Error) -> String {
         switch error {
         case GitHubError.http(let status, _) where status == 401: return "bad token"
-        case GitHubError.http(let status, _) where status == 404: return "repo not found"
+        case GitHubError.http(let status, _) where status == 404: return "repo or branch not found"
         case GitHubError.http(let status, _): return "HTTP \(status)"
         case GitHubError.noResponse, GitHubError.invalidURL: return "no response"
         default: return (error as NSError).localizedDescription
@@ -215,14 +215,16 @@ struct GitHubSyncView: View {
 // MARK: - Recording / digest → sync model mappers
 
 extension SyncItem {
-    /// Flatten a persisted `Recording` into the sync shape. `categoryId` keeps the recording's own
-    /// id (it drives the repo folder), while `categoryLabel` is resolved through the app taxonomy
-    /// (`WZCategories.of`, which falls back to Work) for the frontmatter/UI.
+    /// Flatten a persisted `Recording` into the sync shape. A nil or unknown category maps to the
+    /// shared `uncategorized` bucket — the SAME bucket the journal/digest use — so the GitHub layout
+    /// matches what the app shows (rather than silently filing uncategorized notes under `work/`).
     init(_ r: Recording) {
-        let categoryId = r.category ?? WZCategories.work.id
+        let known = r.category.flatMap { id in WZCategories.all.contains { $0.id == id } ? id : nil }
+        let categoryId = known ?? uncategorizedCategoryID
+        let categoryLabel = known.map { WZCategories.of($0).label } ?? "Uncategorized"
         self.init(id: r.id,
                   categoryId: categoryId,
-                  categoryLabel: WZCategories.of(categoryId).label,
+                  categoryLabel: categoryLabel,
                   timestamp: r.timestamp,
                   provider: r.provider,
                   transcript: r.transcription ?? "",

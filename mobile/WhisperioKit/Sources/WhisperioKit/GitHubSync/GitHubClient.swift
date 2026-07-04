@@ -113,11 +113,18 @@ public struct GitHubClient: Sendable {
         struct TreeResponse: Decodable {
             struct Entry: Decodable { let path: String; let type: String; let sha: String }
             let tree: [Entry]
+            let truncated: Bool?
         }
+        let decoded: TreeResponse
         do {
-            return try JSONDecoder().decode(TreeResponse.self, from: data).tree
-                .map { GitTreeEntry(path: $0.path, type: $0.type, sha: $0.sha) }
+            decoded = try JSONDecoder().decode(TreeResponse.self, from: data)
         } catch { throw GitHubError.malformedResponse("git/trees: \(error)") }
+        // A truncated listing omits entries, so the blob-sha map would be incomplete and SyncPlan
+        // would re-upload already-present files on every sync. Surface it instead of churning.
+        if decoded.truncated == true {
+            throw GitHubError.malformedResponse("git/trees truncated: repo too large for a single recursive tree listing")
+        }
+        return decoded.tree.map { GitTreeEntry(path: $0.path, type: $0.type, sha: $0.sha) }
     }
 
     /// Convenience: map of repo path → blob sha for every file currently on the branch, ready to

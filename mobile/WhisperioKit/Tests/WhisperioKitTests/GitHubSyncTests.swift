@@ -22,31 +22,44 @@ import Foundation
 
     // MARK: - Path derivation
 
-    @Test func recordingPathIsUTCAndUUIDShort() {
-        // 2026-01-15T04:00:00Z — the UTC minute stamp must not shift with the host time zone.
+    // Format a date in the SAME local zone the paths use, so these assertions stay deterministic on
+    // any host while still exercising the join/short-id/sanitize/collision structure.
+    private static func stamp(_ date: Date, _ fmt: String) -> String {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.timeZone = .current
+        f.dateFormat = fmt
+        return f.string(from: date)
+    }
+
+    @Test func recordingPathIsLocalMinuteAndUUIDShort() {
         let ts = Date(timeIntervalSince1970: 1_768_449_600)
         let id = UUID(uuidString: "6F1A2B3C-4D5E-6F70-8192-A3B4C5D6E7F8")!
+        let min = Self.stamp(ts, "yyyy-MM-dd_HH-mm")
         let dir = GitHubPaths.recordingDir(prefix: "notes", categoryId: "work", timestamp: ts, id: id)
-        #expect(dir == "notes/work/2026-01-15_04-00-6f1a2b3c")
-        #expect(GitHubPaths.transcriptPath(dir: dir) == "notes/work/2026-01-15_04-00-6f1a2b3c/transcript.md")
-        #expect(GitHubPaths.renderPath(dir: dir) == "notes/work/2026-01-15_04-00-6f1a2b3c/render.md")
+        #expect(dir == "notes/work/\(min)-6f1a2b3c")
+        #expect(GitHubPaths.transcriptPath(dir: dir) == "notes/work/\(min)-6f1a2b3c/transcript.md")
+        #expect(GitHubPaths.renderPath(dir: dir) == "notes/work/\(min)-6f1a2b3c/render.md")
     }
 
     @Test func emptyPrefixOmitsLeadingSlash() {
         let id = UUID(uuidString: "6F1A2B3C-4D5E-6F70-8192-A3B4C5D6E7F8")!
+        let min = Self.stamp(Self.noon, "yyyy-MM-dd_HH-mm")
         let dir = GitHubPaths.recordingDir(prefix: "", categoryId: "work", timestamp: Self.noon, id: id)
-        #expect(dir == "work/2026-01-15_12-00-6f1a2b3c")
+        #expect(dir == "work/\(min)-6f1a2b3c")
     }
 
     @Test func prefixTrailingSlashIsNormalized() {
         let id = UUID(uuidString: "6F1A2B3C-4D5E-6F70-8192-A3B4C5D6E7F8")!
+        let min = Self.stamp(Self.noon, "yyyy-MM-dd_HH-mm")
         let dir = GitHubPaths.recordingDir(prefix: "/vault/", categoryId: "work", timestamp: Self.noon, id: id)
-        #expect(dir == "vault/work/2026-01-15_12-00-6f1a2b3c")
+        #expect(dir == "vault/work/\(min)-6f1a2b3c")
     }
 
     @Test func synthesisPathIsDaySlug() {
-        #expect(GitHubPaths.synthesisPath(prefix: "notes", date: Self.noon) == "notes/2026-01-15-summary.md")
-        #expect(GitHubPaths.synthesisPath(prefix: "", date: Self.noon) == "2026-01-15-summary.md")
+        let day = Self.stamp(Self.noon, "yyyy-MM-dd")
+        #expect(GitHubPaths.synthesisPath(prefix: "notes", date: Self.noon) == "notes/\(day)-summary.md")
+        #expect(GitHubPaths.synthesisPath(prefix: "", date: Self.noon) == "\(day)-summary.md")
     }
 
     @Test func oddCategoryIdsAreSanitized() {
@@ -58,12 +71,13 @@ import Foundation
     }
 
     @Test func collisionGetsNumericSuffix() {
-        // Two uuids sharing the same first-8 hex, same UTC minute → the second folder is suffixed.
+        // Two uuids sharing the same first-8 hex, same minute → the second folder is suffixed.
         let a = UUID(uuidString: "6F1A2B3C-0000-4000-8000-000000000001")!
         let b = UUID(uuidString: "6F1A2B3C-0000-4000-8000-000000000002")!
+        let min = Self.stamp(Self.noon, "yyyy-MM-dd_HH-mm")
         let assigned = GitHubPaths.assignRecordingDirs([item(id: a), item(id: b)], prefix: "notes")
-        #expect(assigned[0].dir == "notes/work/2026-01-15_12-00-6f1a2b3c")
-        #expect(assigned[1].dir == "notes/work/2026-01-15_12-00-6f1a2b3c-2")
+        #expect(assigned[0].dir == "notes/work/\(min)-6f1a2b3c")
+        #expect(assigned[1].dir == "notes/work/\(min)-6f1a2b3c-2")
     }
 
     // MARK: - Markdown rendering
@@ -135,9 +149,11 @@ import Foundation
             syntheses: [DailySynthesis(date: Self.noon, body: "summary", sourceIds: [id])],
             prefix: "notes")
         let paths = Set(changes.map(\.path))
-        #expect(paths.contains("notes/work/2026-01-15_12-00-6f1a2b3c/transcript.md"))
-        #expect(paths.contains("notes/work/2026-01-15_12-00-6f1a2b3c/render.md"))
-        #expect(paths.contains("notes/2026-01-15-summary.md"))
+        let min = Self.stamp(Self.noon, "yyyy-MM-dd_HH-mm")
+        let day = Self.stamp(Self.noon, "yyyy-MM-dd")
+        #expect(paths.contains("notes/work/\(min)-6f1a2b3c/transcript.md"))
+        #expect(paths.contains("notes/work/\(min)-6f1a2b3c/render.md"))
+        #expect(paths.contains("notes/\(day)-summary.md"))
         #expect(changes.count == 3)
     }
 

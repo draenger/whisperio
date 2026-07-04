@@ -102,7 +102,7 @@ struct DigestDayView: View {
     // MARK: - Grouped notes
 
     private func groupSection(_ group: DigestGroup) -> some View {
-        let byID = Dictionary(uniqueKeysWithValues: dayRecs.map { ($0.id, $0) })
+        let byID = Dictionary(dayRecs.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         let recs = group.recordingIDs.compactMap { byID[$0] }
         let known = group.categoryID == uncategorizedCategoryID ? nil : WZCategories.of(group.categoryID)
         return VStack(alignment: .leading, spacing: 9) {

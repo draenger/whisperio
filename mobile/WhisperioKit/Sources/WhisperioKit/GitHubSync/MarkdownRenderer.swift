@@ -8,7 +8,9 @@ public enum MarkdownRenderer {
     /// isn't `Sendable`, so we never hold it in shared static state (matches `DigestPromptBuilder`).
     private static func isoString(_ date: Date) -> String {
         let f = ISO8601DateFormatter()
-        f.timeZone = GitHubPaths.timeZone
+        // `created` is an absolute instant — keep it canonical UTC, independent of the LOCAL zone
+        // GitHubPaths uses for day-bucket file/folder names.
+        f.timeZone = TimeZone(identifier: "UTC")!
         f.formatOptions = [.withInternetDateTime]
         return f.string(from: date)
     }

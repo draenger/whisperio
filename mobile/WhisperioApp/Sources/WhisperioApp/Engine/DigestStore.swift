@@ -72,7 +72,7 @@ final class DigestStore: ObservableObject {
 
         // 2) Group the (now re-classified) day by category, preserving the passed-in order.
         let dayRecs = dayRecordings()
-        let byID = Dictionary(uniqueKeysWithValues: dayRecs.map { ($0.id, $0) })
+        let byID = Dictionary(dayRecs.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         let groups = DigestGrouping.groupByCategory(dayRecs, order: order)
 
         // 3) Cache the grouped digest (keeping any prior summary until the new one lands) so the
