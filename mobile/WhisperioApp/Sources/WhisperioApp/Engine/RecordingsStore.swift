@@ -3,20 +3,66 @@ import Combine
 import os
 import WhisperioKit
 
-// Real, persisted recordings (replaces SampleData). Saved as JSON in Documents.
+// Real, persisted recordings. Prefers the SwiftData + CloudKit-backed RecordingSyncStore
+// (WhisperioKit) so history follows the user across devices; falls back to the legacy JSON
+// file in Documents when the CloudKit container can't be built (e.g. no iCloud account, or a
+// pre-iOS-17 host). The class name + @MainActor ObservableObject surface are unchanged, so
+// every @EnvironmentObject consumer stays untouched.
 @MainActor
 final class RecordingsStore: ObservableObject {
     @Published private(set) var items: [Recording] = []
-    private let fileURL: URL
+
+    // Exactly one backend is live for the process. `.sync` delegates to the synced store and
+    // mirrors its published items; `.json` keeps the original file-backed behaviour.
+    private enum Backend {
+        case sync(RecordingSyncStore)
+        case json(URL)
+    }
+    private let backend: Backend
+
+    // Keeps our published `items` in step with the synced store's own @Published items.
+    private var syncCancellable: AnyCancellable?
 
     init() {
+        // iOS 17+ (the app's deployment floor) with a reachable container → synced store, which
+        // also runs the one-time recordings.json → SwiftData migration on init. Any init failure
+        // (missing container, no iCloud) drops to the JSON fallback so history is never lost.
+        if #available(iOS 17, macOS 14, *) {
+            do {
+                let store = try RecordingSyncStore()
+                backend = .sync(store)
+                items = store.items
+                syncCancellable = store.$items.sink { [weak self] in self?.items = $0 }
+                return
+            } catch {
+                Self.log.error("RecordingSyncStore init failed, falling back to JSON: \(error.localizedDescription)")
+            }
+        }
         let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-        fileURL = docs.appendingPathComponent("recordings.json")
-        load()
+        let url = docs.appendingPathComponent("recordings.json")
+        backend = .json(url)
+        loadJSON(from: url)
     }
 
-    func add(_ r: Recording) { items.insert(r, at: 0); save() }
-    func delete(_ r: Recording) { items.removeAll { $0.id == r.id }; save() }
+    func add(_ r: Recording) {
+        switch backend {
+        case .sync(let store):
+            store.add(r)
+        case .json(let url):
+            items.insert(r, at: 0)
+            saveJSON(to: url)
+        }
+    }
+
+    func delete(_ r: Recording) {
+        switch backend {
+        case .sync(let store):
+            store.delete(r)
+        case .json(let url):
+            items.removeAll { $0.id == r.id }
+            saveJSON(to: url)
+        }
+    }
 
     // MARK: - Categories
 
@@ -27,12 +73,17 @@ final class RecordingsStore: ObservableObject {
     }
 
     /// Reassign a recording's category — persisted on the backing Recording so it survives
-    /// relaunches (reflected everywhere it's displayed). No-op for sample rows.
+    /// relaunches (reflected everywhere it's displayed). No-op for sample rows (no sourceId).
     func setCategory(_ id: String, for demo: DemoRecording) {
-        guard let sourceId = demo.sourceId,
-              let idx = items.firstIndex(where: { $0.id == sourceId }) else { return }
-        items[idx].category = id
-        save()
+        guard let sourceId = demo.sourceId else { return }
+        switch backend {
+        case .sync(let store):
+            store.setCategory(id, for: sourceId)
+        case .json(let url):
+            guard let idx = items.firstIndex(where: { $0.id == sourceId }) else { return }
+            items[idx].category = id
+            saveJSON(to: url)
+        }
     }
 
     // MARK: - Render (AI rewrite)
@@ -41,16 +92,23 @@ final class RecordingsStore: ObservableObject {
     /// mirrors setCategory: survives relaunches and reflects everywhere it's displayed. No-op for
     /// sample rows (no sourceId).
     func setRender(_ text: String, presetID: String, for demo: DemoRecording) {
-        guard let sourceId = demo.sourceId,
-              let idx = items.firstIndex(where: { $0.id == sourceId }) else { return }
-        items[idx].render = text
-        items[idx].renderPresetID = presetID
-        save()
+        guard let sourceId = demo.sourceId else { return }
+        switch backend {
+        case .sync(let store):
+            store.setRender(text, presetID: presetID, for: sourceId)
+        case .json(let url):
+            guard let idx = items.firstIndex(where: { $0.id == sourceId }) else { return }
+            items[idx].render = text
+            items[idx].renderPresetID = presetID
+            saveJSON(to: url)
+        }
     }
+
+    // MARK: - JSON fallback
 
     private static let log = Logger(subsystem: "ai.whisperio", category: "RecordingsStore")
 
-    private func load() {
+    private func loadJSON(from fileURL: URL) {
         // Missing file is the normal first-run path — nothing to report.
         guard FileManager.default.fileExists(atPath: fileURL.path) else { return }
         let data: Data
@@ -72,7 +130,7 @@ final class RecordingsStore: ObservableObject {
         }
     }
 
-    private func save() {
+    private func saveJSON(to fileURL: URL) {
         do {
             let data = try JSONEncoder().encode(items)
             try data.write(to: fileURL, options: [.atomic])
