@@ -11,10 +11,20 @@ import SwiftUI
 // `WZTheme` / `\.wz` environment). Default window ~1100x760 so the split view breathes.
 @main
 struct WhisperioMacApp: App {
+    // Real, persisted stores so the Journal tab is live (store-backed digests over real notes),
+    // not sample data. `wzLiveJournal` flips iPadSplitView's Journal onto JournalView/DigestDayView.
+    @StateObject private var settings = SettingsStore()
+    @StateObject private var recordings = RecordingsStore()
+    @StateObject private var digests = DigestStore()
+
     var body: some Scene {
         WindowGroup("Whisperio") {
             iPadSplitView()
                 .environment(\.wz, .rezmeTheme)
+                .environment(\.wzLiveJournal, true)
+                .environmentObject(settings)
+                .environmentObject(recordings)
+                .environmentObject(digests)
                 .frame(minWidth: 820, minHeight: 560)
         }
         .defaultSize(width: 1100, height: 760)

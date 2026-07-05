@@ -10,6 +10,9 @@ import SwiftUI
 // Journal tab mirrors that design on the same sample recordings.
 struct iPadSplitView: View {
     @Environment(\.wz) private var t
+    // Set by the live shell (Mac/iPad entry) once the real stores are injected. When true the
+    // Journal tab is store-backed (JournalView + DigestDayView); otherwise it stays on sample data.
+    @Environment(\.wzLiveJournal) private var liveJournal
     @State private var tab = "library"   // library | journal
     @State private var sel = WZSample.recordings[0].id
     private var cur: DemoRecording { WZSample.recordings.first { $0.id == sel } ?? WZSample.recordings[0] }
@@ -28,6 +31,8 @@ struct iPadSplitView: View {
                     Rectangle().fill(t.line).frame(width: 1)
                     detail.frame(maxWidth: .infinity)
                 }
+            } else if liveJournal {
+                IPadLiveJournal(onExit: { withAnimation(.easeInOut(duration: 0.18)) { tab = "library" } })
             } else {
                 iPadJournal()
             }
@@ -144,6 +149,49 @@ struct iPadSplitView: View {
                 .padding(.horizontal, 40).padding(.vertical, 32)
             }
         }
+    }
+}
+
+// Store-backed Journal for the live iPad/Mac shell: the real JournalView day index on the left,
+// the real DigestDayView for the selected day on the right. Both read the injected RecordingsStore /
+// DigestStore / SettingsStore, so summaries generate and notes reflect live edits. Only constructed
+// when `wzLiveJournal` is true (stores present), so the sample path never resolves those objects.
+private struct IPadLiveJournal: View {
+    @Environment(\.wz) private var t
+    var onExit: () -> Void = {}
+    @State private var day: Date?
+
+    var body: some View {
+        HStack(spacing: 0) {
+            JournalView(onBack: onExit, openDay: { day = $0 })
+                .frame(width: 360)
+            Rectangle().fill(t.line).frame(width: 1)
+            Group {
+                if let day {
+                    DigestDayView(day: day,
+                                  onBack: { self.day = nil },
+                                  openRec: { _ in },
+                                  openSettings: {},
+                                  toast: { _ in })
+                        .id(day)
+                } else {
+                    placeholder
+                }
+            }
+            .frame(maxWidth: .infinity)
+        }
+    }
+
+    private var placeholder: some View {
+        VStack(spacing: 12) {
+            WIcon("book", size: 34, weight: .regular).foregroundStyle(t.faint)
+            Text("Select a day").font(WZFont.ui(16, .semibold)).foregroundStyle(t.text)
+            Text("Pick a day from the journal to see its summary and notes.")
+                .font(WZFont.ui(13.5)).foregroundStyle(t.muted).multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(40)
+        .background(t.bg2)
     }
 }
 

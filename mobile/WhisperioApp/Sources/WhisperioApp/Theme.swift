@@ -138,3 +138,16 @@ extension EnvironmentValues {
         set { self[WZThemeKey.self] = newValue }
     }
 }
+
+// Set true only by a shell that has injected the real RecordingsStore / DigestStore / SettingsStore
+// (the live iPad/Mac app entry). Left false in the Gallery/preview so the iPad Journal falls back to
+// its self-contained sample data and never resolves a missing @EnvironmentObject.
+private struct WZLiveJournalKey: EnvironmentKey {
+    static let defaultValue = false
+}
+extension EnvironmentValues {
+    var wzLiveJournal: Bool {
+        get { self[WZLiveJournalKey.self] }
+        set { self[WZLiveJournalKey.self] = newValue }
+    }
+}
