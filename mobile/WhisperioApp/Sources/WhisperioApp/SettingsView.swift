@@ -43,6 +43,24 @@ struct SettingsView: View {
         settings.settings = s
     }
 
+    private func setStorageMode(_ mode: StorageMode) {
+        var s = settings.settings
+        s.storageMode = mode
+        settings.settings = s
+    }
+
+    // A selectable Storage row — tapping picks where transcripts are persisted. Shows a teal
+    // checkmark on the currently-selected mode. Change takes effect on next launch (the store's
+    // ModelContainer config is fixed at init), surfaced by the footnote under the group.
+    private func storageRow(_ mode: StorageMode, _ label: String, _ sub: String,
+                            _ icon: String, last: Bool = false) -> some View {
+        let on = settings.settings.storageMode == mode
+        return SettRow(icon: icon, label: label, sub: sub, last: last,
+                       onTap: { setStorageMode(mode) }) {
+            if on { WIcon("check", size: 18).foregroundStyle(t.accent) }
+        }
+    }
+
     var body: some View {
         ScreenScaffold {
             VStack(spacing: 0) {
@@ -187,6 +205,18 @@ struct SettingsView: View {
                                     last: true) {
                                 WToggle(on: boolBinding(\.autoDailyDigest))
                             }
+                        }
+
+                        VStack(alignment: .leading, spacing: 6) {
+                            SettGroup(title: "Storage") {
+                                storageRow(.onDevice, "On this device", "Private — stays on this iPhone", "lock")
+                                storageRow(.iCloud, "iCloud",
+                                           "Sync your transcripts to your private iCloud across your Apple devices",
+                                           "cloud", last: true)
+                            }
+                            Text("Takes effect after you restart Whisperio.")
+                                .font(WZFont.mono(11)).foregroundStyle(t.faint)
+                                .padding(.leading, 4)
                         }
 
                         SettGroup(title: "Sync") {

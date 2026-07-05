@@ -48,20 +48,31 @@ public final class RecordingSyncStore: ObservableObject {
     /// container id; the entitlement must list the same identifier.
     public static let cloudKitContainerID = "iCloud.ai.whisperio.mobile"
 
-    /// MASTER SWITCH for CloudKit sync. Keep **false** until the CloudKit container
-    /// `iCloud.ai.whisperio.mobile` is actually registered in the Apple Developer portal AND the
-    /// shipped build carries the iCloud entitlement. A CloudKit-backed `ModelContainer` FAULTS
-    /// (uncatchable → crash on launch) when the container/entitlement are missing but an iCloud
-    /// account is present — which is exactly a normal user's device. Because the App Store build
-    /// currently ships with the iCloud entitlement stripped (no container yet), attempting CloudKit
-    /// crashed build 21 on launch. Flip to `true` in the same change that ships the entitlement +
-    /// registered container. Until then we persist locally (no data loss, just no cross-device sync).
-    public static let cloudKitEnabled = true
+    /// UserDefaults key the app's `SettingsStore` persists the `WhisperioSettings` JSON blob under.
+    /// Kept in sync with `SettingsStore.key`; decoded here so the store can honor the user's
+    /// on-device / iCloud choice without a compile dependency on the app target.
+    public static let settingsDefaultsKey = "whisperio.settings.v1"
 
-    /// Build the store. Uses CloudKit only when it is enabled AND an iCloud account is present;
-    /// otherwise a plain on-disk SwiftData store, which never touches CloudKit and so can't fault.
+    /// The user's persisted storage choice, decoded from the settings blob in UserDefaults.
+    /// Defaults to `.iCloud` (the shipped behavior) when the blob is absent or undecodable.
+    private static func persistedStorageMode() -> StorageMode {
+        guard let data = UserDefaults.standard.data(forKey: settingsDefaultsKey),
+              let s = try? JSONDecoder().decode(WhisperioSettings.self, from: data) else {
+            return .iCloud
+        }
+        return s.storageMode
+    }
+
+    /// Build the store, honoring the user's storage choice (Settings → Storage). Uses CloudKit
+    /// only when the user picked `.iCloud` AND an iCloud account is present; otherwise a plain
+    /// on-disk SwiftData store, which never touches CloudKit and so can't fault. The ubiquity
+    /// guard means a signed-out device always falls back to local and never crashes.
+    ///
+    /// NOTE: the SwiftData `ModelContainer` config is fixed at init, so **changing the storage
+    /// mode only takes effect on the next launch** — the UI tells the user as much.
     public convenience init() throws {
-        let useCloudKit = RecordingSyncStore.cloudKitEnabled
+        let mode = RecordingSyncStore.persistedStorageMode()
+        let useCloudKit = (mode == .iCloud)
             && FileManager.default.ubiquityIdentityToken != nil
         let config = useCloudKit
             ? ModelConfiguration(cloudKitDatabase: .private(RecordingSyncStore.cloudKitContainerID))

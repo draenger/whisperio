@@ -1,5 +1,11 @@
 import Foundation
 
+/// Where transcripts (the recordings history) are persisted. User-selectable in Settings.
+/// `onDevice` keeps everything in a private local SwiftData store; `iCloud` syncs the private
+/// CloudKit database across the user's Apple devices. Switching takes effect on next launch
+/// (the SwiftData ModelContainer config is fixed at init — see `RecordingSyncStore`).
+public enum StorageMode: String, Codable, Sendable, CaseIterable { case onDevice; case iCloud }
+
 /// User settings, mirroring the desktop `AppSettings` shape (so config can be shared/synced
 /// later). No secrets are baked in — all keys default to empty and are entered at runtime.
 public struct WhisperioSettings: Codable, Sendable, Equatable {
@@ -55,6 +61,11 @@ public struct WhisperioSettings: Codable, Sendable, Equatable {
     /// UserDefaults blob before writing, so it never sits in plaintext backups.
     public var githubToken: String
 
+    /// Where transcripts are stored: local-only (`onDevice`) or synced via the user's private
+    /// CloudKit database (`iCloud`). Defaults to `.iCloud` to preserve the shipped behavior for
+    /// existing users. Read by `RecordingSyncStore` at launch to pick the SwiftData backend.
+    public var storageMode: StorageMode
+
     public init(
         providerChain: [ProviderID] = [.onDevice],
         openAIKey: String = "",
@@ -77,7 +88,8 @@ public struct WhisperioSettings: Codable, Sendable, Equatable {
         githubRepo: String = "",
         githubBranch: String = "main",
         githubPathPrefix: String = "",
-        githubToken: String = ""
+        githubToken: String = "",
+        storageMode: StorageMode = .iCloud
     ) {
         self.providerChain = providerChain
         self.openAIKey = openAIKey
@@ -101,6 +113,7 @@ public struct WhisperioSettings: Codable, Sendable, Equatable {
         self.githubBranch = githubBranch
         self.githubPathPrefix = githubPathPrefix
         self.githubToken = githubToken
+        self.storageMode = storageMode
     }
 
     // Tolerant decoding — missing keys (older persisted settings, or future-added fields)
@@ -130,6 +143,7 @@ public struct WhisperioSettings: Codable, Sendable, Equatable {
         githubBranch = try c.decodeIfPresent(String.self, forKey: .githubBranch) ?? d.githubBranch
         githubPathPrefix = try c.decodeIfPresent(String.self, forKey: .githubPathPrefix) ?? d.githubPathPrefix
         githubToken = try c.decodeIfPresent(String.self, forKey: .githubToken) ?? d.githubToken
+        storageMode = try c.decodeIfPresent(StorageMode.self, forKey: .storageMode) ?? d.storageMode
     }
 
     /// Whether the given engine requires (and currently has) cloud consent to run.
