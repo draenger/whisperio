@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, type ReactElement } from 'react'
+import { useState, useEffect, useCallback, useRef, type ReactElement, type ReactNode } from 'react'
 import { useTheme } from '../../ThemeContext'
 import { TitleBar } from '../common/TitleBar'
 import type { Theme } from '../../theme'
@@ -99,6 +99,133 @@ function NavIcon({ d, size = 16 }: { d: string; size?: number }): ReactElement {
 interface MediaDeviceOption {
   deviceId: string
   label: string
+}
+
+/* ─── Status header strip (under the title bar) ─── */
+
+/** Provider ids → short display labels for the engine chain. */
+const CHAIN_LABELS: Record<string, string> = {
+  openai: 'OpenAI',
+  elevenlabs: 'ElevenLabs',
+  selfhosted: 'On-Device'
+}
+
+function MicroLabel({ children, theme }: { children: ReactNode; theme: Theme }): ReactElement {
+  return (
+    <span style={{
+      fontFamily: "'JetBrains Mono', monospace",
+      fontSize: '9px',
+      fontWeight: 600,
+      letterSpacing: '0.16em',
+      textTransform: 'uppercase',
+      color: theme.textMuted,
+      flexShrink: 0
+    }}>{children}</span>
+  )
+}
+
+function Keycap({ children, theme }: { children: ReactNode; theme: Theme }): ReactElement {
+  return (
+    <span style={{
+      fontFamily: "'JetBrains Mono', monospace",
+      fontSize: '10px',
+      fontWeight: 600,
+      lineHeight: 1,
+      padding: '3px 6px',
+      borderRadius: '5px',
+      background: theme.bgTertiary,
+      border: `1px solid ${theme.border}`,
+      boxShadow: `0 1px 0 ${theme.border}`,
+      color: theme.textSecondary,
+      whiteSpace: 'nowrap'
+    }}>{children}</span>
+  )
+}
+
+/** Compact status strip mounted directly under the title bar. Reads from live settings state. */
+function StatusHeader({
+  dictationHotkey,
+  providerChain,
+  aiPostProcessing,
+  theme
+}: {
+  dictationHotkey: string
+  providerChain: string[]
+  aiPostProcessing: boolean
+  theme: Theme
+}): ReactElement {
+  const keys = (dictationHotkey || 'Ctrl+Shift+Space').split('+')
+  const chain = providerChain.length ? providerChain : ['openai']
+
+  const Divider = (): ReactElement => (
+    <span style={{ width: '1px', height: '20px', background: theme.border, flexShrink: 0 }} />
+  )
+
+  return (
+    <div style={{
+      display: 'flex',
+      alignItems: 'center',
+      gap: '18px',
+      padding: '9px 18px',
+      background: theme.bgSecondary,
+      borderBottom: `1px solid ${theme.border}`,
+      flexShrink: 0,
+      overflowX: 'auto'
+    }}>
+      {/* STATUS */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+        <MicroLabel theme={theme}>Status</MicroLabel>
+        <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <span style={{ width: '7px', height: '7px', borderRadius: '50%', background: theme.success, boxShadow: `0 0 6px ${theme.success}`, flexShrink: 0 }} />
+          <span style={{ fontSize: '12px', fontWeight: 600, color: theme.text }}>Ready</span>
+        </span>
+      </div>
+
+      <Divider />
+
+      {/* DICTATE */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+        <MicroLabel theme={theme}>Dictate</MicroLabel>
+        <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+          {keys.map((k, i) => <Keycap key={i} theme={theme}>{k}</Keycap>)}
+        </span>
+      </div>
+
+      <Divider />
+
+      {/* ENGINE CHAIN */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
+        <MicroLabel theme={theme}>Engine Chain</MicroLabel>
+        <span style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '12px', fontWeight: 600, whiteSpace: 'nowrap' }}>
+          {chain.map((id, i) => (
+            <span key={id} style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+              {i > 0 && <span style={{ color: theme.textMuted, fontWeight: 400 }}>→</span>}
+              <span style={{ color: i === 0 ? theme.accent : theme.textSecondary }}>{CHAIN_LABELS[id] ?? id}</span>
+            </span>
+          ))}
+        </span>
+      </div>
+
+      <div style={{ flex: 1 }} />
+
+      {/* AI cleanup chip — only when post-processing is on */}
+      {aiPostProcessing && (
+        <span style={{
+          display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0,
+          padding: '4px 10px', borderRadius: '999px',
+          background: `${theme.accent}14`,
+          border: `1px solid ${theme.accent}40`,
+          color: theme.accent,
+          fontSize: '11px', fontWeight: 600, whiteSpace: 'nowrap'
+        }}>
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M12 3l1.9 4.6L18.5 9.5 13.9 11.4 12 16l-1.9-4.6L5.5 9.5l4.6-1.9z" />
+          </svg>
+          AI cleanup
+        </span>
+      )}
+    </div>
+  )
 }
 
 /** Dedicated Updates settings tab. */
@@ -342,6 +469,19 @@ export function SettingsForm(): ReactElement {
     outputRecordingHotkey
   ])
 
+  // Auto-save: persist whenever any setting changes (debounced). Skips the initial
+  // load so we don't write straight back what we just read.
+  const didAutoSaveInit = useRef(false)
+  useEffect(() => {
+    if (loading) return
+    if (!didAutoSaveInit.current) {
+      didAutoSaveInit.current = true
+      return
+    }
+    const t = setTimeout(() => { handleSave() }, 400)
+    return () => clearTimeout(t)
+  }, [handleSave, loading])
+
   const s = makeStyles(theme)
 
   if (loading) {
@@ -370,6 +510,15 @@ export function SettingsForm(): ReactElement {
 
       <UpdateBanner state={updater} theme={theme} />
 
+      {activeTab !== 'recordings' && (
+        <StatusHeader
+          dictationHotkey={dictationHotkey}
+          providerChain={providerChain}
+          aiPostProcessing={aiPostProcessing}
+          theme={theme}
+        />
+      )}
+
       <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
         {/* Sidebar nav */}
         <nav style={s.sidebar}>
@@ -394,7 +543,7 @@ export function SettingsForm(): ReactElement {
                   }
                 }}
               >
-                <span style={{ display: 'flex', flexShrink: 0, color: active ? theme.accentLight : theme.textMuted }}>
+                <span style={{ display: 'flex', flexShrink: 0, color: active ? theme.accent : theme.textMuted }}>
                   <NavIcon d={TAB_ICONS[tab.id]} />
                 </span>
                 {tab.label}
@@ -506,22 +655,22 @@ export function SettingsForm(): ReactElement {
                 </div>
               </div>
 
-              {/* Save bar */}
+              {/* Auto-save footer — settings persist on change */}
               <div style={s.saveBar}>
-                <button
-                  onClick={handleSave}
-                  style={s.button}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.background = theme.accentHover
-                    e.currentTarget.style.boxShadow = `0 0 20px ${theme.accentGlow}`
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.background = theme.accent
-                    e.currentTarget.style.boxShadow = 'none'
-                  }}
-                >
-                  {saved ? 'Saved!' : 'Save Settings'}
-                </button>
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  color: saved ? theme.success : theme.accent,
+                  transition: 'color 0.2s'
+                }}>
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M20 6L9 17l-5-5" />
+                  </svg>
+                  <span style={{ fontSize: '12.5px', fontWeight: 600 }}>
+                    {saved ? 'Saved' : 'Changes save automatically'}
+                  </span>
+                </div>
               </div>
             </>
           )}
@@ -1924,9 +2073,9 @@ function makeStyles(theme: Theme) {
       transition: 'background 0.15s, color 0.15s'
     } as React.CSSProperties,
     navItemActive: {
-      background: theme.inputBg,
+      background: `${theme.accent}14`,
       color: theme.text,
-      boxShadow: `inset 0 0 0 1px ${theme.border}`
+      boxShadow: `inset 3px 0 0 ${theme.accent}`
     } as React.CSSProperties,
     versionBadge: {
       display: 'flex',
@@ -2002,12 +2151,12 @@ function makeStyles(theme: Theme) {
       lineHeight: '1.4'
     },
     saveBar: {
-      padding: '12px 24px',
+      padding: '14px 26px',
       borderTop: `1px solid ${theme.border}`,
       background: theme.bg,
       flexShrink: 0,
       display: 'flex',
-      justifyContent: 'flex-end'
+      justifyContent: 'flex-start'
     },
     button: {
       background: theme.accent,
