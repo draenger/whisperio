@@ -25,6 +25,7 @@ struct HomeView: View {
                 VStack(spacing: 0) {
                     WHeader(title: "Whisperio") {
                         HStack(spacing: 9) {
+                            HeaderSyncGlyph()
                             SquareIconButton(icon: "book", action: openJournal)
                             SquareIconButton(icon: "settings", action: openSettings)
                         }

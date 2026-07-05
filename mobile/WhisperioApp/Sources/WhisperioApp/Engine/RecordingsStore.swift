@@ -12,6 +12,14 @@ import WhisperioKit
 final class RecordingsStore: ObservableObject {
     @Published private(set) var items: [Recording] = []
 
+    // True while the CloudKit-backed store is actively importing/exporting. Forwarded from the
+    // synced store's own `isSyncing`; always false for the JSON backend.
+    @Published private(set) var isSyncing = false
+
+    // Whether the live library is iCloud-backed (SwiftData + CloudKit). Drives the UI's iCloud
+    // badge. False for the JSON fallback.
+    let isCloudBacked: Bool
+
     // Exactly one backend is live for the process. `.sync` delegates to the synced store and
     // mirrors its published items; `.json` keeps the original file-backed behaviour.
     private enum Backend {
@@ -22,6 +30,8 @@ final class RecordingsStore: ObservableObject {
 
     // Keeps our published `items` in step with the synced store's own @Published items.
     private var syncCancellable: AnyCancellable?
+    // Keeps our published `isSyncing` in step with the synced store's own @Published flag.
+    private var syncStateCancellable: AnyCancellable?
 
     init() {
         // iOS 17+ (the app's deployment floor) with a reachable container → synced store, which
@@ -31,8 +41,11 @@ final class RecordingsStore: ObservableObject {
             do {
                 let store = try RecordingSyncStore()
                 backend = .sync(store)
+                isCloudBacked = store.isCloudBacked
                 items = store.items
+                isSyncing = store.isSyncing
                 syncCancellable = store.$items.sink { [weak self] in self?.items = $0 }
+                syncStateCancellable = store.$isSyncing.sink { [weak self] in self?.isSyncing = $0 }
                 return
             } catch {
                 Self.log.error("RecordingSyncStore init failed, falling back to JSON: \(error.localizedDescription)")
@@ -41,6 +54,7 @@ final class RecordingsStore: ObservableObject {
         let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
         let url = docs.appendingPathComponent("recordings.json")
         backend = .json(url)
+        isCloudBacked = false
         loadJSON(from: url)
     }
 

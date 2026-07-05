@@ -1,5 +1,7 @@
 import Foundation
 import SwiftData
+import CoreData
+import CloudKit
 import os
 
 /// Pure, container-free helpers backing `RecordingSyncStore`. Kept off the `@available`
@@ -39,8 +41,20 @@ public final class RecordingSyncStore: ObservableObject {
     /// Current recordings, newest first, deduped on id. Recomputed after every mutation.
     @Published public private(set) var items: [Recording] = []
 
+    /// True while a CloudKit import/export is in flight (event `endDate == nil`). Drives the
+    /// UI sync spinner. Always false for a non-cloud (on-device / in-memory) store.
+    @Published public private(set) var isSyncing = false
+
+    /// Whether this store persists into CloudKit (private DB). False for on-device / in-memory
+    /// stores. Set once at init; used by the UI to decide whether to show the iCloud badge.
+    public let isCloudBacked: Bool
+
     private let container: ModelContainer
     private var context: ModelContext { container.mainContext }
+
+    /// Retained token for the `NSPersistentCloudKitContainer` event observer. Kept for the
+    /// store's lifetime (the store lives as long as the app), so we never remove it.
+    private var cloudEventObserver: NSObjectProtocol?
 
     private static let log = Logger(subsystem: "ai.whisperio", category: "RecordingSyncStore")
 
@@ -77,15 +91,41 @@ public final class RecordingSyncStore: ObservableObject {
         let config = useCloudKit
             ? ModelConfiguration(cloudKitDatabase: .private(RecordingSyncStore.cloudKitContainerID))
             : ModelConfiguration()
-        try self.init(configuration: config)
+        try self.init(configuration: config, isCloudBacked: useCloudKit)
     }
 
     /// Designated init — takes an explicit `ModelConfiguration` so tests can inject an
-    /// in-memory, CloudKit-free store.
-    public init(configuration: ModelConfiguration) throws {
+    /// in-memory, CloudKit-free store. `isCloudBacked` marks whether the config syncs against
+    /// CloudKit; when true the store observes sync events to drive `isSyncing`.
+    public init(configuration: ModelConfiguration, isCloudBacked: Bool = false) throws {
+        self.isCloudBacked = isCloudBacked
         container = try ModelContainer(for: RecordingEntity.self, configurations: configuration)
         migrateLegacyJSONIfNeeded()
         reload()
+        if isCloudBacked {
+            observeCloudKitEvents()
+        }
+    }
+
+    /// Observe `NSPersistentCloudKitContainer` sync events so the UI can show a spinner while an
+    /// import/export is in flight. SwiftData drives an `NSPersistentCloudKitContainer` under the
+    /// hood and posts this notification app-wide; we filter to import/export events and mirror
+    /// their in-flight state (`endDate == nil`) onto `isSyncing`. The observer delivers on the
+    /// main queue, so we hop to the MainActor to mutate the published property.
+    private func observeCloudKitEvents() {
+        cloudEventObserver = NotificationCenter.default.addObserver(
+            forName: NSPersistentCloudKitContainer.eventChangedNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] note in
+            guard let event = note.userInfo?[NSPersistentCloudKitContainer.eventNotificationUserInfoKey]
+                    as? NSPersistentCloudKitContainer.Event else { return }
+            guard event.type == .import || event.type == .export else { return }
+            let syncing = (event.endDate == nil)
+            MainActor.assumeIsolated {
+                self?.isSyncing = syncing
+            }
+        }
     }
 
     // MARK: - Surface

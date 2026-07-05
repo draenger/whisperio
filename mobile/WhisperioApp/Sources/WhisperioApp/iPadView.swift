@@ -71,6 +71,9 @@ struct iPadSplitView: View {
                 WGhost(size: 24)
                 Text("Whisperio").font(WZFont.display(20)).foregroundStyle(t.text)
                 Spacer()
+                // Sample split-view (no live store injected) — a static iCloud glyph mirrors the
+                // sample PrivacyBadge beside it, matching the phone Home header treatment.
+                SyncStatusGlyph(isCloudBacked: true, isSyncing: false)
                 PrivacyBadge(mode: .device, small: true)
             }
             .padding(.horizontal, 18).padding(.top, 20).padding(.bottom, 12)
