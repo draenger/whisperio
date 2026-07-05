@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useEffect, useCallback, type ReactNode, type ReactElement } from 'react'
-import { type ThemeMode, type Theme, type AccentColor, buildTheme } from './theme'
+import { type ThemeMode, type Theme, type AccentColor, buildTheme, DEFAULT_ACCENT } from './theme'
 
 interface ThemeContextValue {
   mode: ThemeMode
@@ -11,15 +11,15 @@ interface ThemeContextValue {
 
 const ThemeContext = createContext<ThemeContextValue>({
   mode: 'dark',
-  accent: 'blue',
-  theme: buildTheme('dark', 'blue'),
+  accent: DEFAULT_ACCENT,
+  theme: buildTheme('dark', DEFAULT_ACCENT),
   toggleTheme: () => {},
   setAccent: () => {}
 })
 
 export function ThemeProvider({ children }: { children: ReactNode }): ReactElement {
   const [mode, setMode] = useState<ThemeMode>('dark')
-  const [accent, setAccentState] = useState<AccentColor>('blue')
+  const [accent, setAccentState] = useState<AccentColor>(DEFAULT_ACCENT)
 
   useEffect(() => {
     window.api.settings.load().then((settings) => {

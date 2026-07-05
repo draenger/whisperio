@@ -73,16 +73,16 @@ export function DictationOverlay(): JSX.Element {
   const isTranscribing = overlayState === 'transcribing'
   const isOutputRecording = overlayInfo?.recordingType === 'output'
 
-  // Color scheme based on recording type
-  const accentColor = isOutputRecording ? '#3b82f6' : '#8b5cf6'
+  // Color scheme based on recording type (Rezme teal for input dictation)
+  const accentColor = isOutputRecording ? '#3b82f6' : '#1cc8b4'
   const dotColor = isOutputRecording ? '#3b82f6' : '#ef4444'
   const dotGlow = isOutputRecording ? 'rgba(59, 130, 246, 0.6)' : 'rgba(239, 68, 68, 0.6)'
   const borderColor = isOutputRecording
     ? 'rgba(59, 130, 246, 0.3)'
-    : 'rgba(139, 92, 246, 0.3)'
+    : 'rgba(28, 200, 180, 0.3)'
   const shadowColor = isOutputRecording
     ? 'rgba(59, 130, 246, 0.1)'
-    : 'rgba(139, 92, 246, 0.1)'
+    : 'rgba(28, 200, 180, 0.1)'
 
   const sourceName = overlayInfo
     ? truncate(overlayInfo.sourceName, 20)
