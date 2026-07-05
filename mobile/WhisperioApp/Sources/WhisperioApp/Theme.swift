@@ -47,7 +47,10 @@ struct WZTheme {
         green: .hex(0x16a34a), red: .hex(0xdc2626), amber: .hex(0xd97706), cyan: .hex(0x0d9488)
     )
 
-    static func of(_ dark: Bool) -> WZTheme { dark ? .darkTheme : .lightTheme }
+    // The "redesign" identity: the Rezme teal palette is now the app-wide default across the
+    // whole Apple family (iPhone / iPad / Watch / Mac). The original violet themes stay in the
+    // file (darkTheme / lightTheme) so switching back is a one-line change.
+    static func of(_ dark: Bool) -> WZTheme { dark ? .rezmeTheme : .rezmeLightTheme }
 
     // Rezme teal — the macOS desktop identity. Dark-first, built around the Rezme
     // signature teal #1cc8b4 (accent) with a lighter #4fe0cf tint for hover/lite states.
@@ -67,6 +70,25 @@ struct WZTheme {
             .init(color: .hex(0x0d9488), location: 1.0),
         ], startPoint: .topLeading, endPoint: .bottomTrailing),
         green: .hex(0x34d399), red: .hex(0xf0556b), amber: .hex(0xfbbf24), cyan: .hex(0x1cc8b4)
+    )
+
+    // Light companion to `rezmeTheme` — teal accent on light surfaces, so the redesign holds up
+    // in light mode too (deeper teal accents for contrast on white).
+    static let rezmeLightTheme = WZTheme(
+        dark: false,
+        bg: .hex(0xf1f8f6), bg2: .hex(0xe7f1ee), surface: .hex(0xffffff),
+        surfaceUp: .hex(0xf3faf8), elevated: .hex(0xeaf4f1),
+        line: Color(red: 10/255, green: 40/255, blue: 36/255).opacity(0.10),
+        lineSoft: Color(red: 10/255, green: 40/255, blue: 36/255).opacity(0.06),
+        hair: Color(red: 28/255, green: 200/255, blue: 180/255).opacity(0.22),
+        text: .hex(0x0a2420), muted: .hex(0x4a635e), faint: .hex(0x8aa39d),
+        accent: .hex(0x0d9488), accentLite: .hex(0x14b8a6),
+        gradient: LinearGradient(stops: [
+            .init(color: .hex(0x14b8a6), location: 0.0),
+            .init(color: .hex(0x0d9488), location: 0.52),
+            .init(color: .hex(0x0f766e), location: 1.0),
+        ], startPoint: .topLeading, endPoint: .bottomTrailing),
+        green: .hex(0x16a34a), red: .hex(0xdc2626), amber: .hex(0xd97706), cyan: .hex(0x0d9488)
     )
 }
 
@@ -110,7 +132,7 @@ extension Color {
 
 // Make the theme available down the view tree.
 private struct WZThemeKey: EnvironmentKey {
-    static let defaultValue = WZTheme.darkTheme
+    static let defaultValue = WZTheme.rezmeTheme
 }
 extension EnvironmentValues {
     var wz: WZTheme {
