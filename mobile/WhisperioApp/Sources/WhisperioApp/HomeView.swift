@@ -2,6 +2,8 @@ import SwiftUI
 import WhisperioKit
 #if canImport(UIKit)
 import UIKit
+#elseif canImport(AppKit)
+import AppKit
 #endif
 
 // Recordings home — the settled "second brain" variant: day-grouped cards, search,
@@ -200,6 +202,9 @@ struct RecRow: View {
             Button {
 #if canImport(UIKit)
                 UIPasteboard.general.string = r.title
+#elseif canImport(AppKit)
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(r.title, forType: .string)
 #endif
             } label: { Label("Copy", systemImage: "doc.on.doc") }
             if let onDelete {
@@ -215,6 +220,9 @@ struct RecRow: View {
 #if canImport(UIKit)
             UIPasteboard.general.string = r.title
             UINotificationFeedbackGenerator().notificationOccurred(.success)
+#elseif canImport(AppKit)
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(r.title, forType: .string)
 #endif
             copied = true
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { copied = false }

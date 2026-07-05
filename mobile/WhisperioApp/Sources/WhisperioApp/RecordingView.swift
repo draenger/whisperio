@@ -3,6 +3,8 @@ import Combine
 import WhisperioKit
 #if canImport(UIKit)
 import UIKit
+#elseif canImport(AppKit)
+import AppKit
 #endif
 
 // Live recording — real mic capture, then transcription through the configured
@@ -204,6 +206,9 @@ struct RecordingView: View {
         if settings.settings.saveRecordings { recordings.add(rec) }
 #if canImport(UIKit)
         UIPasteboard.general.string = text
+#elseif canImport(AppKit)
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
 #endif
         if fromKeyboard { SharedStore.setPendingTranscript(text) }
         onDone(rec)
@@ -222,6 +227,9 @@ struct RecordingView: View {
             if settings.settings.saveRecordings { recordings.add(rec) }
 #if canImport(UIKit)
             UIPasteboard.general.string = text   // ready to paste anywhere immediately
+#elseif canImport(AppKit)
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(text, forType: .string)
 #endif
             // Bounce-to-app from the keyboard: stash the transcript in the shared App Group
             // so the keyboard can insert it via textDocumentProxy when the user swipes back.

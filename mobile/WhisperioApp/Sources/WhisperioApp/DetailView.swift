@@ -2,6 +2,8 @@ import SwiftUI
 import WhisperioKit
 #if canImport(UIKit)
 import UIKit
+#elseif canImport(AppKit)
+import AppKit
 #endif
 
 // Transcript detail — shows the real transcript with source/privacy badges, plus Copy, Share
@@ -220,6 +222,9 @@ struct DetailView: View {
 #if canImport(UIKit)
         UIPasteboard.general.string = text
         UINotificationFeedbackGenerator().notificationOccurred(.success)
+#elseif canImport(AppKit)
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
 #endif
         toast("Copied!")
     }
