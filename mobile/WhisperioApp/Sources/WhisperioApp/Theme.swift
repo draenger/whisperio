@@ -58,37 +58,35 @@ struct WZTheme {
     // Reachable on macOS (this file is pure SwiftUI); the Mac window applies it via `\.wz`.
     static let rezmeTheme = WZTheme(
         dark: true,
-        bg: .hex(0x061512), bg2: .hex(0x030b0a), surface: .hex(0x0c211d),
-        surfaceUp: .hex(0x123029), elevated: .hex(0x173a31),
-        line: .white.opacity(0.08), lineSoft: .white.opacity(0.05),
-        hair: Color(red: 28/255, green: 200/255, blue: 180/255).opacity(0.22),
-        text: .hex(0xEAF6F3), muted: .hex(0x93b3ac), faint: .hex(0x5f807a),
-        accent: .hex(0x1cc8b4), accentLite: .hex(0x4fe0cf),
+        bg: .hex(0x070d15), bg2: .hex(0x05090f), surface: .hex(0x101b2a),
+        surfaceUp: .hex(0x0c1826), elevated: .hex(0x16243a),
+        line: .hex(0x202b3b), lineSoft: .white.opacity(0.05),
+        hair: Color(red: 28/255, green: 200/255, blue: 180/255).opacity(0.30),
+        text: .hex(0xecf2f9), muted: .hex(0xb4c1d0), faint: .hex(0x7e91a4),
+        accent: .hex(0x1cc8b4), accentLite: .hex(0x5ee0d0),
         gradient: LinearGradient(stops: [
-            .init(color: .hex(0x1cc8b4), location: 0.0),
-            .init(color: .hex(0x14b8a6), location: 0.52),
-            .init(color: .hex(0x0d9488), location: 1.0),
-        ], startPoint: .topLeading, endPoint: .bottomTrailing),
-        green: .hex(0x34d399), red: .hex(0xf0556b), amber: .hex(0xfbbf24), cyan: .hex(0x1cc8b4)
+            .init(color: .hex(0x15bca8), location: 0.0),
+            .init(color: .hex(0x3da2f7), location: 1.0),
+        ], startPoint: .leading, endPoint: .trailing),
+        green: .hex(0x22c55e), red: .hex(0xef4444), amber: .hex(0xf59e0b), cyan: .hex(0x1cc8b4)
     )
 
     // Light companion to `rezmeTheme` — teal accent on light surfaces, so the redesign holds up
     // in light mode too (deeper teal accents for contrast on white).
     static let rezmeLightTheme = WZTheme(
         dark: false,
-        bg: .hex(0xf1f8f6), bg2: .hex(0xe7f1ee), surface: .hex(0xffffff),
-        surfaceUp: .hex(0xf3faf8), elevated: .hex(0xeaf4f1),
-        line: Color(red: 10/255, green: 40/255, blue: 36/255).opacity(0.10),
-        lineSoft: Color(red: 10/255, green: 40/255, blue: 36/255).opacity(0.06),
-        hair: Color(red: 28/255, green: 200/255, blue: 180/255).opacity(0.22),
-        text: .hex(0x0a2420), muted: .hex(0x4a635e), faint: .hex(0x8aa39d),
-        accent: .hex(0x0d9488), accentLite: .hex(0x14b8a6),
+        bg: .hex(0xf6f8fa), bg2: .hex(0xeef2f6), surface: .hex(0xffffff),
+        surfaceUp: .hex(0xffffff), elevated: .hex(0xeef2f6),
+        line: .hex(0xe3e9ef),
+        lineSoft: Color(red: 20/255, green: 40/255, blue: 60/255).opacity(0.05),
+        hair: Color(red: 28/255, green: 200/255, blue: 180/255).opacity(0.30),
+        text: .hex(0x0c1822), muted: .hex(0x3f4f5e), faint: .hex(0x74859a),
+        accent: .hex(0x0f8478), accentLite: .hex(0x1cc8b4),
         gradient: LinearGradient(stops: [
-            .init(color: .hex(0x14b8a6), location: 0.0),
-            .init(color: .hex(0x0d9488), location: 0.52),
-            .init(color: .hex(0x0f766e), location: 1.0),
-        ], startPoint: .topLeading, endPoint: .bottomTrailing),
-        green: .hex(0x16a34a), red: .hex(0xdc2626), amber: .hex(0xd97706), cyan: .hex(0x0d9488)
+            .init(color: .hex(0x0f8478), location: 0.0),
+            .init(color: .hex(0x1d7fd6), location: 1.0),
+        ], startPoint: .leading, endPoint: .trailing),
+        green: .hex(0x16a34a), red: .hex(0xdc2626), amber: .hex(0xd97706), cyan: .hex(0x0f8478)
     )
 }
 
