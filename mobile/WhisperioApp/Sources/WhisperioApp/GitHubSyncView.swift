@@ -184,7 +184,10 @@ struct GitHubSyncView: View {
         VStack(alignment: .leading, spacing: 7) {
             SectionLabel(text: label).padding(.leading, 4)
             SecureField("paste token…", text: text)
-                .textInputAutocapitalization(.never).autocorrectionDisabled()
+                #if os(iOS)
+                .textInputAutocapitalization(.never)
+                #endif
+                .autocorrectionDisabled()
                 .font(WZFont.mono(13))
                 .padding(.horizontal, 13).padding(.vertical, 12)
                 .background(t.surfaceUp, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
@@ -197,7 +200,10 @@ struct GitHubSyncView: View {
         VStack(alignment: .leading, spacing: 7) {
             SectionLabel(text: label).padding(.leading, 4)
             TextField(placeholder, text: text)
-                .textInputAutocapitalization(.never).autocorrectionDisabled()
+                #if os(iOS)
+                .textInputAutocapitalization(.never)
+                #endif
+                .autocorrectionDisabled()
                 .font(WZFont.mono(13))
                 .padding(.horizontal, 13).padding(.vertical, 12)
                 .background(t.surfaceUp, in: RoundedRectangle(cornerRadius: 12, style: .continuous))

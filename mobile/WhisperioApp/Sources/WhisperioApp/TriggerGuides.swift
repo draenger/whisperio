@@ -209,7 +209,9 @@ struct TriggerGuidesView: View {
             TriggerGuideDetail(guide: g, onClose: { open = nil })
                 .environment(\.wz, t)
                 .preferredColorScheme(t.dark ? .dark : .light)
+                #if os(iOS)
                 .presentationDetents([.large])
+                #endif
         }
     }
 

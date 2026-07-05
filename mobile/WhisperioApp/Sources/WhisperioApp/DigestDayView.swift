@@ -55,7 +55,9 @@ struct DigestDayView: View {
                               onAccept: grantConsent,
                               onCancel: { showConsent = false })
                 .environment(\.wz, t)
+                #if os(iOS)
                 .presentationDetents([.medium, .large])
+                #endif
         }
     }
 

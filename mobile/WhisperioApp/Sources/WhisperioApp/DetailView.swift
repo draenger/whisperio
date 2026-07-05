@@ -92,14 +92,18 @@ struct DetailView: View {
                          onPick: pick,
                          onClose: { showRewriteSheet = false })
                 .environment(\.wz, t)
+                #if os(iOS)
                 .presentationDetents([.medium, .large])
+                #endif
         }
         .sheet(isPresented: $showConsent) {
             CloudConsentSheet(provider: .openAI,
                               onAccept: grantConsent,
                               onCancel: { showConsent = false })
                 .environment(\.wz, t)
+                #if os(iOS)
                 .presentationDetents([.medium, .large])
+                #endif
         }
     }
 

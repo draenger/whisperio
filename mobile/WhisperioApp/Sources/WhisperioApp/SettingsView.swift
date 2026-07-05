@@ -69,6 +69,7 @@ struct SettingsView: View {
                             if engine == .elevenLabs { keyField("ElevenLabs API key", binding(\.elevenLabsKey)) }
                         }
 
+                        #if os(iOS)
                         VStack(alignment: .leading, spacing: 11) {
                             SectionLabel(text: "Quick dictation").padding(.leading, 4)
                             VStack(alignment: .leading, spacing: 12) {
@@ -81,6 +82,7 @@ struct SettingsView: View {
                             .background(t.surface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
                             .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(t.line, lineWidth: 1))
                         }
+                        #endif
 
                         SettGroup(title: "Dictate from anywhere") {
                             SettRow(icon: "zap", label: "Set up dictation triggers",
@@ -140,7 +142,9 @@ struct SettingsView: View {
                                               text: binding(\.customVocabulary), axis: .vertical)
                                         .lineLimit(2...4)
                                         .font(WZFont.ui(13.5))
+                                        #if os(iOS)
                                         .textInputAutocapitalization(.never)
+                                        #endif
                                         .padding(.horizontal, 11).padding(.vertical, 9)
                                         .background(t.surfaceUp, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                                         .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(t.line, lineWidth: 1))
@@ -218,13 +222,23 @@ struct SettingsView: View {
                               onAccept: { grantCloud(target.id) },
                               onCancel: { consentProvider = nil })
                 .environment(\.wz, t)
+                #if os(iOS)
                 .presentationDetents([.medium, .large])
+                #endif
         }
+        #if os(iOS)
         .fullScreenCover(isPresented: $showTriggerGuides) {
             TriggerGuidesView(onBack: { showTriggerGuides = false })
                 .environment(\.wz, t)
                 .preferredColorScheme(t.dark ? .dark : .light)
         }
+        #else
+        .sheet(isPresented: $showTriggerGuides) {
+            TriggerGuidesView(onBack: { showTriggerGuides = false })
+                .environment(\.wz, t)
+                .preferredColorScheme(t.dark ? .dark : .light)
+        }
+        #endif
         .alert("Restore default templates?", isPresented: $showRestoreConfirm) {
             Button("Restore", role: .destructive) {
                 presets.restoreDefaults()
@@ -296,7 +310,10 @@ struct SettingsView: View {
         VStack(alignment: .leading, spacing: 7) {
             SectionLabel(text: label).padding(.leading, 4)
             SecureField("paste key…", text: text)
-                .textInputAutocapitalization(.never).autocorrectionDisabled()
+                #if os(iOS)
+                .textInputAutocapitalization(.never)
+                #endif
+                .autocorrectionDisabled()
                 .font(WZFont.mono(13))
                 .padding(.horizontal, 13).padding(.vertical, 12)
                 .background(t.surfaceUp, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
@@ -309,8 +326,11 @@ struct SettingsView: View {
         VStack(alignment: .leading, spacing: 7) {
             SectionLabel(text: label).padding(.leading, 4)
             TextField(placeholder, text: text)
-                .textInputAutocapitalization(.never).autocorrectionDisabled()
+                #if os(iOS)
+                .textInputAutocapitalization(.never)
                 .keyboardType(.URL)
+                #endif
+                .autocorrectionDisabled()
                 .font(WZFont.mono(13))
                 .padding(.horizontal, 13).padding(.vertical, 12)
                 .background(t.surfaceUp, in: RoundedRectangle(cornerRadius: 12, style: .continuous))

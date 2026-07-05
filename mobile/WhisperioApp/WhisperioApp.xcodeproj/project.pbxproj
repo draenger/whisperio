@@ -78,6 +78,9 @@
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		1A0000000000000000000009 /* Sources/WhisperioApp */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				1C0000000000000000000030 /* Exceptions for "Sources/WhisperioApp" folder in "WhisperioMac" target */,
+			);
 			path = Sources/WhisperioApp;
 			sourceTree = "<group>";
 		};
@@ -122,6 +125,23 @@
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
+
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		1C0000000000000000000030 /* Exceptions for "Sources/WhisperioApp" folder in "WhisperioMac" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				AppShell.swift,
+				DynamicIslandScene.swift,
+				Engine/PhoneConnectivity.swift,
+				Gallery.swift,
+				KeyboardSetupView.swift,
+				TriggerScene.swift,
+				WatchView.swift,
+				WhisperioShortcuts.swift,
+			);
+			target = 1C0000000000000000000002 /* WhisperioMac */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFrameworksBuildPhase section */
 		1A0000000000000000000005 /* Frameworks */ = {
@@ -314,6 +334,7 @@
 			);
 			fileSystemSynchronizedGroups = (
 				1C0000000000000000000009 /* MacApp */,
+				1A0000000000000000000009 /* Sources/WhisperioApp */,
 			);
 			name = WhisperioMac;
 			packageProductDependencies = (
