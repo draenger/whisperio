@@ -27,6 +27,13 @@ export interface AppSettings {
   saveRecordings: boolean
   outputRecordingHotkey: string
   fallbackEnabled: boolean
+  // GitHub secret-store selection (NON-SECRET metadata only). The access token
+  // and the encryption key are never stored here — they live Keychain-wrapped
+  // via secretVault.ts. Secrets themselves are only ever committed to the repo
+  // as an AES-256-GCM envelope.
+  githubUser: string
+  githubRepo: string
+  githubBranch: string
 }
 
 const DEFAULT_VOCABULARY = [
@@ -58,7 +65,10 @@ const DEFAULT_SETTINGS: AppSettings = {
   outputDeviceId: '',
   saveRecordings: true,
   outputRecordingHotkey: '',
-  fallbackEnabled: false
+  fallbackEnabled: false,
+  githubUser: '',
+  githubRepo: '',
+  githubBranch: ''
 }
 
 function getSettingsPath(): string {
