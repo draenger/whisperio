@@ -73,6 +73,9 @@ export interface AppSettings {
   saveRecordings: boolean
   outputRecordingHotkey: string
   fallbackEnabled: boolean
+  githubUser: string
+  githubRepo: string
+  githubBranch: string
 }
 
 export interface SettingsAPI {
@@ -169,6 +172,51 @@ export interface UpdaterAPI {
   onStatus: (callback: (state: UpdaterState) => void) => () => void
 }
 
+export interface GithubStatus {
+  clientConfigured: boolean
+  vaultAvailable: boolean
+  connected: boolean
+  user: string
+  repo: string
+  branch: string
+}
+
+export interface GithubConnectPrompt {
+  userCode: string
+  verificationUri: string
+  expiresIn: number
+}
+
+export type GithubConnectPoll =
+  | { status: 'authorized'; user: string }
+  | { status: 'pending' }
+  | { status: 'expired' }
+  | { status: 'denied' }
+  | { status: 'error'; message: string }
+
+export interface GithubRepoSummary {
+  fullName: string
+  private: boolean
+  defaultBranch: string
+}
+
+export interface GithubSyncResult {
+  ok: true
+  path: string
+  keys: string[]
+}
+
+export interface GithubAPI {
+  status: () => Promise<GithubStatus>
+  connect: () => Promise<GithubConnectPrompt>
+  poll: () => Promise<GithubConnectPoll>
+  listRepos: () => Promise<GithubRepoSummary[]>
+  selectRepo: (fullName: string, branch: string) => Promise<GithubStatus>
+  disconnect: () => Promise<GithubStatus>
+  push: () => Promise<GithubSyncResult>
+  pull: () => Promise<GithubSyncResult>
+}
+
 export interface WhisperioAPI {
   dictation: DictationAPI
   settings: SettingsAPI
@@ -178,6 +226,7 @@ export interface WhisperioAPI {
   errors: ErrorAPI
   window: WindowAPI
   updater: UpdaterAPI
+  github: GithubAPI
 }
 
 declare global {

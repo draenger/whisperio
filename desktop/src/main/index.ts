@@ -35,6 +35,16 @@ import {
   markServerUsed
 } from './localServer'
 import { initAutoUpdater, getUpdateState, checkForUpdatesManual, installUpdate } from './autoUpdater'
+import {
+  getStatus as githubGetStatus,
+  beginConnect as githubBeginConnect,
+  pollConnect as githubPollConnect,
+  listRepositories as githubListRepositories,
+  selectRepo as githubSelectRepo,
+  disconnect as githubDisconnect,
+  pushSecrets as githubPushSecrets,
+  pullSecrets as githubPullSecrets
+} from './githubSync'
 
 // Set app name and model ID so Windows notifications show "Whisperio"
 app.setName('Whisperio')
@@ -172,6 +182,21 @@ app.whenReady().then(() => {
   // Pause/resume hotkeys during shortcut recording in settings
   ipcMain.on('hotkeys:pause', () => pauseHotkeys())
   ipcMain.on('hotkeys:resume', () => resumeHotkeys())
+
+  // GitHub secret-store IPC handlers. All GitHub network I/O + the token + the
+  // encryption key stay in the main process; the renderer only ever sees status,
+  // the device user-code, repo names, and success/failure — never the token or
+  // any plaintext secret in transit to the repo.
+  ipcMain.handle('github:status', () => githubGetStatus())
+  ipcMain.handle('github:connect', () => githubBeginConnect())
+  ipcMain.handle('github:poll', () => githubPollConnect())
+  ipcMain.handle('github:listRepos', () => githubListRepositories())
+  ipcMain.handle('github:selectRepo', (_e, fullName: string, branch: string) =>
+    githubSelectRepo(fullName, branch)
+  )
+  ipcMain.handle('github:disconnect', () => githubDisconnect())
+  ipcMain.handle('github:push', () => githubPushSecrets())
+  ipcMain.handle('github:pull', () => githubPullSecrets())
 
   // Register transcription IPC handler
   ipcMain.handle('dictation:transcribe', async (_event, audioBuffer: Buffer, filename: string) => {
