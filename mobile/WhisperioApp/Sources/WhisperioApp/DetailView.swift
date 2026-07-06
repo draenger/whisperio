@@ -194,7 +194,8 @@ struct DetailView: View {
     }
 
     private func renderCard(_ text: String) -> some View {
-        let name = presets.presets.first { $0.id == renderPresetID }?.name ?? "Rewrite"
+        let name = presets.presets.first { $0.id == renderPresetID }?.name
+            ?? (renderPresetID == "custom" ? "Custom" : "Rewrite")
         return VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 8) {
                 SectionLabel(text: name)
@@ -275,13 +276,22 @@ struct DetailView: View {
 }
 
 // MARK: - Rewrite preset picker
-// Bottom sheet listing the rewrite presets, styled like CloudConsentSheet. Presets are passed in
-// (not read from the environment) so the sheet renders regardless of environmentObject propagation.
+// Bottom sheet: pick a saved preset OR write a one-off instruction. Styled like CloudConsentSheet.
+// Presets are passed in (not read from the environment) so the sheet renders regardless of
+// environmentObject propagation. The custom instruction runs as a transient (unsaved) preset — to
+// keep it, the user saves a template in Settings instead.
 private struct RewriteSheet: View {
     @Environment(\.wz) private var t
     let presets: [RewritePreset]
     var onPick: (RewritePreset) -> Void
     var onClose: () -> Void
+
+    // A one-off instruction the user types here; runs without being saved as a preset.
+    @State private var customPrompt: String = ""
+
+    private var canRunCustom: Bool {
+        !customPrompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -303,21 +313,57 @@ private struct RewriteSheet: View {
                 .padding(.bottom, 16)
 
             ScrollView(showsIndicators: false) {
-                VStack(spacing: 0) {
-                    ForEach(Array(presets.enumerated()), id: \.element.id) { idx, p in
-                        SettRow(icon: p.icon, label: p.name,
-                                sub: p.isMeta ? "Build a new template from your voice" : nil,
-                                last: idx == presets.count - 1,
-                                onTap: { onPick(p) })
+                VStack(alignment: .leading, spacing: 16) {
+                    VStack(spacing: 0) {
+                        ForEach(Array(presets.enumerated()), id: \.element.id) { idx, p in
+                            SettRow(icon: p.icon, label: p.name,
+                                    sub: p.isMeta ? "Build a new template from your voice" : nil,
+                                    last: idx == presets.count - 1,
+                                    onTap: { onPick(p) })
+                        }
                     }
+                    .padding(.horizontal, 16)
+                    .background(t.surface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(t.line, lineWidth: 1))
+
+                    customSection
                 }
-                .padding(.horizontal, 16)
-                .background(t.surface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(t.line, lineWidth: 1))
             }
         }
         .padding(24)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(t.bg.ignoresSafeArea())
+    }
+
+    // A free-text instruction field + run button, for a rewrite you don't want to save as a preset.
+    private var customSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            SectionLabel(text: "Or write your own").padding(.leading, 4)
+            TextEditor(text: $customPrompt)
+                .font(WZFont.mono(13))
+                .scrollContentBackground(.hidden)
+                .frame(minHeight: 96, maxHeight: 200)
+                #if os(iOS)
+                .textInputAutocapitalization(.sentences)
+                #endif
+                .padding(.horizontal, 9).padding(.vertical, 6)
+                .background(t.surfaceUp, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(t.line, lineWidth: 1))
+            Text("A one-off instruction, e.g. “Rewrite this as formal meeting minutes.” It isn’t saved — add a template in Settings to keep it.")
+                .font(WZFont.mono(11)).foregroundStyle(t.faint)
+                .fixedSize(horizontal: false, vertical: true)
+            GradButton(title: "Rewrite with this", icon: "spark",
+                       action: canRunCustom ? runCustom : {})
+                .opacity(canRunCustom ? 1 : 0.5)
+                .allowsHitTesting(canRunCustom)
+        }
+    }
+
+    private func runCustom() {
+        let prompt = customPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !prompt.isEmpty else { return }
+        // Transient preset — stable "custom" id (not persisted), never a seed, never meta, so it
+        // flows through the normal rewrite path.
+        onPick(RewritePreset(id: "custom", name: "Custom", prompt: prompt, icon: "spark"))
     }
 }
