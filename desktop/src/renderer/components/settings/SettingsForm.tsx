@@ -77,13 +77,14 @@ function UpdateBanner({ state, theme }: { state: UpdaterState | null; theme: The
   )
 }
 
-type TabId = 'general' | 'providers' | 'models' | 'audio' | 'hotkeys' | 'recordings' | 'updates'
+type TabId = 'general' | 'providers' | 'models' | 'audio' | 'hotkeys' | 'sync' | 'recordings' | 'updates'
 
 const TAB_ICONS: Record<string, string> = {
   general: 'M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6',
   providers: 'M12 2 2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5',
   audio: 'M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3zM19 10v2a7 7 0 0 1-14 0v-2M12 19v3',
   hotkeys: 'M3 5h18a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1zM6 9h.01M10 9h.01M14 9h.01M18 9h.01M6 13h.01M9 13h6M18 13h.01',
+  sync: 'M21 2v6h-6M3 12a9 9 0 0 1 15-6.7L21 8M3 22v-6h6M21 12a9 9 0 0 1-15 6.7L3 16',
   recordings: 'M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zM12 7v5l3 2',
   updates: 'M21 12a9 9 0 1 1-2.64-6.36M21 3v6h-6'
 }
@@ -334,7 +335,7 @@ export function SettingsForm(): ReactElement {
   const { theme } = useTheme()
 
   // --- State ---
-  const validTabs: TabId[] = ['general', 'providers', 'audio', 'hotkeys', 'updates', 'recordings']
+  const validTabs: TabId[] = ['general', 'providers', 'audio', 'hotkeys', 'sync', 'updates', 'recordings']
   const initialTab = ((): TabId => {
     const h = window.location.hash.replace('#', '') as TabId
     return validTabs.includes(h) ? h : 'general'
@@ -500,6 +501,7 @@ export function SettingsForm(): ReactElement {
     { id: 'providers', label: 'Providers' },
     { id: 'audio', label: 'Audio' },
     { id: 'hotkeys', label: 'Hotkeys' },
+    { id: 'sync', label: 'Sync' },
     { id: 'updates', label: 'Updates' },
     { id: 'recordings', label: 'Recordings' }
   ]
@@ -647,6 +649,10 @@ export function SettingsForm(): ReactElement {
                       s={s}
                       theme={theme}
                     />
+                  )}
+
+                  {activeTab === 'sync' && (
+                    <SyncTab s={s} theme={theme} />
                   )}
 
                   {activeTab === 'updates' && (
@@ -2019,6 +2025,304 @@ function ToggleRow({
         style={{ display: 'none' }}
       />
     </label>
+  )
+}
+
+/* ─── Tab: Sync (GitHub secret store) ─── */
+
+type GithubStatus = Awaited<ReturnType<Window['api']['github']['status']>>
+type GithubRepo = Awaited<ReturnType<Window['api']['github']['listRepos']>>[number]
+
+/**
+ * GitHub secret-store tab. The renderer never sees the access token or the
+ * encryption key — it only drives the main-process flow (connect → pick repo →
+ * push/pull) and shows status. Secrets are sealed client-side in main before
+ * they ever reach GitHub.
+ */
+function SyncTab({ s, theme }: { s: ReturnType<typeof makeStyles>; theme: Theme }): ReactElement {
+  const [status, setStatus] = useState<GithubStatus | null>(null)
+  const [prompt, setPrompt] = useState<{ userCode: string; verificationUri: string } | null>(null)
+  const [connecting, setConnecting] = useState(false)
+  const [repos, setRepos] = useState<GithubRepo[] | null>(null)
+  const [loadingRepos, setLoadingRepos] = useState(false)
+  const [picking, setPicking] = useState(false)
+  const [busy, setBusy] = useState<'push' | 'pull' | null>(null)
+  const [message, setMessage] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null)
+  const pollTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const refresh = useCallback(async () => {
+    const st = await window.api.github.status()
+    setStatus(st)
+    return st
+  }, [])
+
+  useEffect(() => {
+    refresh()
+    return () => {
+      if (pollTimer.current) clearTimeout(pollTimer.current)
+    }
+  }, [refresh])
+
+  const flash = useCallback((kind: 'ok' | 'err', text: string) => {
+    setMessage({ kind, text })
+    setTimeout(() => setMessage(null), 4000)
+  }, [])
+
+  const loadRepos = useCallback(async () => {
+    setLoadingRepos(true)
+    try {
+      setRepos(await window.api.github.listRepos())
+    } catch (e) {
+      flash('err', e instanceof Error ? e.message : 'Failed to load repositories')
+    } finally {
+      setLoadingRepos(false)
+    }
+  }, [flash])
+
+  const poll = useCallback(async () => {
+    try {
+      const r = await window.api.github.poll()
+      if (r.status === 'pending') {
+        pollTimer.current = setTimeout(poll, 5000)
+        return
+      }
+      setConnecting(false)
+      setPrompt(null)
+      if (r.status === 'authorized') {
+        await refresh()
+        loadRepos()
+        flash('ok', `Connected as ${r.user || 'GitHub user'}`)
+      } else if (r.status === 'expired') {
+        flash('err', 'Authorization expired — please try again')
+      } else if (r.status === 'denied') {
+        flash('err', 'Authorization was denied')
+      } else {
+        flash('err', r.message || 'Connection failed')
+      }
+    } catch (e) {
+      setConnecting(false)
+      setPrompt(null)
+      flash('err', e instanceof Error ? e.message : 'Connection failed')
+    }
+  }, [refresh, loadRepos, flash])
+
+  const handleConnect = useCallback(async () => {
+    setConnecting(true)
+    setMessage(null)
+    try {
+      const p = await window.api.github.connect()
+      setPrompt({ userCode: p.userCode, verificationUri: p.verificationUri })
+      pollTimer.current = setTimeout(poll, 5000)
+    } catch (e) {
+      setConnecting(false)
+      flash('err', e instanceof Error ? e.message : 'Could not start GitHub connection')
+    }
+  }, [poll, flash])
+
+  const handleSelectRepo = useCallback(async (repo: GithubRepo) => {
+    await window.api.github.selectRepo(repo.fullName, repo.defaultBranch)
+    setPicking(false)
+    await refresh()
+    flash('ok', `Store set to ${repo.fullName}`)
+  }, [refresh, flash])
+
+  const handleDisconnect = useCallback(async () => {
+    if (pollTimer.current) clearTimeout(pollTimer.current)
+    setPrompt(null)
+    setRepos(null)
+    setStatus(await window.api.github.disconnect())
+  }, [])
+
+  const handlePush = useCallback(async () => {
+    setBusy('push')
+    try {
+      const r = await window.api.github.push()
+      flash('ok', `Encrypted secrets pushed to ${r.path}`)
+    } catch (e) {
+      flash('err', e instanceof Error ? e.message : 'Push failed')
+    } finally {
+      setBusy(null)
+    }
+  }, [flash])
+
+  const handlePull = useCallback(async () => {
+    setBusy('pull')
+    try {
+      const r = await window.api.github.pull()
+      flash('ok', `Pulled & decrypted ${r.keys.length} secret${r.keys.length === 1 ? '' : 's'}`)
+    } catch (e) {
+      flash('err', e instanceof Error ? e.message : 'Pull failed')
+    } finally {
+      setBusy(null)
+    }
+  }, [flash])
+
+  const btnPrimary: React.CSSProperties = {
+    background: theme.accent, color: '#fff', border: 'none', borderRadius: '8px',
+    padding: '9px 18px', fontSize: '13px', fontWeight: 600, cursor: 'pointer',
+    fontFamily: 'IBM Plex Sans, sans-serif'
+  }
+  const btnGhost: React.CSSProperties = {
+    background: 'transparent', color: theme.accent, border: `1px solid ${theme.border}`,
+    borderRadius: '8px', padding: '9px 18px', fontSize: '13px', fontWeight: 500,
+    cursor: 'pointer', fontFamily: 'IBM Plex Sans, sans-serif'
+  }
+
+  if (!status) {
+    return <div style={s.card}><span style={s.hint}>Loading…</span></div>
+  }
+
+  const showPicker = status.connected && (picking || !status.repo)
+
+  return (
+    <>
+      {/* Security explainer — always visible */}
+      <div style={{ ...s.card, background: `${theme.accent}0d`, border: `1px solid ${theme.accent}33`, borderRadius: '10px', padding: '14px 16px' }}>
+        <h3 style={{ ...s.cardTitle, marginBottom: '6px' }}>Encrypted secret store</h3>
+        <span style={s.hint}>
+          Connect a GitHub repo to back up your API keys. Everything is encrypted on THIS device
+          with AES-256-GCM before it leaves the app — the key is held in your macOS Keychain and is
+          never uploaded. Only unreadable ciphertext is committed to the repo, so GitHub and any
+          collaborators can never see your keys.
+        </span>
+      </div>
+
+      {message && (
+        <div style={{
+          ...s.card, padding: '10px 14px', borderRadius: '8px',
+          background: message.kind === 'ok' ? `${theme.success}18` : '#ef444418',
+          border: `1px solid ${message.kind === 'ok' ? theme.success + '55' : '#ef444455'}`
+        }}>
+          <span style={{ fontSize: '12.5px', color: message.kind === 'ok' ? theme.success : '#ef4444', fontWeight: 500 }}>
+            {message.text}
+          </span>
+        </div>
+      )}
+
+      {!status.vaultAvailable && (
+        <div style={s.card}>
+          <span style={{ fontSize: '13px', color: '#ef4444', fontWeight: 600 }}>OS Keychain unavailable</span>
+          <span style={s.hint}>
+            Secure storage isn’t available on this system, so Whisperio will not sync secrets
+            (it refuses to store them unencrypted). Sync is disabled.
+          </span>
+        </div>
+      )}
+
+      {status.vaultAvailable && !status.clientConfigured && (
+        <div style={s.card}>
+          <h3 style={s.cardTitle}>Setup required</h3>
+          <span style={s.hint}>
+            A GitHub OAuth App (with Device Flow enabled and the <code>repo</code> scope) must be
+            configured for this build. Set <code>WHISPERIO_GITHUB_CLIENT_ID</code> to its client id,
+            then restart Whisperio. The connection flow below activates once it’s set.
+          </span>
+        </div>
+      )}
+
+      {/* Connection card */}
+      {status.vaultAvailable && status.clientConfigured && (
+        <div style={s.card}>
+          <h3 style={s.cardTitle}>GitHub connection</h3>
+
+          {!status.connected && !prompt && (
+            <>
+              <span style={s.hint}>Authorize Whisperio in your browser to use a repo as your secret store.</span>
+              <div>
+                <button onClick={handleConnect} disabled={connecting} style={{ ...btnPrimary, opacity: connecting ? 0.6 : 1 }}>
+                  {connecting ? 'Starting…' : 'Connect GitHub'}
+                </button>
+              </div>
+            </>
+          )}
+
+          {prompt && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <span style={s.hint}>
+                Your browser opened <b>{prompt.verificationUri}</b>. Enter this code to authorize, then
+                come back — Whisperio is waiting.
+              </span>
+              <div style={{
+                fontFamily: "'JetBrains Mono', monospace", fontSize: '26px', fontWeight: 700,
+                letterSpacing: '0.22em', color: theme.accent, padding: '10px 0'
+              }}>{prompt.userCode}</div>
+              <span style={{ fontSize: '11px', color: theme.textMuted }}>Waiting for authorization…</span>
+            </div>
+          )}
+
+          {status.connected && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: theme.success, boxShadow: `0 0 6px ${theme.success}` }} />
+              <span style={{ fontSize: '13px', color: theme.text, fontWeight: 600 }}>
+                Connected{status.user ? ` as ${status.user}` : ''}
+              </span>
+              <div style={{ flex: 1 }} />
+              <button onClick={handleDisconnect} style={{ ...btnGhost, color: '#ef4444', padding: '6px 12px', fontSize: '12px' }}>Disconnect</button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Repo picker */}
+      {showPicker && (
+        <div style={s.card}>
+          <h3 style={s.cardTitle}>Choose store repository</h3>
+          {!repos && !loadingRepos && (
+            <button onClick={loadRepos} style={btnGhost}>Load my repositories</button>
+          )}
+          {loadingRepos && <span style={s.hint}>Loading repositories…</span>}
+          {repos && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', maxHeight: '260px', overflowY: 'auto' }}>
+              {repos.length === 0 && <span style={s.hint}>No repositories found.</span>}
+              {repos.map((r) => (
+                <button key={r.fullName} onClick={() => handleSelectRepo(r)}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: '8px', textAlign: 'left',
+                    padding: '9px 11px', borderRadius: '8px', cursor: 'pointer',
+                    background: r.fullName === status.repo ? `${theme.accent}18` : theme.inputBg,
+                    border: `1px solid ${r.fullName === status.repo ? theme.accent + '55' : theme.inputBorder}`,
+                    fontFamily: 'IBM Plex Sans, sans-serif'
+                  }}>
+                  <span style={{ fontSize: '13px', fontWeight: 500, color: theme.text, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.fullName}</span>
+                  <span style={{
+                    fontSize: '10px', fontWeight: 600, padding: '2px 7px', borderRadius: '999px',
+                    background: r.private ? `${theme.accent}22` : theme.bgTertiary, color: r.private ? theme.accent : theme.textMuted
+                  }}>{r.private ? 'private' : 'public'}</span>
+                </button>
+              ))}
+            </div>
+          )}
+          {status.repo && (
+            <button onClick={() => setPicking(false)} style={{ ...btnGhost, alignSelf: 'flex-start', padding: '6px 12px', fontSize: '12px' }}>Cancel</button>
+          )}
+        </div>
+      )}
+
+      {/* Sync actions */}
+      {status.connected && status.repo && !picking && (
+        <div style={s.card}>
+          <h3 style={s.cardTitle}>Secret store</h3>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+            <span style={s.hint}>Store repo:</span>
+            <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: '12px', color: theme.text }}>{status.repo}</span>
+            <span style={{ fontSize: '11px', color: theme.textMuted }}>({status.branch || 'default'})</span>
+            <button onClick={() => { setPicking(true); if (!repos) loadRepos() }} style={{ ...btnGhost, padding: '4px 10px', fontSize: '11px' }}>Change</button>
+          </div>
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <button onClick={handlePush} disabled={busy !== null} style={{ ...btnPrimary, opacity: busy ? 0.6 : 1 }}>
+              {busy === 'push' ? 'Encrypting & pushing…' : 'Encrypt & push'}
+            </button>
+            <button onClick={handlePull} disabled={busy !== null} style={{ ...btnGhost, opacity: busy ? 0.6 : 1 }}>
+              {busy === 'pull' ? 'Pulling & decrypting…' : 'Pull & decrypt'}
+            </button>
+          </div>
+          <span style={{ ...s.hint, marginTop: '6px' }}>
+            Push seals your current API keys and commits the ciphertext. Pull restores them on another
+            machine (that machine needs its own Keychain key — see note above).
+          </span>
+        </div>
+      )}
+    </>
   )
 }
 

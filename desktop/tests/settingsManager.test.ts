@@ -42,7 +42,10 @@ const DEFAULT_SETTINGS = {
   outputDeviceId: '',
   saveRecordings: true,
   outputRecordingHotkey: '',
-  fallbackEnabled: false
+  fallbackEnabled: false,
+  githubUser: '',
+  githubRepo: '',
+  githubBranch: ''
 }
 
 const SETTINGS_PATH = join('/mock/userData', 'settings.json')
