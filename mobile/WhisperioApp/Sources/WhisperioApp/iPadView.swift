@@ -1,4 +1,9 @@
 import SwiftUI
+#if canImport(UIKit)
+import UIKit
+#elseif canImport(AppKit)
+import AppKit
+#endif
 
 // iPad — Obsidian-style split view. Port of WZiPad / AppleSplit (mob-screens.jsx).
 // A segmented Library / Journal toggle sits at the top: Library is the recording library
@@ -206,6 +211,7 @@ private struct iPadJournal: View {
     @State private var selDay = "today"
     @State private var generatedDays: Set<String> = ["yesterday"]
     @State private var generating = false
+    private let demoSummary = "You shipped the export pipeline and unblocked staging, pushed the launch to Thursday to give QA a full cycle, and captured a few ideas — including a weekly digest that condenses each voice note into three bullets."
 
     private struct JDay { let id: String; let title: String; let recs: [DemoRecording] }
 
@@ -308,11 +314,12 @@ private struct iPadJournal: View {
                     Spacer(minLength: 0)
                 }
             } else if ready {
-                Text("You shipped the export pipeline and unblocked staging, pushed the launch to Thursday to give QA a full cycle, and captured a few ideas — including a weekly digest that condenses each voice note into three bullets.")
+                Text(demoSummary)
                     .font(WZFont.ui(15)).foregroundStyle(t.text).lineSpacing(4)
                     .fixedSize(horizontal: false, vertical: true)
                 HStack {
                     Spacer(minLength: 0)
+                    GhostButton(title: "Copy", icon: "copy") { copy(demoSummary) }.fixedSize()
                     GhostButton(title: "Regenerate", icon: "sync") { generate() }.fixedSize()
                 }
             } else {
@@ -326,6 +333,16 @@ private struct iPadJournal: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(t.surface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(t.line, lineWidth: 1))
+    }
+
+    private func copy(_ text: String) {
+#if canImport(UIKit)
+        UIPasteboard.general.string = text
+        UINotificationFeedbackGenerator().notificationOccurred(.success)
+#elseif canImport(AppKit)
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
+#endif
     }
 
     private func generate() {
