@@ -1,5 +1,10 @@
 import SwiftUI
 import WhisperioKit
+#if canImport(UIKit)
+import UIKit
+#elseif canImport(AppKit)
+import AppKit
+#endif
 
 // One day's digest — the top summary card (Generate summary / spinner / summary + Regenerate) over
 // the day's notes grouped by category. Grouping is computed live from the store so a category the
@@ -87,6 +92,7 @@ struct DigestDayView: View {
                         Text(JournalFormat.generatedMeta(at)).font(WZFont.mono(10.5)).foregroundStyle(t.faint)
                     }
                     Spacer(minLength: 0)
+                    GhostButton(title: "Copy", icon: "copy") { copy(summary) }.fixedSize()
                     GhostButton(title: "Regenerate", icon: "sync") { generate() }.fixedSize()
                 }
             } else {
@@ -100,6 +106,19 @@ struct DigestDayView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(t.surface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(t.line, lineWidth: 1))
+    }
+
+    // MARK: - Copy
+
+    private func copy(_ text: String) {
+#if canImport(UIKit)
+        UIPasteboard.general.string = text
+        UINotificationFeedbackGenerator().notificationOccurred(.success)
+#elseif canImport(AppKit)
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
+#endif
+        toast("Copied!")
     }
 
     // MARK: - Grouped notes
