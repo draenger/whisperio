@@ -152,6 +152,35 @@ describe('recordingStore', () => {
     it('returns false for nonexistent id', async () => {
       expect(await deleteRecording('rec-nonexistent-0000')).toBe(false)
     })
+
+    it('leaves a tombstone in the index but hides it from reads (LWW convergence)', async () => {
+      const entry = await saveRecording(Buffer.from('data'), { duration: 5, provider: 'openai' })
+      expect(entry.updatedAt).toBeGreaterThan(0)
+
+      await deleteRecording(entry.id)
+
+      // Hidden from every reader, exactly as a hard delete used to be.
+      expect(getRecording(entry.id)).toBeNull()
+      expect(getRecordings()).toHaveLength(0)
+      expect(getRecordingAudio(entry.id)).toBeNull()
+      expect(existsSync(entry.filepath)).toBe(false)
+
+      // But a soft-delete tombstone survives in the raw index so the removal can
+      // converge across devices instead of being silently resurrected by a stale add.
+      const raw = loadIndex()
+      expect(raw.recordings).toHaveLength(1)
+      expect(raw.recordings[0].id).toBe(entry.id)
+      expect(raw.recordings[0].deletedAt).toBeGreaterThan(0)
+      expect(raw.recordings[0].updatedAt).toBeGreaterThanOrEqual(entry.updatedAt!)
+      // Freed bytes no longer count against the disk quota.
+      expect(raw.recordings[0].size).toBe(0)
+    })
+
+    it('cannot be updated once tombstoned', async () => {
+      const entry = await saveRecording(Buffer.from('data'), { duration: 5, provider: 'openai' })
+      await deleteRecording(entry.id)
+      expect(await updateRecording(entry.id, { status: 'completed' })).toBeNull()
+    })
   })
 
   describe('deleteAllRecordings', () => {

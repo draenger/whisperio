@@ -13,6 +13,13 @@ export interface RecordingEntry {
   transcription?: string
   error?: string
   size: number
+  // Last-write-wins sync metadata (PT-offline-first-lww-sync). `updatedAt` is the
+  // LWW key bumped on every mutation; `deletedAt`, when set, marks a tombstone —
+  // a soft delete that survives in the index so the removal can converge across
+  // devices instead of a hard splice that could never propagate. Both are optional
+  // so legacy index rows written before this change still load.
+  updatedAt?: number
+  deletedAt?: number
 }
 
 interface RecordingIndex {
@@ -145,7 +152,8 @@ export function saveRecording(
     duration: metadata.duration,
     status: 'pending',
     provider: metadata.provider,
-    size: audioBuffer.length
+    size: audioBuffer.length,
+    updatedAt: timestamp
   }
 
   return enqueue(() => {
@@ -160,10 +168,11 @@ export function saveRecording(
 export function updateRecording(id: string, updates: Partial<RecordingEntry>): Promise<RecordingEntry | null> {
   return enqueue(() => {
     const index = loadIndex()
-    const idx = index.recordings.findIndex((r) => r.id === id)
+    const idx = index.recordings.findIndex((r) => r.id === id && !r.deletedAt)
     if (idx === -1) return null
 
-    index.recordings[idx] = { ...index.recordings[idx], ...updates }
+    // Bump the LWW key so a stale copy on another device can't clobber this edit.
+    index.recordings[idx] = { ...index.recordings[idx], ...updates, updatedAt: Date.now() }
     saveIndex(index)
     return index.recordings[idx]
   })
@@ -171,26 +180,37 @@ export function updateRecording(id: string, updates: Partial<RecordingEntry>): P
 
 export function getRecordings(): RecordingEntry[] {
   const index = loadIndex()
-  return [...index.recordings].sort((a, b) => b.timestamp - a.timestamp)
+  // Hide tombstones from readers — a soft-deleted recording is gone as far as the
+  // UI is concerned, even though its row lingers in the index for sync convergence.
+  return index.recordings
+    .filter((r) => !r.deletedAt)
+    .sort((a, b) => b.timestamp - a.timestamp)
 }
 
 export function getRecording(id: string): RecordingEntry | null {
   const index = loadIndex()
-  return index.recordings.find((r) => r.id === id) || null
+  return index.recordings.find((r) => r.id === id && !r.deletedAt) || null
 }
 
 export function deleteRecording(id: string): Promise<boolean> {
   return enqueue(() => {
     const index = loadIndex()
-    const idx = index.recordings.findIndex((r) => r.id === id)
+    const idx = index.recordings.findIndex((r) => r.id === id && !r.deletedAt)
     if (idx === -1) return false
 
     const entry = index.recordings[idx]
+    // Reclaim the audio file immediately, but keep a tombstone row instead of
+    // hard-splicing it out: bump `updatedAt` and stamp `deletedAt` so the delete
+    // is a last-write-wins fact that can propagate to other devices, and zero the
+    // tracked size so the freed bytes no longer count against the disk quota.
+    // A hard `splice` here could never converge — a stale device would resurrect
+    // the row on the next merge (PT-offline-first-lww-sync).
     if (existsSync(entry.filepath)) {
       unlinkSync(entry.filepath)
     }
 
-    index.recordings.splice(idx, 1)
+    const now = Date.now()
+    index.recordings[idx] = { ...entry, deletedAt: now, updatedAt: now, size: 0 }
     saveIndex(index)
     return true
   })
