@@ -21,6 +21,14 @@ export default defineConfig({
         'src/main/dictation/index.ts',
         'src/main/dictation/overlayWindow.ts',
         'src/main/dictation/autoPaste.ts',
+        // GitHub connect: thin Electron-runtime seams (net transport, safeStorage
+        // key/token wrappers, and the IPC wiring). The pure logic they wrap
+        // (deviceFlow, githubClient, secretCrypto, secretStore, connectionStore)
+        // stays covered by unit tests.
+        'src/main/github/httpTransport.ts',
+        'src/main/github/keyProvider.ts',
+        'src/main/github/githubTokenStore.ts',
+        'src/main/github/ipc.ts',
         'src/preload/**',
         'src/renderer/**/*.tsx',
         'src/renderer/**/*.d.ts',

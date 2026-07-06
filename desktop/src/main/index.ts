@@ -1,8 +1,18 @@
 import { app, BrowserWindow, desktopCapturer, ipcMain, session } from 'electron'
+import { join } from 'path'
 import { initDictation, cleanupDictation, reRegisterHotkeys, pauseHotkeys, resumeHotkeys } from './dictation'
 import { createTray, destroyTray } from './tray'
 import { loadSettings, saveSettings } from './settingsManager'
-import { transcribeAudio } from './transcribe'
+import { transcribeAudio, rewriteText } from './transcribe'
+import { PersistedSeededStore } from './seededStore'
+import { REWRITE_SEEDS, REWRITE_PRESETS_FILENAME, type RewritePreset } from './rewritePrompts'
+import {
+  loadCategorizationConfig,
+  saveCategorizationConfig,
+  resetCategorizationConfig,
+  type CategorizationConfig
+} from './categorizationConfig'
+import { registerGitHubIpc } from './github/ipc'
 import { openSettingsWindow } from './settingsWindow'
 import { getRecentErrors } from './errorHandler'
 import { openRecordingsWindow } from './recordingsWindow'
@@ -267,6 +277,32 @@ app.whenReady().then(() => {
 
   // Expose the real app version to the renderer (settings badge)
   ipcMain.handle('app:getVersion', () => app.getVersion())
+
+  // Rewrite presets — the seeded catalog with per-user soft-delete/override
+  // edits (see seededStore + rewritePrompts).
+  const rewritePresetStore = (): PersistedSeededStore<RewritePreset> =>
+    new PersistedSeededStore<RewritePreset>(
+      REWRITE_SEEDS,
+      join(app.getPath('userData'), REWRITE_PRESETS_FILENAME)
+    )
+  ipcMain.handle('presets:list', () => rewritePresetStore().list())
+  ipcMain.handle('presets:upsert', (_e, preset: RewritePreset) => rewritePresetStore().upsert(preset))
+  ipcMain.handle('presets:delete', (_e, id: string) => rewritePresetStore().delete(id))
+  ipcMain.handle('presets:restoreDefaults', () => rewritePresetStore().restoreDefaults())
+
+  // Ad-hoc rewrite (BYO custom prompt or a chosen/default preset).
+  ipcMain.handle('rewrite:run', (_e, text: string, opts: { presetId?: string; customPrompt?: string }) =>
+    rewriteText(text, opts || {})
+  )
+
+  // Runtime-editable categorization config (prompt + categories).
+  ipcMain.handle('categorization:get', () => loadCategorizationConfig())
+  ipcMain.handle('categorization:save', (_e, config: CategorizationConfig) => saveCategorizationConfig(config))
+  ipcMain.handle('categorization:reset', () => resetCategorizationConfig())
+
+  // GitHub connect + encrypted secret store IPC (device flow / PAT, repo picker,
+  // client-side-encrypted secrets committed to the chosen repo).
+  registerGitHubIpc()
 
   // Initialize Whisperio dictation (overlay + hotkey)
   initDictation()

@@ -170,6 +170,94 @@ export interface UpdaterAPI {
   onStatus: (callback: (state: UpdaterState) => void) => () => void
 }
 
+export interface RewritePreset {
+  id: string
+  name: string
+  prompt: string
+  icon: string
+  isSeed: boolean
+}
+
+export interface PresetsAPI {
+  list: () => Promise<RewritePreset[]>
+  upsert: (preset: RewritePreset) => Promise<RewritePreset[]>
+  delete: (id: string) => Promise<RewritePreset[]>
+  restoreDefaults: () => Promise<RewritePreset[]>
+}
+
+export interface RewriteAPI {
+  run: (text: string, opts: { presetId?: string; customPrompt?: string }) => Promise<string>
+}
+
+export interface CategorizationCategory {
+  id: string
+  label: string
+}
+
+export interface CategorizationConfig {
+  systemPrompt: string
+  categories: CategorizationCategory[]
+}
+
+export interface CategorizationAPI {
+  get: () => Promise<CategorizationConfig>
+  save: (config: CategorizationConfig) => Promise<CategorizationConfig>
+  reset: () => Promise<CategorizationConfig>
+}
+
+export interface GitHubDeviceCode {
+  deviceCode: string
+  userCode: string
+  verificationUri: string
+  expiresIn: number
+  interval: number
+}
+
+export type GitHubPollResult =
+  | { status: 'authorization_pending' }
+  | { status: 'slow_down'; interval: number }
+  | { status: 'expired_token' }
+  | { status: 'access_denied' }
+  | { status: 'success'; accessToken: string; tokenType: string; scope: string }
+
+export interface GitHubRepo {
+  fullName: string
+  name: string
+  owner: string
+  defaultBranch: string
+  private: boolean
+}
+
+export interface GitHubConnection {
+  login: string
+  owner: string
+  repo: string
+  defaultBranch: string
+  secretsPath: string
+}
+
+export interface GitHubStatus {
+  connected: boolean
+  hasClientId: boolean
+  secretStorageAvailable: boolean
+  connection: GitHubConnection | null
+}
+
+export interface GitHubAPI {
+  status: () => Promise<GitHubStatus>
+  startDeviceFlow: () => Promise<GitHubDeviceCode>
+  pollDeviceFlow: (deviceCode: string) => Promise<GitHubPollResult>
+  pastePat: (token: string) => Promise<{ ok: boolean }>
+  listRepos: () => Promise<GitHubRepo[]>
+  selectRepo: (repo: GitHubRepo & { login?: string }) => Promise<GitHubConnection>
+  testConnection: () => Promise<{ ok: boolean; fullName: string }>
+  disconnect: () => Promise<{ ok: boolean }>
+  secretList: () => Promise<string[]>
+  secretGet: (name: string) => Promise<string | null>
+  secretSet: (name: string, value: string) => Promise<{ ok: boolean }>
+  secretDelete: (name: string) => Promise<{ ok: boolean }>
+}
+
 export interface WhisperioAPI {
   dictation: DictationAPI
   settings: SettingsAPI
@@ -179,6 +267,10 @@ export interface WhisperioAPI {
   errors: ErrorAPI
   window: WindowAPI
   updater: UpdaterAPI
+  presets: PresetsAPI
+  rewrite: RewriteAPI
+  categorization: CategorizationAPI
+  github: GitHubAPI
 }
 
 const dictationApi: DictationAPI = {
@@ -330,6 +422,38 @@ const updaterApi: UpdaterAPI = {
   }
 }
 
+const presetsApi: PresetsAPI = {
+  list: () => ipcRenderer.invoke('presets:list'),
+  upsert: (preset) => ipcRenderer.invoke('presets:upsert', preset),
+  delete: (id) => ipcRenderer.invoke('presets:delete', id),
+  restoreDefaults: () => ipcRenderer.invoke('presets:restoreDefaults')
+}
+
+const rewriteApi: RewriteAPI = {
+  run: (text, opts) => ipcRenderer.invoke('rewrite:run', text, opts)
+}
+
+const categorizationApi: CategorizationAPI = {
+  get: () => ipcRenderer.invoke('categorization:get'),
+  save: (config) => ipcRenderer.invoke('categorization:save', config),
+  reset: () => ipcRenderer.invoke('categorization:reset')
+}
+
+const githubApi: GitHubAPI = {
+  status: () => ipcRenderer.invoke('github:status'),
+  startDeviceFlow: () => ipcRenderer.invoke('github:startDeviceFlow'),
+  pollDeviceFlow: (deviceCode) => ipcRenderer.invoke('github:pollDeviceFlow', deviceCode),
+  pastePat: (token) => ipcRenderer.invoke('github:pastePat', token),
+  listRepos: () => ipcRenderer.invoke('github:listRepos'),
+  selectRepo: (repo) => ipcRenderer.invoke('github:selectRepo', repo),
+  testConnection: () => ipcRenderer.invoke('github:testConnection'),
+  disconnect: () => ipcRenderer.invoke('github:disconnect'),
+  secretList: () => ipcRenderer.invoke('github:secretList'),
+  secretGet: (name) => ipcRenderer.invoke('github:secretGet', name),
+  secretSet: (name, value) => ipcRenderer.invoke('github:secretSet', name, value),
+  secretDelete: (name) => ipcRenderer.invoke('github:secretDelete', name)
+}
+
 contextBridge.exposeInMainWorld('api', {
   dictation: dictationApi,
   settings: settingsApi,
@@ -339,4 +463,8 @@ contextBridge.exposeInMainWorld('api', {
   errors: errorsApi,
   window: windowApi,
   updater: updaterApi,
+  presets: presetsApi,
+  rewrite: rewriteApi,
+  categorization: categorizationApi,
+  github: githubApi,
 })

@@ -77,7 +77,7 @@ function UpdateBanner({ state, theme }: { state: UpdaterState | null; theme: The
   )
 }
 
-type TabId = 'general' | 'providers' | 'models' | 'audio' | 'hotkeys' | 'recordings' | 'updates'
+type TabId = 'general' | 'providers' | 'rewrite' | 'github' | 'models' | 'audio' | 'hotkeys' | 'recordings' | 'updates'
 
 const TAB_ICONS: Record<string, string> = {
   general: 'M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6',
@@ -85,7 +85,9 @@ const TAB_ICONS: Record<string, string> = {
   audio: 'M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3zM19 10v2a7 7 0 0 1-14 0v-2M12 19v3',
   hotkeys: 'M3 5h18a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1zM6 9h.01M10 9h.01M14 9h.01M18 9h.01M6 13h.01M9 13h6M18 13h.01',
   recordings: 'M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zM12 7v5l3 2',
-  updates: 'M21 12a9 9 0 1 1-2.64-6.36M21 3v6h-6'
+  updates: 'M21 12a9 9 0 1 1-2.64-6.36M21 3v6h-6',
+  rewrite: 'M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z',
+  github: 'M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22'
 }
 
 function NavIcon({ d, size = 16 }: { d: string; size?: number }): ReactElement {
@@ -334,7 +336,7 @@ export function SettingsForm(): ReactElement {
   const { theme } = useTheme()
 
   // --- State ---
-  const validTabs: TabId[] = ['general', 'providers', 'audio', 'hotkeys', 'updates', 'recordings']
+  const validTabs: TabId[] = ['general', 'providers', 'rewrite', 'github', 'audio', 'hotkeys', 'updates', 'recordings']
   const initialTab = ((): TabId => {
     const h = window.location.hash.replace('#', '') as TabId
     return validTabs.includes(h) ? h : 'general'
@@ -498,6 +500,8 @@ export function SettingsForm(): ReactElement {
   const tabs: { id: TabId; label: string }[] = [
     { id: 'general', label: 'General' },
     { id: 'providers', label: 'Providers' },
+    { id: 'rewrite', label: 'Rewrite' },
+    { id: 'github', label: 'GitHub' },
     { id: 'audio', label: 'Audio' },
     { id: 'hotkeys', label: 'Hotkeys' },
     { id: 'updates', label: 'Updates' },
@@ -652,6 +656,10 @@ export function SettingsForm(): ReactElement {
                   {activeTab === 'updates' && (
                     <UpdatesTab state={updater} s={s} theme={theme} />
                   )}
+
+                  {activeTab === 'rewrite' && <RewriteTab s={s} theme={theme} />}
+
+                  {activeTab === 'github' && <GitHubTab s={s} theme={theme} />}
                 </div>
               </div>
 
@@ -2019,6 +2027,528 @@ function ToggleRow({
         style={{ display: 'none' }}
       />
     </label>
+  )
+}
+
+/* ─── Rewrite tab (presets + categorization config) ─── */
+
+// Derive the shapes from the preload typings so the UI stays in sync with the
+// bridge without a cross-project import.
+type RewritePreset = Awaited<ReturnType<Window['api']['presets']['list']>>[number]
+type CategorizationConfig = Awaited<ReturnType<Window['api']['categorization']['get']>>
+
+function smallButton(theme: Theme, variant: 'solid' | 'ghost' | 'danger' = 'solid'): React.CSSProperties {
+  const base: React.CSSProperties = {
+    borderRadius: '7px',
+    padding: '7px 13px',
+    fontSize: '12.5px',
+    fontWeight: 600,
+    cursor: 'pointer',
+    fontFamily: 'IBM Plex Sans, sans-serif',
+    transition: 'all 0.15s'
+  }
+  if (variant === 'solid') return { ...base, background: theme.accent, color: '#fff', border: 'none' }
+  if (variant === 'danger')
+    return { ...base, background: 'transparent', color: theme.danger, border: `1px solid ${theme.danger}55` }
+  return { ...base, background: 'transparent', color: theme.textSecondary, border: `1px solid ${theme.inputBorder}` }
+}
+
+function RewriteTab({ s, theme }: { s: ReturnType<typeof makeStyles>; theme: Theme }): ReactElement {
+  const [presets, setPresets] = useState<RewritePreset[]>([])
+  const [defaultPresetId, setDefaultPresetId] = useState<string>('')
+  const [config, setConfig] = useState<CategorizationConfig | null>(null)
+  const [catPrompt, setCatPrompt] = useState('')
+  const [status, setStatus] = useState('')
+
+  const reloadPresets = useCallback(async () => {
+    setPresets(await window.api.presets.list())
+  }, [])
+
+  useEffect(() => {
+    reloadPresets()
+    window.api.settings.load().then((st) => setDefaultPresetId(st.defaultRewritePresetId ?? ''))
+    window.api.categorization.get().then((c) => {
+      setConfig(c)
+      setCatPrompt(c.systemPrompt)
+    })
+  }, [reloadPresets])
+
+  const flash = (msg: string): void => {
+    setStatus(msg)
+    setTimeout(() => setStatus(''), 2000)
+  }
+
+  return (
+    <>
+      <div style={s.card}>
+        <h3 style={s.cardTitle}>Rewrite presets</h3>
+        <p style={s.hint}>
+          The transcript rewrite / post-processing prompt. Pick the default used after dictation, delete the
+          built-ins you don&apos;t want (they can always be restored), and the picker in the rewrite flow uses
+          the same list.
+        </p>
+
+        <label style={{ ...s.label, marginTop: '8px' }}>Default rewrite preset</label>
+        <select
+          value={defaultPresetId}
+          onChange={async (e) => {
+            const id = e.target.value
+            setDefaultPresetId(id)
+            await window.api.settings.save({ defaultRewritePresetId: id })
+            flash('Saved')
+          }}
+          style={s.select}
+        >
+          <option value="">Fix technical terms (default)</option>
+          {presets.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.name}
+            </option>
+          ))}
+        </select>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '10px' }}>
+          {presets.map((p) => (
+            <div
+              key={p.id}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: '8px',
+                padding: '9px 12px',
+                background: theme.inputBg,
+                border: `1px solid ${theme.inputBorder}`,
+                borderRadius: '8px'
+              }}
+            >
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontSize: '13px', fontWeight: 600, color: theme.text }}>{p.name}</div>
+                <div
+                  style={{
+                    fontSize: '11.5px',
+                    color: theme.textMuted,
+                    whiteSpace: 'nowrap',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    maxWidth: '340px'
+                  }}
+                >
+                  {p.prompt}
+                </div>
+              </div>
+              <button
+                onClick={async () => {
+                  await window.api.presets.delete(p.id)
+                  await reloadPresets()
+                }}
+                style={smallButton(theme, 'danger')}
+              >
+                {p.isSeed ? 'Hide' : 'Delete'}
+              </button>
+            </div>
+          ))}
+        </div>
+
+        <div style={{ marginTop: '10px' }}>
+          <button
+            onClick={async () => {
+              await window.api.presets.restoreDefaults()
+              await reloadPresets()
+              flash('Defaults restored')
+            }}
+            style={smallButton(theme, 'ghost')}
+          >
+            Restore defaults
+          </button>
+        </div>
+      </div>
+
+      <div style={s.card}>
+        <h3 style={s.cardTitle}>Categorization prompt</h3>
+        <p style={s.hint}>
+          The system prompt used to categorize a note. Editable here rather than hardcoded; categories:{' '}
+          {config?.categories.map((c) => c.id).join(', ')}.
+        </p>
+        <textarea
+          value={catPrompt}
+          onChange={(e) => setCatPrompt(e.target.value)}
+          style={{ ...s.textarea, minHeight: '90px' }}
+        />
+        <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
+          <button
+            onClick={async () => {
+              const saved = await window.api.categorization.save({
+                systemPrompt: catPrompt,
+                categories: config?.categories ?? []
+              })
+              setConfig(saved)
+              setCatPrompt(saved.systemPrompt)
+              flash('Saved')
+            }}
+            style={smallButton(theme, 'solid')}
+          >
+            Save prompt
+          </button>
+          <button
+            onClick={async () => {
+              const reset = await window.api.categorization.reset()
+              setConfig(reset)
+              setCatPrompt(reset.systemPrompt)
+              flash('Reset to default')
+            }}
+            style={smallButton(theme, 'ghost')}
+          >
+            Reset to default
+          </button>
+          {status && (
+            <span style={{ alignSelf: 'center', fontSize: '12px', color: theme.success, fontWeight: 600 }}>
+              {status}
+            </span>
+          )}
+        </div>
+      </div>
+    </>
+  )
+}
+
+/* ─── GitHub tab (connect + encrypted secret store) ─── */
+
+type GitHubStatus = Awaited<ReturnType<Window['api']['github']['status']>>
+type GitHubRepo = Awaited<ReturnType<Window['api']['github']['listRepos']>>[number]
+type GitHubDeviceCode = Awaited<ReturnType<Window['api']['github']['startDeviceFlow']>>
+
+function GitHubTab({ s, theme }: { s: ReturnType<typeof makeStyles>; theme: Theme }): ReactElement {
+  const [status, setStatus] = useState<GitHubStatus | null>(null)
+  const [pat, setPat] = useState('')
+  const [device, setDevice] = useState<GitHubDeviceCode | null>(null)
+  const [repos, setRepos] = useState<GitHubRepo[]>([])
+  const [busy, setBusy] = useState(false)
+  const [message, setMessage] = useState('')
+  const [secrets, setSecrets] = useState<string[]>([])
+  const [newSecretName, setNewSecretName] = useState('')
+  const [newSecretValue, setNewSecretValue] = useState('')
+  const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const refresh = useCallback(async () => {
+    const st = await window.api.github.status()
+    setStatus(st)
+    if (st.connected && st.connection) {
+      try {
+        setSecrets(await window.api.github.secretList())
+      } catch {
+        setSecrets([])
+      }
+    }
+  }, [])
+
+  useEffect(() => {
+    refresh()
+    return () => {
+      if (pollRef.current) clearTimeout(pollRef.current)
+    }
+  }, [refresh])
+
+  const say = (m: string): void => {
+    setMessage(m)
+  }
+
+  const startDeviceFlow = async (): Promise<void> => {
+    setBusy(true)
+    say('')
+    try {
+      const code = await window.api.github.startDeviceFlow()
+      setDevice(code)
+      // Poll until the user authorizes (or it expires).
+      const poll = async (): Promise<void> => {
+        try {
+          const result = await window.api.github.pollDeviceFlow(code.deviceCode)
+          if (result.status === 'success') {
+            setDevice(null)
+            setBusy(false)
+            say('Connected to GitHub')
+            await refresh()
+            return
+          }
+          if (result.status === 'expired_token' || result.status === 'access_denied') {
+            setDevice(null)
+            setBusy(false)
+            say(result.status === 'expired_token' ? 'Code expired — try again' : 'Access denied')
+            return
+          }
+          const delay = (result.status === 'slow_down' ? result.interval : code.interval) * 1000
+          pollRef.current = setTimeout(poll, delay)
+        } catch (err) {
+          setBusy(false)
+          say(err instanceof Error ? err.message : 'Device flow failed')
+        }
+      }
+      pollRef.current = setTimeout(poll, code.interval * 1000)
+    } catch (err) {
+      setBusy(false)
+      say(err instanceof Error ? err.message : 'Could not start device flow')
+    }
+  }
+
+  const connectPat = async (): Promise<void> => {
+    setBusy(true)
+    say('')
+    try {
+      await window.api.github.pastePat(pat.trim())
+      setPat('')
+      say('Connected to GitHub')
+      await refresh()
+    } catch (err) {
+      say(err instanceof Error ? err.message : 'Token rejected')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const loadRepos = async (): Promise<void> => {
+    setBusy(true)
+    try {
+      setRepos(await window.api.github.listRepos())
+    } catch (err) {
+      say(err instanceof Error ? err.message : 'Could not list repos')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const connection = status?.connection ?? null
+
+  return (
+    <>
+      <div style={s.card}>
+        <h3 style={s.cardTitle}>GitHub secret store</h3>
+        <p style={s.hint}>
+          Connect a GitHub account and pick a repository to hold your app secrets. Secrets are encrypted on
+          this device (AES-256-GCM) before they leave the app — only the ciphertext is committed; the key
+          stays in the OS keychain and is never uploaded.
+        </p>
+
+        {status && !status.secretStorageAvailable && (
+          <div
+            style={{
+              marginTop: '8px',
+              padding: '9px 12px',
+              borderRadius: '8px',
+              background: `${theme.danger}14`,
+              border: `1px solid ${theme.danger}44`,
+              fontSize: '12px',
+              color: theme.danger
+            }}
+          >
+            OS secure storage (Keychain / DPAPI) is unavailable on this machine, so secrets can&apos;t be
+            encrypted safely. Secret sync is disabled.
+          </div>
+        )}
+
+        {!status?.connected && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '8px' }}>
+            {status?.hasClientId && (
+              <div>
+                <button onClick={startDeviceFlow} disabled={busy} style={smallButton(theme, 'solid')}>
+                  Connect with GitHub (device flow)
+                </button>
+                {device && (
+                  <div style={{ marginTop: '8px', fontSize: '12.5px', color: theme.text }}>
+                    Enter code{' '}
+                    <span style={{ fontFamily: 'monospace', fontWeight: 700, color: theme.accent }}>
+                      {device.userCode}
+                    </span>{' '}
+                    at{' '}
+                    <span style={{ fontFamily: 'monospace' }}>{device.verificationUri}</span> (opened in your
+                    browser). Waiting for authorization…
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div>
+              <label style={s.label}>
+                {status?.hasClientId ? 'Or paste a Personal Access Token' : 'Paste a Personal Access Token'}
+              </label>
+              <p style={s.hint}>Needs the classic `repo` scope (or fine-grained Contents: read/write).</p>
+              <div style={{ display: 'flex', gap: '8px', marginTop: '4px' }}>
+                <input
+                  type="password"
+                  value={pat}
+                  onChange={(e) => setPat(e.target.value)}
+                  placeholder="ghp_..."
+                  style={{ ...s.input, flex: 1 }}
+                />
+                <button onClick={connectPat} disabled={busy || !pat.trim()} style={smallButton(theme, 'solid')}>
+                  Connect
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {status?.connected && !connection && (
+          <div style={{ marginTop: '8px' }}>
+            <p style={s.hint}>Connected. Choose the repository to store secrets in.</p>
+            <div style={{ display: 'flex', gap: '8px', marginTop: '6px' }}>
+              <button onClick={loadRepos} disabled={busy} style={smallButton(theme, 'ghost')}>
+                {busy ? 'Loading…' : 'Load my repositories'}
+              </button>
+              <button
+                onClick={async () => {
+                  await window.api.github.disconnect()
+                  await refresh()
+                }}
+                style={smallButton(theme, 'danger')}
+              >
+                Disconnect
+              </button>
+            </div>
+            {repos.length > 0 && (
+              <select
+                onChange={async (e) => {
+                  const repo = repos.find((r) => r.fullName === e.target.value)
+                  if (!repo) return
+                  await window.api.github.selectRepo({ ...repo, login: repo.owner })
+                  await refresh()
+                }}
+                defaultValue=""
+                style={{ ...s.select, marginTop: '8px' }}
+              >
+                <option value="" disabled>
+                  Select a repository…
+                </option>
+                {repos.map((r) => (
+                  <option key={r.fullName} value={r.fullName}>
+                    {r.fullName}
+                    {r.private ? ' (private)' : ''}
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
+        )}
+
+        {status?.connected && connection && (
+          <div style={{ marginTop: '8px' }}>
+            <div style={{ fontSize: '13px', color: theme.text }}>
+              Repository:{' '}
+              <span style={{ fontWeight: 600 }}>
+                {connection.owner}/{connection.repo}
+              </span>{' '}
+              <span style={{ color: theme.textMuted }}>({connection.defaultBranch})</span>
+            </div>
+            <div style={{ fontSize: '11.5px', color: theme.textMuted, marginTop: '2px' }}>
+              Secrets file: {connection.secretsPath}
+            </div>
+            <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
+              <button
+                onClick={async () => {
+                  try {
+                    const r = await window.api.github.testConnection()
+                    say(`Access OK — ${r.fullName}`)
+                  } catch (err) {
+                    say(err instanceof Error ? err.message : 'Test failed')
+                  }
+                }}
+                style={smallButton(theme, 'ghost')}
+              >
+                Test connection
+              </button>
+              <button
+                onClick={async () => {
+                  await window.api.github.disconnect()
+                  setRepos([])
+                  await refresh()
+                }}
+                style={smallButton(theme, 'danger')}
+              >
+                Disconnect
+              </button>
+            </div>
+          </div>
+        )}
+
+        {message && (
+          <div style={{ marginTop: '8px', fontSize: '12px', color: theme.textSecondary }}>{message}</div>
+        )}
+      </div>
+
+      {status?.connected && connection && (
+        <div style={s.card}>
+          <h3 style={s.cardTitle}>Stored secrets</h3>
+          <p style={s.hint}>Names are shown; values stay encrypted in the repo and are never displayed here.</p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '4px' }}>
+            {secrets.length === 0 && (
+              <div style={{ fontSize: '12.5px', color: theme.textMuted }}>No secrets stored yet.</div>
+            )}
+            {secrets.map((name) => (
+              <div
+                key={name}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  padding: '8px 12px',
+                  background: theme.inputBg,
+                  border: `1px solid ${theme.inputBorder}`,
+                  borderRadius: '8px'
+                }}
+              >
+                <span style={{ fontFamily: 'monospace', fontSize: '12.5px', color: theme.text }}>{name}</span>
+                <button
+                  onClick={async () => {
+                    await window.api.github.secretDelete(name)
+                    setSecrets(await window.api.github.secretList())
+                  }}
+                  style={smallButton(theme, 'danger')}
+                >
+                  Delete
+                </button>
+              </div>
+            ))}
+          </div>
+
+          <label style={{ ...s.label, marginTop: '10px' }}>Add / update a secret</label>
+          <div style={{ display: 'flex', gap: '8px', marginTop: '4px' }}>
+            <input
+              type="text"
+              value={newSecretName}
+              onChange={(e) => setNewSecretName(e.target.value)}
+              placeholder="NAME"
+              style={{ ...s.input, flex: 1 }}
+            />
+            <input
+              type="password"
+              value={newSecretValue}
+              onChange={(e) => setNewSecretValue(e.target.value)}
+              placeholder="value"
+              style={{ ...s.input, flex: 1 }}
+            />
+            <button
+              disabled={busy || !newSecretName.trim() || !newSecretValue}
+              onClick={async () => {
+                setBusy(true)
+                try {
+                  await window.api.github.secretSet(newSecretName.trim(), newSecretValue)
+                  setNewSecretName('')
+                  setNewSecretValue('')
+                  setSecrets(await window.api.github.secretList())
+                  say('Secret saved')
+                } catch (err) {
+                  say(err instanceof Error ? err.message : 'Could not save secret')
+                } finally {
+                  setBusy(false)
+                }
+              }}
+              style={smallButton(theme, 'solid')}
+            >
+              Save
+            </button>
+          </div>
+        </div>
+      )}
+    </>
   )
 }
 

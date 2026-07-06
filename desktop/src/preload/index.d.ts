@@ -73,6 +73,14 @@ export interface AppSettings {
   saveRecordings: boolean
   outputRecordingHotkey: string
   fallbackEnabled: boolean
+  defaultRewritePresetId?: string
+  githubConnection?: {
+    login: string
+    owner: string
+    repo: string
+    defaultBranch: string
+    secretsPath: string
+  }
 }
 
 export interface SettingsAPI {
@@ -169,6 +177,94 @@ export interface UpdaterAPI {
   onStatus: (callback: (state: UpdaterState) => void) => () => void
 }
 
+export interface RewritePreset {
+  id: string
+  name: string
+  prompt: string
+  icon: string
+  isSeed: boolean
+}
+
+export interface PresetsAPI {
+  list: () => Promise<RewritePreset[]>
+  upsert: (preset: RewritePreset) => Promise<RewritePreset[]>
+  delete: (id: string) => Promise<RewritePreset[]>
+  restoreDefaults: () => Promise<RewritePreset[]>
+}
+
+export interface RewriteAPI {
+  run: (text: string, opts: { presetId?: string; customPrompt?: string }) => Promise<string>
+}
+
+export interface CategorizationCategory {
+  id: string
+  label: string
+}
+
+export interface CategorizationConfig {
+  systemPrompt: string
+  categories: CategorizationCategory[]
+}
+
+export interface CategorizationAPI {
+  get: () => Promise<CategorizationConfig>
+  save: (config: CategorizationConfig) => Promise<CategorizationConfig>
+  reset: () => Promise<CategorizationConfig>
+}
+
+export interface GitHubDeviceCode {
+  deviceCode: string
+  userCode: string
+  verificationUri: string
+  expiresIn: number
+  interval: number
+}
+
+export type GitHubPollResult =
+  | { status: 'authorization_pending' }
+  | { status: 'slow_down'; interval: number }
+  | { status: 'expired_token' }
+  | { status: 'access_denied' }
+  | { status: 'success'; accessToken: string; tokenType: string; scope: string }
+
+export interface GitHubRepo {
+  fullName: string
+  name: string
+  owner: string
+  defaultBranch: string
+  private: boolean
+}
+
+export interface GitHubConnection {
+  login: string
+  owner: string
+  repo: string
+  defaultBranch: string
+  secretsPath: string
+}
+
+export interface GitHubStatus {
+  connected: boolean
+  hasClientId: boolean
+  secretStorageAvailable: boolean
+  connection: GitHubConnection | null
+}
+
+export interface GitHubAPI {
+  status: () => Promise<GitHubStatus>
+  startDeviceFlow: () => Promise<GitHubDeviceCode>
+  pollDeviceFlow: (deviceCode: string) => Promise<GitHubPollResult>
+  pastePat: (token: string) => Promise<{ ok: boolean }>
+  listRepos: () => Promise<GitHubRepo[]>
+  selectRepo: (repo: GitHubRepo & { login?: string }) => Promise<GitHubConnection>
+  testConnection: () => Promise<{ ok: boolean; fullName: string }>
+  disconnect: () => Promise<{ ok: boolean }>
+  secretList: () => Promise<string[]>
+  secretGet: (name: string) => Promise<string | null>
+  secretSet: (name: string, value: string) => Promise<{ ok: boolean }>
+  secretDelete: (name: string) => Promise<{ ok: boolean }>
+}
+
 export interface WhisperioAPI {
   dictation: DictationAPI
   settings: SettingsAPI
@@ -178,6 +274,10 @@ export interface WhisperioAPI {
   errors: ErrorAPI
   window: WindowAPI
   updater: UpdaterAPI
+  presets: PresetsAPI
+  rewrite: RewriteAPI
+  categorization: CategorizationAPI
+  github: GitHubAPI
 }
 
 declare global {

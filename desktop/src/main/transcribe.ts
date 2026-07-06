@@ -1,6 +1,15 @@
 import { net, app } from 'electron'
+import { join } from 'path'
 import { loadSettings, AppSettings, type ProviderId } from './settingsManager'
 import { handleTranscriptionError, notifyInfo } from './errorHandler'
+import { PersistedSeededStore } from './seededStore'
+import {
+  REWRITE_SEEDS,
+  REWRITE_PRESETS_FILENAME,
+  resolveRewriteSystemPrompt,
+  buildRewriteMessages,
+  type RewritePreset
+} from './rewritePrompts'
 
 // True only in unpackaged (development) builds. Used to gate logging of
 // privacy-sensitive transcript content so it never reaches production stdout.
@@ -139,13 +148,60 @@ async function transcribeWithProvider(
 
   if (settings.aiPostProcessing && text && vocab) {
     try {
-      text = await postProcessWithLLM(apiKey, text, vocab, baseUrl)
+      const systemPrompt = resolveRewriteSystemPrompt(
+        loadRewritePresets(),
+        settings.defaultRewritePresetId,
+        vocab
+      )
+      text = await rewriteWithLLM(apiKey, text, systemPrompt, baseUrl)
     } catch (err) {
       console.error('[Whisperio] AI post-processing failed, using raw transcript:', err)
     }
   }
 
   return text
+}
+
+/**
+ * Load the user's resolved rewrite presets (seeds + their soft-delete/override
+ * edits). Defensive: any failure resolving the userData path or reading the file
+ * falls back to the built-in seeds so the auto post-process path keeps working.
+ */
+function loadRewritePresets(): RewritePreset[] {
+  try {
+    const store = new PersistedSeededStore<RewritePreset>(
+      REWRITE_SEEDS,
+      join(app.getPath('userData'), REWRITE_PRESETS_FILENAME)
+    )
+    return store.list()
+  } catch {
+    return REWRITE_SEEDS
+  }
+}
+
+/**
+ * Run a rewrite on arbitrary text via the `rewrite:run` IPC — BYO custom prompt
+ * or a chosen/default preset. Resolves the OpenAI key + base URL from settings.
+ */
+export async function rewriteText(
+  text: string,
+  opts: { presetId?: string; customPrompt?: string } = {}
+): Promise<string> {
+  const settings = loadSettings()
+  const apiKey = settings.openaiApiKey
+  if (!apiKey) {
+    throw new Error('No OpenAI API key configured. Open Settings to set it.')
+  }
+  const baseUrl = settings.openaiBaseUrl?.trim() || DEFAULT_OPENAI_BASE
+  const vocab = settings.customVocabulary?.trim() || ''
+
+  let systemPrompt: string
+  if (opts.customPrompt && opts.customPrompt.trim()) {
+    systemPrompt = buildRewriteMessages({ customPrompt: opts.customPrompt }, '', vocab).system
+  } else {
+    systemPrompt = resolveRewriteSystemPrompt(loadRewritePresets(), opts.presetId, vocab)
+  }
+  return rewriteWithLLM(apiKey, text, systemPrompt, baseUrl)
 }
 
 function whisperTranscribe(apiKey: string, audioBuffer: Buffer, filename: string, prompt: string, baseUrl: string, model: string, directUrl = false, language = 'auto'): Promise<string> {
@@ -367,22 +423,19 @@ function elevenLabsTranscribe(apiKey: string, audioBuffer: Buffer, filename: str
   })
 }
 
-function postProcessWithLLM(apiKey: string, text: string, vocabulary: string, baseUrl: string): Promise<string> {
+/**
+ * Run a chat rewrite over `text` using `systemPrompt`. Formerly the hardcoded
+ * technical-terms post-processor; the prompt is now resolved from the selected /
+ * default rewrite preset (or a BYO custom prompt) by the caller, so the same
+ * transport is reused for both the auto post-process path and the `rewrite:run`
+ * IPC. Falls back to the input text when the model returns nothing usable.
+ */
+export function rewriteWithLLM(apiKey: string, text: string, systemPrompt: string, baseUrl: string): Promise<string> {
   const body = JSON.stringify({
     model: 'gpt-4o-mini',
     temperature: 0,
     messages: [
-      {
-        role: 'system',
-        content:
-          `Fix misrecognized technical terms in this speech-to-text transcript. ` +
-          `Use these exact spellings: ${vocabulary}\n\n` +
-          `Rules:\n` +
-          `- Only fix obvious speech recognition errors (e.g. "get" → "git", "get hub" → "GitHub")\n` +
-          `- Do NOT change meaning, rephrase, add words, or remove words\n` +
-          `- Preserve the original language (Polish/English)\n` +
-          `- Return ONLY the corrected text, nothing else`
-      },
+      { role: 'system', content: systemPrompt },
       { role: 'user', content: text }
     ]
   })

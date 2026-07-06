@@ -6,6 +6,20 @@ export type ProviderId = 'openai' | 'elevenlabs' | 'selfhosted'
 
 export type AccentColor = 'graphite' | 'blue' | 'teal' | 'emerald' | 'amber' | 'violet'
 
+/**
+ * Non-secret mirror of the GitHub connection metadata (see
+ * github/connectionStore). The access token + encrypted secrets NEVER live here —
+ * only this display metadata, so the renderer can show connection status without
+ * an extra round-trip.
+ */
+export interface GitHubConnectionMeta {
+  login: string
+  owner: string
+  repo: string
+  defaultBranch: string
+  secretsPath: string
+}
+
 export interface AppSettings {
   sttProvider: 'openai' | 'elevenlabs'
   providerChain: ProviderId[]
@@ -27,6 +41,12 @@ export interface AppSettings {
   saveRecordings: boolean
   outputRecordingHotkey: string
   fallbackEnabled: boolean
+  // Id of the rewrite preset used for the auto post-process path. Optional —
+  // undefined falls back to the built-in technical-terms preset (today's
+  // behavior). See rewritePrompts.ts.
+  defaultRewritePresetId?: string
+  // Non-secret GitHub connection metadata mirror (no token, no secrets).
+  githubConnection?: GitHubConnectionMeta
 }
 
 const DEFAULT_VOCABULARY = [
