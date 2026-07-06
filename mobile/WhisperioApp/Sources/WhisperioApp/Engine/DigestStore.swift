@@ -40,7 +40,8 @@ final class DigestStore: ObservableObject {
         recordings: RecordingsStore,
         categories: [WZCategory],
         using client: ChatLLM,
-        model: String
+        model: String,
+        promptConfig: DigestPromptConfig = .default
     ) async throws {
         let calendar = Calendar.current
         let dayKey = DigestGrouping.dayKey(for: day, calendar: calendar)
@@ -61,7 +62,8 @@ final class DigestStore: ObservableObject {
         if !uncategorized.isEmpty {
             let notes = uncategorized.map { (id: $0.id, text: $0.transcription ?? "") }
             let labels = categories.map { (id: $0.id, label: $0.label) }
-            if let map = try? await client.classify(notes: notes, categories: labels, model: model) {
+            if let map = try? await client.classify(notes: notes, categories: labels,
+                                                     model: model, promptConfig: promptConfig) {
                 for rec in uncategorized {
                     if let categoryID = map[rec.id] {
                         recordings.setCategory(categoryID, for: DemoRecording(rec))
@@ -91,7 +93,8 @@ final class DigestStore: ObservableObject {
             return (label: label, notes: notes)
         }
         let summary = try await client.summarize(
-            day: day, groups: promptGroups, locale: Locale.current.identifier, model: model)
+            day: day, groups: promptGroups, locale: Locale.current.identifier,
+            model: model, promptConfig: promptConfig)
         upsert(DailyDigest(id: dayKey, date: day,
                            recordingIDs: dayRecs.map(\.id), groups: groups,
                            summary: summary, summaryGeneratedAt: Date()))
@@ -105,6 +108,7 @@ final class DigestStore: ObservableObject {
         categories: [WZCategory],
         using client: ChatLLM,
         model: String,
+        promptConfig: DigestPromptConfig = .default,
         window: Int = 7
     ) async {
         guard client.isConfigured else { return }
@@ -126,7 +130,8 @@ final class DigestStore: ObservableObject {
             }
             guard hasNotes else { continue }
             try? await generate(for: day, recordings: recordings,
-                                categories: categories, using: client, model: model)
+                                categories: categories, using: client, model: model,
+                                promptConfig: promptConfig)
         }
     }
 

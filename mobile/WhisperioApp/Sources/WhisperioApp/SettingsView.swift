@@ -15,6 +15,7 @@ struct SettingsView: View {
     // Open the rewrite-preset editor — nil means "new template".
     var openPresetEditor: (RewritePreset?) -> Void = { _ in }
     var openGitHubSync: () -> Void = {}
+    var openDigestPrompts: () -> Void = {}
     var toast: (String) -> Void = { _ in }
 
     @State private var consentProvider: ProviderID?   // non-nil → consent sheet is up
@@ -201,10 +202,12 @@ struct SettingsView: View {
                             SettRow(icon: "book", label: "Auto-journaling",
                                     sub: settings.settings.cloudConsentGranted
                                         ? "Group & summarize each day’s notes with AI · uses the cloud text model"
-                                        : "Groups & summarizes each day’s notes · turn on cloud transcription first",
-                                    last: true) {
+                                        : "Groups & summarizes each day’s notes · turn on cloud transcription first") {
                                 WToggle(on: boolBinding(\.autoDailyDigest))
                             }
+                            SettRow(icon: "command", label: "Categorization prompts",
+                                    sub: "Edit how the AI sorts & summarizes your day", last: true,
+                                    onTap: openDigestPrompts)
                         }
 
                         VStack(alignment: .leading, spacing: 6) {

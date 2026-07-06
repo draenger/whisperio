@@ -5,13 +5,14 @@ import WhisperioKit
 // App shell — custom screen routing + toast, mirroring WZPhone() in wz-iphone.jsx.
 // (The concept uses a bespoke transition shell rather than NavigationStack.)
 
-enum WZScreen { case onboarding, home, recording, detail, settings, models, keyboardSetup, keyboardReturn, presetEditor, journal, digestDay, githubSync }
+enum WZScreen { case onboarding, home, recording, detail, settings, models, keyboardSetup, keyboardReturn, presetEditor, journal, digestDay, githubSync, digestPromptEditor }
 
 struct WZPhoneView: View {
     @Environment(\.scenePhase) private var scenePhase
     @EnvironmentObject private var settings: SettingsStore
     @EnvironmentObject private var recordings: RecordingsStore
     @EnvironmentObject private var digests: DigestStore
+    @EnvironmentObject private var digestPrompts: DigestPromptStore
     @State private var dark = true
     @State private var screen: WZScreen = .home
     @State private var rec: DemoRecording = WZSample.recordings[0]
@@ -122,6 +123,7 @@ struct WZPhoneView: View {
                          openKeyboardSetup: { go(.keyboardSetup) },
                          openPresetEditor: { openEditor($0 ?? Self.newPreset(), from: .settings) },
                          openGitHubSync: { go(.githubSync) },
+                         openDigestPrompts: { go(.digestPromptEditor) },
                          toast: showToast)
         case .models:
             ModelsView(onBack: { go(.settings) })
@@ -131,6 +133,8 @@ struct WZPhoneView: View {
             KeyboardSetupView(onBack: { go(.settings) })
         case .githubSync:
             GitHubSyncView(onBack: { go(.settings) }, toast: showToast)
+        case .digestPromptEditor:
+            DigestPromptEditorView(onBack: { go(.settings) }, toast: showToast)
         case .keyboardReturn:
             KeyboardReturnView(text: returnText, onClose: { go(.home) })
         case .home:
@@ -159,7 +163,8 @@ struct WZPhoneView: View {
         let model = settings.settings.chatModel
         Task {
             await digests.backfillIfNeeded(recordings: recordings, categories: WZCategories.all,
-                                           using: client, model: model)
+                                           using: client, model: model,
+                                           promptConfig: digestPrompts.config)
         }
     }
 
@@ -203,6 +208,7 @@ struct WhisperioApp: App {
     @StateObject private var recordings = RecordingsStore()
     @StateObject private var presets = PresetStore()
     @StateObject private var digests = DigestStore()
+    @StateObject private var digestPrompts = DigestPromptStore()
     @State private var incomingURL: URL?
 
     var body: some Scene {
@@ -212,6 +218,7 @@ struct WhisperioApp: App {
                 .environmentObject(recordings)
                 .environmentObject(presets)
                 .environmentObject(digests)
+                .environmentObject(digestPrompts)
                 .onAppear {
                     PhoneConnectivity.shared.recordings = recordings
                     PhoneConnectivity.shared.activate()

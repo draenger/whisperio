@@ -71,10 +71,12 @@ extension ChatLLM {
     func classify(
         notes: [(id: UUID, text: String)],
         categories: [(id: String, label: String)],
-        model: String
+        model: String,
+        promptConfig: DigestPromptConfig = .default
     ) async throws -> [UUID: String] {
         guard !notes.isEmpty else { return [:] }
-        let prompt = DigestPromptBuilder.classificationPrompt(notes: notes, categories: categories)
+        let prompt = DigestPromptBuilder.classificationPrompt(
+            notes: notes, categories: categories, config: promptConfig)
         let raw = try await complete(messages: [ChatMessage(role: "user", content: prompt)],
                                      model: model, temperature: 0)
         return DigestClassificationParser.parse(raw, allowed: Set(categories.map(\.id)))
@@ -85,9 +87,11 @@ extension ChatLLM {
         day: Date,
         groups: [(label: String, notes: [String])],
         locale: String,
-        model: String
+        model: String,
+        promptConfig: DigestPromptConfig = .default
     ) async throws -> String {
-        let prompt = DigestPromptBuilder.summaryPrompt(day: day, groups: groups, locale: locale)
+        let prompt = DigestPromptBuilder.summaryPrompt(
+            day: day, groups: groups, locale: locale, config: promptConfig)
         let out = try await complete(messages: [ChatMessage(role: "user", content: prompt)],
                                      model: model, temperature: 0)
         return out.trimmingCharacters(in: .whitespacesAndNewlines)
