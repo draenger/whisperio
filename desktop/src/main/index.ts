@@ -31,7 +31,8 @@ import {
   getServerStatus,
   startServer,
   stopServer,
-  setServerStatusCallback
+  setServerStatusCallback,
+  markServerUsed
 } from './localServer'
 import { initAutoUpdater, getUpdateState, checkForUpdatesManual, installUpdate } from './autoUpdater'
 
@@ -174,6 +175,9 @@ app.whenReady().then(() => {
 
   // Register transcription IPC handler
   ipcMain.handle('dictation:transcribe', async (_event, audioBuffer: Buffer, filename: string) => {
+    // Reset the local whisper-server idle clock so an actively-used server is
+    // not reclaimed by the idle sweep mid-session (no-op when it's not running).
+    markServerUsed()
     return transcribeAudio(audioBuffer, filename)
   })
 

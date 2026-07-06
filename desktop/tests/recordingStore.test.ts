@@ -22,7 +22,9 @@ import {
   deleteRecordingsByDate,
   getRecordingAudio,
   loadIndex,
-  saveIndex
+  saveIndex,
+  setMaxDiskBytes,
+  getMaxDiskBytes
 } from '../src/main/recordingStore'
 
 describe('recordingStore', () => {
@@ -227,6 +229,56 @@ describe('recordingStore', () => {
 
       const loaded = loadIndex()
       expect(loaded).toEqual(index)
+    })
+  })
+
+  describe('disk quota eviction', () => {
+    const originalCap = getMaxDiskBytes()
+
+    afterEach(() => {
+      setMaxDiskBytes(originalCap)
+    })
+
+    it('evicts oldest recordings when the total exceeds maxDiskBytes', async () => {
+      setMaxDiskBytes(30) // tiny cap: 30 bytes, evict down to 90% (27)
+
+      const nowSpy = vi.spyOn(Date, 'now')
+      nowSpy.mockReturnValue(1_000)
+      const oldest = await saveRecording(Buffer.alloc(20), { duration: 1, provider: 'openai' })
+      nowSpy.mockReturnValue(2_000)
+      const middle = await saveRecording(Buffer.alloc(20), { duration: 2, provider: 'openai' })
+      nowSpy.mockReturnValue(3_000)
+      const newest = await saveRecording(Buffer.alloc(20), { duration: 3, provider: 'openai' })
+      nowSpy.mockRestore()
+
+      // Only the newest survives: each 20-byte save pushes total to 40 (> 30),
+      // evicting the oldest until <= 27.
+      const list = getRecordings()
+      expect(list).toHaveLength(1)
+      expect(list[0].id).toBe(newest.id)
+
+      // Evicted recordings' files are deleted from disk.
+      expect(existsSync(oldest.filepath)).toBe(false)
+      expect(existsSync(middle.filepath)).toBe(false)
+      expect(existsSync(newest.filepath)).toBe(true)
+    })
+
+    it('never evicts the recording just saved, even if it alone exceeds the cap', async () => {
+      setMaxDiskBytes(10) // cap smaller than a single recording
+
+      const entry = await saveRecording(Buffer.alloc(50), { duration: 1, provider: 'openai' })
+
+      expect(getRecording(entry.id)).not.toBeNull()
+      expect(existsSync(entry.filepath)).toBe(true)
+    })
+
+    it('keeps all recordings when under the default cap (no eviction)', async () => {
+      const a = await saveRecording(Buffer.from('a'), { duration: 1, provider: 'openai' })
+      const b = await saveRecording(Buffer.from('b'), { duration: 2, provider: 'openai' })
+
+      expect(getRecordings()).toHaveLength(2)
+      expect(existsSync(a.filepath)).toBe(true)
+      expect(existsSync(b.filepath)).toBe(true)
     })
   })
 

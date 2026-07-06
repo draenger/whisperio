@@ -19,6 +19,52 @@ interface RecordingIndex {
   recordings: RecordingEntry[]
 }
 
+// Bound the on-disk recordings cache. Without a cap the `.webm` files accumulate
+// forever, silently eating gigabytes of the user's disk on a long-lived install
+// (and eventually failing writes once the volume fills). When a new recording
+// pushes the tracked total over `maxDiskBytes`, evict the oldest recordings
+// (delete file + index entry) down to ~90% of the cap (hysteresis so we don't
+// re-evict on the very next save). The newly-saved entry is always protected.
+const DEFAULT_MAX_DISK_BYTES = 2 * 1024 * 1024 * 1024 // 2 GiB
+let maxDiskBytes = DEFAULT_MAX_DISK_BYTES
+
+/** Override the total on-disk recordings quota (bytes). */
+export function setMaxDiskBytes(bytes: number): void {
+  maxDiskBytes = bytes
+}
+
+/** Current total on-disk recordings quota (bytes). */
+export function getMaxDiskBytes(): number {
+  return maxDiskBytes
+}
+
+// Evict oldest-first (by timestamp) until the tracked total is at or below 90%
+// of the cap. `protectId` is never evicted (the recording just saved this pass).
+// Mutates `index.recordings` in place; the caller persists it.
+function evictToQuota(index: RecordingIndex, protectId?: string): void {
+  let total = index.recordings.reduce((sum, r) => sum + (r.size || 0), 0)
+  if (total <= maxDiskBytes) return
+
+  const target = Math.floor(maxDiskBytes * 0.9)
+  const oldestFirst = [...index.recordings].sort((a, b) => a.timestamp - b.timestamp)
+
+  for (const entry of oldestFirst) {
+    if (total <= target) break
+    if (entry.id === protectId) continue
+
+    if (existsSync(entry.filepath)) {
+      try {
+        unlinkSync(entry.filepath)
+      } catch {
+        /* best-effort: still drop the index entry so the quota converges */
+      }
+    }
+    const idx = index.recordings.findIndex((r) => r.id === entry.id)
+    if (idx !== -1) index.recordings.splice(idx, 1)
+    total -= entry.size || 0
+  }
+}
+
 export function getRecordingsDir(): string {
   const dir = join(app.getPath('userData'), 'recordings')
   if (!existsSync(dir)) {
@@ -105,6 +151,7 @@ export function saveRecording(
   return enqueue(() => {
     const index = loadIndex()
     index.recordings.push(entry)
+    evictToQuota(index, entry.id)
     saveIndex(index)
     return entry
   })
