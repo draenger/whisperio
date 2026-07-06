@@ -4,18 +4,24 @@ import Foundation
 // one to classify a day's notes into categories, and one to summarize the grouped day. The kit
 // stays networking-free (the app target runs these through a ChatLLM); here we only assemble the
 // prompt string. Both builders make a single batched call so the digest costs one round-trip each.
+//
+// The instruction *prose* is no longer hardcoded here: it comes from a DigestPromptConfig (defaulting
+// to `.default`, which reproduces the original wording verbatim) so the app can persist a user-edited
+// copy. This file still owns the structural scaffolding (category list, per-note lines, group
+// headers) so an edited config can never strip the data the model needs.
 
 public enum DigestPromptBuilder {
     /// Build the classification prompt: given the day's notes and the available categories, ask the
     /// model to return a single JSON object mapping each note id (string) to a category id. One
-    /// batched call classifies every note at once. The model is told to use "uncategorized" when
-    /// nothing fits and to return only the JSON object.
+    /// batched call classifies every note at once. The intro + trailing instruction come from
+    /// `config` (default: the shipped prompt); the category/note scaffolding is assembled here.
     public static func classificationPrompt(
         notes: [(id: UUID, text: String)],
-        categories: [(id: String, label: String)]
+        categories: [(id: String, label: String)],
+        config: DigestPromptConfig = .default
     ) -> String {
         var lines: [String] = []
-        lines.append("You are classifying short voice-note transcripts into categories.")
+        lines.append(config.classificationIntro)
         lines.append("")
         lines.append("Categories (id — label):")
         for cat in categories {
@@ -29,26 +35,26 @@ public enum DigestPromptBuilder {
             lines.append("- \(note.id.uuidString): \(text)")
         }
         lines.append("")
-        lines.append("Return only a single JSON object mapping each note id to exactly one category id, "
-            + "e.g. {\"<noteId>\":\"<categoryId>\"}. Use \"uncategorized\" when no category fits. "
-            + "Do not add commentary, keys, or notes that were not listed.")
+        lines.append(config.classificationInstruction)
         return lines.joined(separator: "\n")
     }
 
     /// Build the daily-summary prompt: given the day and its category groups (label + the notes'
     /// text), ask the model for a concise digest of the day. One batched call summarizes everything.
-    /// The model is told to answer in the same language as the transcripts (never translate).
+    /// The intro + trailing instruction come from `config` (default: the shipped prompt); `{date}`
+    /// and `{locale}` tokens in those are substituted here.
     public static func summaryPrompt(
         day: Date,
         groups: [(label: String, notes: [String])],
-        locale: String
+        locale: String,
+        config: DigestPromptConfig = .default
     ) -> String {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withFullDate]
         let dayString = formatter.string(from: day)
 
         var lines: [String] = []
-        lines.append("You are writing a concise daily digest of a person's voice notes for \(dayString).")
+        lines.append(config.summaryIntro.replacingOccurrences(of: "{date}", with: dayString))
         lines.append("")
         for group in groups {
             lines.append("## \(group.label)")
@@ -58,10 +64,7 @@ public enum DigestPromptBuilder {
             }
             lines.append("")
         }
-        lines.append("Write a short, well-structured summary of the day grouped by the sections above, "
-            + "capturing key points and any action items. Do not invent details that are not in the notes. "
-            + "Answer in the same language as the transcripts themselves — never translate them "
-            + "(the interface locale is \(locale) but the notes' language wins). Return only the summary.")
+        lines.append(config.summaryInstruction.replacingOccurrences(of: "{locale}", with: locale))
         return lines.joined(separator: "\n")
     }
 }

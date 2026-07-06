@@ -136,6 +136,72 @@ struct DigestTests {
         #expect(prompt.contains("en_US"))
     }
 
+    // MARK: - DigestPromptConfig: default reproduces the original prompts; edits flow through
+
+    // With the default config, the built prompts are byte-for-byte what the hardcoded builder produced.
+    @Test func defaultConfigReproducesOriginalPrompts() {
+        let noteID = UUID(uuidString: "6F1A2B3C-4D5E-6F70-8192-A3B4C5D6E7F8")!
+        let classify = DigestPromptBuilder.classificationPrompt(
+            notes: [(id: noteID, text: "buy milk")],
+            categories: [(id: "todo", label: "To-do")],
+            config: .default)
+        #expect(classify.contains("You are classifying short voice-note transcripts into categories."))
+        #expect(classify.contains("single JSON object"))
+        // Passing .default explicitly matches the default-argument overload.
+        #expect(classify == DigestPromptBuilder.classificationPrompt(
+            notes: [(id: noteID, text: "buy milk")], categories: [(id: "todo", label: "To-do")]))
+
+        let day = Date(timeIntervalSince1970: 1_768_478_400) // 2026-01-15
+        let summary = DigestPromptBuilder.summaryPrompt(
+            day: day, groups: [(label: "Work", notes: ["shipped"])], locale: "en_US", config: .default)
+        #expect(summary.contains("2026-01-15"))   // {date} substituted
+        #expect(summary.contains("en_US"))         // {locale} substituted
+        #expect(summary == DigestPromptBuilder.summaryPrompt(
+            day: day, groups: [(label: "Work", notes: ["shipped"])], locale: "en_US"))
+    }
+
+    // A user-edited config drives the built prompt text, and {date}/{locale} tokens still substitute.
+    @Test func editedConfigDrivesPromptText() {
+        var cfg = DigestPromptConfig.default
+        cfg.classificationIntro = "Sort these notes."
+        cfg.classificationInstruction = "Reply with JSON only."
+        cfg.summaryIntro = "Digest for {date}:"
+        cfg.summaryInstruction = "Be brief. Locale {locale}."
+
+        let noteID = UUID()
+        let classify = DigestPromptBuilder.classificationPrompt(
+            notes: [(id: noteID, text: "x")], categories: [(id: "todo", label: "To-do")], config: cfg)
+        #expect(classify.contains("Sort these notes."))
+        #expect(classify.contains("Reply with JSON only."))
+        #expect(!classify.contains("You are classifying"))
+        // Structural scaffolding is still present regardless of the edited prose.
+        #expect(classify.contains("todo — To-do"))
+        #expect(classify.contains("uncategorized — none of the above"))
+
+        let day = Date(timeIntervalSince1970: 1_768_478_400) // 2026-01-15
+        let summary = DigestPromptBuilder.summaryPrompt(
+            day: day, groups: [(label: "Work", notes: ["shipped"])], locale: "pl_PL", config: cfg)
+        #expect(summary.contains("Digest for 2026-01-15:"))
+        #expect(summary.contains("Be brief. Locale pl_PL."))
+        #expect(summary.contains("## Work"))
+    }
+
+    // The config round-trips through Codable, and a partial/legacy blob falls back to defaults.
+    @Test func digestPromptConfigCodableAndTolerant() throws {
+        var cfg = DigestPromptConfig.default
+        cfg.classificationIntro = "Custom intro."
+        let data = try JSONEncoder().encode(cfg)
+        let decoded = try JSONDecoder().decode(DigestPromptConfig.self, from: data)
+        #expect(decoded == cfg)
+
+        // A blob carrying only one field decodes the rest from the shipped defaults.
+        let partial = #"{ "summaryIntro": "Only this one {date}" }"#.data(using: .utf8)!
+        let tolerant = try JSONDecoder().decode(DigestPromptConfig.self, from: partial)
+        #expect(tolerant.summaryIntro == "Only this one {date}")
+        #expect(tolerant.classificationIntro == DigestPromptConfig.Defaults.classificationIntro)
+        #expect(tolerant.summaryInstruction == DigestPromptConfig.Defaults.summaryInstruction)
+    }
+
     // MARK: - DailyDigest Codable round-trip + legacy decode
 
     @Test func dailyDigestRoundtrips() throws {

@@ -10,6 +10,7 @@ struct DigestDayView: View {
     @EnvironmentObject private var recordings: RecordingsStore
     @EnvironmentObject private var digests: DigestStore
     @EnvironmentObject private var settings: SettingsStore
+    @EnvironmentObject private var digestPrompts: DigestPromptStore
     let day: Date
     var onBack: () -> Void
     var openRec: (DemoRecording) -> Void
@@ -145,7 +146,8 @@ struct DigestDayView: View {
             do {
                 try await digests.generate(for: day, recordings: recordings,
                                            categories: WZCategories.all,
-                                           using: client, model: settings.settings.chatModel)
+                                           using: client, model: settings.settings.chatModel,
+                                           promptConfig: digestPrompts.config)
                 generating = false
             } catch {
                 generating = false
