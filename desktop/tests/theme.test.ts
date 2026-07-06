@@ -3,6 +3,7 @@ import {
   ACCENTS,
   ACCENT_ORDER,
   ACCENT_LABELS,
+  DEFAULT_ACCENT,
   buildTheme,
   darkTheme,
   lightTheme,
@@ -132,7 +133,7 @@ describe('buildTheme', () => {
     })
 
     it('uses the dark surface base tokens', () => {
-      expect(buildTheme('dark', 'blue').bg).toBe('#0a0911')
+      expect(buildTheme('dark', 'blue').bg).toBe('#070d15')
     })
   })
 
@@ -155,7 +156,7 @@ describe('buildTheme', () => {
     })
 
     it('uses the light surface base tokens', () => {
-      expect(buildTheme('light', 'blue').bg).toBe('#f6f5fc')
+      expect(buildTheme('light', 'blue').bg).toBe('#f6f8fa')
     })
   })
 
@@ -174,12 +175,12 @@ describe('buildTheme', () => {
 })
 
 describe('default theme exports', () => {
-  it('darkTheme equals the blue dark build', () => {
-    expect(darkTheme).toEqual(buildTheme('dark', 'blue'))
+  it('darkTheme equals the default-accent dark build', () => {
+    expect(darkTheme).toEqual(buildTheme('dark', DEFAULT_ACCENT))
   })
 
-  it('lightTheme equals the blue light build', () => {
-    expect(lightTheme).toEqual(buildTheme('light', 'blue'))
+  it('lightTheme equals the default-accent light build', () => {
+    expect(lightTheme).toEqual(buildTheme('light', DEFAULT_ACCENT))
   })
 
   it('dark and light themes expose identical key sets', () => {
