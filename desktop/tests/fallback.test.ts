@@ -2,7 +2,9 @@ import { vi, describe, it, expect, beforeEach } from 'vitest'
 
 const mockLoadSettings = vi.fn()
 vi.mock('../src/main/settingsManager', () => ({
-  loadSettings: (...args: unknown[]) => mockLoadSettings(...args)
+  loadSettings: (...args: unknown[]) => mockLoadSettings(...args),
+  getActiveVocabulary: (settings: { customVocabulary?: string }) =>
+    settings.customVocabulary?.trim() || ''
 }))
 
 const mockNotifyInfo = vi.fn()

@@ -16,6 +16,7 @@ export interface AppSettings {
   transcriptionLanguage: string
   transcriptionPrompt: string
   customVocabulary: string
+  removedDefaultVocabulary: string[]
   aiPostProcessing: boolean
   launchAtStartup: boolean
   dictationHotkey: string
@@ -29,14 +30,46 @@ export interface AppSettings {
   fallbackEnabled: boolean
 }
 
-const DEFAULT_VOCABULARY = [
+// Canonical seed source for the built-in vocabulary. This is the immutable
+// "defaults" list — it is never hard-deleted. Users soft-delete individual
+// entries via `removedDefaultVocabulary`, and "restore defaults" simply clears
+// that set. Keep this list in sync with the renderer copy in SettingsForm.tsx.
+export const DEFAULT_VOCABULARY_TERMS: string[] = [
   'git', 'GitHub', 'npm', 'yarn', 'pnpm', 'pip', 'Docker', 'Kubernetes', 'kubectl',
   'TypeScript', 'JavaScript', 'React', 'Next.js', 'Node.js', 'VS Code', 'API', 'CLI',
   'SSH', 'YAML', 'JSON', 'REST', 'GraphQL', 'webpack', 'ESLint', 'Prettier',
   'PostgreSQL', 'MongoDB', 'Redis', 'AWS', 'Azure', 'Terraform', 'CI/CD', 'DevOps',
   'localhost', 'regex', 'boolean', 'middleware', 'endpoint', 'repository', 'README',
   'Vite', 'Vitest', 'Electron', 'Python', 'FastAPI', 'Whisper', 'OpenAI'
-].join(', ')
+]
+
+function splitTerms(value: string): string[] {
+  return value
+    .split(',')
+    .map((t) => t.trim())
+    .filter(Boolean)
+}
+
+/**
+ * The effective vocabulary actually handed to the transcription providers:
+ * the active (non-soft-deleted) default terms followed by the user's own
+ * additional terms, de-duplicated case-insensitively. Returned as a
+ * comma-separated string to match the shape the providers already consume.
+ */
+export function getActiveVocabulary(settings: AppSettings): string {
+  const removed = new Set((settings.removedDefaultVocabulary ?? []).map((t) => t.toLowerCase()))
+  const activeDefaults = DEFAULT_VOCABULARY_TERMS.filter((t) => !removed.has(t.toLowerCase()))
+  const custom = splitTerms(settings.customVocabulary ?? '')
+  const seen = new Set<string>()
+  const out: string[] = []
+  for (const term of [...activeDefaults, ...custom]) {
+    const key = term.toLowerCase()
+    if (seen.has(key)) continue
+    seen.add(key)
+    out.push(term)
+  }
+  return out.join(', ')
+}
 
 const DEFAULT_SETTINGS: AppSettings = {
   sttProvider: 'openai',
@@ -47,7 +80,11 @@ const DEFAULT_SETTINGS: AppSettings = {
   elevenlabsApiKey: '',
   transcriptionLanguage: 'auto',
   transcriptionPrompt: '',
-  customVocabulary: DEFAULT_VOCABULARY,
+  // `customVocabulary` now holds only the user's own additional terms; the
+  // built-in seed lives in DEFAULT_VOCABULARY_TERMS and is merged in at
+  // read-time via getActiveVocabulary().
+  customVocabulary: '',
+  removedDefaultVocabulary: [],
   aiPostProcessing: false,
   launchAtStartup: true,
   dictationHotkey: '',
@@ -65,6 +102,25 @@ function getSettingsPath(): string {
   return join(app.getPath('userData'), 'settings.json')
 }
 
+/**
+ * Migrate legacy (pre-soft-delete) settings. Old files stored the entire
+ * vocabulary — defaults + user additions — flattened into `customVocabulary`
+ * with no `removedDefaultVocabulary`. Reconstruct the soft-delete state
+ * losslessly: any default term the user had stripped out becomes soft-deleted,
+ * and any remaining terms that aren't defaults become their own additions.
+ */
+function migrateVocabulary(parsed: Partial<AppSettings>): Partial<AppSettings> {
+  if (parsed.removedDefaultVocabulary !== undefined || typeof parsed.customVocabulary !== 'string') {
+    return parsed
+  }
+  const terms = splitTerms(parsed.customVocabulary)
+  const present = new Set(terms.map((t) => t.toLowerCase()))
+  const defaultKeys = new Set(DEFAULT_VOCABULARY_TERMS.map((t) => t.toLowerCase()))
+  const removedDefaultVocabulary = DEFAULT_VOCABULARY_TERMS.filter((t) => !present.has(t.toLowerCase()))
+  const additions = terms.filter((t) => !defaultKeys.has(t.toLowerCase()))
+  return { ...parsed, removedDefaultVocabulary, customVocabulary: additions.join(', ') }
+}
+
 export function loadSettings(): AppSettings {
   const filePath = getSettingsPath()
   if (!existsSync(filePath)) {
@@ -73,7 +129,7 @@ export function loadSettings(): AppSettings {
   try {
     const raw = readFileSync(filePath, 'utf-8')
     const parsed = JSON.parse(raw) as Partial<AppSettings>
-    return { ...DEFAULT_SETTINGS, ...parsed }
+    return { ...DEFAULT_SETTINGS, ...migrateVocabulary(parsed) }
   } catch (err) {
     // A corrupt settings.json (e.g. truncated by a crash/power-loss mid-write)
     // must not silently wipe the user's API keys + config. Preserve the bad

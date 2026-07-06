@@ -372,6 +372,7 @@ export function SettingsForm(): ReactElement {
   const [transcriptionLanguage, setTranscriptionLanguage] = useState('auto')
   const [prompt, setPrompt] = useState('')
   const [vocabulary, setVocabulary] = useState('')
+  const [removedDefaultVocabulary, setRemovedDefaultVocabulary] = useState<string[]>([])
   const [aiPostProcessing, setAiPostProcessing] = useState(false)
   const [fallbackEnabled, setFallbackEnabled] = useState(false)
 
@@ -399,6 +400,7 @@ export function SettingsForm(): ReactElement {
       setTranscriptionLanguage(settings.transcriptionLanguage ?? 'auto')
       setPrompt(settings.transcriptionPrompt ?? '')
       setVocabulary(settings.customVocabulary ?? '')
+      setRemovedDefaultVocabulary(settings.removedDefaultVocabulary ?? [])
       setAiPostProcessing(settings.aiPostProcessing ?? false)
       setLaunchAtStartup(settings.launchAtStartup ?? true)
       setDictationHotkey(settings.dictationHotkey ?? '')
@@ -450,6 +452,7 @@ export function SettingsForm(): ReactElement {
       transcriptionLanguage,
       transcriptionPrompt: prompt,
       customVocabulary: vocabulary,
+      removedDefaultVocabulary,
       aiPostProcessing,
       launchAtStartup,
       dictationHotkey,
@@ -464,7 +467,7 @@ export function SettingsForm(): ReactElement {
     setTimeout(() => setSaved(false), 2000)
   }, [
     providerChain, apiKey, openaiBaseUrl, whisperModel, elevenlabsApiKey, transcriptionLanguage, prompt,
-    vocabulary, aiPostProcessing, launchAtStartup, dictationHotkey,
+    vocabulary, removedDefaultVocabulary, aiPostProcessing, launchAtStartup, dictationHotkey,
     dictateAndSendHotkey, inputDeviceId, outputDeviceId, saveRecordings,
     outputRecordingHotkey
   ])
@@ -614,6 +617,8 @@ export function SettingsForm(): ReactElement {
                       setPrompt={setPrompt}
                       vocabulary={vocabulary}
                       setVocabulary={setVocabulary}
+                      removedDefaultVocabulary={removedDefaultVocabulary}
+                      setRemovedDefaultVocabulary={setRemovedDefaultVocabulary}
                       aiPostProcessing={aiPostProcessing}
                       setAiPostProcessing={setAiPostProcessing}
                       s={s}
@@ -946,6 +951,18 @@ const ALL_PROVIDERS: { id: string; label: string; desc: string }[] = [
   { id: 'selfhosted', label: 'Local Model', desc: 'Offline, private' }
 ]
 
+// Built-in seed vocabulary shown as removable/restorable chips. Mirror of
+// DEFAULT_VOCABULARY_TERMS in src/main/settingsManager.ts (the source of truth
+// for what is actually sent to the providers). Keep the two lists in sync.
+const DEFAULT_VOCABULARY_TERMS: string[] = [
+  'git', 'GitHub', 'npm', 'yarn', 'pnpm', 'pip', 'Docker', 'Kubernetes', 'kubectl',
+  'TypeScript', 'JavaScript', 'React', 'Next.js', 'Node.js', 'VS Code', 'API', 'CLI',
+  'SSH', 'YAML', 'JSON', 'REST', 'GraphQL', 'webpack', 'ESLint', 'Prettier',
+  'PostgreSQL', 'MongoDB', 'Redis', 'AWS', 'Azure', 'Terraform', 'CI/CD', 'DevOps',
+  'localhost', 'regex', 'boolean', 'middleware', 'endpoint', 'repository', 'README',
+  'Vite', 'Vitest', 'Electron', 'Python', 'FastAPI', 'Whisper', 'OpenAI'
+]
+
 function CogIcon({ size = 14, color = 'currentColor' }: { size?: number; color?: string }): ReactElement {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -963,6 +980,7 @@ function ProvidersTab({
   transcriptionLanguage, setTranscriptionLanguage,
   prompt, setPrompt,
   vocabulary, setVocabulary,
+  removedDefaultVocabulary, setRemovedDefaultVocabulary,
   aiPostProcessing, setAiPostProcessing,
   s, theme
 }: {
@@ -982,6 +1000,8 @@ function ProvidersTab({
   setPrompt: (v: string) => void
   vocabulary: string
   setVocabulary: (v: string) => void
+  removedDefaultVocabulary: string[]
+  setRemovedDefaultVocabulary: (v: string[]) => void
   aiPostProcessing: boolean
   setAiPostProcessing: (v: boolean) => void
   s: ReturnType<typeof makeStyles>
@@ -1162,10 +1182,99 @@ function ProvidersTab({
 
       <div style={s.card}>
         <h3 style={s.cardTitle}>Vocabulary</h3>
-        <label style={s.label}>Custom Vocabulary</label>
-        <textarea value={vocabulary} onChange={(e) => setVocabulary(e.target.value)} rows={3} placeholder="git, GitHub, npm, TypeScript, React, Docker, kubectl..." style={s.textarea} />
-        <span style={s.hint}>Comma-separated terms for better recognition across all providers.</span>
+        <VocabularyEditor
+          vocabulary={vocabulary}
+          setVocabulary={setVocabulary}
+          removedDefaultVocabulary={removedDefaultVocabulary}
+          setRemovedDefaultVocabulary={setRemovedDefaultVocabulary}
+          s={s}
+          theme={theme}
+        />
       </div>
+    </>
+  )
+}
+
+/* ─── Vocabulary editor: soft-deletable default terms + user additions ─── */
+
+function VocabularyEditor({
+  vocabulary, setVocabulary,
+  removedDefaultVocabulary, setRemovedDefaultVocabulary,
+  s, theme
+}: {
+  vocabulary: string
+  setVocabulary: (v: string) => void
+  removedDefaultVocabulary: string[]
+  setRemovedDefaultVocabulary: (v: string[]) => void
+  s: ReturnType<typeof makeStyles>
+  theme: Theme
+}): ReactElement {
+  const removedSet = new Set(removedDefaultVocabulary.map((t) => t.toLowerCase()))
+  const activeDefaults = DEFAULT_VOCABULARY_TERMS.filter((t) => !removedSet.has(t.toLowerCase()))
+  const removedDefaults = DEFAULT_VOCABULARY_TERMS.filter((t) => removedSet.has(t.toLowerCase()))
+  const customTerms = vocabulary.split(',').map((t) => t.trim()).filter(Boolean)
+
+  const softDeleteDefault = (term: string): void => {
+    if (removedSet.has(term.toLowerCase())) return
+    setRemovedDefaultVocabulary([...removedDefaultVocabulary, term])
+  }
+  const restoreDefault = (term: string): void => {
+    setRemovedDefaultVocabulary(removedDefaultVocabulary.filter((t) => t.toLowerCase() !== term.toLowerCase()))
+  }
+  const restoreAllDefaults = (): void => setRemovedDefaultVocabulary([])
+  const removeCustom = (term: string): void => {
+    setVocabulary(customTerms.filter((t) => t.toLowerCase() !== term.toLowerCase()).join(', '))
+  }
+
+  const chip = (opts: { key: string; label: string; onAction: () => void; symbol: string; ghost?: boolean; title: string }): ReactElement => (
+    <span key={opts.key} style={{
+      display: 'inline-flex', alignItems: 'center', gap: '5px',
+      padding: '3px 6px 3px 9px', borderRadius: '6px',
+      background: opts.ghost ? 'transparent' : theme.inputBg,
+      border: `1px solid ${opts.ghost ? theme.border + '60' : theme.inputBorder}`,
+      fontSize: '12px', color: opts.ghost ? theme.textMuted : theme.text,
+      fontFamily: 'IBM Plex Sans, sans-serif', opacity: opts.ghost ? 0.7 : 1
+    }}>
+      {opts.label}
+      <button onClick={opts.onAction} title={opts.title}
+        style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: theme.textMuted, fontSize: '12px', lineHeight: 1, padding: '0 1px', fontFamily: 'IBM Plex Sans, sans-serif' }}>
+        {opts.symbol}
+      </button>
+    </span>
+  )
+
+  return (
+    <>
+      <label style={s.label}>Default Terms</label>
+      <span style={s.hint}>Built-in terms for better recognition. Remove any you don&apos;t need — they can be restored anytime.</span>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '8px' }}>
+        {activeDefaults.map((term) => chip({ key: `d-${term}`, label: term, onAction: () => softDeleteDefault(term), symbol: '×', title: `Remove "${term}"` }))}
+        {activeDefaults.length === 0 && <span style={s.hint}>All default terms removed.</span>}
+      </div>
+
+      {removedDefaults.length > 0 && (
+        <>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '12px' }}>
+            <label style={s.label}>Removed ({removedDefaults.length})</label>
+            <button onClick={restoreAllDefaults}
+              style={{ background: 'transparent', border: `1px solid ${theme.inputBorder}`, borderRadius: '6px', padding: '4px 10px', fontSize: '11px', fontWeight: 600, color: theme.accent, cursor: 'pointer', fontFamily: 'IBM Plex Sans, sans-serif' }}>
+              Restore defaults
+            </button>
+          </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '8px' }}>
+            {removedDefaults.map((term) => chip({ key: `r-${term}`, label: term, onAction: () => restoreDefault(term), symbol: '↺', ghost: true, title: `Restore "${term}"` }))}
+          </div>
+        </>
+      )}
+
+      <label style={{ ...s.label, marginTop: '14px' }}>Your Terms</label>
+      <textarea value={vocabulary} onChange={(e) => setVocabulary(e.target.value)} rows={2} placeholder="Add your own comma-separated terms..." style={s.textarea} />
+      <span style={s.hint}>Comma-separated terms added on top of the defaults above.</span>
+      {customTerms.length > 0 && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '8px' }}>
+          {customTerms.map((term) => chip({ key: `c-${term}`, label: term, onAction: () => removeCustom(term), symbol: '×', title: `Remove "${term}"` }))}
+        </div>
+      )}
     </>
   )
 }

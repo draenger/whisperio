@@ -1,5 +1,5 @@
 import { net, app } from 'electron'
-import { loadSettings, AppSettings, type ProviderId } from './settingsManager'
+import { loadSettings, AppSettings, getActiveVocabulary, type ProviderId } from './settingsManager'
 import { handleTranscriptionError, notifyInfo } from './errorHandler'
 
 // True only in unpackaged (development) builds. Used to gate logging of
@@ -93,7 +93,7 @@ async function transcribeWithProvider(
       handleTranscriptionError(err, 'elevenlabs')
       throw err
     }
-    const vocab = settings.customVocabulary?.trim() || ''
+    const vocab = getActiveVocabulary(settings)
     const lang = settings.transcriptionLanguage?.trim() || 'auto'
     return elevenLabsTranscribe(apiKey, audioBuffer, filename, vocab, lang)
   }
@@ -107,7 +107,7 @@ async function transcribeWithProvider(
     }
     const model = settings.whisperModel?.trim() || SELFHOSTED_MODEL
     const basePrompt = settings.transcriptionPrompt || DEFAULT_PROMPT
-    const vocab = settings.customVocabulary?.trim()
+    const vocab = getActiveVocabulary(settings)
     const prompt = vocab
       ? `${basePrompt}\n\nTechnical terms that may appear (use these exact spellings): ${vocab}`
       : basePrompt
@@ -129,7 +129,7 @@ async function transcribeWithProvider(
   const model = DEFAULT_MODEL
 
   const basePrompt = settings.transcriptionPrompt || DEFAULT_PROMPT
-  const vocab = settings.customVocabulary?.trim()
+  const vocab = getActiveVocabulary(settings)
   const prompt = vocab
     ? `${basePrompt}\n\nTechnical terms that may appear (use these exact spellings): ${vocab}`
     : basePrompt

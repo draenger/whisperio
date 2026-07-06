@@ -64,6 +64,7 @@ export interface AppSettings {
   transcriptionLanguage: string
   transcriptionPrompt: string
   customVocabulary: string
+  removedDefaultVocabulary: string[]
   aiPostProcessing: boolean
   launchAtStartup: boolean
   dictationHotkey: string
