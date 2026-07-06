@@ -1,8 +1,8 @@
 {
   "standard": "apex/standards/repo-knowledge-structure.md",
   "generatedBy": "/apex:document",
-  "generatedAt": "2026-07-02",
-  "sourceCommit": "815a82563eff989e1dab6f3c03998ef3fc71cb2d",
+  "generatedAt": "2026-07-06",
+  "sourceCommit": "3b7864120f3eb930f5ac1c6e77ccad2201af342c",
   "documents": [
     "docs/README.md",
     "docs/architecture.md",
@@ -13,10 +13,32 @@
     "docs/features/settings.md",
     "docs/features/auto-update.md",
     "docs/features/mobile-app.md",
+    "docs/features/apple-sync.md",
+    "docs/features/github-sync.md",
+    "docs/features/daily-digest.md",
+    "docs/features/rewrite-presets.md",
     "docs/runbook.md",
     "docs/testing.md"
   ],
   "consolidatedSources": [
+    {
+      "original": "docs/apple-sync-and-mac-app.md",
+      "movedTo": "docs/_legacy/apple-sync-and-mac-app.md",
+      "absorbedInto": ["docs/features/apple-sync.md", "docs/runbook.md"],
+      "note": "Manual CloudKit + Mac-app handoff checklist (bare-filename citations stripped on archive). The CloudKit sync + storage picker + Mac app now shipped; operational portal/schema steps folded into the runbook, behavior into the feature doc."
+    },
+    {
+      "original": "docs/mac-app-plan.md",
+      "movedTo": "docs/_legacy/mac-app-plan.md",
+      "absorbedInto": ["docs/features/apple-sync.md", "docs/architecture.md"],
+      "note": "Superseded plan: it proposed a separate ai.whisperio.mac target rendering MacApp/ContentView; shipped code went UNIVERSAL (same ai.whisperio.mobile bundle id, rendering the shared iPadView). Docs follow the shipped code."
+    },
+    {
+      "original": "docs/dev-log-2026-07-05.md",
+      "movedTo": "docs/_legacy/dev-log-2026-07-05.md",
+      "absorbedInto": ["docs/runbook.md"],
+      "note": "Historical 4-5 Jul session log (teal redesign, macOS, CloudKit, TestFlight). The durable release gotchas (Xcode Distribute for CloudKit, deploy schema to Production, husar keychain) absorbed into the runbook; the rest kept as a dated record."
+    },
     {
       "original": "ARCHITECTURE.md",
       "movedTo": "docs/_legacy/ARCHITECTURE.md",

@@ -91,6 +91,32 @@ persisted to `userData/settings.json` (`desktop/src/main/settingsManager.ts:64`)
   - No sign-in; reviewers need a BYO OpenAI test key (set a $5 hard limit).
   - `ITSAppUsesNonExemptEncryption = NO` (standard HTTPS only).
 
+## Mobile — CloudKit sync & the native Mac app
+
+The Apple-ecosystem history sync ([features/apple-sync.md](features/apple-sync.md)) depends on Apple
+Developer portal + CloudKit Console setup that **cannot** live in the repo. Team is `953Q6T2WTB`.
+
+- **Identifiers that must match the code verbatim:** iCloud container `iCloud.ai.whisperio.mobile`
+  (`mobile/WhisperioKit/Sources/WhisperioKit/RecordingSyncStore.swift:63`), App Group
+  `group.ai.whisperio.mobile` (`mobile/WhisperioKit/Sources/WhisperioKit/SharedStore.swift:14`), iOS
+  bundle id `ai.whisperio.mobile`. The Mac app is a **universal** target on the *same* bundle id, so
+  it inherits the provisioned App ID + CloudKit container.
+- **CloudKit builds MUST go through Xcode Archive → Distribute.** A headless `xcodebuild`/altool
+  export (the `whisperio-release` skill / `mobile/WhisperioApp/Scripts/release-testflight.sh`) strips
+  the iCloud container entitlement → the app faults at launch when an iCloud account is present. Use
+  the headless path only for **non-CloudKit** builds.
+- **Deploy the CloudKit schema to Production before shipping.** SwiftData JIT-creates the schema only
+  in the *Development* environment (on a Debug write). Seed it by running **WhisperioMac Debug** on a
+  Mac signed into iCloud — the `#if DEBUG` seed
+  (`mobile/WhisperioApp/MacApp/WhisperioMacApp.swift:40`) writes one record — then in the CloudKit
+  Console **Deploy Schema Changes → Production** (`CD_RecordingEntity`). Skipping this = "works in
+  Xcode, nothing syncs on TestFlight".
+- **CloudKit Console shows the *developer* Apple ID's private DB**, usually a different account than
+  the one on your test devices — it can look empty while device↔device sync works. Verify sync
+  device→device, not via the Console.
+- **Signing keychain:** the distribution cert lives in the `husar` keychain (password `husar`);
+  answer the codesign prompt with it + "Always Allow".
+
 ## Website
 
 `docs/` is the GitHub Pages root (CNAME `whisperio.danielkasprzyk.com` — `docs/CNAME:1`):

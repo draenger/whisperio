@@ -15,11 +15,11 @@ character-for-character or the app fails to build or silently doesn't sync.
 
 | Thing | Value | Source of truth |
 |---|---|---|
-| iCloud container | `iCloud.ai.whisperio.mobile` | `RecordingSyncStore.swift:49` (`cloudKitContainerID`) |
+| iCloud container | `iCloud.ai.whisperio.mobile` | `RecordingSyncStore.swift` (`cloudKitContainerID`) |
 | App group | `group.ai.whisperio.mobile` | `mobile/WhisperioApp/WhisperioApp.entitlements` |
 | iOS app bundle id | `ai.whisperio.mobile` | existing WhisperioApp target |
 | Mac app bundle id | `ai.whisperio.mac` | new target (below) |
-| Migration flag | `migratedV2` (UserDefaults) | `RecordingSyncStore.swift:10` |
+| Migration flag | `migratedV2` (UserDefaults) | `RecordingSyncStore.swift` |
 
 ## 1. Apple Developer portal — create the iCloud container
 
@@ -137,11 +137,11 @@ the simulator's iCloud is unreliable for push).
       old history imported into the synced list, that a `recordings.json.migrated` marker was left
       behind, and that the `migratedV2` UserDefaults flag is set. Relaunch and confirm the migration
       does **not** re-run or duplicate rows (it's idempotent on id and gated on the flag —
-      `RecordingSyncStore.swift:160`).
+      `RecordingSyncStore.swift`).
 - [ ] **LWW category edit**: assign a recording to category A on iPhone; after it syncs, reassign the
       same recording to category B on iPad. Both edits bump `modifiedAt`
-      (`RecordingSyncStore.setCategory`, `RecordingSyncStore.swift:85`), and reads resolve the row
-      with the newest `modifiedAt` (`firstEntity`, `RecordingSyncStore.swift:120`; dedup at read via
+      (`RecordingSyncStore.setCategory`, `RecordingSyncStore.swift`), and reads resolve the row
+      with the newest `modifiedAt` (`firstEntity`, `RecordingSyncStore.swift`; dedup at read via
       `RecordingSync.dedupByID`). Confirm the **later** edit (category B) wins on all three devices,
       not a duplicate or the older value.
 
