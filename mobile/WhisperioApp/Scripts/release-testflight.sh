@@ -9,6 +9,15 @@
 #   ./release-testflight.sh --no-verify  # skip the WhisperioKit test gate
 set -euo pipefail
 
+# Fail loud: point at the line that aborted instead of dying silently.
+trap 'echo "✘ release aborted (line $LINENO)" >&2' ERR
+
+# --- Argument validation (reject typos so we never build an unverified IPA by accident) ---
+case "${1:-}" in
+  ""|--no-verify) ;;
+  *) echo "✘ unknown argument: $1 (expected --no-verify or none)" >&2; exit 2 ;;
+esac
+
 REPO="$(cd "$(dirname "$0")/../../.." && pwd)"          # …/whisperio
 PROJ="$REPO/mobile/WhisperioApp/WhisperioApp.xcodeproj"
 KIT="$REPO/mobile/WhisperioKit"
@@ -26,12 +35,23 @@ EXPORT_OPTS="$SCRIPTS/ExportOptions.plist"
 auth=(-allowProvisioningUpdates -authenticationKeyPath "$KEY" -authenticationKeyID "$KID" -authenticationKeyIssuerID "$ISS")
 
 echo "▸ Whisperio → TestFlight (headless)"
-[ -f "$KEY" ] || { echo "✘ ASC key missing: $KEY"; exit 1; }
+
+# --- Preflight: fail early with a clear message instead of a cryptic xcodebuild error ---
+command -v xcodebuild >/dev/null || { echo "✘ xcodebuild not on PATH (install Xcode + command-line tools)"; exit 1; }
+[ -f "$KEY" ]         || { echo "✘ ASC key missing: $KEY"; exit 1; }
+[ -d "$PROJ" ]        || { echo "✘ Xcode project missing: $PROJ"; exit 1; }
+[ -f "$EXPORT_OPTS" ] || { echo "✘ ExportOptions.plist missing: $EXPORT_OPTS"; exit 1; }
 
 # 0. Verify the pure core (fast, catches regressions before a slow archive)
 if [[ "${1:-}" != "--no-verify" ]]; then
   echo "▸ swift test (WhisperioKit)…"
-  ( cd "$KIT" && swift test >/dev/null ) && echo "  ✓ tests green"
+  command -v swift >/dev/null || { echo "✘ swift not on PATH (needed for the test gate; use --no-verify to skip)"; exit 1; }
+  [ -d "$KIT" ]               || { echo "✘ WhisperioKit package missing: $KIT"; exit 1; }
+  if ( cd "$KIT" && swift test >/dev/null ); then
+    echo "  ✓ tests green"
+  else
+    echo "✘ WhisperioKit tests failed — aborting release (re-run with --no-verify to override)"; exit 1
+  fi
 fi
 
 # 1. Ensure the iOS device platform is present (macOS evicts it when the disk fills)
