@@ -22,7 +22,7 @@ Grounding facts confirmed: `MacApp/` scaffold exists (`WhisperioMacApp.swift`, `
 | `DetailView.swift` | `.../DetailView.swift` | **Adapt** — `NSPasteboard`; gate `.presentationDetents` (`:95,:102`); `ShareLink` OK |
 | `RecordingView.swift` | `.../RecordingView.swift` | **Adapt** — waveform/status *fragment* → overlay pill; needs macOS audio backend; `NSPasteboard`; mic-permission copy rewrite |
 | `SettingsView.swift` | `.../SettingsView.swift` | **Adapt (heavy)** — `SettGroup`/`SettRow` reusable; strip `SiriTipView`/`ShortcutsLink`/`fullScreenCover`/`presentationDetents`/`textInputAutocapitalization`/`keyboardType` |
-| `Shared.swift` `ScreenScaffold` | `.../Shared.swift:11` | **Adapt** — `.padding(.top,54)` (notch clearance) → 0 on macOS |
+| `Shared.swift` `ScreenScaffold` | `.../Shared.swift` | **Adapt** — `.padding(.top,54)` (notch clearance) → 0 on macOS |
 | `AppShell.swift` | `.../AppShell.swift` | **Mac-only-new** — bespoke `WZScreen` router → `NavigationSplitView` + `WindowGroup` windowing; `MacApp/WhisperioMacApp.swift` replaces it |
 | `Engine/AudioRecorder`, `LiveDictation` | `WhisperioKit/Engine/*` | **Adapt** — gate `AVAudioSession`; swap permission to `AVCaptureDevice` |
 | `PhoneConnectivity.swift` | `WhisperioKit/Engine/PhoneConnectivity.swift` | **Exclude** — WatchConnectivity, iOS-only |
@@ -42,7 +42,7 @@ Grounding facts confirmed: `MacApp/` scaffold exists (`WhisperioMacApp.swift`, `
 - `SettingsView.swift:143,299,312 .textInputAutocapitalization(.never)`, `:313 .keyboardType(.URL)` → `#if os(iOS)` on those modifiers (keep `.autocorrectionDisabled()`, which is macOS-fine).
 - `SettingsView.swift:223 .fullScreenCover`, `:221 .presentationDetents` → replace with a plain `.sheet` (no detents) on macOS.
 - `DetailView.swift:95,102 .presentationDetents` → `#if os(iOS)` (keep the `.sheet`).
-- Siblings routed to by the shell: `DigestDayView.swift:58`, `SetupView.swift:82` + `:50`, `TriggerGuides.swift:212` — same `.presentationDetents`/autocapitalization gating (only if included in the target).
+- Siblings routed to by the shell: `DigestDayView.swift`, `SetupView.swift` + `:50`, `TriggerGuides.swift` — same `.presentationDetents`/autocapitalization gating (only if included in the target).
 
 **C. AVAudioSession — does not exist on macOS at all (capture blocker):**
 - `AudioRecorder.swift:30–31,45,77,93` and `LiveDictation.swift:85–87,307` — `AVAudioSession.sharedInstance()/setCategory/setActive`.

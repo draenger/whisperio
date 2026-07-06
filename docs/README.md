@@ -14,6 +14,10 @@ Standardized repo docs per the apex repo-knowledge-structure standard. This fold
 - [features/settings.md](features/settings.md) — settings window, hotkey recorder, themes, persistence (and where API keys actually live).
 - [features/auto-update.md](features/auto-update.md) — electron-updater flow from GitHub Releases.
 - [features/mobile-app.md](features/mobile-app.md) — iPhone/iPad/Watch app, keyboard extension, widget, App Intents, WhisperioKit domain core.
+- [features/apple-sync.md](features/apple-sync.md) — CloudKit history sync, on-device/iCloud storage picker, sync indicator, native Mac app.
+- [features/github-sync.md](features/github-sync.md) — mirror transcripts/renders/summaries to a GitHub repo as Markdown (cross-ecosystem sync).
+- [features/daily-digest.md](features/daily-digest.md) — Journal: per-day grouped notes + on-demand AI day summary.
+- [features/rewrite-presets.md](features/rewrite-presets.md) — mobile AI reformatting of a transcript via built-in + user presets.
 - [runbook.md](runbook.md) — run / build / release desktop, ship mobile to TestFlight, CI pipeline, config & secrets.
 - [testing.md](testing.md) — how to run the Vitest suite + coverage gate, Swift package tests, how to add a test.
 - [docs-manifest.json](docs-manifest.json) — what was consolidated, from where, at which commit.

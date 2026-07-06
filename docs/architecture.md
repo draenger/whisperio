@@ -7,7 +7,9 @@ transcribed (cloud or fully local) and auto-pasted into whatever app has focus. 
 
 - **Desktop app** (the main product) — Electron, Windows / macOS / Linux, lives in `desktop/`.
 - **Mobile app** — native Swift iPhone + iPad + Apple Watch app with a keyboard extension and
-  widget, distributed via TestFlight, lives in `mobile/`.
+  widget, distributed via TestFlight, lives in `mobile/`. A native **macOS** app (`WhisperioMac`)
+  is a universal target sharing the same code + CloudKit container
+  (`mobile/WhisperioApp/MacApp/WhisperioMacApp.swift:13`).
 - **Website** — static GitHub Pages site in `docs/` (`docs/index.html:1`, `docs/privacy.html:1`,
   CNAME → whisperio.danielkasprzyk.com in `docs/CNAME:1`).
 
@@ -67,6 +69,19 @@ src/
   keyboard extension (`mobile/WhisperioApp/Keyboard/KeyboardViewController.swift:75`),
   widget/Control Center control (`mobile/WhisperioApp/Widget/WhisperioWidget.swift:76`),
   App Intents (`mobile/WhisperioApp/Sources/WhisperioApp/DictateIntent.swift:38`).
+
+Beyond capture, the mobile side has grown four user-facing subsystems, each with a pure core in
+WhisperioKit and a thin app-side store/view:
+
+- **History sync** — SwiftData + CloudKit store (`mobile/WhisperioKit/Sources/WhisperioKit/RecordingSyncStore.swift:40`);
+  on-device vs iCloud is user-selectable (`mobile/WhisperioKit/Sources/WhisperioKit/Settings.swift:7`).
+  See [features/apple-sync.md](features/apple-sync.md).
+- **GitHub sync** — Markdown mirror to a Git repo (`mobile/WhisperioKit/Sources/WhisperioKit/GitHubSync/GitHubClient.swift:63`);
+  Whisperio's *cross-ecosystem* path (CloudKit is Apple-only). See [features/github-sync.md](features/github-sync.md).
+- **Daily digest / Journal** — per-day grouping + AI summary (`mobile/WhisperioKit/Sources/WhisperioKit/DigestGrouping.swift:10`).
+  See [features/daily-digest.md](features/daily-digest.md).
+- **Rewrite presets** — AI transcript reformatting (`mobile/WhisperioKit/Sources/WhisperioKit/RewritePresets.swift:76`).
+  See [features/rewrite-presets.md](features/rewrite-presets.md).
 
 Details in [features/mobile-app.md](features/mobile-app.md).
 
@@ -161,6 +176,11 @@ store" as an aspiration, not current behavior.
 | CI pipeline | `.github/workflows/build.yml:1` |
 | Mobile domain core | `mobile/WhisperioKit/Sources/WhisperioKit/` |
 | Mobile engine (audio, providers, sync) | `mobile/WhisperioApp/Sources/WhisperioApp/Engine/` |
+| Mobile CloudKit history store | `mobile/WhisperioKit/Sources/WhisperioKit/RecordingSyncStore.swift:40` |
+| Mobile GitHub-sync engine | `mobile/WhisperioKit/Sources/WhisperioKit/GitHubSync/` |
+| Mobile digest grouping + prompts | `mobile/WhisperioKit/Sources/WhisperioKit/DigestGrouping.swift:10` |
+| Mobile rewrite presets | `mobile/WhisperioKit/Sources/WhisperioKit/RewritePresets.swift:76` |
+| Native Mac app | `mobile/WhisperioApp/MacApp/WhisperioMacApp.swift:13` |
 | Website (GitHub Pages) | `docs/index.html:1` |
 
 ## Gotchas
