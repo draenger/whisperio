@@ -133,4 +133,31 @@ struct RecordingEntityTests {
         store.delete(Recording(id: id, filename: "a.caf", duration: 1))
         #expect(store.items.isEmpty)
     }
+
+    // Last-writer-wins: a stale/out-of-order re-add of the same id (older `updatedAt`) must NOT
+    // clobber a newer stored write, while a genuinely newer write does win.
+    @available(iOS 17, macOS 14, *)
+    @MainActor
+    @Test func lastWriterWinsRejectsStaleWrite() throws {
+        let config = ModelConfiguration(isStoredInMemoryOnly: true)
+        guard let store = try? RecordingSyncStore(configuration: config) else { return }
+
+        let id = UUID()
+        let base = Date()
+        // Establish a newer stored value.
+        store.add(Recording(id: id, filename: "a.caf", duration: 1,
+                            transcription: "newer", updatedAt: base.addingTimeInterval(100)))
+        #expect(store.items.first?.transcription == "newer")
+
+        // An older write arriving late is dropped — the newer value survives.
+        store.add(Recording(id: id, filename: "a.caf", duration: 1,
+                            transcription: "stale", updatedAt: base))
+        #expect(store.items.count == 1)
+        #expect(store.items.first?.transcription == "newer")
+
+        // A genuinely newer write wins.
+        store.add(Recording(id: id, filename: "a.caf", duration: 1,
+                            transcription: "newest", updatedAt: base.addingTimeInterval(200)))
+        #expect(store.items.first?.transcription == "newest")
+    }
 }

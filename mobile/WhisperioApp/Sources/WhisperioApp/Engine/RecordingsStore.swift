@@ -63,8 +63,21 @@ final class RecordingsStore: ObservableObject {
         case .sync(let store):
             store.add(r)
         case .json(let url):
-            items.insert(r, at: 0)
+            upsertJSON(r)
             saveJSON(to: url)
+        }
+    }
+
+    /// Insert-or-update the local `items` last-writer-wins. A new id is inserted newest-first;
+    /// an existing id is overwritten only when the incoming record is at least as new
+    /// (`lastWriteAt`), so a stale/out-of-order write can't clobber newer data and duplicate ids
+    /// never accumulate.
+    private func upsertJSON(_ r: Recording) {
+        if let idx = items.firstIndex(where: { $0.id == r.id }) {
+            guard r.lastWriteAt >= items[idx].lastWriteAt else { return }
+            items[idx] = r
+        } else {
+            items.insert(r, at: 0)
         }
     }
 
@@ -96,6 +109,7 @@ final class RecordingsStore: ObservableObject {
         case .json(let url):
             guard let idx = items.firstIndex(where: { $0.id == sourceId }) else { return }
             items[idx].category = id
+            items[idx].updatedAt = Date()   // bump LWW clock so this edit wins over stale copies
             saveJSON(to: url)
         }
     }
@@ -114,6 +128,7 @@ final class RecordingsStore: ObservableObject {
             guard let idx = items.firstIndex(where: { $0.id == sourceId }) else { return }
             items[idx].render = text
             items[idx].renderPresetID = presetID
+            items[idx].updatedAt = Date()   // bump LWW clock so this edit wins over stale copies
             saveJSON(to: url)
         }
     }
