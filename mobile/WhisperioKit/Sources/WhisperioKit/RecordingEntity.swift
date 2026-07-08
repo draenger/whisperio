@@ -27,7 +27,9 @@ public final class RecordingEntity {
     public var category: String?
     public var render: String?
     public var renderPresetID: String?
-    /// Last local mutation time — seeds a future last-writer-wins merge.
+    /// Last local mutation time — the comparison clock for the last-writer-wins merge in
+    /// `RecordingSyncStore.upsert` (a stale/out-of-order write with an older time is dropped) and
+    /// the tie-breaker that resolves CloudKit-produced duplicates to the newest row on read.
     public var modifiedAt: Date = Date()
 
     public init(

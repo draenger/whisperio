@@ -168,8 +168,14 @@ public final class RecordingSyncStore: ObservableObject {
     // MARK: - Reads
 
     private func reload() {
+        // Newest recording first (by creation timestamp); among CloudKit-produced duplicates of
+        // the same recording (identical timestamp), the newest `modifiedAt` sorts first so the
+        // keep-first dedup below resolves the collision last-writer-wins.
         let descriptor = FetchDescriptor<RecordingEntity>(
-            sortBy: [SortDescriptor(\.timestamp, order: .reverse)]
+            sortBy: [
+                SortDescriptor(\.timestamp, order: .reverse),
+                SortDescriptor(\.modifiedAt, order: .reverse)
+            ]
         )
         let entities: [RecordingEntity]
         do {
@@ -193,10 +199,17 @@ public final class RecordingSyncStore: ObservableObject {
     }
 
     private func upsert(_ r: Recording) {
+        // Last-writer-wins: the incoming record only overwrites the stored row when it is at
+        // least as new as what's already there (`lastWriteAt`, i.e. updatedAt ?? timestamp).
+        // A stale or out-of-order write — e.g. an older copy arriving after a CloudKit sync —
+        // is dropped so it can't clobber newer data. `modifiedAt` is carried from the winning
+        // write so subsequent comparisons keep converging on the same latest state.
+        let incoming = r.lastWriteAt
         if let existing = firstEntity(id: r.id) {
-            existing.apply(r)
+            guard incoming >= existing.modifiedAt else { return }
+            existing.apply(r, modifiedAt: incoming)
         } else {
-            context.insert(RecordingEntity(r))
+            context.insert(RecordingEntity(r, modifiedAt: incoming))
         }
     }
 
