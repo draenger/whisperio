@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, type ReactElement } from 'react'
+import { useState, useEffect, useCallback, useRef, type ReactElement, type ReactNode } from 'react'
 import { useTheme } from '../../ThemeContext'
 import { TitleBar } from '../common/TitleBar'
 import type { Theme } from '../../theme'
@@ -42,9 +42,9 @@ function UpdateBanner({ state, theme }: { state: UpdaterState | null; theme: The
       display: 'flex',
       alignItems: 'center',
       gap: '12px',
-      padding: '10px 16px',
-      background: `${accent}14`,
-      borderBottom: `1px solid ${accent}40`,
+      padding: '11px 16px',
+      background: `${accent}12`,
+      borderBottom: `1px solid ${accent}33`,
       flexShrink: 0
     }}>
       <div style={{
@@ -67,7 +67,7 @@ function UpdateBanner({ state, theme }: { state: UpdaterState | null; theme: The
           onClick={async () => { setInstalling(true); await window.api.updater.install() }}
           disabled={installing}
           style={{
-            background: accent, border: 'none', borderRadius: '6px', padding: '7px 16px',
+            background: accent, border: 'none', borderRadius: '10px', padding: '8px 16px',
             fontSize: '12px', fontWeight: 600, color: '#fff', cursor: installing ? 'default' : 'pointer',
             fontFamily: 'IBM Plex Sans, sans-serif', flexShrink: 0, opacity: installing ? 0.6 : 1
           }}
@@ -77,13 +77,19 @@ function UpdateBanner({ state, theme }: { state: UpdaterState | null; theme: The
   )
 }
 
-type TabId = 'general' | 'providers' | 'models' | 'audio' | 'hotkeys' | 'recordings' | 'updates'
+type TabId = 'general' | 'providers' | 'models' | 'audio' | 'hotkeys' | 'sync' | 'recordings' | 'updates'
+
+type NavGroup = {
+  label: string
+  tabs: { id: TabId; label: string }[]
+}
 
 const TAB_ICONS: Record<string, string> = {
   general: 'M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6',
   providers: 'M12 2 2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5',
   audio: 'M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3zM19 10v2a7 7 0 0 1-14 0v-2M12 19v3',
   hotkeys: 'M3 5h18a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1zM6 9h.01M10 9h.01M14 9h.01M18 9h.01M6 13h.01M9 13h6M18 13h.01',
+  sync: 'M21 2v6h-6M3 12a9 9 0 0 1 15-6.7L21 8M3 22v-6h6M21 12a9 9 0 0 1-15 6.7L3 16',
   recordings: 'M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zM12 7v5l3 2',
   updates: 'M21 12a9 9 0 1 1-2.64-6.36M21 3v6h-6'
 }
@@ -99,6 +105,133 @@ function NavIcon({ d, size = 16 }: { d: string; size?: number }): ReactElement {
 interface MediaDeviceOption {
   deviceId: string
   label: string
+}
+
+/* ─── Status header strip (under the title bar) ─── */
+
+/** Provider ids → short display labels for the engine chain. */
+const CHAIN_LABELS: Record<string, string> = {
+  openai: 'OpenAI',
+  elevenlabs: 'ElevenLabs',
+  selfhosted: 'On-Device'
+}
+
+function MicroLabel({ children, theme }: { children: ReactNode; theme: Theme }): ReactElement {
+  return (
+    <span style={{
+      fontFamily: "'JetBrains Mono', monospace",
+      fontSize: '9px',
+      fontWeight: 600,
+      letterSpacing: '0.16em',
+      textTransform: 'uppercase',
+      color: theme.textMuted,
+      flexShrink: 0
+    }}>{children}</span>
+  )
+}
+
+function Keycap({ children, theme }: { children: ReactNode; theme: Theme }): ReactElement {
+  return (
+    <span style={{
+      fontFamily: "'JetBrains Mono', monospace",
+      fontSize: '10px',
+      fontWeight: 600,
+      lineHeight: 1,
+      padding: '3px 6px',
+      borderRadius: '5px',
+      background: theme.bgTertiary,
+      border: `1px solid ${theme.border}`,
+      boxShadow: `0 1px 0 ${theme.border}`,
+      color: theme.textSecondary,
+      whiteSpace: 'nowrap'
+    }}>{children}</span>
+  )
+}
+
+/** Compact status strip mounted directly under the title bar. Reads from live settings state. */
+function StatusHeader({
+  dictationHotkey,
+  providerChain,
+  aiPostProcessing,
+  theme
+}: {
+  dictationHotkey: string
+  providerChain: string[]
+  aiPostProcessing: boolean
+  theme: Theme
+}): ReactElement {
+  const keys = (dictationHotkey || 'Ctrl+Shift+Space').split('+')
+  const chain = providerChain.length ? providerChain : ['openai']
+
+  const Divider = (): ReactElement => (
+    <span style={{ width: '1px', height: '20px', background: theme.border, flexShrink: 0 }} />
+  )
+
+  return (
+    <div style={{
+      display: 'flex',
+      alignItems: 'center',
+      gap: '14px',
+      padding: '10px 18px',
+      background: theme.bgSecondary,
+      borderBottom: `1px solid ${theme.border}`,
+      flexShrink: 0,
+      overflowX: 'auto'
+    }}>
+      {/* STATUS */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+        <MicroLabel theme={theme}>Status</MicroLabel>
+        <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <span style={{ width: '7px', height: '7px', borderRadius: '50%', background: theme.success, boxShadow: `0 0 6px ${theme.success}`, flexShrink: 0 }} />
+          <span style={{ fontSize: '12px', fontWeight: 600, color: theme.text }}>Ready</span>
+        </span>
+      </div>
+
+      <Divider />
+
+      {/* DICTATE */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+        <MicroLabel theme={theme}>Dictate</MicroLabel>
+        <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+          {keys.map((k, i) => <Keycap key={i} theme={theme}>{k}</Keycap>)}
+        </span>
+      </div>
+
+      <Divider />
+
+      {/* ENGINE CHAIN */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
+        <MicroLabel theme={theme}>Engine Chain</MicroLabel>
+        <span style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '12px', fontWeight: 600, whiteSpace: 'nowrap' }}>
+          {chain.map((id, i) => (
+            <span key={id} style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+              {i > 0 && <span style={{ color: theme.textMuted, fontWeight: 400 }}>→</span>}
+              <span style={{ color: i === 0 ? theme.accent : theme.textSecondary }}>{CHAIN_LABELS[id] ?? id}</span>
+            </span>
+          ))}
+        </span>
+      </div>
+
+      <div style={{ flex: 1 }} />
+
+      {/* AI cleanup chip — only when post-processing is on */}
+      {aiPostProcessing && (
+        <span style={{
+          display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0,
+          padding: '4px 10px', borderRadius: '999px',
+          background: `${theme.accent}14`,
+          border: `1px solid ${theme.accent}40`,
+          color: theme.accent,
+          fontSize: '11px', fontWeight: 600, whiteSpace: 'nowrap'
+        }}>
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M12 3l1.9 4.6L18.5 9.5 13.9 11.4 12 16l-1.9-4.6L5.5 9.5l4.6-1.9z" />
+          </svg>
+          AI cleanup
+        </span>
+      )}
+    </div>
+  )
 }
 
 /** Dedicated Updates settings tab. */
@@ -207,7 +340,31 @@ export function SettingsForm(): ReactElement {
   const { theme } = useTheme()
 
   // --- State ---
-  const validTabs: TabId[] = ['general', 'providers', 'audio', 'hotkeys', 'updates', 'recordings']
+  const navGroups: NavGroup[] = [
+    {
+      label: 'Basics',
+      tabs: [
+        { id: 'general', label: 'General' },
+        { id: 'providers', label: 'Providers' },
+        { id: 'audio', label: 'Audio' },
+        { id: 'hotkeys', label: 'Hotkeys' }
+      ]
+    },
+    {
+      label: 'Library',
+      tabs: [
+        { id: 'sync', label: 'Sync' },
+        { id: 'recordings', label: 'Recordings' }
+      ]
+    },
+    {
+      label: 'System',
+      tabs: [
+        { id: 'updates', label: 'Updates' }
+      ]
+    }
+  ]
+  const validTabs: TabId[] = navGroups.flatMap((group) => group.tabs.map((tab) => tab.id))
   const initialTab = ((): TabId => {
     const h = window.location.hash.replace('#', '') as TabId
     return validTabs.includes(h) ? h : 'general'
@@ -245,6 +402,7 @@ export function SettingsForm(): ReactElement {
   const [transcriptionLanguage, setTranscriptionLanguage] = useState('auto')
   const [prompt, setPrompt] = useState('')
   const [vocabulary, setVocabulary] = useState('')
+  const [removedDefaultVocabulary, setRemovedDefaultVocabulary] = useState<string[]>([])
   const [aiPostProcessing, setAiPostProcessing] = useState(false)
   const [fallbackEnabled, setFallbackEnabled] = useState(false)
 
@@ -272,6 +430,7 @@ export function SettingsForm(): ReactElement {
       setTranscriptionLanguage(settings.transcriptionLanguage ?? 'auto')
       setPrompt(settings.transcriptionPrompt ?? '')
       setVocabulary(settings.customVocabulary ?? '')
+      setRemovedDefaultVocabulary(settings.removedDefaultVocabulary ?? [])
       setAiPostProcessing(settings.aiPostProcessing ?? false)
       setLaunchAtStartup(settings.launchAtStartup ?? true)
       setDictationHotkey(settings.dictationHotkey ?? '')
@@ -323,6 +482,7 @@ export function SettingsForm(): ReactElement {
       transcriptionLanguage,
       transcriptionPrompt: prompt,
       customVocabulary: vocabulary,
+      removedDefaultVocabulary,
       aiPostProcessing,
       launchAtStartup,
       dictationHotkey,
@@ -337,10 +497,23 @@ export function SettingsForm(): ReactElement {
     setTimeout(() => setSaved(false), 2000)
   }, [
     providerChain, apiKey, openaiBaseUrl, whisperModel, elevenlabsApiKey, transcriptionLanguage, prompt,
-    vocabulary, aiPostProcessing, launchAtStartup, dictationHotkey,
+    vocabulary, removedDefaultVocabulary, aiPostProcessing, launchAtStartup, dictationHotkey,
     dictateAndSendHotkey, inputDeviceId, outputDeviceId, saveRecordings,
     outputRecordingHotkey
   ])
+
+  // Auto-save: persist whenever any setting changes (debounced). Skips the initial
+  // load so we don't write straight back what we just read.
+  const didAutoSaveInit = useRef(false)
+  useEffect(() => {
+    if (loading) return
+    if (!didAutoSaveInit.current) {
+      didAutoSaveInit.current = true
+      return
+    }
+    const t = setTimeout(() => { handleSave() }, 400)
+    return () => clearTimeout(t)
+  }, [handleSave, loading])
 
   const s = makeStyles(theme)
 
@@ -355,52 +528,67 @@ export function SettingsForm(): ReactElement {
     )
   }
 
-  const tabs: { id: TabId; label: string }[] = [
-    { id: 'general', label: 'General' },
-    { id: 'providers', label: 'Providers' },
-    { id: 'audio', label: 'Audio' },
-    { id: 'hotkeys', label: 'Hotkeys' },
-    { id: 'updates', label: 'Updates' },
-    { id: 'recordings', label: 'Recordings' }
-  ]
-
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', background: theme.bg }}>
       <TitleBar title={activeTab === 'recordings' ? 'Whisperio Recordings' : 'Whisperio Settings'} />
 
       <UpdateBanner state={updater} theme={theme} />
 
+      {activeTab !== 'recordings' && (
+        <StatusHeader
+          dictationHotkey={dictationHotkey}
+          providerChain={providerChain}
+          aiPostProcessing={aiPostProcessing}
+          theme={theme}
+        />
+      )}
+
       <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
         {/* Sidebar nav */}
         <nav style={s.sidebar}>
           <div style={s.sidebarLabel}>Settings</div>
-          {tabs.map((tab) => {
-            const active = activeTab === tab.id
-            return (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
-                style={{ ...s.navItem, ...(active ? s.navItemActive : {}) }}
-                onMouseEnter={(e) => {
-                  if (!active) {
-                    e.currentTarget.style.color = theme.text
-                    e.currentTarget.style.background = theme.bgTertiary
-                  }
-                }}
-                onMouseLeave={(e) => {
-                  if (!active) {
-                    e.currentTarget.style.color = theme.textSecondary
-                    e.currentTarget.style.background = 'transparent'
-                  }
-                }}
-              >
-                <span style={{ display: 'flex', flexShrink: 0, color: active ? theme.accentLight : theme.textMuted }}>
-                  <NavIcon d={TAB_ICONS[tab.id]} />
-                </span>
-                {tab.label}
-              </button>
-            )
-          })}
+          {navGroups.map((group) => (
+            <div key={group.label} style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginBottom: '8px' }}>
+              <div style={{
+                padding: '8px 10px 4px',
+                fontFamily: "'JetBrains Mono', monospace",
+                fontSize: '9px',
+                fontWeight: 600,
+                letterSpacing: '0.18em',
+                textTransform: 'uppercase',
+                color: theme.textMuted
+              }}>
+                {group.label}
+              </div>
+              {group.tabs.map((tab) => {
+                const active = activeTab === tab.id
+                return (
+                  <button
+                    key={tab.id}
+                    onClick={() => setActiveTab(tab.id)}
+                    style={{ ...s.navItem, ...(active ? s.navItemActive : {}) }}
+                    onMouseEnter={(e) => {
+                      if (!active) {
+                        e.currentTarget.style.color = theme.text
+                        e.currentTarget.style.background = theme.bgTertiary
+                      }
+                    }}
+                    onMouseLeave={(e) => {
+                      if (!active) {
+                        e.currentTarget.style.color = theme.textSecondary
+                        e.currentTarget.style.background = 'transparent'
+                      }
+                    }}
+                  >
+                    <span style={{ display: 'flex', flexShrink: 0, color: active ? theme.accent : theme.textMuted }}>
+                      <NavIcon d={TAB_ICONS[tab.id]} />
+                    </span>
+                    {tab.label}
+                  </button>
+                )
+              })}
+            </div>
+          ))}
           <div style={{ flex: 1 }} />
           <div
             style={{
@@ -465,6 +653,8 @@ export function SettingsForm(): ReactElement {
                       setPrompt={setPrompt}
                       vocabulary={vocabulary}
                       setVocabulary={setVocabulary}
+                      removedDefaultVocabulary={removedDefaultVocabulary}
+                      setRemovedDefaultVocabulary={setRemovedDefaultVocabulary}
                       aiPostProcessing={aiPostProcessing}
                       setAiPostProcessing={setAiPostProcessing}
                       s={s}
@@ -500,28 +690,32 @@ export function SettingsForm(): ReactElement {
                     />
                   )}
 
+                  {activeTab === 'sync' && (
+                    <SyncTab s={s} theme={theme} />
+                  )}
+
                   {activeTab === 'updates' && (
                     <UpdatesTab state={updater} s={s} theme={theme} />
                   )}
                 </div>
               </div>
 
-              {/* Save bar */}
+              {/* Auto-save footer — settings persist on change */}
               <div style={s.saveBar}>
-                <button
-                  onClick={handleSave}
-                  style={s.button}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.background = theme.accentHover
-                    e.currentTarget.style.boxShadow = `0 0 20px ${theme.accentGlow}`
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.background = theme.accent
-                    e.currentTarget.style.boxShadow = 'none'
-                  }}
-                >
-                  {saved ? 'Saved!' : 'Save Settings'}
-                </button>
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  color: saved ? theme.success : theme.accent,
+                  transition: 'color 0.2s'
+                }}>
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M20 6L9 17l-5-5" />
+                  </svg>
+                  <span style={{ fontSize: '12.5px', fontWeight: 600 }}>
+                    {saved ? 'Saved' : 'Changes save automatically'}
+                  </span>
+                </div>
               </div>
             </>
           )}
@@ -797,6 +991,18 @@ const ALL_PROVIDERS: { id: string; label: string; desc: string }[] = [
   { id: 'selfhosted', label: 'Local Model', desc: 'Offline, private' }
 ]
 
+// Built-in seed vocabulary shown as removable/restorable chips. Mirror of
+// DEFAULT_VOCABULARY_TERMS in src/main/settingsManager.ts (the source of truth
+// for what is actually sent to the providers). Keep the two lists in sync.
+const DEFAULT_VOCABULARY_TERMS: string[] = [
+  'git', 'GitHub', 'npm', 'yarn', 'pnpm', 'pip', 'Docker', 'Kubernetes', 'kubectl',
+  'TypeScript', 'JavaScript', 'React', 'Next.js', 'Node.js', 'VS Code', 'API', 'CLI',
+  'SSH', 'YAML', 'JSON', 'REST', 'GraphQL', 'webpack', 'ESLint', 'Prettier',
+  'PostgreSQL', 'MongoDB', 'Redis', 'AWS', 'Azure', 'Terraform', 'CI/CD', 'DevOps',
+  'localhost', 'regex', 'boolean', 'middleware', 'endpoint', 'repository', 'README',
+  'Vite', 'Vitest', 'Electron', 'Python', 'FastAPI', 'Whisper', 'OpenAI'
+]
+
 function CogIcon({ size = 14, color = 'currentColor' }: { size?: number; color?: string }): ReactElement {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -814,6 +1020,7 @@ function ProvidersTab({
   transcriptionLanguage, setTranscriptionLanguage,
   prompt, setPrompt,
   vocabulary, setVocabulary,
+  removedDefaultVocabulary, setRemovedDefaultVocabulary,
   aiPostProcessing, setAiPostProcessing,
   s, theme
 }: {
@@ -833,6 +1040,8 @@ function ProvidersTab({
   setPrompt: (v: string) => void
   vocabulary: string
   setVocabulary: (v: string) => void
+  removedDefaultVocabulary: string[]
+  setRemovedDefaultVocabulary: (v: string[]) => void
   aiPostProcessing: boolean
   setAiPostProcessing: (v: boolean) => void
   s: ReturnType<typeof makeStyles>
@@ -1013,10 +1222,99 @@ function ProvidersTab({
 
       <div style={s.card}>
         <h3 style={s.cardTitle}>Vocabulary</h3>
-        <label style={s.label}>Custom Vocabulary</label>
-        <textarea value={vocabulary} onChange={(e) => setVocabulary(e.target.value)} rows={3} placeholder="git, GitHub, npm, TypeScript, React, Docker, kubectl..." style={s.textarea} />
-        <span style={s.hint}>Comma-separated terms for better recognition across all providers.</span>
+        <VocabularyEditor
+          vocabulary={vocabulary}
+          setVocabulary={setVocabulary}
+          removedDefaultVocabulary={removedDefaultVocabulary}
+          setRemovedDefaultVocabulary={setRemovedDefaultVocabulary}
+          s={s}
+          theme={theme}
+        />
       </div>
+    </>
+  )
+}
+
+/* ─── Vocabulary editor: soft-deletable default terms + user additions ─── */
+
+function VocabularyEditor({
+  vocabulary, setVocabulary,
+  removedDefaultVocabulary, setRemovedDefaultVocabulary,
+  s, theme
+}: {
+  vocabulary: string
+  setVocabulary: (v: string) => void
+  removedDefaultVocabulary: string[]
+  setRemovedDefaultVocabulary: (v: string[]) => void
+  s: ReturnType<typeof makeStyles>
+  theme: Theme
+}): ReactElement {
+  const removedSet = new Set(removedDefaultVocabulary.map((t) => t.toLowerCase()))
+  const activeDefaults = DEFAULT_VOCABULARY_TERMS.filter((t) => !removedSet.has(t.toLowerCase()))
+  const removedDefaults = DEFAULT_VOCABULARY_TERMS.filter((t) => removedSet.has(t.toLowerCase()))
+  const customTerms = vocabulary.split(',').map((t) => t.trim()).filter(Boolean)
+
+  const softDeleteDefault = (term: string): void => {
+    if (removedSet.has(term.toLowerCase())) return
+    setRemovedDefaultVocabulary([...removedDefaultVocabulary, term])
+  }
+  const restoreDefault = (term: string): void => {
+    setRemovedDefaultVocabulary(removedDefaultVocabulary.filter((t) => t.toLowerCase() !== term.toLowerCase()))
+  }
+  const restoreAllDefaults = (): void => setRemovedDefaultVocabulary([])
+  const removeCustom = (term: string): void => {
+    setVocabulary(customTerms.filter((t) => t.toLowerCase() !== term.toLowerCase()).join(', '))
+  }
+
+  const chip = (opts: { key: string; label: string; onAction: () => void; symbol: string; ghost?: boolean; title: string }): ReactElement => (
+    <span key={opts.key} style={{
+      display: 'inline-flex', alignItems: 'center', gap: '5px',
+      padding: '3px 6px 3px 9px', borderRadius: '6px',
+      background: opts.ghost ? 'transparent' : theme.inputBg,
+      border: `1px solid ${opts.ghost ? theme.border + '60' : theme.inputBorder}`,
+      fontSize: '12px', color: opts.ghost ? theme.textMuted : theme.text,
+      fontFamily: 'IBM Plex Sans, sans-serif', opacity: opts.ghost ? 0.7 : 1
+    }}>
+      {opts.label}
+      <button onClick={opts.onAction} title={opts.title}
+        style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: theme.textMuted, fontSize: '12px', lineHeight: 1, padding: '0 1px', fontFamily: 'IBM Plex Sans, sans-serif' }}>
+        {opts.symbol}
+      </button>
+    </span>
+  )
+
+  return (
+    <>
+      <label style={s.label}>Default Terms</label>
+      <span style={s.hint}>Built-in terms for better recognition. Remove any you don&apos;t need — they can be restored anytime.</span>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '8px' }}>
+        {activeDefaults.map((term) => chip({ key: `d-${term}`, label: term, onAction: () => softDeleteDefault(term), symbol: '×', title: `Remove "${term}"` }))}
+        {activeDefaults.length === 0 && <span style={s.hint}>All default terms removed.</span>}
+      </div>
+
+      {removedDefaults.length > 0 && (
+        <>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '12px' }}>
+            <label style={s.label}>Removed ({removedDefaults.length})</label>
+            <button onClick={restoreAllDefaults}
+              style={{ background: 'transparent', border: `1px solid ${theme.inputBorder}`, borderRadius: '6px', padding: '4px 10px', fontSize: '11px', fontWeight: 600, color: theme.accent, cursor: 'pointer', fontFamily: 'IBM Plex Sans, sans-serif' }}>
+              Restore defaults
+            </button>
+          </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '8px' }}>
+            {removedDefaults.map((term) => chip({ key: `r-${term}`, label: term, onAction: () => restoreDefault(term), symbol: '↺', ghost: true, title: `Restore "${term}"` }))}
+          </div>
+        </>
+      )}
+
+      <label style={{ ...s.label, marginTop: '14px' }}>Your Terms</label>
+      <textarea value={vocabulary} onChange={(e) => setVocabulary(e.target.value)} rows={2} placeholder="Add your own comma-separated terms..." style={s.textarea} />
+      <span style={s.hint}>Comma-separated terms added on top of the defaults above.</span>
+      {customTerms.length > 0 && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '8px' }}>
+          {customTerms.map((term) => chip({ key: `c-${term}`, label: term, onAction: () => removeCustom(term), symbol: '×', title: `Remove "${term}"` }))}
+        </div>
+      )}
     </>
   )
 }
@@ -1873,6 +2171,304 @@ function ToggleRow({
   )
 }
 
+/* ─── Tab: Sync (GitHub secret store) ─── */
+
+type GithubStatus = Awaited<ReturnType<Window['api']['github']['status']>>
+type GithubRepo = Awaited<ReturnType<Window['api']['github']['listRepos']>>[number]
+
+/**
+ * GitHub secret-store tab. The renderer never sees the access token or the
+ * encryption key — it only drives the main-process flow (connect → pick repo →
+ * push/pull) and shows status. Secrets are sealed client-side in main before
+ * they ever reach GitHub.
+ */
+function SyncTab({ s, theme }: { s: ReturnType<typeof makeStyles>; theme: Theme }): ReactElement {
+  const [status, setStatus] = useState<GithubStatus | null>(null)
+  const [prompt, setPrompt] = useState<{ userCode: string; verificationUri: string } | null>(null)
+  const [connecting, setConnecting] = useState(false)
+  const [repos, setRepos] = useState<GithubRepo[] | null>(null)
+  const [loadingRepos, setLoadingRepos] = useState(false)
+  const [picking, setPicking] = useState(false)
+  const [busy, setBusy] = useState<'push' | 'pull' | null>(null)
+  const [message, setMessage] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null)
+  const pollTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const refresh = useCallback(async () => {
+    const st = await window.api.github.status()
+    setStatus(st)
+    return st
+  }, [])
+
+  useEffect(() => {
+    refresh()
+    return () => {
+      if (pollTimer.current) clearTimeout(pollTimer.current)
+    }
+  }, [refresh])
+
+  const flash = useCallback((kind: 'ok' | 'err', text: string) => {
+    setMessage({ kind, text })
+    setTimeout(() => setMessage(null), 4000)
+  }, [])
+
+  const loadRepos = useCallback(async () => {
+    setLoadingRepos(true)
+    try {
+      setRepos(await window.api.github.listRepos())
+    } catch (e) {
+      flash('err', e instanceof Error ? e.message : 'Failed to load repositories')
+    } finally {
+      setLoadingRepos(false)
+    }
+  }, [flash])
+
+  const poll = useCallback(async () => {
+    try {
+      const r = await window.api.github.poll()
+      if (r.status === 'pending') {
+        pollTimer.current = setTimeout(poll, 5000)
+        return
+      }
+      setConnecting(false)
+      setPrompt(null)
+      if (r.status === 'authorized') {
+        await refresh()
+        loadRepos()
+        flash('ok', `Connected as ${r.user || 'GitHub user'}`)
+      } else if (r.status === 'expired') {
+        flash('err', 'Authorization expired — please try again')
+      } else if (r.status === 'denied') {
+        flash('err', 'Authorization was denied')
+      } else {
+        flash('err', r.message || 'Connection failed')
+      }
+    } catch (e) {
+      setConnecting(false)
+      setPrompt(null)
+      flash('err', e instanceof Error ? e.message : 'Connection failed')
+    }
+  }, [refresh, loadRepos, flash])
+
+  const handleConnect = useCallback(async () => {
+    setConnecting(true)
+    setMessage(null)
+    try {
+      const p = await window.api.github.connect()
+      setPrompt({ userCode: p.userCode, verificationUri: p.verificationUri })
+      pollTimer.current = setTimeout(poll, 5000)
+    } catch (e) {
+      setConnecting(false)
+      flash('err', e instanceof Error ? e.message : 'Could not start GitHub connection')
+    }
+  }, [poll, flash])
+
+  const handleSelectRepo = useCallback(async (repo: GithubRepo) => {
+    await window.api.github.selectRepo(repo.fullName, repo.defaultBranch)
+    setPicking(false)
+    await refresh()
+    flash('ok', `Store set to ${repo.fullName}`)
+  }, [refresh, flash])
+
+  const handleDisconnect = useCallback(async () => {
+    if (pollTimer.current) clearTimeout(pollTimer.current)
+    setPrompt(null)
+    setRepos(null)
+    setStatus(await window.api.github.disconnect())
+  }, [])
+
+  const handlePush = useCallback(async () => {
+    setBusy('push')
+    try {
+      const r = await window.api.github.push()
+      flash('ok', `Encrypted secrets pushed to ${r.path}`)
+    } catch (e) {
+      flash('err', e instanceof Error ? e.message : 'Push failed')
+    } finally {
+      setBusy(null)
+    }
+  }, [flash])
+
+  const handlePull = useCallback(async () => {
+    setBusy('pull')
+    try {
+      const r = await window.api.github.pull()
+      flash('ok', `Pulled & decrypted ${r.keys.length} secret${r.keys.length === 1 ? '' : 's'}`)
+    } catch (e) {
+      flash('err', e instanceof Error ? e.message : 'Pull failed')
+    } finally {
+      setBusy(null)
+    }
+  }, [flash])
+
+  const btnPrimary: React.CSSProperties = {
+    background: theme.accent, color: '#fff', border: 'none', borderRadius: '8px',
+    padding: '9px 18px', fontSize: '13px', fontWeight: 600, cursor: 'pointer',
+    fontFamily: 'IBM Plex Sans, sans-serif'
+  }
+  const btnGhost: React.CSSProperties = {
+    background: 'transparent', color: theme.accent, border: `1px solid ${theme.border}`,
+    borderRadius: '8px', padding: '9px 18px', fontSize: '13px', fontWeight: 500,
+    cursor: 'pointer', fontFamily: 'IBM Plex Sans, sans-serif'
+  }
+
+  if (!status) {
+    return <div style={s.card}><span style={s.hint}>Loading…</span></div>
+  }
+
+  const showPicker = status.connected && (picking || !status.repo)
+
+  return (
+    <>
+      {/* Security explainer — always visible */}
+      <div style={{ ...s.card, background: `${theme.accent}0d`, border: `1px solid ${theme.accent}33`, borderRadius: '10px', padding: '14px 16px' }}>
+        <h3 style={{ ...s.cardTitle, marginBottom: '6px' }}>Encrypted secret store</h3>
+        <span style={s.hint}>
+          Connect a GitHub repo to back up your API keys. Everything is encrypted on THIS device
+          with AES-256-GCM before it leaves the app — the key is held in your macOS Keychain and is
+          never uploaded. Only unreadable ciphertext is committed to the repo, so GitHub and any
+          collaborators can never see your keys.
+        </span>
+      </div>
+
+      {message && (
+        <div style={{
+          ...s.card, padding: '10px 14px', borderRadius: '8px',
+          background: message.kind === 'ok' ? `${theme.success}18` : '#ef444418',
+          border: `1px solid ${message.kind === 'ok' ? theme.success + '55' : '#ef444455'}`
+        }}>
+          <span style={{ fontSize: '12.5px', color: message.kind === 'ok' ? theme.success : '#ef4444', fontWeight: 500 }}>
+            {message.text}
+          </span>
+        </div>
+      )}
+
+      {!status.vaultAvailable && (
+        <div style={s.card}>
+          <span style={{ fontSize: '13px', color: '#ef4444', fontWeight: 600 }}>OS Keychain unavailable</span>
+          <span style={s.hint}>
+            Secure storage isn’t available on this system, so Whisperio will not sync secrets
+            (it refuses to store them unencrypted). Sync is disabled.
+          </span>
+        </div>
+      )}
+
+      {status.vaultAvailable && !status.clientConfigured && (
+        <div style={s.card}>
+          <h3 style={s.cardTitle}>Setup required</h3>
+          <span style={s.hint}>
+            A GitHub OAuth App (with Device Flow enabled and the <code>repo</code> scope) must be
+            configured for this build. Set <code>WHISPERIO_GITHUB_CLIENT_ID</code> to its client id,
+            then restart Whisperio. The connection flow below activates once it’s set.
+          </span>
+        </div>
+      )}
+
+      {/* Connection card */}
+      {status.vaultAvailable && status.clientConfigured && (
+        <div style={s.card}>
+          <h3 style={s.cardTitle}>GitHub connection</h3>
+
+          {!status.connected && !prompt && (
+            <>
+              <span style={s.hint}>Authorize Whisperio in your browser to use a repo as your secret store.</span>
+              <div>
+                <button onClick={handleConnect} disabled={connecting} style={{ ...btnPrimary, opacity: connecting ? 0.6 : 1 }}>
+                  {connecting ? 'Starting…' : 'Connect GitHub'}
+                </button>
+              </div>
+            </>
+          )}
+
+          {prompt && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <span style={s.hint}>
+                Your browser opened <b>{prompt.verificationUri}</b>. Enter this code to authorize, then
+                come back — Whisperio is waiting.
+              </span>
+              <div style={{
+                fontFamily: "'JetBrains Mono', monospace", fontSize: '26px', fontWeight: 700,
+                letterSpacing: '0.22em', color: theme.accent, padding: '10px 0'
+              }}>{prompt.userCode}</div>
+              <span style={{ fontSize: '11px', color: theme.textMuted }}>Waiting for authorization…</span>
+            </div>
+          )}
+
+          {status.connected && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: theme.success, boxShadow: `0 0 6px ${theme.success}` }} />
+              <span style={{ fontSize: '13px', color: theme.text, fontWeight: 600 }}>
+                Connected{status.user ? ` as ${status.user}` : ''}
+              </span>
+              <div style={{ flex: 1 }} />
+              <button onClick={handleDisconnect} style={{ ...btnGhost, color: '#ef4444', padding: '6px 12px', fontSize: '12px' }}>Disconnect</button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Repo picker */}
+      {showPicker && (
+        <div style={s.card}>
+          <h3 style={s.cardTitle}>Choose store repository</h3>
+          {!repos && !loadingRepos && (
+            <button onClick={loadRepos} style={btnGhost}>Load my repositories</button>
+          )}
+          {loadingRepos && <span style={s.hint}>Loading repositories…</span>}
+          {repos && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', maxHeight: '260px', overflowY: 'auto' }}>
+              {repos.length === 0 && <span style={s.hint}>No repositories found.</span>}
+              {repos.map((r) => (
+                <button key={r.fullName} onClick={() => handleSelectRepo(r)}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: '8px', textAlign: 'left',
+                    padding: '9px 11px', borderRadius: '8px', cursor: 'pointer',
+                    background: r.fullName === status.repo ? `${theme.accent}18` : theme.inputBg,
+                    border: `1px solid ${r.fullName === status.repo ? theme.accent + '55' : theme.inputBorder}`,
+                    fontFamily: 'IBM Plex Sans, sans-serif'
+                  }}>
+                  <span style={{ fontSize: '13px', fontWeight: 500, color: theme.text, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.fullName}</span>
+                  <span style={{
+                    fontSize: '10px', fontWeight: 600, padding: '2px 7px', borderRadius: '999px',
+                    background: r.private ? `${theme.accent}22` : theme.bgTertiary, color: r.private ? theme.accent : theme.textMuted
+                  }}>{r.private ? 'private' : 'public'}</span>
+                </button>
+              ))}
+            </div>
+          )}
+          {status.repo && (
+            <button onClick={() => setPicking(false)} style={{ ...btnGhost, alignSelf: 'flex-start', padding: '6px 12px', fontSize: '12px' }}>Cancel</button>
+          )}
+        </div>
+      )}
+
+      {/* Sync actions */}
+      {status.connected && status.repo && !picking && (
+        <div style={s.card}>
+          <h3 style={s.cardTitle}>Secret store</h3>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+            <span style={s.hint}>Store repo:</span>
+            <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: '12px', color: theme.text }}>{status.repo}</span>
+            <span style={{ fontSize: '11px', color: theme.textMuted }}>({status.branch || 'default'})</span>
+            <button onClick={() => { setPicking(true); if (!repos) loadRepos() }} style={{ ...btnGhost, padding: '4px 10px', fontSize: '11px' }}>Change</button>
+          </div>
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <button onClick={handlePush} disabled={busy !== null} style={{ ...btnPrimary, opacity: busy ? 0.6 : 1 }}>
+              {busy === 'push' ? 'Encrypting & pushing…' : 'Encrypt & push'}
+            </button>
+            <button onClick={handlePull} disabled={busy !== null} style={{ ...btnGhost, opacity: busy ? 0.6 : 1 }}>
+              {busy === 'pull' ? 'Pulling & decrypting…' : 'Pull & decrypt'}
+            </button>
+          </div>
+          <span style={{ ...s.hint, marginTop: '6px' }}>
+            Push seals your current API keys and commits the ciphertext. Pull restores them on another
+            machine (that machine needs its own Keychain key — see note above).
+          </span>
+        </div>
+      )}
+    </>
+  )
+}
+
 /* ─── Styles ─── */
 
 function makeStyles(theme: Theme) {
@@ -1881,7 +2477,11 @@ function makeStyles(theme: Theme) {
       padding: '24px 26px 28px',
       display: 'flex',
       flexDirection: 'column' as const,
-      gap: '30px'
+      gap: '24px',
+      maxWidth: '1120px',
+      width: '100%',
+      boxSizing: 'border-box' as const,
+      margin: '0 auto'
     },
     scrollArea: {
       flex: 1,
@@ -1889,13 +2489,13 @@ function makeStyles(theme: Theme) {
       overflowX: 'hidden' as const
     },
     sidebar: {
-      width: '184px',
+      width: '212px',
       flexShrink: 0,
       borderRight: `1px solid ${theme.border}`,
-      padding: '14px 12px',
+      padding: '16px 12px',
       display: 'flex',
       flexDirection: 'column' as const,
-      gap: '3px',
+      gap: '4px',
       background: theme.bgSecondary
     } as React.CSSProperties,
     sidebarLabel: {
@@ -1909,30 +2509,33 @@ function makeStyles(theme: Theme) {
     navItem: {
       display: 'flex',
       alignItems: 'center',
-      gap: '11px',
+      gap: '10px',
       width: '100%',
       textAlign: 'left' as const,
       cursor: 'pointer',
       border: 'none',
-      borderRadius: '9px',
-      padding: '9px 11px',
+      borderRadius: '10px',
+      padding: '10px 12px',
       fontFamily: "'IBM Plex Sans', sans-serif",
-      fontSize: '13.5px',
+      fontSize: '13px',
       fontWeight: 600,
       background: 'transparent',
       color: theme.textSecondary,
-      transition: 'background 0.15s, color 0.15s'
+      transition: 'background 0.15s, color 0.15s, transform 0.15s'
     } as React.CSSProperties,
     navItemActive: {
-      background: theme.inputBg,
+      background: `${theme.accent}14`,
       color: theme.text,
-      boxShadow: `inset 0 0 0 1px ${theme.border}`
+      boxShadow: `inset 3px 0 0 ${theme.accent}`
     } as React.CSSProperties,
     versionBadge: {
       display: 'flex',
       alignItems: 'center',
       gap: '8px',
-      padding: '8px 11px',
+      padding: '9px 12px',
+      borderRadius: '999px',
+      background: theme.bg,
+      border: `1px solid ${theme.border}`,
       fontFamily: "'JetBrains Mono', monospace",
       fontSize: '10.5px',
       color: theme.textMuted
@@ -1940,29 +2543,35 @@ function makeStyles(theme: Theme) {
     card: {
       display: 'flex',
       flexDirection: 'column' as const,
-      gap: '10px',
-      paddingBottom: '4px'
+      gap: '12px',
+      padding: '18px 18px 16px',
+      background: theme.bgSecondary,
+      border: `1px solid ${theme.border}`,
+      borderRadius: '12px',
+      boxShadow: theme.shadow
     },
     cardTitle: {
       fontFamily: "'Space Grotesk', sans-serif",
-      fontSize: '14px',
+      fontSize: '13px',
       fontWeight: 600,
       color: theme.text,
-      marginBottom: '4px',
-      letterSpacing: '0.01em'
+      marginBottom: 0,
+      letterSpacing: '0.015em'
     },
     label: {
-      fontSize: '12px',
-      fontWeight: 500,
+      fontSize: '11px',
+      fontWeight: 700,
+      letterSpacing: '0.06em',
+      textTransform: 'uppercase' as const,
       color: theme.textSecondary,
       marginTop: '4px'
     },
     input: {
       background: theme.inputBg,
       border: `1px solid ${theme.inputBorder}`,
-      borderRadius: '8px',
-      padding: '10px 14px',
-      fontSize: '14px',
+      borderRadius: '10px',
+      padding: '11px 14px',
+      fontSize: '13px',
       color: theme.text,
       outline: 'none',
       fontFamily: 'IBM Plex Sans, sans-serif',
@@ -1972,9 +2581,9 @@ function makeStyles(theme: Theme) {
     textarea: {
       background: theme.inputBg,
       border: `1px solid ${theme.inputBorder}`,
-      borderRadius: '8px',
-      padding: '10px 14px',
-      fontSize: '14px',
+      borderRadius: '10px',
+      padding: '11px 14px',
+      fontSize: '13px',
       color: theme.text,
       outline: 'none',
       fontFamily: 'IBM Plex Sans, sans-serif',
@@ -1986,9 +2595,9 @@ function makeStyles(theme: Theme) {
     select: {
       background: theme.inputBg,
       border: `1px solid ${theme.inputBorder}`,
-      borderRadius: '8px',
-      padding: '10px 14px',
-      fontSize: '14px',
+      borderRadius: '10px',
+      padding: '11px 14px',
+      fontSize: '13px',
       color: theme.text,
       outline: 'none',
       fontFamily: 'IBM Plex Sans, sans-serif',
@@ -1997,25 +2606,25 @@ function makeStyles(theme: Theme) {
       transition: 'border-color 0.15s'
     } as React.CSSProperties,
     hint: {
-      fontSize: '11px',
+      fontSize: '12px',
       color: theme.textMuted,
-      lineHeight: '1.4'
+      lineHeight: '1.5'
     },
     saveBar: {
-      padding: '12px 24px',
+      padding: '14px 26px',
       borderTop: `1px solid ${theme.border}`,
-      background: theme.bg,
+      background: theme.bgSecondary,
       flexShrink: 0,
       display: 'flex',
-      justifyContent: 'flex-end'
+      justifyContent: 'flex-start'
     },
     button: {
       background: theme.accent,
       color: theme.accentInk,
       border: 'none',
-      borderRadius: '8px',
-      padding: '10px 28px',
-      fontSize: '14px',
+      borderRadius: '10px',
+      padding: '10px 20px',
+      fontSize: '13px',
       fontWeight: 600,
       cursor: 'pointer',
       fontFamily: "'IBM Plex Sans', sans-serif",

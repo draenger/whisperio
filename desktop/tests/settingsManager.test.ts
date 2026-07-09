@@ -10,14 +10,23 @@ vi.mock('electron', () => ({
 const mockExistsSync = vi.fn()
 const mockReadFileSync = vi.fn()
 const mockWriteFileSync = vi.fn()
+const mockRenameSync = vi.fn()
 
 vi.mock('fs', () => ({
   existsSync: (...args: unknown[]) => mockExistsSync(...args),
   readFileSync: (...args: unknown[]) => mockReadFileSync(...args),
-  writeFileSync: (...args: unknown[]) => mockWriteFileSync(...args)
+  writeFileSync: (...args: unknown[]) => mockWriteFileSync(...args),
+  renameSync: (...args: unknown[]) => mockRenameSync(...args)
 }))
 
-import { loadSettings, saveSettings, getSetting } from '../src/main/settingsManager'
+import {
+  loadSettings,
+  saveSettings,
+  getSetting,
+  getActiveVocabulary,
+  DEFAULT_VOCABULARY_TERMS,
+  type AppSettings
+} from '../src/main/settingsManager'
 
 const DEFAULT_SETTINGS = {
   sttProvider: 'openai',
@@ -28,8 +37,10 @@ const DEFAULT_SETTINGS = {
   elevenlabsApiKey: '',
   transcriptionLanguage: 'auto',
   transcriptionPrompt: '',
-  customVocabulary:
-    'git, GitHub, npm, yarn, pnpm, pip, Docker, Kubernetes, kubectl, TypeScript, JavaScript, React, Next.js, Node.js, VS Code, API, CLI, SSH, YAML, JSON, REST, GraphQL, webpack, ESLint, Prettier, PostgreSQL, MongoDB, Redis, AWS, Azure, Terraform, CI/CD, DevOps, localhost, regex, boolean, middleware, endpoint, repository, README, Vite, Vitest, Electron, Python, FastAPI, Whisper, OpenAI',
+  // The built-in vocabulary now lives in DEFAULT_VOCABULARY_TERMS; the stored
+  // `customVocabulary` holds only the user's own additions.
+  customVocabulary: '',
+  removedDefaultVocabulary: [],
   aiPostProcessing: false,
   launchAtStartup: true,
   dictationHotkey: '',
@@ -40,7 +51,10 @@ const DEFAULT_SETTINGS = {
   outputDeviceId: '',
   saveRecordings: true,
   outputRecordingHotkey: '',
-  fallbackEnabled: false
+  fallbackEnabled: false,
+  githubUser: '',
+  githubRepo: '',
+  githubBranch: ''
 }
 
 const SETTINGS_PATH = join('/mock/userData', 'settings.json')
@@ -84,11 +98,15 @@ describe('settingsManager', () => {
         openaiApiKey: 'sk-old',
         transcriptionPrompt: 'New prompt'
       })
-      expect(mockWriteFileSync).toHaveBeenCalledWith(
-        SETTINGS_PATH,
-        JSON.stringify(result, null, 2),
-        'utf-8'
-      )
+      // Atomic write: content is written to a temp file then renamed over the
+      // real settings.json so a crash mid-write can't corrupt it.
+      expect(mockWriteFileSync).toHaveBeenCalledTimes(1)
+      const [tmpPath, content, enc] = mockWriteFileSync.mock.calls[0]
+      expect(String(tmpPath).startsWith(`${SETTINGS_PATH}.`)).toBe(true)
+      expect(String(tmpPath).endsWith('.tmp')).toBe(true)
+      expect(content).toBe(JSON.stringify(result, null, 2))
+      expect(enc).toBe('utf-8')
+      expect(mockRenameSync).toHaveBeenCalledWith(tmpPath, SETTINGS_PATH)
     })
   })
 
@@ -97,6 +115,62 @@ describe('settingsManager', () => {
       mockExistsSync.mockReturnValue(true)
       mockReadFileSync.mockReturnValue(JSON.stringify({ openaiApiKey: 'sk-123' }))
       expect(getSetting('openaiApiKey')).toBe('sk-123')
+    })
+  })
+
+  describe('getActiveVocabulary', () => {
+    const base = { ...DEFAULT_SETTINGS } as AppSettings
+
+    it('returns all default terms when nothing is removed and no additions', () => {
+      expect(getActiveVocabulary(base)).toBe(DEFAULT_VOCABULARY_TERMS.join(', '))
+    })
+
+    it('omits soft-deleted default terms (case-insensitive)', () => {
+      const result = getActiveVocabulary({ ...base, removedDefaultVocabulary: ['git', 'DOCKER'] })
+      const terms = result.split(', ')
+      expect(terms).not.toContain('git')
+      expect(terms).not.toContain('Docker')
+      expect(terms).toContain('GitHub')
+    })
+
+    it('appends user additions after active defaults and de-dupes', () => {
+      const result = getActiveVocabulary({
+        ...base,
+        removedDefaultVocabulary: ['git'],
+        customVocabulary: 'Svelte, git, Rust'
+      })
+      const terms = result.split(', ')
+      // "git" is soft-deleted AND re-added as a custom term -> re-appears once at the end
+      expect(terms.filter((t) => t.toLowerCase() === 'git')).toHaveLength(1)
+      expect(terms).toContain('Svelte')
+      expect(terms).toContain('Rust')
+    })
+  })
+
+  describe('legacy vocabulary migration', () => {
+    it('reconstructs soft-delete state from a flat pre-migration customVocabulary', () => {
+      mockExistsSync.mockReturnValue(true)
+      // Old-format file: defaults flattened into customVocabulary, no
+      // removedDefaultVocabulary. User had deleted "git" and added "Svelte".
+      const legacyTerms = DEFAULT_VOCABULARY_TERMS.filter((t) => t !== 'git').concat('Svelte')
+      mockReadFileSync.mockReturnValue(JSON.stringify({ customVocabulary: legacyTerms.join(', ') }))
+
+      const result = loadSettings()
+
+      expect(result.removedDefaultVocabulary).toEqual(['git'])
+      expect(result.customVocabulary).toBe('Svelte')
+    })
+
+    it('leaves new-format settings untouched', () => {
+      mockExistsSync.mockReturnValue(true)
+      mockReadFileSync.mockReturnValue(
+        JSON.stringify({ customVocabulary: 'Svelte', removedDefaultVocabulary: ['git'] })
+      )
+
+      const result = loadSettings()
+
+      expect(result.removedDefaultVocabulary).toEqual(['git'])
+      expect(result.customVocabulary).toBe('Svelte')
     })
   })
 })

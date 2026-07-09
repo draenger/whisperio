@@ -2,7 +2,12 @@ import { vi, describe, it, expect, beforeEach } from 'vitest'
 
 const mockLoadSettings = vi.fn()
 vi.mock('../src/main/settingsManager', () => ({
-  loadSettings: (...args: unknown[]) => mockLoadSettings(...args)
+  loadSettings: (...args: unknown[]) => mockLoadSettings(...args),
+  // The default/soft-delete merge is unit-tested in settingsManager.test.ts.
+  // Here we isolate the provider wire-format: the effective vocab is just the
+  // custom terms the test supplies.
+  getActiveVocabulary: (settings: { customVocabulary?: string }) =>
+    settings.customVocabulary?.trim() || ''
 }))
 
 // Helper: create a mock net.request that resolves with given status + body
@@ -110,7 +115,7 @@ describe('transcribeAudio', () => {
     mockNetRequest.mockReturnValue(mockReq)
 
     await expect(transcribeAudio(Buffer.from('audio'), 'test.webm')).rejects.toThrow(
-      'Failed to parse response'
+      'Failed to parse transcription response'
     )
   })
 
@@ -194,7 +199,7 @@ describe('transcribeAudio', () => {
     mockNetRequest.mockReturnValue(mockReq)
 
     await expect(transcribeAudio(Buffer.from('audio'), 'test.webm')).rejects.toThrow(
-      'Failed to parse response'
+      'Failed to parse transcription response'
     )
   })
 

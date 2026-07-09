@@ -21,6 +21,11 @@ export default defineConfig({
         'src/main/dictation/index.ts',
         'src/main/dictation/overlayWindow.ts',
         'src/main/dictation/autoPaste.ts',
+        // Electron-runtime-only: safeStorage/Keychain, net, shell — exercised via
+        // manual/smoke testing. The pure crypto core (secretCrypto.ts) IS tested.
+        'src/main/secretVault.ts',
+        'src/main/githubStore.ts',
+        'src/main/githubSync.ts',
         'src/preload/**',
         'src/renderer/**/*.tsx',
         'src/renderer/**/*.d.ts',

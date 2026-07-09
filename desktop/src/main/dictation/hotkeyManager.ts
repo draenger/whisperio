@@ -24,6 +24,27 @@ let activeOutputHotkey: string | null = null
 
 let state: DictationState = 'idle'
 
+/**
+ * Monotonic id for the current dictation session. Incremented every time a new
+ * recording starts AND every time a session is cancelled / force-reset / times
+ * out. The id is handed to the renderer at deactivate and echoed back with the
+ * transcription result; `handleResult` drops any result whose id no longer
+ * matches — so a transcription that resolves AFTER the user gave up (force-reset
+ * and moved to another window) can never auto-paste stale (possibly sensitive)
+ * text into the wrong app.
+ */
+let currentSessionId = 0
+
+/** Start a fresh session and return its id. */
+function startSession(): number {
+  return ++currentSessionId
+}
+
+/** Invalidate any in-flight session so a late result is dropped. */
+function invalidateSession(): void {
+  currentSessionId++
+}
+
 /** When true, press Enter after pasting the result */
 let sendEnterOnResult = false
 
@@ -49,6 +70,9 @@ function setState(newState: DictationState): void {
     transcribeTimeout = setTimeout(() => {
       if (state === 'transcribing') {
         console.error('[Whisperio] Transcription timed out after 60s — force-resetting to idle')
+        // Invalidate so a result that arrives after this timeout is dropped
+        // rather than auto-pasted into whatever now has focus.
+        invalidateSession()
         setState('idle')
         hideOverlay()
         restoreTargetWindow()
@@ -68,6 +92,7 @@ async function activate(): Promise<void> {
         console.error('[Whisperio] Overlay window not available — cannot activate')
         return
       }
+      startSession()
       setState('recording')
       showOverlay()
       // Only the primary overlay records audio; all overlays show visual state
@@ -86,10 +111,13 @@ async function activate(): Promise<void> {
       // Second tap — stop recording, transcribe
       unregisterEscape()
       setState('transcribing')
-      sendToPrimaryOverlay('dictation:deactivate')
+      // Tag the result the renderer is about to produce with this session id.
+      sendToPrimaryOverlay('dictation:deactivate', currentSessionId)
     } else if (state === 'transcribing' || state === 'pasting') {
-      // Stuck in transcribing/pasting — force reset so the user can try again
+      // Stuck in transcribing/pasting — force reset so the user can try again.
+      // Invalidate so the abandoned transcription's result is dropped, not pasted.
       console.warn(`[Whisperio] Force-resetting from stuck "${state}" state`)
+      invalidateSession()
       unregisterEscape()
       setState('idle')
       hideOverlay()
@@ -98,6 +126,7 @@ async function activate(): Promise<void> {
   } catch (err) {
     console.error('[Whisperio] Error in activate():', err)
     // Force reset to idle so the user can try again
+    invalidateSession()
     state = 'idle'
     hideOverlay()
   }
@@ -118,6 +147,7 @@ async function activateOutput(): Promise<void> {
         console.error('[Whisperio] Overlay window not available — cannot activate output recording')
         return
       }
+      startSession()
       setState('recording')
       showOverlay()
       sendToPrimaryOverlay('dictation:activate-output')
@@ -132,9 +162,10 @@ async function activateOutput(): Promise<void> {
     } else if (state === 'recording') {
       unregisterEscape()
       setState('transcribing')
-      sendToPrimaryOverlay('dictation:deactivate')
+      sendToPrimaryOverlay('dictation:deactivate', currentSessionId)
     } else if (state === 'transcribing' || state === 'pasting') {
       console.warn(`[Whisperio] Force-resetting from stuck "${state}" state`)
+      invalidateSession()
       unregisterEscape()
       setState('idle')
       hideOverlay()
@@ -142,12 +173,16 @@ async function activateOutput(): Promise<void> {
     }
   } catch (err) {
     console.error('[Whisperio] Error in activateOutput():', err)
+    invalidateSession()
     state = 'idle'
     hideOverlay()
   }
 }
 
 function cancel(): void {
+  // Invalidate so any in-flight transcription's result is dropped rather than
+  // pasted after the user cancelled.
+  invalidateSession()
   sendEnterOnResult = false
   unregisterEscape()
   sendToPrimaryOverlay('dictation:cancel')
@@ -162,7 +197,22 @@ function unregisterEscape(): void {
   }
 }
 
-async function handleResult(_event: Electron.IpcMainInvokeEvent, text: string): Promise<void> {
+async function handleResult(
+  _event: Electron.IpcMainInvokeEvent,
+  text: string,
+  sessionId?: number
+): Promise<void> {
+  // Drop results from a session the user already cancelled / force-reset / that
+  // timed out. Without this, a slow transcription that resolves after the user
+  // moved on would auto-paste (and possibly Enter) stale, potentially sensitive
+  // text into whatever window now has focus. Checked FIRST so a stale result
+  // can't consume the current session's sendEnterOnResult flag.
+  if (typeof sessionId === 'number' && sessionId !== currentSessionId) {
+    console.warn(
+      `[Whisperio] Dropping stale transcription result (session ${sessionId} ≠ current ${currentSessionId})`
+    )
+    return
+  }
   const shouldSend = sendEnterOnResult
   sendEnterOnResult = false
   unregisterEscape()

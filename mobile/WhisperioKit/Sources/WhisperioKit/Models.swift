@@ -54,6 +54,24 @@ public struct Recording: Identifiable, Codable, Sendable, Equatable {
     public var provider: ProviderID?
     public var transcription: String?
     public var error: String?
+    /// User-assigned category id (see the app's category taxonomy). Optional so recordings
+    /// persisted before categories existed keep decoding — nil means "never assigned".
+    public var category: String?
+    /// The AI-rewritten output for this recording. Optional so recordings persisted before
+    /// rewrite existed keep decoding — nil means "never rewritten".
+    public var render: String?
+    /// Id of the rewrite preset that produced `render`. Optional for the same reason — nil
+    /// means "no render, or produced before presets were tracked".
+    public var renderPresetID: String?
+    /// Last logical mutation time, used for last-writer-wins conflict resolution when the same
+    /// recording is written concurrently or out of order (across devices / a CloudKit sync).
+    /// Optional so recordings persisted before LWW existed keep decoding — nil is treated as the
+    /// record's `timestamp` (its creation time) when comparing writers. See `lastWriteAt`.
+    public var updatedAt: Date?
+
+    /// The effective time to compare for last-writer-wins: the explicit `updatedAt` when set,
+    /// otherwise the creation `timestamp`. Newer wins on merge/write.
+    public var lastWriteAt: Date { updatedAt ?? timestamp }
 
     public init(
         id: UUID = UUID(),
@@ -63,7 +81,11 @@ public struct Recording: Identifiable, Codable, Sendable, Equatable {
         status: Status = .pending,
         provider: ProviderID? = nil,
         transcription: String? = nil,
-        error: String? = nil
+        error: String? = nil,
+        category: String? = nil,
+        render: String? = nil,
+        renderPresetID: String? = nil,
+        updatedAt: Date? = nil
     ) {
         self.id = id
         self.filename = filename
@@ -73,5 +95,9 @@ public struct Recording: Identifiable, Codable, Sendable, Equatable {
         self.provider = provider
         self.transcription = transcription
         self.error = error
+        self.category = category
+        self.render = render
+        self.renderPresetID = renderPresetID
+        self.updatedAt = updatedAt
     }
 }

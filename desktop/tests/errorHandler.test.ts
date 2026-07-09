@@ -138,6 +138,20 @@ describe('errorHandler', () => {
       expect(result.statusCode).toBe(402)
       expect(result.responseBody).toContain('insufficient_quota')
     })
+
+    // transcribe.ts (privacy hardening) now throws bodiless, colon-less messages.
+    // These are the EXACT shapes production emits — they must still parse.
+    it('extracts status code from a bodiless OpenAI API error', () => {
+      const result = parseApiError(new Error('OpenAI API error 401'))
+      expect(result.statusCode).toBe(401)
+      expect(result.responseBody).toBe('')
+    })
+
+    it('extracts status code from a bodiless ElevenLabs API error', () => {
+      const result = parseApiError(new Error('ElevenLabs API error 429'))
+      expect(result.statusCode).toBe(429)
+      expect(result.responseBody).toBe('')
+    })
   })
 
   describe('handleTranscriptionError', () => {
@@ -189,6 +203,30 @@ describe('errorHandler', () => {
       const errors = getRecentErrors()
       const last = errors[errors.length - 1]
       expect(last.category).toBe('NETWORK_ERROR')
+    })
+
+    // Regression: the privacy-hardened, bodiless production messages must still
+    // map to actionable categories (previously fell through to UNKNOWN).
+    it('categorizes a bodiless 401 as API_KEY_MISSING', () => {
+      handleTranscriptionError(new Error('OpenAI API error 401'), 'openai')
+      const errors = getRecentErrors()
+      const last = errors[errors.length - 1]
+      expect(last.category).toBe('API_KEY_MISSING')
+      expect(last.message).toBe('Invalid API key. Check your settings.')
+    })
+
+    it('categorizes a bodiless 402 as QUOTA_EXCEEDED', () => {
+      handleTranscriptionError(new Error('OpenAI API error 402'), 'openai')
+      const errors = getRecentErrors()
+      const last = errors[errors.length - 1]
+      expect(last.category).toBe('QUOTA_EXCEEDED')
+    })
+
+    it('categorizes a bodiless 429 as RATE_LIMITED', () => {
+      handleTranscriptionError(new Error('ElevenLabs API error 429'), 'elevenlabs')
+      const errors = getRecentErrors()
+      const last = errors[errors.length - 1]
+      expect(last.category).toBe('RATE_LIMITED')
     })
 
     it('fires a notification', () => {

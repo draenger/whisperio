@@ -218,6 +218,50 @@ describe('hotkeyManager', () => {
     expect(mod.getState()).toBe('idle')
   })
 
+  it('pastes a result whose session id matches the current session', async () => {
+    mod.registerHotkey()
+    const activate = mockRegister.mock.calls[0][1] as () => Promise<void>
+    const handleResult = (
+      mockIpcHandle.mock.calls.find((c) => c[0] === 'dictation:result') as unknown[]
+    )[1] as (event: unknown, text: string, sessionId?: number) => Promise<void>
+
+    await activate() // -> recording
+    await activate() // -> transcribing
+    const deactivateCall = mockSendToPrimaryOverlay.mock.calls.find(
+      (c) => c[0] === 'dictation:deactivate'
+    ) as unknown[]
+    const sessionId = deactivateCall[1] as number
+
+    await handleResult({}, 'Hello', sessionId)
+    expect(mockAutoPaste).toHaveBeenCalledWith('Hello')
+    expect(mod.getState()).toBe('idle')
+  })
+
+  it('drops a stale transcription result after force-reset (no autopaste into wrong window)', async () => {
+    mod.registerHotkey()
+    const activate = mockRegister.mock.calls[0][1] as () => Promise<void>
+    const handleResult = (
+      mockIpcHandle.mock.calls.find((c) => c[0] === 'dictation:result') as unknown[]
+    )[1] as (event: unknown, text: string, sessionId?: number) => Promise<void>
+
+    await activate() // -> recording
+    await activate() // -> transcribing
+    const deactivateCall = mockSendToPrimaryOverlay.mock.calls.find(
+      (c) => c[0] === 'dictation:deactivate'
+    ) as unknown[]
+    const staleSessionId = deactivateCall[1] as number
+
+    await activate() // -> idle (user gives up, force-reset; session invalidated)
+    expect(mod.getState()).toBe('idle')
+
+    // The abandoned transcription finally resolves carrying the OLD session id.
+    await handleResult({}, 'sensitive dictated text', staleSessionId)
+
+    // Must be dropped — never pasted into whatever window now has focus.
+    expect(mockAutoPaste).not.toHaveBeenCalled()
+    expect(mod.getState()).toBe('idle')
+  })
+
   it('registerHotkey tries candidates in order until one succeeds', () => {
     mockRegister.mockReturnValueOnce(false).mockReturnValueOnce(true)
 
@@ -439,7 +483,9 @@ describe('hotkeyManager', () => {
 
     await activateOutput() // -> transcribing
     expect(mod.getState()).toBe('transcribing')
-    expect(mockSendToPrimaryOverlay).toHaveBeenCalledWith('dictation:deactivate')
+    // deactivate now carries the session id so the renderer can echo it back
+    // and stale results can be dropped.
+    expect(mockSendToPrimaryOverlay).toHaveBeenCalledWith('dictation:deactivate', expect.any(Number))
 
     await activateOutput() // -> idle (force reset from transcribing)
     expect(mod.getState()).toBe('idle')

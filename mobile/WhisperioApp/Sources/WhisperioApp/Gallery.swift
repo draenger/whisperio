@@ -40,6 +40,7 @@ private struct EngineDirectionBDemo: View {
 
 struct GalleryView: View {
     @State private var dark = true
+    @StateObject private var settings = SettingsStore()
     private var t: WZTheme { .of(dark) }
 
     var body: some View {
@@ -60,7 +61,7 @@ struct GalleryView: View {
                     entry("Dynamic Island · Live Activity") { AnyView(DynamicIslandScene()) }
                 ])
                 section("Other devices", [
-                    entry("iPad · split view") { AnyView(iPadHost()) },
+                    entry("iPad · split view") { AnyView(iPadHost().environmentObject(settings)) },
                     entry("Apple Watch") { AnyView(WatchHost()) }
                 ])
                 section("Edge states", [

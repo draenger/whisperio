@@ -7,10 +7,54 @@ const WHISPER_CPP_RELEASE = 'v1.8.4'
 const WHISPER_BIN_URL = `https://github.com/ggml-org/whisper.cpp/releases/download/${WHISPER_CPP_RELEASE}/whisper-bin-x64.zip`
 const SERVER_PORT = 8178
 
+// Idle reclaim: the whisper-server holds its loaded model resident in RAM/VRAM
+// for the whole app lifetime. Without an idle sweep a user who transcribes once
+// and then leaves the app open pays that memory cost indefinitely. Stamp
+// `lastUsedAt` on start + on each transcription request (markServerUsed) and
+// auto-stop the server once it has been idle past the TTL. It lazily re-spawns
+// on the next startServer() call.
+const DEFAULT_IDLE_TTL_MS = 15 * 60 * 1000
+const IDLE_SWEEP_INTERVAL_MS = 60 * 1000
+
 let serverProcess: ChildProcess | null = null
 let serverStatus: 'stopped' | 'starting' | 'running' | 'error' = 'stopped'
 let serverModel: string | null = null
 let statusCallback: ((status: ServerStatus) => void) | null = null
+let idleTtlMs = DEFAULT_IDLE_TTL_MS
+let lastUsedAt = 0
+let idleSweepTimer: ReturnType<typeof setInterval> | null = null
+
+/** Override the idle TTL (ms) after which an idle server is auto-stopped. */
+export function setIdleTtlMs(ms: number): void {
+  idleTtlMs = ms
+}
+
+/**
+ * Record that the local server was just used (a transcription request hit it).
+ * Resets the idle clock so an actively-used server is not reclaimed.
+ */
+export function markServerUsed(): void {
+  lastUsedAt = Date.now()
+}
+
+function clearIdleSweep(): void {
+  if (idleSweepTimer) {
+    clearInterval(idleSweepTimer)
+    idleSweepTimer = null
+  }
+}
+
+function startIdleSweep(): void {
+  clearIdleSweep()
+  lastUsedAt = Date.now()
+  idleSweepTimer = setInterval(() => {
+    if (serverStatus === 'running' && Date.now() - lastUsedAt >= idleTtlMs) {
+      stopServer()
+    }
+  }, IDLE_SWEEP_INTERVAL_MS)
+  // Don't let the sweep timer keep the event loop (or the Electron app) alive.
+  idleSweepTimer.unref?.()
+}
 
 export interface ServerStatus {
   status: 'stopped' | 'starting' | 'running' | 'error'
@@ -134,6 +178,13 @@ export async function startServer(modelFilename: string): Promise<void> {
 
     serverProcess = proc
     let started = false
+    let assumeRunningTimer: NodeJS.Timeout | null = null
+    const clearAssumeRunningTimer = (): void => {
+      if (assumeRunningTimer) {
+        clearTimeout(assumeRunningTimer)
+        assumeRunningTimer = null
+      }
+    }
 
     const checkOutput = (data: string): void => {
       console.log(`[whisper-server] ${data}`)
@@ -145,7 +196,9 @@ export async function startServer(modelFilename: string): Promise<void> {
         data.includes('ready')
       )) {
         started = true
+        clearAssumeRunningTimer()
         serverStatus = 'running'
+        startIdleSweep()
         emitStatus()
         resolve()
       }
@@ -155,6 +208,8 @@ export async function startServer(modelFilename: string): Promise<void> {
     proc.stderr?.on('data', checkOutput)
 
     proc.on('error', (err) => {
+      clearAssumeRunningTimer()
+      clearIdleSweep()
       serverStatus = 'error'
       serverProcess = null
       emitStatus(err.message)
@@ -162,6 +217,8 @@ export async function startServer(modelFilename: string): Promise<void> {
     })
 
     proc.on('exit', (code) => {
+      clearAssumeRunningTimer()
+      clearIdleSweep()
       serverProcess = null
       if (serverStatus === 'running') {
         serverStatus = 'stopped'
@@ -173,11 +230,15 @@ export async function startServer(modelFilename: string): Promise<void> {
       }
     })
 
-    // If server doesn't report "listening" in 30s, consider it running anyway
-    setTimeout(() => {
+    // If server doesn't report "listening" in 30s, consider it running anyway.
+    // The handle is cleared on success/error/exit so the timer doesn't leak and
+    // fire stale logic up to 30s after the server already settled.
+    assumeRunningTimer = setTimeout(() => {
+      assumeRunningTimer = null
       if (!started && serverProcess && !serverProcess.killed) {
         started = true
         serverStatus = 'running'
+        startIdleSweep()
         emitStatus()
         resolve()
       }
@@ -186,6 +247,7 @@ export async function startServer(modelFilename: string): Promise<void> {
 }
 
 export function stopServer(): void {
+  clearIdleSweep()
   if (serverProcess && !serverProcess.killed) {
     serverProcess.kill()
     serverProcess = null
@@ -214,13 +276,35 @@ function downloadFile(url: string, destPath: string): Promise<void> {
         return
       }
 
+      // Electron's IncomingMessage is a Node Readable at runtime but its
+      // typings don't surface pause/resume; cast for backpressure control.
+      const readable = response as unknown as NodeJS.ReadableStream
       const writeStream = createWriteStream(destPath)
-      response.on('data', (chunk: Buffer) => writeStream.write(chunk))
-      response.on('end', () => writeStream.end(resolve))
-      response.on('error', (err: Error) => {
-        writeStream.end()
-        reject(err)
+      let failed = false
+      const fail = (err: unknown): void => {
+        if (failed) return
+        failed = true
+        writeStream.destroy()
+        try { unlinkSync(destPath) } catch { /* ignore */ }
+        reject(err instanceof Error ? err : new Error(String(err)))
+      }
+      // Without an 'error' listener a disk-full / unwritable destination would
+      // crash the Electron main process via an unhandled stream error.
+      writeStream.on('error', fail)
+      response.on('data', (chunk: Buffer) => {
+        if (failed) return
+        if (!writeStream.write(chunk)) {
+          readable.pause()
+          writeStream.once('drain', () => { if (!failed) readable.resume() })
+        }
       })
+      // Resolve only after bytes are flushed to disk, so a partial/corrupt zip
+      // isn't reported as a successful download.
+      response.on('end', () => {
+        if (failed) return
+        writeStream.end(() => { if (!failed) resolve() })
+      })
+      response.on('error', fail)
     })
 
     request.on('error', reject)

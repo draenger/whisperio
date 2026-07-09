@@ -47,7 +47,9 @@ struct SetupView: View {
                         VStack(alignment: .leading, spacing: 8) {
                             SectionLabel(text: "\(selected == .openAI ? "OpenAI" : "ElevenLabs") API key")
                             SecureField("paste key…", text: selected == .openAI ? $openAIKey : $elevenKey)
+                                #if os(iOS)
                                 .textInputAutocapitalization(.never)
+                                #endif
                                 .autocorrectionDisabled()
                                 .font(WZFont.mono(13))
                                 .padding(.horizontal, 13).padding(.vertical, 12)
@@ -79,7 +81,9 @@ struct SetupView: View {
                               onAccept: { finish(consent: true) },
                               onCancel: { consentProvider = nil })
                 .environment(\.wz, t)
+                #if os(iOS)
                 .presentationDetents([.medium, .large])
+                #endif
         }
     }
 

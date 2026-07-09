@@ -70,6 +70,43 @@ struct SquareIconButton: View {
     }
 }
 
+// Tiny header status glyph for the iCloud-backed library: a teal cloud when the library syncs
+// via CloudKit, swapped for a mini spinner while an import/export is actively in flight.
+// Renders nothing when the library isn't cloud-backed (on-device / JSON store). Pure view —
+// takes explicit state so it works both live and in sample/gallery contexts.
+struct SyncStatusGlyph: View {
+    @Environment(\.wz) private var t
+    var isCloudBacked: Bool
+    var isSyncing: Bool
+
+    var body: some View {
+        if isCloudBacked {
+            ZStack {
+                if isSyncing {
+                    ProgressView()
+                        .controlSize(.mini)
+                        .tint(t.cyan)
+                } else {
+                    Image(systemName: "icloud")
+                        .font(.system(size: 15, weight: .regular))
+                        .foregroundStyle(t.cyan)
+                }
+            }
+            .frame(width: 22, height: 22)
+            .help(isSyncing ? "Syncing…" : "iCloud")
+            .accessibilityLabel(isSyncing ? "Syncing" : "iCloud backed")
+        }
+    }
+}
+
+// Live wrapper reading the injected RecordingsStore, for use inside the app shell (Home header).
+struct HeaderSyncGlyph: View {
+    @EnvironmentObject private var recordings: RecordingsStore
+    var body: some View {
+        SyncStatusGlyph(isCloudBacked: recordings.isCloudBacked, isSyncing: recordings.isSyncing)
+    }
+}
+
 // Uppercase mono section label (used throughout).
 struct SectionLabel: View {
     @Environment(\.wz) private var t

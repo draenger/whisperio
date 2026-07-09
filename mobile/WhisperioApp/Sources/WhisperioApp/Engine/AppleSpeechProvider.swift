@@ -1,5 +1,5 @@
 import Foundation
-import Speech
+@preconcurrency import Speech
 import WhisperioKit
 
 // On-device transcription via Apple's Speech framework (free, private, no network).
@@ -7,14 +7,18 @@ struct AppleSpeechProvider: TranscriptionProvider {
     let id: ProviderID = .onDevice
     let locale: Locale
     let vocabulary: [String]
+    /// When true, recognition is pinned on-device (audio never leaves). When false, Apple
+    /// may use its online recognition so STT still works where on-device isn't available.
+    let requireOnDevice: Bool
 
-    init(language: String, vocabulary: [String] = []) {
+    init(language: String, vocabulary: [String] = [], requireOnDevice: Bool = true) {
         if language == "auto" || language.isEmpty {
             locale = Locale.current
         } else {
             locale = Locale(identifier: language)
         }
         self.vocabulary = vocabulary
+        self.requireOnDevice = requireOnDevice
     }
 
     var isConfigured: Bool {
@@ -38,16 +42,17 @@ struct AppleSpeechProvider: TranscriptionProvider {
             throw Self.err("Speech recognition permission not granted.")
         }
 
-        // Require true on-device recognition — honors the "private / offline" promise.
-        // Without it, SFSpeechRecognizer silently uploads audio to Apple's servers.
-        guard recognizer.supportsOnDeviceRecognition else {
+        // In on-device mode, refuse if the device can't do it locally (honors the
+        // "audio never leaves the device" promise). When the user has allowed Apple online
+        // recognition, skip this guard so STT still works via Apple's servers.
+        if requireOnDevice && !recognizer.supportsOnDeviceRecognition {
             try? FileManager.default.removeItem(at: url)
-            throw Self.err("On-device speech isn't available for \(locale.identifier). Install dictation for this language in iOS Settings, or pick a cloud engine (OpenAI / ElevenLabs).")
+            throw Self.err("On-device speech isn't available for \(locale.identifier). Turn on “Apple online speech” in Settings, install dictation for this language in iOS Settings, or pick a cloud engine (OpenAI / ElevenLabs).")
         }
 
         let request = SFSpeechURLRecognitionRequest(url: url)
         request.shouldReportPartialResults = false
-        request.requiresOnDeviceRecognition = true
+        request.requiresOnDeviceRecognition = requireOnDevice
         if !vocabulary.isEmpty { request.contextualStrings = vocabulary }
 
         let once = ResumeOnce()

@@ -1,6 +1,17 @@
-import { net } from 'electron'
-import { loadSettings, AppSettings, type ProviderId } from './settingsManager'
+import { net, app } from 'electron'
+import { loadSettings, AppSettings, getActiveVocabulary, type ProviderId } from './settingsManager'
 import { handleTranscriptionError, notifyInfo } from './errorHandler'
+
+// True only in unpackaged (development) builds. Used to gate logging of
+// privacy-sensitive transcript content so it never reaches production stdout.
+// Guarded so it degrades to `false` (no logging) if `app` is unavailable.
+function isDev(): boolean {
+  try {
+    return !app.isPackaged
+  } catch {
+    return false
+  }
+}
 
 const DEFAULT_OPENAI_BASE = 'https://api.openai.com/v1'
 const ELEVENLABS_STT_URL = 'https://api.elevenlabs.io/v1/speech-to-text'
@@ -82,7 +93,7 @@ async function transcribeWithProvider(
       handleTranscriptionError(err, 'elevenlabs')
       throw err
     }
-    const vocab = settings.customVocabulary?.trim() || ''
+    const vocab = getActiveVocabulary(settings)
     const lang = settings.transcriptionLanguage?.trim() || 'auto'
     return elevenLabsTranscribe(apiKey, audioBuffer, filename, vocab, lang)
   }
@@ -96,7 +107,7 @@ async function transcribeWithProvider(
     }
     const model = settings.whisperModel?.trim() || SELFHOSTED_MODEL
     const basePrompt = settings.transcriptionPrompt || DEFAULT_PROMPT
-    const vocab = settings.customVocabulary?.trim()
+    const vocab = getActiveVocabulary(settings)
     const prompt = vocab
       ? `${basePrompt}\n\nTechnical terms that may appear (use these exact spellings): ${vocab}`
       : basePrompt
@@ -118,7 +129,7 @@ async function transcribeWithProvider(
   const model = DEFAULT_MODEL
 
   const basePrompt = settings.transcriptionPrompt || DEFAULT_PROMPT
-  const vocab = settings.customVocabulary?.trim()
+  const vocab = getActiveVocabulary(settings)
   const prompt = vocab
     ? `${basePrompt}\n\nTechnical terms that may appear (use these exact spellings): ${vocab}`
     : basePrompt
@@ -218,19 +229,25 @@ function whisperTranscribe(apiKey: string, audioBuffer: Buffer, filename: string
       })
       response.on('end', () => {
         const responseBody = Buffer.concat(chunks).toString('utf-8')
-        console.log(`[Whisperio] Transcription response (${response.statusCode}): ${responseBody.substring(0, 200)}`)
+        // Don't log transcript/response bodies in production — this is a privacy
+        // app and main-process stdout is commonly captured by run/crash tooling.
+        if (isDev()) {
+          console.log(`[Whisperio] Transcription response (${response.statusCode}): ${responseBody.substring(0, 200)}`)
+        }
         if (response.statusCode !== 200) {
-          const err = new Error(`OpenAI API error ${response.statusCode}: ${responseBody}`)
+          // Keep the raw provider body out of the user-facing Error message.
+          if (isDev()) console.error(`[Whisperio] OpenAI API error body: ${responseBody}`)
+          const err = new Error(`OpenAI API error ${response.statusCode}`)
           handleTranscriptionError(err, directUrl ? 'selfhosted' : 'openai')
           settle(reject)(err)
           return
         }
         try {
           const data = JSON.parse(responseBody) as TranscribeResult
-          console.log(`[Whisperio] Transcribed text: "${data.text?.substring(0, 100)}"`)
+          if (isDev()) console.log(`[Whisperio] Transcribed text: "${data.text?.substring(0, 100)}"`)
           settle(resolve)(data.text)
         } catch {
-          const err = new Error(`Failed to parse response: ${responseBody}`)
+          const err = new Error(`Failed to parse transcription response (HTTP ${response.statusCode})`)
           handleTranscriptionError(err, 'openai')
           settle(reject)(err)
         }
@@ -320,7 +337,8 @@ function elevenLabsTranscribe(apiKey: string, audioBuffer: Buffer, filename: str
       response.on('end', () => {
         const responseBody = Buffer.concat(chunks).toString('utf-8')
         if (response.statusCode !== 200) {
-          const err = new Error(`ElevenLabs API error ${response.statusCode}: ${responseBody}`)
+          if (isDev()) console.error(`[Whisperio] ElevenLabs API error body: ${responseBody}`)
+          const err = new Error(`ElevenLabs API error ${response.statusCode}`)
           handleTranscriptionError(err, 'elevenlabs')
           settle(reject)(err)
           return
@@ -329,7 +347,7 @@ function elevenLabsTranscribe(apiKey: string, audioBuffer: Buffer, filename: str
           const data = JSON.parse(responseBody) as TranscribeResult
           settle(resolve)(data.text)
         } catch {
-          const err = new Error(`Failed to parse response: ${responseBody}`)
+          const err = new Error(`Failed to parse transcription response (HTTP ${response.statusCode})`)
           handleTranscriptionError(err, 'elevenlabs')
           settle(reject)(err)
         }
@@ -370,6 +388,26 @@ function postProcessWithLLM(apiKey: string, text: string, vocabulary: string, ba
   })
 
   return new Promise<string>((resolve, reject) => {
+    // Mirror the 45s timeout+abort guard used by the transcription helpers so a
+    // hung chat endpoint (slow proxy / custom baseUrl) can't leave the dictation
+    // flow stuck and the socket/promise dangling forever.
+    let settled = false
+    const timeout = setTimeout(() => {
+      if (!settled) {
+        settled = true
+        request.abort()
+        reject(new Error('OpenAI chat post-processing request timed out after 45s'))
+      }
+    }, 45_000)
+
+    const settle = <T>(fn: (val: T) => void) => (val: T): void => {
+      if (!settled) {
+        settled = true
+        clearTimeout(timeout)
+        fn(val)
+      }
+    }
+
     const request = net.request({
       method: 'POST',
       url: `${baseUrl}/chat/completions`
@@ -389,21 +427,22 @@ function postProcessWithLLM(apiKey: string, text: string, vocabulary: string, ba
       response.on('end', () => {
         const responseBody = Buffer.concat(chunks).toString('utf-8')
         if (response.statusCode !== 200) {
-          reject(new Error(`OpenAI Chat API error ${response.statusCode}: ${responseBody}`))
+          if (isDev()) console.error(`[Whisperio] OpenAI Chat API error body: ${responseBody}`)
+          settle(reject)(new Error(`OpenAI Chat API error ${response.statusCode}`))
           return
         }
         try {
           const data = JSON.parse(responseBody) as ChatResponse
           const corrected = data.choices?.[0]?.message?.content?.trim()
-          resolve(corrected || text)
+          settle(resolve)(corrected || text)
         } catch {
-          reject(new Error(`Failed to parse Chat response: ${responseBody}`))
+          settle(reject)(new Error(`Failed to parse Chat response (HTTP ${response.statusCode})`))
         }
       })
-      response.on('error', (err: Error) => reject(err))
+      response.on('error', (err: Error) => settle(reject)(err))
     })
 
-    request.on('error', (err: Error) => reject(err))
+    request.on('error', (err: Error) => settle(reject)(err))
     request.write(body)
     request.end()
   })

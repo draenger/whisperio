@@ -361,10 +361,15 @@ describe('localServer', () => {
     beforeEach(() => {
       setPlatform('win32')
       mockExistsSync.mockReturnValue(true)
-      // createWriteStream returns a fake stream
+      // createWriteStream returns a fake stream (write returns true so the
+      // backpressure pause/resume path is not exercised; on/once/destroy are
+      // present because the implementation attaches an 'error' listener).
       mockCreateWriteStream.mockImplementation(() => ({
-        write: vi.fn(),
-        end: vi.fn((cb?: () => void) => cb && cb())
+        write: vi.fn(() => true),
+        end: vi.fn((cb?: () => void) => cb && cb()),
+        on: vi.fn(),
+        once: vi.fn(),
+        destroy: vi.fn()
       }))
       // powershell extract execFile calls its callback with no error
       mockExecFile.mockImplementation((cmd: string, _args: unknown[], cb?: (err: Error | null) => void) => {
@@ -510,6 +515,62 @@ describe('localServer', () => {
       expect(mod.getServerStatus().status).toBe('running')
       expect(exeChecks).toBeGreaterThan(0)
       mod.stopServer()
+    })
+  })
+
+  describe('idle TTL sweep', () => {
+    it('auto-stops a running server once it has been idle past the TTL', async () => {
+      vi.useFakeTimers()
+      try {
+        setPlatform('win32')
+        const mod = await freshModule()
+        mockExistsSync.mockReturnValue(true)
+        mod.setIdleTtlMs(1_000) // reclaim after 1s idle
+        const proc = makeFakeProc()
+        mockExecFile.mockReturnValue(proc)
+
+        const startP = mod.startServer('model.bin')
+        proc.stdout.emit('data', 'listening')
+        await startP
+        expect(mod.getServerStatus().status).toBe('running')
+
+        // Advance past the TTL and at least one sweep interval (60s).
+        await vi.advanceTimersByTimeAsync(61_000)
+
+        expect(mod.getServerStatus().status).toBe('stopped')
+        expect(proc.kill).toHaveBeenCalled()
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it('does not reclaim a server that keeps being used (markServerUsed resets the clock)', async () => {
+      vi.useFakeTimers()
+      try {
+        setPlatform('win32')
+        const mod = await freshModule()
+        mockExistsSync.mockReturnValue(true)
+        mod.setIdleTtlMs(120_000) // 2 min idle TTL
+        const proc = makeFakeProc()
+        mockExecFile.mockReturnValue(proc)
+
+        const startP = mod.startServer('model.bin')
+        proc.stdout.emit('data', 'listening')
+        await startP
+
+        // 90s pass (< TTL), then a transcription request resets the idle clock.
+        await vi.advanceTimersByTimeAsync(90_000)
+        expect(mod.getServerStatus().status).toBe('running')
+        mod.markServerUsed()
+
+        // Another 90s: 180s since start but only 90s since last use → still alive.
+        await vi.advanceTimersByTimeAsync(90_000)
+        expect(mod.getServerStatus().status).toBe('running')
+
+        mod.stopServer()
+      } finally {
+        vi.useRealTimers()
+      }
     })
   })
 

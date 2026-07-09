@@ -55,6 +55,7 @@ struct OnboardingView: View {
             eyebrow("Whisperio for iPhone")
             title("Speak anywhere.\nIt types for you.")
             bodyText("Talk, and Whisperio transcribes you and drops the text exactly where your cursor is — in any app.")
+            chips([("mic", "Tap to talk"), ("keyboard", "Works anywhere"), ("lock", "Private")])
         case 1:
             art { glow(icon: "lock", color: t.green) }
             eyebrow("Private by design")
@@ -77,12 +78,18 @@ struct OnboardingView: View {
             eyebrow("One quick step")
             title("Allow the mic,\nadd the keyboard.")
             bodyText("Grant microphone access and add the Whisperio keyboard in Settings. That’s the whole setup.")
+            chips([("mic", "Mic permission"), ("keyboard", "Add keyboard")])
         }
     }
 
     // MARK: building blocks
     private func art<V: View>(@ViewBuilder _ content: () -> V) -> some View {
-        content().frame(maxWidth: .infinity).frame(height: 180)
+        content()
+            .frame(maxWidth: .infinity)
+            .frame(height: 180)
+            .background(t.surface, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous).stroke(t.line, lineWidth: 1))
+            .shadow(color: .black.opacity(t.dark ? 0.22 : 0.08), radius: 16, y: 10)
     }
     private var glowGhost: some View {
         ZStack {

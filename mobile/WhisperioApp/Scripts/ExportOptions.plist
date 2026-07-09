@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>method</key><string>app-store-connect</string>
+  <key>teamID</key><string>953Q6T2WTB</string>
+  <key>signingStyle</key><string>manual</string>
+  <key>signingCertificate</key><string>iPhone Distribution: Daniel Kasprzyk (953Q6T2WTB)</string>
+  <key>provisioningProfiles</key>
+  <dict>
+    <key>ai.whisperio.mobile</key><string>WZ AppStore mobile 92ab</string>
+    <key>ai.whisperio.mobile.WhisperioKeyboard</key><string>WZ AppStore WhisperioKeyboard cdc6</string>
+    <key>ai.whisperio.mobile.WhisperioWidget</key><string>WZ AppStore WhisperioWidget 4412</string>
+    <key>ai.whisperio.mobile.watchkitapp</key><string>WZ AppStore watchkitapp fd15</string>
+  </dict>
+  <key>manageAppVersionAndBuildNumber</key><true/>
+  <key>uploadSymbols</key><true/>
+  <key>destination</key><string>upload</string>
+</dict>
+</plist>

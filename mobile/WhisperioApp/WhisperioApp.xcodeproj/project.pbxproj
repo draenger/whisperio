@@ -8,11 +8,12 @@
 
 /* Begin PBXBuildFile section */
 		1A0000000000000000000012 /* WhisperioKit in Frameworks */ = {isa = PBXBuildFile; productRef = 1A0000000000000000000011 /* WhisperioKit */; };
-		1A000000000000000000002C /* WhisperioWidget.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = 1A0000000000000000000022 /* WhisperioWidget.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
-		1B000000000000000000002C /* WhisperioKeyboard.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = 1B0000000000000000000022 /* WhisperioKeyboard.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
-		1B0000000000000000000012 /* WhisperioKit in Frameworks */ = {isa = PBXBuildFile; productRef = 1B0000000000000000000011 /* WhisperioKit */; };
+		1A000000000000000000002C /* WhisperioWidget.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 1A0000000000000000000022 /* WhisperioWidget.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		1A000000000000000000002E /* DictateIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A000000000000000000002D /* DictateIntent.swift */; };
 		1A0000000000000000000040 /* WhisperioWatch Watch App.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = 65DB73B02FE4974400C0E269 /* WhisperioWatch Watch App.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		1B0000000000000000000012 /* WhisperioKit in Frameworks */ = {isa = PBXBuildFile; productRef = 1B0000000000000000000011 /* WhisperioKit */; };
+		1B000000000000000000002C /* WhisperioKeyboard.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 1B0000000000000000000022 /* WhisperioKeyboard.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		1C0000000000000000000012 /* WhisperioKit in Frameworks */ = {isa = PBXBuildFile; productRef = 1C0000000000000000000011 /* WhisperioKit */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -23,13 +24,6 @@
 			remoteGlobalIDString = 1A0000000000000000000021;
 			remoteInfo = WhisperioWidget;
 		};
-		1B000000000000000000002A /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = 1A0000000000000000000001 /* Project object */;
-			proxyType = 1;
-			remoteGlobalIDString = 1B0000000000000000000021;
-			remoteInfo = WhisperioKeyboard;
-		};
 		1A0000000000000000000043 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = 1A0000000000000000000001 /* Project object */;
@@ -37,19 +31,26 @@
 			remoteGlobalIDString = 65DB73AF2FE4974400C0E269;
 			remoteInfo = "WhisperioWatch Watch App";
 		};
+		1B000000000000000000002A /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 1A0000000000000000000001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 1B0000000000000000000021;
+			remoteInfo = WhisperioKeyboard;
+		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
-		1A000000000000000000002B /* Embed App Extensions */ = {
+		1A000000000000000000002B /* Embed Foundation Extensions */ = {
 			isa = PBXCopyFilesBuildPhase;
 			buildActionMask = 2147483647;
 			dstPath = "";
 			dstSubfolderSpec = 13;
 			files = (
-				1A000000000000000000002C /* WhisperioWidget.appex in Embed App Extensions */,
-				1B000000000000000000002C /* WhisperioKeyboard.appex in Embed App Extensions */,
+				1A000000000000000000002C /* WhisperioWidget.appex in Embed Foundation Extensions */,
+				1B000000000000000000002C /* WhisperioKeyboard.appex in Embed Foundation Extensions */,
 			);
-			name = "Embed App Extensions";
+			name = "Embed Foundation Extensions";
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		1A0000000000000000000041 /* Embed Watch Content */ = {
@@ -68,14 +69,35 @@
 /* Begin PBXFileReference section */
 		1A0000000000000000000003 /* WhisperioApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = WhisperioApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		1A0000000000000000000022 /* WhisperioWidget.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = WhisperioWidget.appex; sourceTree = BUILT_PRODUCTS_DIR; };
-		1B0000000000000000000022 /* WhisperioKeyboard.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = WhisperioKeyboard.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		1A000000000000000000002D /* DictateIntent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = DictateIntent.swift; path = Sources/WhisperioApp/DictateIntent.swift; sourceTree = SOURCE_ROOT; };
+		1B0000000000000000000022 /* WhisperioKeyboard.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = WhisperioKeyboard.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		1C0000000000000000000003 /* WhisperioMac.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = WhisperioMac.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		65DB73B02FE4974400C0E269 /* WhisperioWatch Watch App.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "WhisperioWatch Watch App.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		1C0000000000000000000030 /* Exceptions for "Sources/WhisperioApp" folder in "WhisperioMac" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				AppShell.swift,
+				DynamicIslandScene.swift,
+				Engine/PhoneConnectivity.swift,
+				Gallery.swift,
+				KeyboardSetupView.swift,
+				TriggerScene.swift,
+				WatchView.swift,
+				WhisperioShortcuts.swift,
+			);
+			target = 1C0000000000000000000002 /* WhisperioMac */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		1A0000000000000000000009 /* Sources/WhisperioApp */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				1C0000000000000000000030 /* Exceptions for "Sources/WhisperioApp" folder in "WhisperioMac" target */,
+			);
 			path = Sources/WhisperioApp;
 			sourceTree = "<group>";
 		};
@@ -87,6 +109,11 @@
 		1B0000000000000000000020 /* Keyboard */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = Keyboard;
+			sourceTree = "<group>";
+		};
+		1C0000000000000000000009 /* MacApp */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = MacApp;
 			sourceTree = "<group>";
 		};
 		65DB73732FE496B600C0E269 /* WhisperioWatch Watch App */ = {
@@ -140,6 +167,14 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		1C0000000000000000000005 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				1C0000000000000000000012 /* WhisperioKit in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		65DB73AD2FE4974400C0E269 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -161,6 +196,7 @@
 				65DB73942FE4971400C0E269 /* WhisperioWatch Watch AppTests */,
 				65DB739E2FE4971400C0E269 /* WhisperioWatch Watch AppUITests */,
 				65DB73B12FE4974400C0E269 /* WhisperioWatch Watch App */,
+				1C0000000000000000000009 /* MacApp */,
 				1A0000000000000000000008 /* Products */,
 				65DB73242FE4837700C0E269 /* Recovered References */,
 			);
@@ -173,6 +209,7 @@
 				1A0000000000000000000022 /* WhisperioWidget.appex */,
 				1B0000000000000000000022 /* WhisperioKeyboard.appex */,
 				65DB73B02FE4974400C0E269 /* WhisperioWatch Watch App.app */,
+				1C0000000000000000000003 /* WhisperioMac.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -195,7 +232,7 @@
 				1A0000000000000000000004 /* Sources */,
 				1A0000000000000000000005 /* Frameworks */,
 				1A0000000000000000000006 /* Resources */,
-				1A000000000000000000002B /* Embed App Extensions */,
+				1A000000000000000000002B /* Embed Foundation Extensions */,
 				1A0000000000000000000041 /* Embed Watch Content */,
 			);
 			buildRules = (
@@ -261,6 +298,30 @@
 			productReference = 1B0000000000000000000022 /* WhisperioKeyboard.appex */;
 			productType = "com.apple.product-type.app-extension";
 		};
+		1C0000000000000000000002 /* WhisperioMac */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 1C000000000000000000000B /* Build configuration list for PBXNativeTarget "WhisperioMac" */;
+			buildPhases = (
+				1C0000000000000000000004 /* Sources */,
+				1C0000000000000000000005 /* Frameworks */,
+				1C0000000000000000000006 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				1A0000000000000000000009 /* Sources/WhisperioApp */,
+				1C0000000000000000000009 /* MacApp */,
+			);
+			name = WhisperioMac;
+			packageProductDependencies = (
+				1C0000000000000000000011 /* WhisperioKit */,
+			);
+			productName = WhisperioMac;
+			productReference = 1C0000000000000000000003 /* WhisperioMac.app */;
+			productType = "com.apple.product-type.application";
+		};
 		65DB73AF2FE4974400C0E269 /* WhisperioWatch Watch App */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = 65DB73B82FE4974500C0E269 /* Build configuration list for PBXNativeTarget "WhisperioWatch Watch App" */;
@@ -291,7 +352,7 @@
 			attributes = {
 				BuildIndependentTargetsInParallel = 1;
 				LastSwiftUpdateCheck = 2650;
-				LastUpgradeCheck = 1620;
+				LastUpgradeCheck = 2660;
 				TargetAttributes = {
 					1A0000000000000000000002 = {
 						CreatedOnToolsVersion = 16.2;
@@ -300,6 +361,9 @@
 						CreatedOnToolsVersion = 16.2;
 					};
 					1B0000000000000000000021 = {
+						CreatedOnToolsVersion = 26.5;
+					};
+					1C0000000000000000000002 = {
 						CreatedOnToolsVersion = 26.5;
 					};
 					65DB73AF2FE4974400C0E269 = {
@@ -328,6 +392,7 @@
 				1A0000000000000000000021 /* WhisperioWidget */,
 				1B0000000000000000000021 /* WhisperioKeyboard */,
 				65DB73AF2FE4974400C0E269 /* WhisperioWatch Watch App */,
+				1C0000000000000000000002 /* WhisperioMac */,
 			);
 		};
 /* End PBXProject section */
@@ -348,6 +413,13 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		1B0000000000000000000025 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		1C0000000000000000000006 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -386,6 +458,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		1C0000000000000000000004 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		65DB73AC2FE4974400C0E269 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -401,15 +480,15 @@
 			target = 1A0000000000000000000021 /* WhisperioWidget */;
 			targetProxy = 1A000000000000000000002A /* PBXContainerItemProxy */;
 		};
-		1B0000000000000000000029 /* PBXTargetDependency */ = {
-			isa = PBXTargetDependency;
-			target = 1B0000000000000000000021 /* WhisperioKeyboard */;
-			targetProxy = 1B000000000000000000002A /* PBXContainerItemProxy */;
-		};
 		1A0000000000000000000042 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			target = 65DB73AF2FE4974400C0E269 /* WhisperioWatch Watch App */;
 			targetProxy = 1A0000000000000000000043 /* PBXContainerItemProxy */;
+		};
+		1B0000000000000000000029 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 1B0000000000000000000021 /* WhisperioKeyboard */;
+			targetProxy = 1B000000000000000000002A /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -420,20 +499,47 @@
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				CLANG_ENABLE_MODULES = YES;
 				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
 				DEBUG_INFORMATION_FORMAT = dwarf;
+				DEVELOPMENT_TEAM = 953Q6T2WTB;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
 				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
 				GCC_OPTIMIZATION_LEVEL = 0;
 				GCC_PREPROCESSOR_DEFINITIONS = (
 					"DEBUG=1",
 					"$(inherited)",
 				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				ONLY_ACTIVE_ARCH = YES;
 				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 			};
@@ -445,13 +551,40 @@
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				CLANG_ENABLE_MODULES = YES;
 				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEVELOPMENT_TEAM = 953Q6T2WTB;
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_COMPILATION_MODE = wholemodule;
 				SWIFT_OPTIMIZATION_LEVEL = "-O";
 			};
@@ -461,18 +594,19 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				CODE_SIGNING_ALLOWED = NO;
-				CODE_SIGNING_REQUIRED = NO;
+				CODE_SIGNING_ALLOWED = YES;
+				CODE_SIGNING_REQUIRED = YES;
 				CODE_SIGN_ENTITLEMENTS = WhisperioApp.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 7;
+				CURRENT_PROJECT_VERSION = 33;
 				DEVELOPMENT_TEAM = 953Q6T2WTB;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = AppInfo.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = Whisperio;
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Whisperio records your voice to transcribe it into text.";
 				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Whisperio uses on-device speech recognition to turn your dictation into text.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
@@ -485,7 +619,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.3.0;
+				MARKETING_VERSION = 1.4.1;
 				PRODUCT_BUNDLE_IDENTIFIER = ai.whisperio.mobile;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -499,18 +633,19 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				CODE_SIGNING_ALLOWED = NO;
-				CODE_SIGNING_REQUIRED = NO;
+				CODE_SIGNING_ALLOWED = YES;
+				CODE_SIGNING_REQUIRED = YES;
 				CODE_SIGN_ENTITLEMENTS = WhisperioApp.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 7;
+				CURRENT_PROJECT_VERSION = 33;
 				DEVELOPMENT_TEAM = 953Q6T2WTB;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = AppInfo.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = Whisperio;
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Whisperio records your voice to transcribe it into text.";
 				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Whisperio uses on-device speech recognition to turn your dictation into text.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
@@ -523,7 +658,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.3.0;
+				MARKETING_VERSION = 1.4.1;
 				PRODUCT_BUNDLE_IDENTIFIER = ai.whisperio.mobile;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -538,7 +673,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 7;
+				CURRENT_PROJECT_VERSION = 33;
 				DEVELOPMENT_TEAM = 953Q6T2WTB;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = WidgetInfo.plist;
@@ -551,7 +686,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.3.0;
+				MARKETING_VERSION = 1.4.1;
 				PRODUCT_BUNDLE_IDENTIFIER = ai.whisperio.mobile.WhisperioWidget;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
@@ -565,7 +700,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 7;
+				CURRENT_PROJECT_VERSION = 33;
 				DEVELOPMENT_TEAM = 953Q6T2WTB;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = WidgetInfo.plist;
@@ -578,7 +713,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.3.0;
+				MARKETING_VERSION = 1.4.1;
 				PRODUCT_BUNDLE_IDENTIFIER = ai.whisperio.mobile.WhisperioWidget;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
@@ -590,11 +725,11 @@
 		1B0000000000000000000027 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				CODE_SIGNING_ALLOWED = NO;
-				CODE_SIGNING_REQUIRED = NO;
+				CODE_SIGNING_ALLOWED = YES;
+				CODE_SIGNING_REQUIRED = YES;
 				CODE_SIGN_ENTITLEMENTS = WhisperioKeyboard.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 7;
+				CURRENT_PROJECT_VERSION = 33;
 				DEVELOPMENT_TEAM = 953Q6T2WTB;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = KeyboardInfo.plist;
@@ -606,7 +741,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.3.0;
+				MARKETING_VERSION = 1.4.1;
 				PRODUCT_BUNDLE_IDENTIFIER = ai.whisperio.mobile.WhisperioKeyboard;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
@@ -618,11 +753,11 @@
 		1B0000000000000000000028 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				CODE_SIGNING_ALLOWED = NO;
-				CODE_SIGNING_REQUIRED = NO;
+				CODE_SIGNING_ALLOWED = YES;
+				CODE_SIGNING_REQUIRED = YES;
 				CODE_SIGN_ENTITLEMENTS = WhisperioKeyboard.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 7;
+				CURRENT_PROJECT_VERSION = 33;
 				DEVELOPMENT_TEAM = 953Q6T2WTB;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = KeyboardInfo.plist;
@@ -634,12 +769,76 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.3.0;
+				MARKETING_VERSION = 1.4.1;
 				PRODUCT_BUNDLE_IDENTIFIER = ai.whisperio.mobile.WhisperioKeyboard;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		1C000000000000000000000E /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
+				CODE_SIGN_ENTITLEMENTS = MacApp/WhisperioMac.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 33;
+				DEVELOPMENT_TEAM = 953Q6T2WTB;
+				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = Whisperio;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Whisperio records your voice to transcribe it into text.";
+				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Whisperio uses on-device speech recognition to turn your dictation into text.";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 1.4.1;
+				PRODUCT_BUNDLE_IDENTIFIER = ai.whisperio.mobile;
+				PRODUCT_NAME = WhisperioMac;
+				SDKROOT = macosx;
+				SUPPORTED_PLATFORMS = macosx;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		1C000000000000000000000F /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
+				CODE_SIGN_ENTITLEMENTS = MacApp/WhisperioMac.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 33;
+				DEVELOPMENT_TEAM = 953Q6T2WTB;
+				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = Whisperio;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Whisperio records your voice to transcribe it into text.";
+				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Whisperio uses on-device speech recognition to turn your dictation into text.";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 1.4.1;
+				PRODUCT_BUNDLE_IDENTIFIER = ai.whisperio.mobile;
+				PRODUCT_NAME = WhisperioMac;
+				SDKROOT = macosx;
+				SUPPORTED_PLATFORMS = macosx;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
 			};
 			name = Release;
 		};
@@ -676,7 +875,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 7;
+				CURRENT_PROJECT_VERSION = 33;
 				DEVELOPMENT_TEAM = 953Q6T2WTB;
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
@@ -698,7 +897,7 @@
 					"@executable_path/Frameworks",
 				);
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
-				MARKETING_VERSION = 1.3.0;
+				MARKETING_VERSION = 1.4.1;
 				MTL_FAST_MATH = YES;
 				PRODUCT_BUNDLE_IDENTIFIER = ai.whisperio.mobile.watchkitapp;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -749,7 +948,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 7;
+				CURRENT_PROJECT_VERSION = 33;
 				DEVELOPMENT_TEAM = 953Q6T2WTB;
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
@@ -771,7 +970,7 @@
 					"@executable_path/Frameworks",
 				);
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
-				MARKETING_VERSION = 1.3.0;
+				MARKETING_VERSION = 1.4.1;
 				MTL_FAST_MATH = YES;
 				PRODUCT_BUNDLE_IDENTIFIER = ai.whisperio.mobile.watchkitapp;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -828,6 +1027,15 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
+		1C000000000000000000000B /* Build configuration list for PBXNativeTarget "WhisperioMac" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				1C000000000000000000000E /* Debug */,
+				1C000000000000000000000F /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 		65DB73B82FE4974500C0E269 /* Build configuration list for PBXNativeTarget "WhisperioWatch Watch App" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
@@ -852,6 +1060,10 @@
 			productName = WhisperioKit;
 		};
 		1B0000000000000000000011 /* WhisperioKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = WhisperioKit;
+		};
+		1C0000000000000000000011 /* WhisperioKit */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = WhisperioKit;
 		};
