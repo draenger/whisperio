@@ -21,6 +21,9 @@ final class RecordingsStore: ObservableObject {
     // badge. False for the JSON fallback.
     @Published private(set) var isCloudBacked = false
 
+    // Last local CloudKit/SwiftData error reported by the live store. Nil for JSON fallback.
+    @Published private(set) var lastErrorMessage: String?
+
     // Exactly one backend is live for the process. `.sync` delegates to the synced store and
     // mirrors its published items; `.json` keeps the original file-backed behaviour.
     private enum Backend {
@@ -33,6 +36,8 @@ final class RecordingsStore: ObservableObject {
     private var syncCancellable: AnyCancellable?
     // Keeps our published `isSyncing` in step with the synced store's own @Published flag.
     private var syncStateCancellable: AnyCancellable?
+    // Keeps our published `lastErrorMessage` in step with the synced store's own diagnostics.
+    private var syncErrorCancellable: AnyCancellable?
 
     init() {
         // iOS 17+ (the app's deployment floor) with a reachable container → synced store, which
@@ -71,11 +76,14 @@ final class RecordingsStore: ObservableObject {
     private func attach(syncStore: RecordingSyncStore) {
         syncCancellable = nil
         syncStateCancellable = nil
+        syncErrorCancellable = nil
         isCloudBacked = syncStore.isCloudBacked
         items = syncStore.items
         isSyncing = syncStore.isSyncing
+        lastErrorMessage = syncStore.lastErrorMessage
         syncCancellable = syncStore.$items.sink { [weak self] in self?.items = $0 }
         syncStateCancellable = syncStore.$isSyncing.sink { [weak self] in self?.isSyncing = $0 }
+        syncErrorCancellable = syncStore.$lastErrorMessage.sink { [weak self] in self?.lastErrorMessage = $0 }
     }
 
     func add(_ r: Recording) {

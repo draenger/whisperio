@@ -49,6 +49,10 @@ public final class RecordingSyncStore: ObservableObject {
     /// stores. Set once at init; used by the UI to decide whether to show the iCloud badge.
     @Published public private(set) var isCloudBacked: Bool
 
+    /// Last local CloudKit/SwiftData error surfaced by this store. Useful for in-app diagnostics
+    /// when sync silently falls back or a save/fetch starts failing.
+    @Published public private(set) var lastErrorMessage: String?
+
     private let container: ModelContainer
     private var context: ModelContext { container.mainContext }
 
@@ -189,7 +193,7 @@ public final class RecordingSyncStore: ObservableObject {
         do {
             entities = try context.fetch(descriptor)
         } catch {
-            Self.log.error("Failed to fetch recordings: \(error.localizedDescription)")
+            recordError("Failed to fetch recordings: \(error.localizedDescription)")
             return
         }
         items = RecordingSync.dedupByID(entities.map(\.recording))
@@ -233,8 +237,13 @@ public final class RecordingSyncStore: ObservableObject {
         do {
             try context.save()
         } catch {
-            Self.log.error("Failed to save context: \(error.localizedDescription)")
+            recordError("Failed to save context: \(error.localizedDescription)")
         }
+    }
+
+    private func recordError(_ message: String) {
+        lastErrorMessage = message
+        Self.log.error("\(message, privacy: .public)")
     }
 
     // MARK: - Migration
