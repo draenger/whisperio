@@ -42,9 +42,9 @@ function UpdateBanner({ state, theme }: { state: UpdaterState | null; theme: The
       display: 'flex',
       alignItems: 'center',
       gap: '12px',
-      padding: '10px 16px',
-      background: `${accent}14`,
-      borderBottom: `1px solid ${accent}40`,
+      padding: '11px 16px',
+      background: `${accent}12`,
+      borderBottom: `1px solid ${accent}33`,
       flexShrink: 0
     }}>
       <div style={{
@@ -67,7 +67,7 @@ function UpdateBanner({ state, theme }: { state: UpdaterState | null; theme: The
           onClick={async () => { setInstalling(true); await window.api.updater.install() }}
           disabled={installing}
           style={{
-            background: accent, border: 'none', borderRadius: '6px', padding: '7px 16px',
+            background: accent, border: 'none', borderRadius: '10px', padding: '8px 16px',
             fontSize: '12px', fontWeight: 600, color: '#fff', cursor: installing ? 'default' : 'pointer',
             fontFamily: 'IBM Plex Sans, sans-serif', flexShrink: 0, opacity: installing ? 0.6 : 1
           }}
@@ -78,6 +78,11 @@ function UpdateBanner({ state, theme }: { state: UpdaterState | null; theme: The
 }
 
 type TabId = 'general' | 'providers' | 'models' | 'audio' | 'hotkeys' | 'sync' | 'recordings' | 'updates'
+
+type NavGroup = {
+  label: string
+  tabs: { id: TabId; label: string }[]
+}
 
 const TAB_ICONS: Record<string, string> = {
   general: 'M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6',
@@ -166,8 +171,8 @@ function StatusHeader({
     <div style={{
       display: 'flex',
       alignItems: 'center',
-      gap: '18px',
-      padding: '9px 18px',
+      gap: '14px',
+      padding: '10px 18px',
       background: theme.bgSecondary,
       borderBottom: `1px solid ${theme.border}`,
       flexShrink: 0,
@@ -335,7 +340,31 @@ export function SettingsForm(): ReactElement {
   const { theme } = useTheme()
 
   // --- State ---
-  const validTabs: TabId[] = ['general', 'providers', 'audio', 'hotkeys', 'sync', 'updates', 'recordings']
+  const navGroups: NavGroup[] = [
+    {
+      label: 'Basics',
+      tabs: [
+        { id: 'general', label: 'General' },
+        { id: 'providers', label: 'Providers' },
+        { id: 'audio', label: 'Audio' },
+        { id: 'hotkeys', label: 'Hotkeys' }
+      ]
+    },
+    {
+      label: 'Library',
+      tabs: [
+        { id: 'sync', label: 'Sync' },
+        { id: 'recordings', label: 'Recordings' }
+      ]
+    },
+    {
+      label: 'System',
+      tabs: [
+        { id: 'updates', label: 'Updates' }
+      ]
+    }
+  ]
+  const validTabs: TabId[] = navGroups.flatMap((group) => group.tabs.map((tab) => tab.id))
   const initialTab = ((): TabId => {
     const h = window.location.hash.replace('#', '') as TabId
     return validTabs.includes(h) ? h : 'general'
@@ -499,16 +528,6 @@ export function SettingsForm(): ReactElement {
     )
   }
 
-  const tabs: { id: TabId; label: string }[] = [
-    { id: 'general', label: 'General' },
-    { id: 'providers', label: 'Providers' },
-    { id: 'audio', label: 'Audio' },
-    { id: 'hotkeys', label: 'Hotkeys' },
-    { id: 'sync', label: 'Sync' },
-    { id: 'updates', label: 'Updates' },
-    { id: 'recordings', label: 'Recordings' }
-  ]
-
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', background: theme.bg }}>
       <TitleBar title={activeTab === 'recordings' ? 'Whisperio Recordings' : 'Whisperio Settings'} />
@@ -528,33 +547,48 @@ export function SettingsForm(): ReactElement {
         {/* Sidebar nav */}
         <nav style={s.sidebar}>
           <div style={s.sidebarLabel}>Settings</div>
-          {tabs.map((tab) => {
-            const active = activeTab === tab.id
-            return (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
-                style={{ ...s.navItem, ...(active ? s.navItemActive : {}) }}
-                onMouseEnter={(e) => {
-                  if (!active) {
-                    e.currentTarget.style.color = theme.text
-                    e.currentTarget.style.background = theme.bgTertiary
-                  }
-                }}
-                onMouseLeave={(e) => {
-                  if (!active) {
-                    e.currentTarget.style.color = theme.textSecondary
-                    e.currentTarget.style.background = 'transparent'
-                  }
-                }}
-              >
-                <span style={{ display: 'flex', flexShrink: 0, color: active ? theme.accent : theme.textMuted }}>
-                  <NavIcon d={TAB_ICONS[tab.id]} />
-                </span>
-                {tab.label}
-              </button>
-            )
-          })}
+          {navGroups.map((group) => (
+            <div key={group.label} style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginBottom: '8px' }}>
+              <div style={{
+                padding: '8px 10px 4px',
+                fontFamily: "'JetBrains Mono', monospace",
+                fontSize: '9px',
+                fontWeight: 600,
+                letterSpacing: '0.18em',
+                textTransform: 'uppercase',
+                color: theme.textMuted
+              }}>
+                {group.label}
+              </div>
+              {group.tabs.map((tab) => {
+                const active = activeTab === tab.id
+                return (
+                  <button
+                    key={tab.id}
+                    onClick={() => setActiveTab(tab.id)}
+                    style={{ ...s.navItem, ...(active ? s.navItemActive : {}) }}
+                    onMouseEnter={(e) => {
+                      if (!active) {
+                        e.currentTarget.style.color = theme.text
+                        e.currentTarget.style.background = theme.bgTertiary
+                      }
+                    }}
+                    onMouseLeave={(e) => {
+                      if (!active) {
+                        e.currentTarget.style.color = theme.textSecondary
+                        e.currentTarget.style.background = 'transparent'
+                      }
+                    }}
+                  >
+                    <span style={{ display: 'flex', flexShrink: 0, color: active ? theme.accent : theme.textMuted }}>
+                      <NavIcon d={TAB_ICONS[tab.id]} />
+                    </span>
+                    {tab.label}
+                  </button>
+                )
+              })}
+            </div>
+          ))}
           <div style={{ flex: 1 }} />
           <div
             style={{
@@ -2443,7 +2477,11 @@ function makeStyles(theme: Theme) {
       padding: '24px 26px 28px',
       display: 'flex',
       flexDirection: 'column' as const,
-      gap: '30px'
+      gap: '24px',
+      maxWidth: '1120px',
+      width: '100%',
+      boxSizing: 'border-box' as const,
+      margin: '0 auto'
     },
     scrollArea: {
       flex: 1,
@@ -2451,13 +2489,13 @@ function makeStyles(theme: Theme) {
       overflowX: 'hidden' as const
     },
     sidebar: {
-      width: '184px',
+      width: '212px',
       flexShrink: 0,
       borderRight: `1px solid ${theme.border}`,
-      padding: '14px 12px',
+      padding: '16px 12px',
       display: 'flex',
       flexDirection: 'column' as const,
-      gap: '3px',
+      gap: '4px',
       background: theme.bgSecondary
     } as React.CSSProperties,
     sidebarLabel: {
@@ -2471,19 +2509,19 @@ function makeStyles(theme: Theme) {
     navItem: {
       display: 'flex',
       alignItems: 'center',
-      gap: '11px',
+      gap: '10px',
       width: '100%',
       textAlign: 'left' as const,
       cursor: 'pointer',
       border: 'none',
-      borderRadius: '9px',
-      padding: '9px 11px',
+      borderRadius: '10px',
+      padding: '10px 12px',
       fontFamily: "'IBM Plex Sans', sans-serif",
-      fontSize: '13.5px',
+      fontSize: '13px',
       fontWeight: 600,
       background: 'transparent',
       color: theme.textSecondary,
-      transition: 'background 0.15s, color 0.15s'
+      transition: 'background 0.15s, color 0.15s, transform 0.15s'
     } as React.CSSProperties,
     navItemActive: {
       background: `${theme.accent}14`,
@@ -2494,7 +2532,10 @@ function makeStyles(theme: Theme) {
       display: 'flex',
       alignItems: 'center',
       gap: '8px',
-      padding: '8px 11px',
+      padding: '9px 12px',
+      borderRadius: '999px',
+      background: theme.bg,
+      border: `1px solid ${theme.border}`,
       fontFamily: "'JetBrains Mono', monospace",
       fontSize: '10.5px',
       color: theme.textMuted
@@ -2502,29 +2543,35 @@ function makeStyles(theme: Theme) {
     card: {
       display: 'flex',
       flexDirection: 'column' as const,
-      gap: '10px',
-      paddingBottom: '4px'
+      gap: '12px',
+      padding: '18px 18px 16px',
+      background: theme.bgSecondary,
+      border: `1px solid ${theme.border}`,
+      borderRadius: '12px',
+      boxShadow: theme.shadow
     },
     cardTitle: {
       fontFamily: "'Space Grotesk', sans-serif",
-      fontSize: '14px',
+      fontSize: '13px',
       fontWeight: 600,
       color: theme.text,
-      marginBottom: '4px',
-      letterSpacing: '0.01em'
+      marginBottom: 0,
+      letterSpacing: '0.015em'
     },
     label: {
-      fontSize: '12px',
-      fontWeight: 500,
+      fontSize: '11px',
+      fontWeight: 700,
+      letterSpacing: '0.06em',
+      textTransform: 'uppercase' as const,
       color: theme.textSecondary,
       marginTop: '4px'
     },
     input: {
       background: theme.inputBg,
       border: `1px solid ${theme.inputBorder}`,
-      borderRadius: '8px',
-      padding: '10px 14px',
-      fontSize: '14px',
+      borderRadius: '10px',
+      padding: '11px 14px',
+      fontSize: '13px',
       color: theme.text,
       outline: 'none',
       fontFamily: 'IBM Plex Sans, sans-serif',
@@ -2534,9 +2581,9 @@ function makeStyles(theme: Theme) {
     textarea: {
       background: theme.inputBg,
       border: `1px solid ${theme.inputBorder}`,
-      borderRadius: '8px',
-      padding: '10px 14px',
-      fontSize: '14px',
+      borderRadius: '10px',
+      padding: '11px 14px',
+      fontSize: '13px',
       color: theme.text,
       outline: 'none',
       fontFamily: 'IBM Plex Sans, sans-serif',
@@ -2548,9 +2595,9 @@ function makeStyles(theme: Theme) {
     select: {
       background: theme.inputBg,
       border: `1px solid ${theme.inputBorder}`,
-      borderRadius: '8px',
-      padding: '10px 14px',
-      fontSize: '14px',
+      borderRadius: '10px',
+      padding: '11px 14px',
+      fontSize: '13px',
       color: theme.text,
       outline: 'none',
       fontFamily: 'IBM Plex Sans, sans-serif',
@@ -2559,14 +2606,14 @@ function makeStyles(theme: Theme) {
       transition: 'border-color 0.15s'
     } as React.CSSProperties,
     hint: {
-      fontSize: '11px',
+      fontSize: '12px',
       color: theme.textMuted,
-      lineHeight: '1.4'
+      lineHeight: '1.5'
     },
     saveBar: {
       padding: '14px 26px',
       borderTop: `1px solid ${theme.border}`,
-      background: theme.bg,
+      background: theme.bgSecondary,
       flexShrink: 0,
       display: 'flex',
       justifyContent: 'flex-start'
@@ -2575,9 +2622,9 @@ function makeStyles(theme: Theme) {
       background: theme.accent,
       color: theme.accentInk,
       border: 'none',
-      borderRadius: '8px',
-      padding: '10px 28px',
-      fontSize: '14px',
+      borderRadius: '10px',
+      padding: '10px 20px',
+      fontSize: '13px',
       fontWeight: 600,
       cursor: 'pointer',
       fontFamily: "'IBM Plex Sans', sans-serif",

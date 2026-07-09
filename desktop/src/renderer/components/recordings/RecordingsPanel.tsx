@@ -107,8 +107,8 @@ export function RecordingsView(): ReactElement {
 
   if (loading) {
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, justifyContent: 'center', alignItems: 'center' }}>
-        <p style={{ color: theme.textMuted }}>Loading...</p>
+      <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, justifyContent: 'center', alignItems: 'center', background: theme.bg }}>
+        <p style={{ color: theme.textMuted, fontSize: '13px', letterSpacing: '0.02em' }}>Loading recordings…</p>
       </div>
     )
   }
@@ -118,11 +118,12 @@ export function RecordingsView(): ReactElement {
     return (
       <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
         <div style={s.scrollArea}>
-          <RecordingDetail
-            theme={theme}
-            rec={selectedRec}
-            onBack={() => setSelectedId(null)}
-            onCopy={() => selectedRec.transcription && handleCopy(selectedRec.id, selectedRec.transcription)}
+        <RecordingDetail
+          theme={theme}
+          s={s}
+          rec={selectedRec}
+          onBack={() => setSelectedId(null)}
+          onCopy={() => selectedRec.transcription && handleCopy(selectedRec.id, selectedRec.transcription)}
             copied={copiedId === selectedRec.id}
             onReprocess={() => handleReprocess(selectedRec.id)}
             onDelete={async () => {
@@ -143,9 +144,10 @@ export function RecordingsView(): ReactElement {
     <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
       {/* Toolbar */}
       <div style={s.toolbar}>
-        <span style={s.recordingCount}>
-          {recordings.length} recording{recordings.length !== 1 ? 's' : ''}
-        </span>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
+          <span style={{ fontSize: '12px', fontWeight: 600, color: theme.text }}>{recordings.length} recording{recordings.length !== 1 ? 's' : ''}</span>
+          <span style={s.recordingCount}>Latest first. Click any row for detail.</span>
+        </div>
         <div style={{ display: 'flex', gap: '8px' }}>
           <button
             onClick={loadRecordings}
@@ -199,11 +201,27 @@ export function RecordingsView(): ReactElement {
         <div style={s.container}>
           {recordings.length === 0 ? (
             <div style={s.emptyState}>
-              <span style={{ fontSize: '32px', opacity: 0.3 }}>{'\u25CC'}</span>
-              <p style={{ color: theme.textMuted, fontSize: '14px', marginTop: '12px' }}>
+              <div style={{
+                width: '56px',
+                height: '56px',
+                borderRadius: '16px',
+                background: theme.bgTertiary,
+                border: `1px solid ${theme.border}`,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: theme.textMuted,
+                marginBottom: '14px'
+              }}>
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M12 2a10 10 0 1 0 10 10" />
+                  <polyline points="22 2 22 8 16 8" />
+                </svg>
+              </div>
+              <p style={{ color: theme.text, fontSize: '14px', fontWeight: 600 }}>
                 No recordings yet
               </p>
-              <p style={{ color: theme.textMuted, fontSize: '12px', marginTop: '4px', opacity: 0.6 }}>
+              <p style={{ color: theme.textMuted, fontSize: '12px', marginTop: '4px', maxWidth: '260px', lineHeight: 1.5 }}>
                 Recordings will appear here after you dictate
               </p>
             </div>
@@ -359,6 +377,7 @@ function mimeFromName(name: string): string {
 
 function RecordingDetail({
   theme,
+  s,
   rec,
   onBack,
   onCopy,
@@ -371,6 +390,7 @@ function RecordingDetail({
   statusIcon
 }: {
   theme: Theme
+  s: ReturnType<typeof makeStyles>
   rec: RecordingEntry
   onBack: () => void
   onCopy: () => void
@@ -452,7 +472,7 @@ function RecordingDetail({
   ]
 
   return (
-    <div style={{ padding: '20px 26px 28px' }}>
+    <div style={s.detailShell}>
       <button
         onClick={onBack}
         style={{
@@ -479,41 +499,52 @@ function RecordingDetail({
         Recordings
       </button>
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
-        <span style={{ fontSize: 17, fontWeight: 700, color: si.color, flexShrink: 0 }}>{si.char}</span>
-        <h2 style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 18, fontWeight: 600, color: theme.text, letterSpacing: '-.01em' }}>
-          {formatDate(rec.timestamp)}
-        </h2>
+      <div style={s.detailHeader}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
+          <div style={{
+            width: '34px',
+            height: '34px',
+            borderRadius: '10px',
+            background: `${si.color}18`,
+            border: `1px solid ${si.color}30`,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            color: si.color,
+            flexShrink: 0
+          }}>
+            <span style={{ fontSize: 15, fontWeight: 700 }}>{si.char}</span>
+          </div>
+          <div style={{ minWidth: 0 }}>
+            <div style={s.detailKicker}>Recording detail</div>
+            <h2 style={s.detailTitle}>{formatDate(rec.timestamp)}</h2>
+          </div>
+        </div>
+        <span style={{
+          ...s.metaPill,
+          background: `${si.color}12`,
+          borderColor: `${si.color}30`,
+          color: si.color
+        }}>
+          {rec.status}
+        </span>
       </div>
 
-      <div style={{ display: 'flex', gap: 30, flexWrap: 'wrap', paddingBottom: 20, borderBottom: `1px solid ${theme.border}` }}>
+      <div style={s.detailMetaGrid}>
         {meta.map(([k, v]) => (
-          <div key={k}>
-            <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, letterSpacing: '.14em', textTransform: 'uppercase', color: theme.textMuted, marginBottom: 5 }}>{k}</div>
-            <div style={{ fontSize: 13.5, fontWeight: 500, color: theme.text }}>{v}</div>
+          <div key={k} style={s.detailMetaItem}>
+            <div style={s.detailMetaKey}>{k}</div>
+            <div style={s.detailMetaValue}>{v}</div>
           </div>
         ))}
       </div>
 
       {!failed && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '13px 16px', borderRadius: 12, border: `1px solid ${theme.border}`, margin: '22px 0' }}>
+        <div style={s.waveformCard}>
           <button
             onClick={togglePlay}
             disabled={!audioUrl}
-            style={{
-              width: 38,
-              height: 38,
-              borderRadius: '50%',
-              border: 'none',
-              background: theme.accent,
-              color: theme.accentInk,
-              cursor: audioUrl ? 'pointer' : 'default',
-              opacity: audioUrl ? 1 : 0.5,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              flexShrink: 0
-            }}
+            style={s.playButton}
           >
             {playing ? (
               <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="5" width="4" height="14" rx="1" /><rect x="14" y="5" width="4" height="14" rx="1" /></svg>
@@ -521,7 +552,7 @@ function RecordingDetail({
               <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M6 4l14 8-14 8z" /></svg>
             )}
           </button>
-          <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 2, height: 34 }}>
+          <div style={s.waveformTrack}>
             {bars.map((h, bi) => (
               <span
                 key={bi}
@@ -552,10 +583,10 @@ function RecordingDetail({
         </div>
       )}
 
-      <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10.5, letterSpacing: '.16em', textTransform: 'uppercase', color: theme.textMuted, margin: failed ? '24px 0 10px' : '4px 0 10px' }}>
+      <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10.5, letterSpacing: '.16em', textTransform: 'uppercase', color: theme.textMuted, margin: failed ? '24px 0 10px' : '6px 0 10px' }}>
         Transcription
       </div>
-      <div style={{ fontSize: 14.5, color: failed ? theme.danger : theme.text, lineHeight: 1.7, whiteSpace: 'pre-wrap' }}>
+      <div style={{ fontSize: 14.5, color: failed ? theme.danger : theme.text, lineHeight: 1.75, whiteSpace: 'pre-wrap' }}>
         {failed ? rec.error || 'Transcription failed.' : rec.transcription || 'No transcription available.'}
       </div>
 
@@ -605,10 +636,10 @@ function RecordingDetail({
 function makeStyles(theme: Theme) {
   return {
     container: {
-      padding: '16px 20px 20px',
+      padding: '16px 20px 22px',
       display: 'flex',
       flexDirection: 'column' as const,
-      gap: '8px'
+      gap: '10px'
     },
     scrollArea: {
       flex: 1,
@@ -619,21 +650,22 @@ function makeStyles(theme: Theme) {
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'space-between',
-      padding: '10px 20px',
+      gap: '16px',
+      padding: '12px 20px',
       borderBottom: `1px solid ${theme.border}`,
       background: theme.bg,
       flexShrink: 0
     },
     recordingCount: {
-      fontSize: '12px',
+      fontSize: '11px',
       color: theme.textMuted,
       fontWeight: 500
     } as React.CSSProperties,
     toolbarButton: {
       background: theme.bgSecondary,
       border: `1px solid ${theme.border}`,
-      borderRadius: '8px',
-      padding: '6px 12px',
+      borderRadius: '10px',
+      padding: '7px 12px',
       fontSize: '12px',
       fontWeight: 500,
       color: theme.textSecondary,
@@ -647,12 +679,12 @@ function makeStyles(theme: Theme) {
     recordingRow: {
       background: theme.bgSecondary,
       border: `1px solid ${theme.border}`,
-      borderRadius: '12px',
-      padding: '12px 16px',
+      borderRadius: '14px',
+      padding: '14px 16px',
       display: 'flex',
       alignItems: 'center',
       gap: '12px',
-      transition: 'border-color 0.15s',
+      transition: 'border-color 0.15s, transform 0.15s, box-shadow 0.15s',
       position: 'relative' as const
     },
     statusIcon: {
@@ -686,13 +718,13 @@ function makeStyles(theme: Theme) {
       fontSize: '11px',
       color: theme.textMuted,
       background: theme.bgTertiary,
-      padding: '1px 6px',
-      borderRadius: '4px'
+      padding: '2px 7px',
+      borderRadius: '999px'
     },
     recordingText: {
       fontSize: '13px',
       color: theme.textSecondary,
-      lineHeight: '1.4',
+      lineHeight: '1.45',
       overflow: 'hidden' as const,
       textOverflow: 'ellipsis' as const,
       whiteSpace: 'nowrap' as const
@@ -722,8 +754,105 @@ function makeStyles(theme: Theme) {
       flexDirection: 'column' as const,
       alignItems: 'center',
       justifyContent: 'center',
-      padding: '60px 20px',
+      padding: '76px 20px',
       textAlign: 'center' as const
+    },
+    detailShell: {
+      padding: '20px 26px 28px',
+      maxWidth: '1060px',
+      margin: '0 auto'
+    },
+    detailHeader: {
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      gap: '12px',
+      marginBottom: '16px'
+    },
+    detailKicker: {
+      fontFamily: "'JetBrains Mono', monospace",
+      fontSize: '10px',
+      letterSpacing: '0.18em',
+      textTransform: 'uppercase' as const,
+      color: theme.textMuted,
+      marginBottom: '4px'
+    },
+    detailTitle: {
+      fontFamily: "'Space Grotesk', sans-serif",
+      fontSize: '18px',
+      fontWeight: 600,
+      color: theme.text,
+      letterSpacing: '-.01em',
+      lineHeight: 1.2,
+      margin: 0
+    },
+    detailMetaGrid: {
+      display: 'grid',
+      gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))',
+      gap: '12px',
+      paddingBottom: '20px',
+      borderBottom: `1px solid ${theme.border}`
+    },
+    detailMetaItem: {
+      display: 'flex',
+      flexDirection: 'column' as const,
+      gap: '4px'
+    },
+    detailMetaKey: {
+      fontFamily: "'JetBrains Mono', monospace",
+      fontSize: '10px',
+      letterSpacing: '.14em',
+      textTransform: 'uppercase' as const,
+      color: theme.textMuted
+    },
+    detailMetaValue: {
+      fontSize: '13.5px',
+      fontWeight: 500,
+      color: theme.text
+    },
+    metaPill: {
+      display: 'inline-flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      padding: '5px 10px',
+      borderRadius: '999px',
+      border: `1px solid ${theme.border}`,
+      fontSize: '11px',
+      fontWeight: 600,
+      textTransform: 'capitalize' as const,
+      flexShrink: 0
+    },
+    waveformCard: {
+      display: 'flex',
+      alignItems: 'center',
+      gap: '14px',
+      padding: '14px 16px',
+      borderRadius: '14px',
+      border: `1px solid ${theme.border}`,
+      background: `linear-gradient(180deg, ${theme.bgSecondary} 0%, ${theme.bg} 100%)`,
+      margin: '22px 0'
+    },
+    playButton: {
+      width: 38,
+      height: 38,
+      borderRadius: '50%',
+      border: 'none',
+      background: theme.accent,
+      color: theme.accentInk,
+      cursor: 'pointer',
+      opacity: 1,
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      flexShrink: 0,
+      boxShadow: `0 10px 24px -14px ${theme.accentGlow}`
+    } as React.CSSProperties,
+    waveformTrack: {
+      flex: 1,
+      display: 'flex',
+      alignItems: 'center',
+      gap: '2px',
+      height: 34
     }
   }
 }

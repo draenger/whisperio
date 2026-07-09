@@ -60,6 +60,23 @@ export function ThemeProvider({ children }: { children: ReactNode }): ReactEleme
       document.head.appendChild(style)
     }
     style.textContent = `
+      html, body, #root {
+        min-height: 100%;
+      }
+      body {
+        margin: 0;
+        background: ${theme.bg};
+        color: ${theme.text};
+        font-family: "IBM Plex Sans", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+        text-rendering: geometricPrecision;
+        color-scheme: ${theme.bg === '#070d15' ? 'dark' : 'light'};
+      }
+      ::selection {
+        background: rgba(${theme.accentRgb}, 0.28);
+        color: ${theme.text};
+      }
       * {
         scrollbar-width: thin;
         scrollbar-color: ${theme.border} transparent;
@@ -78,9 +95,22 @@ export function ThemeProvider({ children }: { children: ReactNode }): ReactEleme
       *::-webkit-scrollbar-thumb:hover {
         background: ${theme.borderHover};
       }
+      button, input, textarea, select {
+        font: inherit;
+      }
+      button {
+        -webkit-tap-highlight-color: transparent;
+      }
       textarea, pre, code {
         word-wrap: break-word;
         overflow-wrap: break-word;
+      }
+      input, textarea, select {
+        color: ${theme.text};
+      }
+      input::placeholder, textarea::placeholder {
+        color: ${theme.textMuted};
+        opacity: 1;
       }
       input:focus-visible, select:focus-visible, textarea:focus-visible {
         border-color: rgba(${theme.accentRgb}, 0.6) !important;
