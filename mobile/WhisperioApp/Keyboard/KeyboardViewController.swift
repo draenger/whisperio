@@ -52,6 +52,7 @@ final class KeyboardViewController: UIInputViewController {
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
         // Coming back from the app (the bounce flow): pick up and insert the transcript.
+        applyPendingRewriteIfAny()
         insertPendingTranscriptIfAny()
         refreshState()
         updateSuggestions()
@@ -68,13 +69,25 @@ final class KeyboardViewController: UIInputViewController {
     func refreshState() {
         model.hasFullAccess = hasFullAccess
         model.needsGlobeKey = needsInputModeSwitchKey
+        model.lastInserted = SharedStore.lastInsertedTranscript
     }
 
     private func insertPendingTranscriptIfAny() {
         if let text = SharedStore.consumePendingTranscript() {
             textDocumentProxy.insertText(text)
             model.lastInserted = text
+            SharedStore.setLastInsertedTranscript(text)
         }
+    }
+
+    private func applyPendingRewriteIfAny() {
+        guard let text = SharedStore.consumeRewriteResult() else { return }
+        if let last = SharedStore.lastInsertedTranscript ?? model.lastInserted, !last.isEmpty {
+            for _ in 0..<last.count { textDocumentProxy.deleteBackward() }
+        }
+        textDocumentProxy.insertText(text)
+        model.lastInserted = text
+        SharedStore.setLastInsertedTranscript(text)
     }
 
     // MARK: - Key actions (driven from SwiftUI)
@@ -129,6 +142,24 @@ final class KeyboardViewController: UIInputViewController {
         SharedStore.swipeBackExplainerShown = true
         if !openURL(SharedStore.dictateURL) {
             // Opening failed despite Full Access — tell the user instead of failing silently.
+            model.showFullAccessHint = true
+        }
+    }
+
+    /// Rewrite the latest inserted transcript with one of our shipped prompts.
+    func startRewrite(presetID: String) {
+        guard hasFullAccess else {
+            model.showFullAccessHint = true
+            return
+        }
+        guard let source = SharedStore.lastInsertedTranscript ?? model.lastInserted,
+              !source.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            model.showFullAccessHint = true
+            return
+        }
+        SharedStore.setRewriteSource(source)
+        SharedStore.setRewritePresetID(presetID)
+        if !openURL(SharedStore.rewriteURL) {
             model.showFullAccessHint = true
         }
     }

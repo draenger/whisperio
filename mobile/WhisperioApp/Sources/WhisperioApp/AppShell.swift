@@ -5,7 +5,7 @@ import WhisperioKit
 // App shell — custom screen routing + toast, mirroring WZPhone() in wz-iphone.jsx.
 // (The concept uses a bespoke transition shell rather than NavigationStack.)
 
-enum WZScreen { case onboarding, home, recording, detail, settings, models, keyboardSetup, keyboardReturn, presetEditor, journal, digestDay, githubSync, digestPromptEditor }
+enum WZScreen { case onboarding, home, recording, detail, settings, models, keyboardSetup, keyboardReturn, keyboardRewrite, presetEditor, journal, digestDay, githubSync, digestPromptEditor }
 
 struct WZPhoneView: View {
     @Environment(\.scenePhase) private var scenePhase
@@ -28,6 +28,8 @@ struct WZPhoneView: View {
     // return to when the editor closes (Settings, or Detail for the Template Builder flow).
     @State private var editorPreset: RewritePreset = RewritePresetCatalog.seeds[0]
     @State private var editorReturn: WZScreen = .settings
+    @State private var rewriteSource: String = ""
+    @State private var rewritePresetID: String = ""
     // Incoming URL binding — set at App level so it fires even before setup completes.
     @Binding private var incomingURL: URL?
 
@@ -85,6 +87,10 @@ struct WZPhoneView: View {
             let comps = URLComponents(url: url, resolvingAgainstBaseURL: false)
             fromKeyboard = comps?.queryItems?.first { $0.name == "return" }?.value == "keyboard"
             go(.recording)
+        } else if url.host == "rewrite" {
+            rewriteSource = SharedStore.consumeRewriteSource() ?? ""
+            rewritePresetID = SharedStore.consumeRewritePresetID() ?? "clean-up"
+            go(.keyboardRewrite)
         }
     }
 
@@ -121,6 +127,7 @@ struct WZPhoneView: View {
             SettingsView(onBack: { go(.home) }, dark: $dark,
                          openModels: { go(.models) },
                          openKeyboardSetup: { go(.keyboardSetup) },
+                         openOnboarding: { go(.onboarding) },
                          openPresetEditor: { openEditor($0 ?? Self.newPreset(), from: .settings) },
                          openGitHubSync: { go(.githubSync) },
                          openDigestPrompts: { go(.digestPromptEditor) },
@@ -137,6 +144,13 @@ struct WZPhoneView: View {
             DigestPromptEditorView(onBack: { go(.settings) }, toast: showToast)
         case .keyboardReturn:
             KeyboardReturnView(text: returnText, onClose: { go(.home) })
+        case .keyboardRewrite:
+            KeyboardRewriteView(source: rewriteSource, presetID: rewritePresetID,
+                                onBack: { go(.home) },
+                                onDone: { result in
+                                    returnText = result
+                                    go(.keyboardReturn)
+                                })
         case .home:
             HomeView(openRec: { rec = $0; go(.detail) },
                      openRecording: { go(.recording) },

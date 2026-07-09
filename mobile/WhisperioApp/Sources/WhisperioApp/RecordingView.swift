@@ -1,5 +1,6 @@
 import SwiftUI
 import Combine
+import AVFoundation
 import WhisperioKit
 #if canImport(UIKit)
 import UIKit
@@ -34,6 +35,9 @@ struct RecordingView: View {
     @State private var errorMsg = ""
     @State private var done = false   // guards against stop firing after cancel/stop
     @State private var startedLive = false   // which path begin() actually took
+    @State private var resumeAfterInterruption = false
+    @State private var interruptionDidEnd = false
+    @State private var lastActivityAt: Date?
 
     private enum Phase { case starting, listening, processing, error }
     private let tick = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
@@ -112,7 +116,12 @@ struct RecordingView: View {
                 .padding(.top, 14).padding(.bottom, 42)
             }
         }
-        .onReceive(tick) { _ in if phase == .listening { secs += 1 } }
+        .onReceive(tick) { _ in
+            guard phase == .listening else { return }
+            secs += 1
+            noteActivityIfNeeded()
+            checkAutoStopIfNeeded()
+        }
         .onReceive(NotificationCenter.default.publisher(for: .whisperioStopDictation)) { _ in
             stop()   // triple-tap / "stop" shortcut ends recording + transcribes
         }
@@ -125,6 +134,11 @@ struct RecordingView: View {
                 errorMsg = message
             }
         }
+        #if canImport(UIKit)
+        .onReceive(NotificationCenter.default.publisher(for: AVAudioSession.interruptionNotification)) { note in
+            handleInterruption(note)
+        }
+        #endif
         .task { await begin() }
     }
 
@@ -162,6 +176,7 @@ struct RecordingView: View {
             return
         }
         startedLive = useLive
+        lastActivityAt = Date()
         do {
             if startedLive {
                 try live.start(language: settings.settings.language,
@@ -170,33 +185,40 @@ struct RecordingView: View {
             } else {
                 try recorder.start()
             }
+            SharedStore.setRecordingActive(true)
             phase = .listening
         } catch {
+            SharedStore.setRecordingActive(false)
             phase = .error; errorMsg = error.localizedDescription
         }
     }
 
     private func stop() {
+        stop(shouldDismiss: true)
+    }
+
+    private func stop(shouldDismiss: Bool) {
         guard phase == .listening, !done else { return }
-        done = true
+        done = shouldDismiss
         phase = .processing
         if startedLive {
             Task {
                 // finish() waits briefly for the recognizer to flush the tail of the last
                 // segment, so the words spoken right before stop make it into the result.
                 let (text, clip) = await live.finish()
-                await finalizeLive(text, clip)
+                await finalizeLive(text, clip, shouldDismiss: shouldDismiss)
             }
         } else {
             let clip = recorder.stop()
-            Task { await transcribe(clip) }
+            Task { await transcribe(clip, shouldDismiss: shouldDismiss) }
         }
     }
 
     // Finalize the on-device live path: the streamed transcript IS the result (no second pass).
-    private func finalizeLive(_ raw: String, _ clip: AudioClip?) async {
+    private func finalizeLive(_ raw: String, _ clip: AudioClip?, shouldDismiss: Bool) async {
         let text = settings.cleanup(raw).trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else {
+            SharedStore.setRecordingActive(false)
             phase = .error; errorMsg = "Nothing was transcribed — try again and speak clearly."; return
         }
         let rec = Recording(filename: clip?.filename ?? "", duration: clip?.duration ?? 0,
@@ -210,11 +232,17 @@ struct RecordingView: View {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(text, forType: .string)
 #endif
+        SharedStore.setRecordingActive(false)
         if fromKeyboard { SharedStore.setPendingTranscript(text) }
-        onDone(rec)
+        if shouldDismiss {
+            onDone(rec)
+        } else {
+            phase = .starting
+            attemptResumeAfterInterruption()
+        }
     }
 
-    private func transcribe(_ clip: AudioClip?) async {
+    private func transcribe(_ clip: AudioClip?, shouldDismiss: Bool) async {
         guard let clip else {
             phase = .error; errorMsg = "Nothing was recorded."; return
         }
@@ -231,11 +259,18 @@ struct RecordingView: View {
             NSPasteboard.general.clearContents()
             NSPasteboard.general.setString(text, forType: .string)
 #endif
+            SharedStore.setRecordingActive(false)
             // Bounce-to-app from the keyboard: stash the transcript in the shared App Group
             // so the keyboard can insert it via textDocumentProxy when the user swipes back.
             if fromKeyboard { SharedStore.setPendingTranscript(text) }
-            onDone(rec)
+            if shouldDismiss {
+                onDone(rec)
+            } else {
+                phase = .starting
+                attemptResumeAfterInterruption()
+            }
         case .failure(let err):
+            SharedStore.setRecordingActive(false)
             phase = .error
             switch err {
             case .noProvidersConfigured:
@@ -249,6 +284,56 @@ struct RecordingView: View {
     private func cancel() {
         done = true
         if startedLive { live.cancel() } else { recorder.cancel() }
+        SharedStore.setRecordingActive(false)
         onCancel()
+    }
+
+    #if canImport(UIKit)
+    private func handleInterruption(_ note: Notification) {
+        guard let raw = note.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt,
+              let type = AVAudioSession.InterruptionType(rawValue: raw) else { return }
+
+        switch type {
+        case .began:
+            interruptionDidEnd = false
+            if settings.settings.audioInterruptionBehavior == .resume {
+                resumeAfterInterruption = true
+                stop(shouldDismiss: false)
+            } else {
+                stop(shouldDismiss: true)
+            }
+        case .ended:
+            interruptionDidEnd = true
+            attemptResumeAfterInterruption()
+        @unknown default:
+            break
+        }
+    }
+    #endif
+
+    private func attemptResumeAfterInterruption() {
+        guard resumeAfterInterruption, interruptionDidEnd, phase != .listening, !done else { return }
+        resumeAfterInterruption = false
+        interruptionDidEnd = false
+        done = false
+        Task { await begin() }
+    }
+
+    private func noteActivityIfNeeded() {
+        guard phase == .listening else { return }
+        let currentLevel = startedLive ? live.level : recorder.level
+        if currentLevel > 0.05 {
+            lastActivityAt = Date()
+        }
+    }
+
+    private func checkAutoStopIfNeeded() {
+        let timeout = settings.settings.audioAutoStopTimeoutSeconds
+        guard timeout > 0,
+              phase == .listening,
+              let lastActivityAt else { return }
+        if Date().timeIntervalSince(lastActivityAt) >= timeout {
+            stop()
+        }
     }
 }

@@ -1,4 +1,5 @@
 import SwiftUI
+import WhisperioKit
 #if canImport(UIKit)
 import UIKit
 #elseif canImport(AppKit)
@@ -15,15 +16,25 @@ import AppKit
 // Journal tab mirrors that design on the same sample recordings.
 struct iPadSplitView: View {
     @Environment(\.wz) private var t
+    @EnvironmentObject private var settings: SettingsStore
     // Set by the live shell (Mac/iPad entry) once the real stores are injected. When true the
     // Journal tab is store-backed (JournalView + DigestDayView); otherwise it stays on sample data.
     @Environment(\.wzLiveJournal) private var liveJournal
     @State private var tab = "library"   // library | journal
     @State private var sel = WZSample.recordings[0].id
+    @State private var showCloudConsent = false
+    @State private var pendingCloudEngine: ProviderID?
     private var cur: DemoRecording { WZSample.recordings.first { $0.id == sel } ?? WZSample.recordings[0] }
+    private var primaryEngine: ProviderID { settings.settings.providerChain.first ?? .onDevice }
+    private var cloudConsentGranted: Bool { settings.settings.cloudConsentGranted }
 
     var body: some View {
         VStack(spacing: 0) {
+            HStack {
+                engineBar
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 18).padding(.top, 12)
             HStack {
                 segmented.frame(width: 260)
                 Spacer(minLength: 0)
@@ -43,6 +54,77 @@ struct iPadSplitView: View {
             }
         }
         .background(t.bg.ignoresSafeArea())
+        .overlay {
+            if showCloudConsent {
+                ConsentSheet(onClose: { withAnimation { showCloudConsent = false } },
+                             onConfirm: confirmCloudEngine)
+                    .transition(.opacity)
+            }
+        }
+    }
+
+    private var engineBar: some View {
+        HStack(spacing: 3) {
+            engineItem(id: .onDevice, title: "On-device", icon: "cpu")
+            engineItem(id: .openAI, title: "OpenAI", icon: "globe")
+            engineItem(id: .elevenLabs, title: "ElevenLabs", icon: "cloud")
+            Spacer(minLength: 0)
+            PrivacyBadge(mode: settings.settings.isCloud(primaryEngine) ? .cloud : .device, small: true)
+        }
+        .padding(3)
+        .background(t.surfaceUp, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(t.line, lineWidth: 1))
+    }
+
+    private func engineItem(id: ProviderID, title: String, icon: String) -> some View {
+        let on = primaryEngine == id
+        let needsConsent = settings.settings.isCloud(id) && !cloudConsentGranted
+        return Button {
+            selectEngine(id)
+        } label: {
+            HStack(spacing: 6) {
+                WIcon(icon, size: 13)
+                Text(title)
+            }
+            .font(WZFont.ui(13, .semibold))
+            .foregroundStyle(on ? .white : t.muted)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 8)
+            .background(on ? t.accent : .clear, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+            .overlay(alignment: .topTrailing) {
+                if needsConsent {
+                    WIcon("lock", size: 9).foregroundStyle(t.amber)
+                        .padding(.top, 3).padding(.trailing, 6)
+                }
+            }
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func selectEngine(_ id: ProviderID) {
+        guard id != primaryEngine else { return }
+        if settings.settings.isCloud(id) && !settings.settings.cloudConsentGranted {
+            pendingCloudEngine = id
+            withAnimation(.easeInOut(duration: 0.18)) { showCloudConsent = true }
+            return
+        }
+        applyEngine(id)
+    }
+
+    private func applyEngine(_ id: ProviderID) {
+        var s = settings.settings
+        s.providerChain = [id]
+        settings.settings = s
+    }
+
+    private func confirmCloudEngine() {
+        let id = pendingCloudEngine ?? .openAI
+        var s = settings.settings
+        s.cloudConsentGranted = true
+        s.providerChain = [id]
+        settings.settings = s
+        pendingCloudEngine = nil
+        showCloudConsent = false
     }
 
     private var segmented: some View {

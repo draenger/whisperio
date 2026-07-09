@@ -1,4 +1,5 @@
 import SwiftUI
+import WhisperioKit
 
 // Native iOS keyboard replica + a single branded add-on: the real Whisperio logo
 // (bundled image "WhisperioLogo") with a mic, sitting in the predictive bar.
@@ -91,6 +92,27 @@ struct KeyboardRootView: View {
             }
             .buttonStyle(.plain)
             .padding(.leading, 6)
+
+            if let _ = model.lastInserted {
+                Menu {
+                    ForEach(RewritePresetCatalog.seeds.filter { !$0.isMeta }) { preset in
+                        Button(preset.name) { model.rewrite(presetID: preset.id) }
+                    }
+                } label: {
+                    HStack(spacing: 5) {
+                        Image(systemName: "sparkles")
+                            .font(.system(size: 12, weight: .semibold))
+                        Text("Rewrite")
+                    }
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(keyText)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .background(specialBg.opacity(dark ? 0.85 : 0.55), in: Capsule())
+                }
+                .menuStyle(.borderlessButton)
+                .padding(.leading, 6)
+            }
 
             // Live suggestions (offline, from UITextChecker). Empty when there's nothing to predict.
             if model.suggestions.isEmpty {

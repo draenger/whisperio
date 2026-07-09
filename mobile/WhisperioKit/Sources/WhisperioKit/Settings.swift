@@ -6,6 +6,17 @@ import Foundation
 /// (the SwiftData ModelContainer config is fixed at init — see `RecordingSyncStore`).
 public enum StorageMode: String, Codable, Sendable, CaseIterable { case onDevice; case iCloud }
 
+/// What Whisperio should do when iOS interrupts an active audio session (phone call, Siri,
+/// alarms, FaceTime, other audio owners). iOS always tears down the mic; this only controls
+/// whether Whisperio should stop and exit cleanly, or try to start a fresh session again
+/// once the interruption ends.
+public enum AudioInterruptionBehavior: String, Codable, Sendable, CaseIterable {
+    case stop = "stop"
+    case resume = "resume"
+}
+
+/// Automatic stop timeout after silence. Off by default so Whisperio behaves like a normal
+/// dictation app unless the user opts into auto-release.
 /// User settings, mirroring the desktop `AppSettings` shape (so config can be shared/synced
 /// later). No secrets are baked in — all keys default to empty and are entered at runtime.
 public struct WhisperioSettings: Codable, Sendable, Equatable {
@@ -38,6 +49,10 @@ public struct WhisperioSettings: Codable, Sendable, Equatable {
     /// isn't available for the language/device. Off by default — keeps the "audio never
     /// leaves the device" guarantee; when on, audio may be sent to Apple so STT still works.
     public var appleAllowOnline: Bool
+    /// What Whisperio should do when iOS interrupts the audio session.
+    public var audioInterruptionBehavior: AudioInterruptionBehavior
+    /// Auto-stop mic after a period of silence. `0` disables it. Value is seconds.
+    public var audioAutoStopTimeoutSeconds: Double
 
     /// Explicit, persisted consent that audio may leave the device for a cloud provider.
     /// On-device (Apple Speech) never needs this; cloud providers stay disabled until granted.
@@ -81,6 +96,8 @@ public struct WhisperioSettings: Codable, Sendable, Equatable {
         saveRecordings: Bool = true,
         liveTranscriptionEnabled: Bool = true,
         appleAllowOnline: Bool = false,
+        audioInterruptionBehavior: AudioInterruptionBehavior = .stop,
+        audioAutoStopTimeoutSeconds: Double = 0,
         cloudConsentGranted: Bool = false,
         autoDailyDigest: Bool = false,
         githubSyncEnabled: Bool = false,
@@ -105,6 +122,8 @@ public struct WhisperioSettings: Codable, Sendable, Equatable {
         self.saveRecordings = saveRecordings
         self.liveTranscriptionEnabled = liveTranscriptionEnabled
         self.appleAllowOnline = appleAllowOnline
+        self.audioInterruptionBehavior = audioInterruptionBehavior
+        self.audioAutoStopTimeoutSeconds = audioAutoStopTimeoutSeconds
         self.cloudConsentGranted = cloudConsentGranted
         self.autoDailyDigest = autoDailyDigest
         self.githubSyncEnabled = githubSyncEnabled
@@ -135,6 +154,8 @@ public struct WhisperioSettings: Codable, Sendable, Equatable {
         saveRecordings = try c.decodeIfPresent(Bool.self, forKey: .saveRecordings) ?? d.saveRecordings
         liveTranscriptionEnabled = try c.decodeIfPresent(Bool.self, forKey: .liveTranscriptionEnabled) ?? d.liveTranscriptionEnabled
         appleAllowOnline = try c.decodeIfPresent(Bool.self, forKey: .appleAllowOnline) ?? d.appleAllowOnline
+        audioInterruptionBehavior = try c.decodeIfPresent(AudioInterruptionBehavior.self, forKey: .audioInterruptionBehavior) ?? d.audioInterruptionBehavior
+        audioAutoStopTimeoutSeconds = try c.decodeIfPresent(Double.self, forKey: .audioAutoStopTimeoutSeconds) ?? d.audioAutoStopTimeoutSeconds
         cloudConsentGranted = try c.decodeIfPresent(Bool.self, forKey: .cloudConsentGranted) ?? d.cloudConsentGranted
         autoDailyDigest = try c.decodeIfPresent(Bool.self, forKey: .autoDailyDigest) ?? d.autoDailyDigest
         githubSyncEnabled = try c.decodeIfPresent(Bool.self, forKey: .githubSyncEnabled) ?? d.githubSyncEnabled

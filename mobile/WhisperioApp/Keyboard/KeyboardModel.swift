@@ -12,6 +12,7 @@ final class KeyboardModel: ObservableObject {
     @Published var showFullAccessHint = false
     @Published var shifted = true
     @Published var lastInserted: String?
+    @Published var pendingRewrite: String?
     @Published var suggestions: [String] = []
 
     func tap(_ ch: String) {
@@ -26,5 +27,6 @@ final class KeyboardModel: ObservableObject {
     func nextKeyboard() { controller?.advanceToNextKeyboard() }
     func toggleShift() { shifted.toggle() }
     func mic() { controller?.startDictation() }
+    func rewrite(presetID: String) { controller?.startRewrite(presetID: presetID) }
     func pickSuggestion(_ word: String) { controller?.applySuggestion(word) }
 }

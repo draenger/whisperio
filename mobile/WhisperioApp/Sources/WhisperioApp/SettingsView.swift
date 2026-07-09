@@ -12,6 +12,7 @@ struct SettingsView: View {
     @Binding var dark: Bool
     var openModels: () -> Void
     var openKeyboardSetup: () -> Void = {}
+    var openOnboarding: () -> Void = {}
     // Open the rewrite-preset editor — nil means "new template".
     var openPresetEditor: (RewritePreset?) -> Void = { _ in }
     var openGitHubSync: () -> Void = {}
@@ -36,6 +37,24 @@ struct SettingsView: View {
 
     private var currentLanguageName: String {
         languages.first { $0.code == settings.settings.language }?.name ?? settings.settings.language
+    }
+
+    private var hasOpenAIKey: Bool {
+        !settings.settings.openAIKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private var interruptionBehaviorBinding: Binding<String> {
+        Binding(get: { settings.settings.audioInterruptionBehavior.rawValue },
+                set: { raw in
+                    var s = settings.settings
+                    s.audioInterruptionBehavior = AudioInterruptionBehavior(rawValue: raw) ?? .stop
+                    settings.settings = s
+                })
+    }
+
+    private var autoStopSecondsBinding: Binding<Double> {
+        Binding(get: { settings.settings.audioAutoStopTimeoutSeconds },
+                set: { settings.settings.audioAutoStopTimeoutSeconds = max(0, $0) })
     }
 
     private func setLanguage(_ code: String) {
@@ -67,176 +86,251 @@ struct SettingsView: View {
             VStack(spacing: 0) {
                 WHeader(title: "Settings", onBack: onBack)
                 ScrollView(showsIndicators: false) {
-                    VStack(alignment: .leading, spacing: 18) {
-                        VStack(alignment: .leading, spacing: 9) {
-                            HStack {
-                                SectionLabel(text: "Transcription engine")
-                                Spacer()
-                                PrivacyBadge(mode: settings.settings.isCloud(engine) ? .cloud : .device, small: true)
-                            }
-                            .padding(.leading, 4)
-                            VStack(spacing: 10) {
-                                engineRow(.onDevice, "Apple — on-device", "Free · private · offline", "cpu")
-                                engineRow(.openAI, "OpenAI", "Cloud · Whisper API", "globe")
-                                engineRow(.elevenLabs, "ElevenLabs", "Cloud · Scribe", "globe")
-                            }
-                            if engine == .openAI {
-                                keyField("OpenAI API key", binding(\.openAIKey))
-                                plainField("Base URL (optional, self-hosted)", "https://api.openai.com/v1", binding(\.openAIBaseURL))
-                                plainField("Model (optional)", "whisper-1", binding(\.whisperModel))
-                            }
-                            if engine == .elevenLabs { keyField("ElevenLabs API key", binding(\.elevenLabsKey)) }
-                        }
-
-                        #if os(iOS)
-                        VStack(alignment: .leading, spacing: 11) {
-                            SectionLabel(text: "Quick dictation").padding(.leading, 4)
-                            VStack(alignment: .leading, spacing: 12) {
-                                Text("Say “Dictate with Whisperio” to Siri — or add the shortcut, then assign it to Back Tap (Settings → Accessibility → Touch → Back Tap → Run Shortcut).")
-                                    .font(WZFont.ui(13)).foregroundStyle(t.muted).lineSpacing(3)
-                                SiriTipView(intent: DictateIntent()).tint(t.accent)
-                                ShortcutsLink().tint(t.accent)
-                            }
-                            .padding(16)
-                            .background(t.surface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-                            .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(t.line, lineWidth: 1))
-                        }
-                        #endif
-
-                        SettGroup(title: "Dictate from anywhere") {
-                            SettRow(icon: "zap", label: "Set up dictation triggers",
-                                    sub: "Action Button, Back Tap, keyboard, widgets & more — step by step",
-                                    onTap: { showTriggerGuides = true })
-                            SettRow(icon: "keyboard", label: "Whisperio keyboard",
-                                    sub: "Dictate from any app — install & setup", last: true,
-                                    onTap: openKeyboardSetup)
-                        }
-
-                        SettGroup(title: "Transcription") {
-                            SettRow(icon: "mic", label: "Live transcription",
-                                    sub: "See text as you speak · on-device, free") {
-                                WToggle(on: boolBinding(\.liveTranscriptionEnabled))
-                            }
-                            SettRow(icon: "globe", label: "Apple online speech",
-                                    sub: "Use Apple’s servers when on-device isn’t available · audio leaves the device") {
-                                WToggle(on: boolBinding(\.appleAllowOnline))
-                            }
-                            SettRow(icon: "spark", label: "Cleanup",
-                                    sub: "Tidy punctuation, casing & spacing") {
-                                WToggle(on: boolBinding(\.cleanupEnabled))
-                            }
-                            SettRow(icon: "cloud", label: "Fallback engines",
-                                    sub: "If the chosen engine fails, try the others", last: true) {
-                                WToggle(on: boolBinding(\.fallbackEnabled))
-                            }
-                        }
-
-                        VStack(alignment: .leading, spacing: 9) {
-                            SectionLabel(text: "Language & vocabulary").padding(.leading, 4)
-                            VStack(spacing: 0) {
-                                Menu {
-                                    ForEach(languages, id: \.code) { lang in
-                                        Button(lang.name) { setLanguage(lang.code) }
+                    VStack(alignment: .leading, spacing: 22) {
+                        VStack(alignment: .leading, spacing: 10) {
+                            SectionLabel(text: "Model settings").padding(.leading, 4)
+                            SettGroup(title: "Transcription engine") {
+                                VStack(alignment: .leading, spacing: 9) {
+                                    HStack {
+                                        Spacer()
+                                        PrivacyBadge(mode: settings.settings.isCloud(engine) ? .cloud : .device, small: true)
                                     }
-                                } label: {
-                                    HStack(spacing: 13) {
-                                        WIcon("globe", size: 17, weight: .regular).foregroundStyle(t.accentLite)
+                                    .padding(.bottom, 1)
+                                    VStack(spacing: 10) {
+                                        engineRow(.onDevice, "Apple — on-device", "Free · private · offline", "cpu")
+                                        engineRow(.openAI, "OpenAI", "Cloud · Whisper API", "globe")
+                                        engineRow(.elevenLabs, "ElevenLabs", "Cloud · Scribe", "globe")
+                                    }
+                                    if engine == .openAI {
+                                        keyField("OpenAI API key", binding(\.openAIKey))
+                                        plainField("Base URL (optional, self-hosted)", "https://api.openai.com/v1", binding(\.openAIBaseURL))
+                                        plainField("Model (optional)", "whisper-1", binding(\.whisperModel))
+                                    }
+                                    if engine == .elevenLabs { keyField("ElevenLabs API key", binding(\.elevenLabsKey)) }
+                                }
+                            }
+
+                            SettGroup(title: "Transcription") {
+                                SettRow(icon: "mic", label: "Live transcription",
+                                        sub: "See text as you speak · on-device, free") {
+                                    WToggle(on: boolBinding(\.liveTranscriptionEnabled))
+                                }
+                                VStack(alignment: .leading, spacing: 9) {
+                                    HStack(alignment: .top, spacing: 13) {
+                                        WIcon("clock", size: 17, weight: .regular).foregroundStyle(t.accentLite)
                                             .frame(width: 34, height: 34)
                                             .background(t.surfaceUp, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-                                        VStack(alignment: .leading, spacing: 1) {
-                                            Text("Language").font(WZFont.ui(14.5, .medium)).foregroundStyle(t.text)
-                                            Text("Spoken language for transcription").font(WZFont.ui(12)).foregroundStyle(t.muted)
+                                        VStack(alignment: .leading, spacing: 2) {
+                                            Text("When interrupted").font(WZFont.ui(14.5, .medium)).foregroundStyle(t.text)
+                                            Text("Calls, Siri, alarms, FaceTime, and other audio interruptions always release the mic. Whisperio can either stop or try to resume after the interruption ends.")
+                                                .font(WZFont.ui(12)).foregroundStyle(t.muted).lineSpacing(3)
+                                        }
+                                    }
+                                    Segmented(value: interruptionBehaviorBinding, options: [
+                                        (id: AudioInterruptionBehavior.stop.rawValue, label: "Stop"),
+                                        (id: AudioInterruptionBehavior.resume.rawValue, label: "Resume")
+                                    ])
+                                Text(settings.settings.audioInterruptionBehavior == .resume
+                                         ? "Whisperio will end the current session, then try to start a fresh one when the interruption ends."
+                                         : "Whisperio will end the session and stay idle until you start again.")
+                                        .font(WZFont.mono(11)).foregroundStyle(t.faint)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                }
+                                .padding(.vertical, 12)
+                                VStack(alignment: .leading, spacing: 9) {
+                                    HStack(alignment: .top, spacing: 13) {
+                                        WIcon("timer", size: 17, weight: .regular).foregroundStyle(t.accentLite)
+                                            .frame(width: 34, height: 34)
+                                            .background(t.surfaceUp, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                                        VStack(alignment: .leading, spacing: 2) {
+                                            Text("Auto-stop after silence").font(WZFont.ui(14.5, .medium)).foregroundStyle(t.text)
+                                            Text("Whisperio will release the mic after this many seconds without speech. Set to 0 to turn it off.")
+                                                .font(WZFont.ui(12)).foregroundStyle(t.muted).lineSpacing(3)
+                                        }
+                                    }
+                                    HStack(spacing: 12) {
+                                        Stepper(value: autoStopSecondsBinding, in: 0...120, step: 5) {
+                                            Text(autoStopSecondsBinding.wrappedValue == 0
+                                                 ? "Off"
+                                                 : "\(Int(autoStopSecondsBinding.wrappedValue)) seconds")
+                                                .font(WZFont.ui(13.5, .semibold))
+                                                .foregroundStyle(t.text)
                                         }
                                         Spacer(minLength: 0)
-                                        Text(currentLanguageName).font(WZFont.ui(13)).foregroundStyle(t.accentLite)
-                                        WIcon("chevR", size: 16, weight: .regular).foregroundStyle(t.faint)
+                                    }
+                                    Text(autoStopSecondsBinding.wrappedValue == 0
+                                         ? "No automatic stop. Only manual stop or interruption will release the mic."
+                                         : "When the app is quiet for \(Int(autoStopSecondsBinding.wrappedValue)) seconds, Whisperio stops listening.")
+                                        .font(WZFont.mono(11)).foregroundStyle(t.faint)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                }
+                                .padding(.vertical, 12)
+                                SettRow(icon: "globe", label: "Apple online speech",
+                                        sub: "Use Apple’s servers when on-device isn’t available · audio leaves the device") {
+                                    WToggle(on: boolBinding(\.appleAllowOnline))
+                                }
+                                SettRow(icon: "spark", label: "Cleanup",
+                                        sub: "Tidy punctuation, casing & spacing") {
+                                    WToggle(on: boolBinding(\.cleanupEnabled))
+                                }
+                                SettRow(icon: "cloud", label: "Fallback engines",
+                                        sub: "If the chosen engine fails, try the others", last: true) {
+                                    WToggle(on: boolBinding(\.fallbackEnabled))
+                                }
+                            }
+                        }
+
+                        VStack(alignment: .leading, spacing: 10) {
+                            SectionLabel(text: "Integrations").padding(.leading, 4)
+                            #if os(iOS)
+                            SettGroup(title: "Quick dictation") {
+                                VStack(alignment: .leading, spacing: 12) {
+                                    Text("Say “Dictate with Whisperio” to Siri — or add the shortcut, then assign it to Back Tap (Settings → Accessibility → Touch → Back Tap → Run Shortcut).")
+                                        .font(WZFont.ui(13)).foregroundStyle(t.muted).lineSpacing(3)
+                                    SiriTipView(intent: DictateIntent()).tint(t.accent)
+                                    ShortcutsLink().tint(t.accent)
+                                }
+                            }
+                            #endif
+                            SettGroup(title: "Dictate from anywhere") {
+                                SettRow(icon: "zap", label: "Set up dictation triggers",
+                                        sub: "Action Button, Back Tap, keyboard, widgets & more — step by step",
+                                        onTap: { showTriggerGuides = true })
+                                SettRow(icon: "keyboard", label: "Whisperio keyboard",
+                                        sub: "Dictate from any app — install & setup", last: true,
+                                        onTap: openKeyboardSetup)
+                            }
+                            SettGroup(title: "Setup") {
+                                SettRow(icon: "spark", label: "Replay onboarding",
+                                        sub: "Go through the intro flow again", last: true,
+                                        onTap: openOnboarding)
+                            }
+                        }
+
+                        VStack(alignment: .leading, spacing: 10) {
+                            SectionLabel(text: "Content").padding(.leading, 4)
+                            VStack(alignment: .leading, spacing: 8) {
+                                SectionLabel(text: "Language & vocabulary").padding(.leading, 4)
+                                VStack(spacing: 0) {
+                                    Menu {
+                                        ForEach(languages, id: \.code) { lang in
+                                            Button(lang.name) { setLanguage(lang.code) }
+                                        }
+                                    } label: {
+                                        HStack(spacing: 13) {
+                                            WIcon("globe", size: 17, weight: .regular).foregroundStyle(t.accentLite)
+                                                .frame(width: 34, height: 34)
+                                                .background(t.surfaceUp, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                                            VStack(alignment: .leading, spacing: 1) {
+                                                Text("Language").font(WZFont.ui(14.5, .medium)).foregroundStyle(t.text)
+                                                Text("Spoken language for transcription").font(WZFont.ui(12)).foregroundStyle(t.muted)
+                                            }
+                                            Spacer(minLength: 0)
+                                            Text(currentLanguageName).font(WZFont.ui(13)).foregroundStyle(t.accentLite)
+                                            WIcon("chevR", size: 16, weight: .regular).foregroundStyle(t.faint)
+                                        }
+                                        .padding(.vertical, 13)
+                                    }
+                                    .overlay(alignment: .bottom) { Rectangle().fill(t.lineSoft).frame(height: 1) }
+
+                                    VStack(alignment: .leading, spacing: 7) {
+                                        Text("Custom words").font(WZFont.ui(13, .semibold)).foregroundStyle(t.muted)
+                                        TextField("git, GitHub, Next.js, kubectl…",
+                                                  text: binding(\.customVocabulary), axis: .vertical)
+                                            .lineLimit(2...4)
+                                            .font(WZFont.ui(13.5))
+                                            #if os(iOS)
+                                            .textInputAutocapitalization(.never)
+                                            #endif
+                                            .padding(.horizontal, 11).padding(.vertical, 9)
+                                            .background(t.surfaceUp, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                                            .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(t.line, lineWidth: 1))
+                                        Text("Comma-separated — helps spell names, brands & jargon.")
+                                            .font(WZFont.mono(11)).foregroundStyle(t.faint)
                                     }
                                     .padding(.vertical, 13)
                                 }
-                                .overlay(alignment: .bottom) { Rectangle().fill(t.lineSoft).frame(height: 1) }
+                                .padding(.horizontal, 16)
+                                .background(t.surface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                                .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(t.line, lineWidth: 1))
+                            }
 
-                                VStack(alignment: .leading, spacing: 7) {
-                                    Text("Custom words").font(WZFont.ui(13, .semibold)).foregroundStyle(t.muted)
-                                    TextField("git, GitHub, Next.js, kubectl…",
-                                              text: binding(\.customVocabulary), axis: .vertical)
-                                        .lineLimit(2...4)
-                                        .font(WZFont.ui(13.5))
-                                        #if os(iOS)
-                                        .textInputAutocapitalization(.never)
-                                        #endif
-                                        .padding(.horizontal, 11).padding(.vertical, 9)
-                                        .background(t.surfaceUp, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-                                        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(t.line, lineWidth: 1))
-                                    Text("Comma-separated — helps spell names, brands & jargon.")
-                                        .font(WZFont.mono(11)).foregroundStyle(t.faint)
+                            VStack(alignment: .leading, spacing: 8) {
+                                SectionLabel(text: "Rewrite prompts").padding(.leading, 4)
+                                Text(hasOpenAIKey
+                                     ? "Edit the rewrite templates Whisperio uses on transcripts."
+                                     : "Add an OpenAI API key first to edit rewrite prompts.")
+                                    .font(WZFont.mono(11)).foregroundStyle(t.faint)
+                                    .fixedSize(horizontal: false, vertical: true)
+                                VStack(spacing: 0) {
+                                    ForEach(presets.presets) { p in
+                                        SettRow(icon: p.icon, label: p.name,
+                                                sub: p.isMeta ? "Builds new templates from your voice" : nil,
+                                                onTap: { openPresetEditor(p) })
+                                    }
+                                    SettRow(icon: "plus", label: "New template",
+                                            sub: "Add your own rewrite instruction", last: true,
+                                            onTap: { openPresetEditor(nil) })
                                 }
-                                .padding(.vertical, 13)
-                            }
-                            .padding(.horizontal, 16)
-                            .background(t.surface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-                            .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(t.line, lineWidth: 1))
-                        }
-
-                        VStack(alignment: .leading, spacing: 8) {
-                            SectionLabel(text: "Rewrite presets").padding(.leading, 4)
-                            VStack(spacing: 0) {
-                                ForEach(presets.presets) { p in
-                                    SettRow(icon: p.icon, label: p.name,
-                                            sub: p.isMeta ? "Builds new templates from your voice" : nil,
-                                            onTap: { openPresetEditor(p) })
+                                .padding(.horizontal, 16)
+                                .background(t.surface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                                .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(t.line, lineWidth: 1))
+                                .opacity(hasOpenAIKey ? 1 : 0.5)
+                                .allowsHitTesting(hasOpenAIKey)
+                                GhostButton(title: "Restore default templates", icon: "sync") {
+                                    showRestoreConfirm = true
                                 }
-                                SettRow(icon: "plus", label: "New template",
-                                        sub: "Add your own rewrite instruction", last: true,
-                                        onTap: { openPresetEditor(nil) })
+                                .padding(.top, 2)
+                                .opacity(hasOpenAIKey ? 1 : 0.5)
+                                .allowsHitTesting(hasOpenAIKey)
                             }
-                            .padding(.horizontal, 16)
-                            .background(t.surface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-                            .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(t.line, lineWidth: 1))
-                            GhostButton(title: "Restore default templates", icon: "sync") {
-                                showRestoreConfirm = true
+
+                            SettGroup(title: "Journaling") {
+                                SettRow(icon: "book", label: "Auto-journaling",
+                                        sub: settings.settings.cloudConsentGranted
+                                            ? "Group & summarize each day’s notes with AI · uses the cloud text model"
+                                            : "Groups & summarizes each day’s notes · turn on cloud transcription first") {
+                                    WToggle(on: boolBinding(\.autoDailyDigest))
+                                }
+                                SettRow(icon: "command", label: "Categorization prompts",
+                                        sub: "Edit how the AI sorts & summarizes your day", last: true,
+                                        onTap: openDigestPrompts)
                             }
-                            .padding(.top, 2)
                         }
 
-                        SettGroup(title: "Journaling") {
-                            SettRow(icon: "book", label: "Auto-journaling",
-                                    sub: settings.settings.cloudConsentGranted
-                                        ? "Group & summarize each day’s notes with AI · uses the cloud text model"
-                                        : "Groups & summarizes each day’s notes · turn on cloud transcription first") {
-                                WToggle(on: boolBinding(\.autoDailyDigest))
+                        VStack(alignment: .leading, spacing: 10) {
+                            SectionLabel(text: "Sync settings").padding(.leading, 4)
+                            VStack(alignment: .leading, spacing: 6) {
+                                SettGroup(title: "Storage") {
+                                    storageRow(.onDevice, "On this device", "Private — stays on this iPhone", "lock")
+                                    storageRow(.iCloud, "iCloud",
+                                               "Sync your transcripts to your private iCloud across your Apple devices",
+                                               "cloud", last: true)
+                                }
+                                Text("Takes effect after you restart Whisperio.")
+                                    .font(WZFont.mono(11)).foregroundStyle(t.faint)
+                                    .padding(.leading, 4)
                             }
-                            SettRow(icon: "command", label: "Categorization prompts",
-                                    sub: "Edit how the AI sorts & summarizes your day", last: true,
-                                    onTap: openDigestPrompts)
-                        }
 
-                        VStack(alignment: .leading, spacing: 6) {
-                            SettGroup(title: "Storage") {
-                                storageRow(.onDevice, "On this device", "Private — stays on this iPhone", "lock")
-                                storageRow(.iCloud, "iCloud",
-                                           "Sync your transcripts to your private iCloud across your Apple devices",
-                                           "cloud", last: true)
+                            SettGroup(title: "Sync") {
+                                SettRow(icon: "sync", label: "Sync to GitHub",
+                                        sub: "Mirror transcripts, renders & daily summaries to a Git repo",
+                                        last: true, onTap: openGitHubSync)
                             }
-                            Text("Takes effect after you restart Whisperio.")
-                                .font(WZFont.mono(11)).foregroundStyle(t.faint)
-                                .padding(.leading, 4)
                         }
 
-                        SettGroup(title: "Sync") {
-                            SettRow(icon: "sync", label: "Sync to GitHub",
-                                    sub: "Mirror transcripts, renders & daily summaries to a Git repo",
-                                    last: true, onTap: openGitHubSync)
-                        }
+                        VStack(alignment: .leading, spacing: 10) {
+                            SectionLabel(text: "System").padding(.leading, 4)
+                            SettGroup(title: "On-device models") {
+                                SettRow(icon: "download", label: "Manage models",
+                                        sub: "Apple Speech + Whisper", last: true, onTap: openModels)
+                            }
 
-                        SettGroup(title: "On-device models") {
-                            SettRow(icon: "download", label: "Manage models",
-                                    sub: "Apple Speech + Whisper", last: true, onTap: openModels)
-                        }
-
-                        SettGroup(title: "Appearance") {
-                            SettRow(icon: dark ? "moon" : "sun", label: "Dark mode",
-                                    sub: "Match Whisperio’s look", last: true) {
-                                WToggle(on: $dark)
+                            SettGroup(title: "Appearance") {
+                                SettRow(icon: dark ? "moon" : "sun", label: "Dark mode",
+                                        sub: "Match Whisperio’s look", last: true) {
+                                    WToggle(on: $dark)
+                                }
                             }
                         }
 

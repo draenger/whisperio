@@ -136,20 +136,22 @@ struct HomeView: View {
     }
 
     private var micDock: some View {
-        ZStack {
-            LinearGradient(colors: [t.bg, t.bg.opacity(0)], startPoint: .bottom, endPoint: .top)
-                .frame(height: 130).allowsHitTesting(false)
+        ZStack(alignment: .bottom) {
+            LinearGradient(colors: [t.bg.opacity(0), t.bg], startPoint: .top, endPoint: .bottom)
+                .frame(height: 190)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+                .ignoresSafeArea(edges: .bottom)
             Button(action: openRecording) {
                 WIcon("mic", size: 28, weight: .bold).foregroundStyle(.white)
                     .frame(width: 72, height: 72)
                     .background(t.gradient, in: Circle())
                     .overlay(Circle().stroke(t.accent.opacity(t.dark ? 0.12 : 0.08), lineWidth: 6))
-                    .shadow(color: t.accent.opacity(0.7), radius: 14, y: 16)
+                    .shadow(color: t.accent.opacity(0.72), radius: 22, y: 24)
             }
             .buttonStyle(.plain)
-            .padding(.bottom, 40)
+            .padding(.bottom, 22)
         }
-        .frame(maxWidth: .infinity, alignment: .center)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
     }
 }
 
