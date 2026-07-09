@@ -1,6 +1,7 @@
 import Foundation
 import Combine
 import os
+import SwiftData
 import WhisperioKit
 
 // Real, persisted recordings. Prefers the SwiftData + CloudKit-backed RecordingSyncStore
@@ -18,7 +19,7 @@ final class RecordingsStore: ObservableObject {
 
     // Whether the live library is iCloud-backed (SwiftData + CloudKit). Drives the UI's iCloud
     // badge. False for the JSON fallback.
-    let isCloudBacked: Bool
+    @Published private(set) var isCloudBacked = false
 
     // Exactly one backend is live for the process. `.sync` delegates to the synced store and
     // mirrors its published items; `.json` keeps the original file-backed behaviour.
@@ -26,7 +27,7 @@ final class RecordingsStore: ObservableObject {
         case sync(RecordingSyncStore)
         case json(URL)
     }
-    private let backend: Backend
+    private var backend: Backend
 
     // Keeps our published `items` in step with the synced store's own @Published items.
     private var syncCancellable: AnyCancellable?
@@ -41,11 +42,7 @@ final class RecordingsStore: ObservableObject {
             do {
                 let store = try RecordingSyncStore()
                 backend = .sync(store)
-                isCloudBacked = store.isCloudBacked
-                items = store.items
-                isSyncing = store.isSyncing
-                syncCancellable = store.$items.sink { [weak self] in self?.items = $0 }
-                syncStateCancellable = store.$isSyncing.sink { [weak self] in self?.isSyncing = $0 }
+                attach(syncStore: store)
                 return
             } catch {
                 Self.log.error("RecordingSyncStore init failed, falling back to JSON: \(error.localizedDescription)")
@@ -56,6 +53,29 @@ final class RecordingsStore: ObservableObject {
         backend = .json(url)
         isCloudBacked = false
         loadJSON(from: url)
+    }
+
+    /// Promote the current library into the iCloud-backed SwiftData store and switch the live
+    /// backend over immediately. Callers typically pair this with `settings.storageMode = .iCloud`.
+    /// The caller chooses whether to surface the success/failure to the user.
+    @MainActor
+    func migrateCurrentLibraryToCloud() throws {
+        guard #available(iOS 17, macOS 14, *) else { return }
+        let cloudConfig = ModelConfiguration(cloudKitDatabase: .private(RecordingSyncStore.cloudKitContainerID))
+        let cloudStore = try RecordingSyncStore(configuration: cloudConfig, isCloudBacked: true)
+        cloudStore.add(items)
+        backend = .sync(cloudStore)
+        attach(syncStore: cloudStore)
+    }
+
+    private func attach(syncStore: RecordingSyncStore) {
+        syncCancellable = nil
+        syncStateCancellable = nil
+        isCloudBacked = syncStore.isCloudBacked
+        items = syncStore.items
+        isSyncing = syncStore.isSyncing
+        syncCancellable = syncStore.$items.sink { [weak self] in self?.items = $0 }
+        syncStateCancellable = syncStore.$isSyncing.sink { [weak self] in self?.isSyncing = $0 }
     }
 
     func add(_ r: Recording) {

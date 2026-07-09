@@ -7,6 +7,7 @@ import WhisperioKit
 struct SettingsView: View {
     @Environment(\.wz) private var t
     @EnvironmentObject private var settings: SettingsStore
+    @EnvironmentObject private var recordings: RecordingsStore
     @EnvironmentObject private var presets: PresetStore
     var onBack: () -> Void
     @Binding var dark: Bool
@@ -67,6 +68,16 @@ struct SettingsView: View {
         var s = settings.settings
         s.storageMode = mode
         settings.settings = s
+    }
+
+    private func moveLibraryToCloud() {
+        do {
+            try recordings.migrateCurrentLibraryToCloud()
+            setStorageMode(.iCloud)
+            toast("Library moved to iCloud sync")
+        } catch {
+            toast("Couldn't move library to iCloud")
+        }
     }
 
     // A selectable Storage row — tapping picks where transcripts are persisted. Shows a teal
@@ -302,10 +313,17 @@ struct SettingsView: View {
                             SectionLabel(text: "Sync settings").padding(.leading, 4)
                             VStack(alignment: .leading, spacing: 6) {
                                 SettGroup(title: "Storage") {
-                                    storageRow(.onDevice, "On this device", "Private — stays on this iPhone", "lock")
-                                    storageRow(.iCloud, "iCloud",
-                                               "Sync your transcripts to your private iCloud across your Apple devices",
-                                               "cloud", last: true)
+                                    storageRow(.iCloud, "Auto sync",
+                                               "Keep the library in iCloud and sync it across your Apple devices",
+                                               "cloud")
+                                    storageRow(.onDevice, "On this device",
+                                               "Keep the library local until you move it manually",
+                                               "lock")
+                                    if settings.settings.storageMode == .onDevice {
+                                        SettRow(icon: "cloud", label: "Move library to iCloud",
+                                                sub: "Copies the current library into iCloud and switches this device to auto sync.",
+                                                last: true, onTap: moveLibraryToCloud)
+                                    }
                                 }
                                 Text("Takes effect after you restart Whisperio.")
                                     .font(WZFont.mono(11)).foregroundStyle(t.faint)

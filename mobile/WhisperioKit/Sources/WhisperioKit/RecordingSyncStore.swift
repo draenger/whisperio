@@ -47,7 +47,7 @@ public final class RecordingSyncStore: ObservableObject {
 
     /// Whether this store persists into CloudKit (private DB). False for on-device / in-memory
     /// stores. Set once at init; used by the UI to decide whether to show the iCloud badge.
-    public let isCloudBacked: Bool
+    @Published public private(set) var isCloudBacked: Bool
 
     private let container: ModelContainer
     private var context: ModelContext { container.mainContext }
@@ -134,6 +134,14 @@ public final class RecordingSyncStore: ObservableObject {
     /// updated in place rather than duplicated.
     public func add(_ r: Recording) {
         upsert(r)
+        save()
+        reload()
+    }
+
+    /// Seed this store from an existing recording snapshot. Duplicate ids are upserted, so the
+    /// newest version of each record wins without creating extra rows.
+    public func add(_ recordings: [Recording]) {
+        for r in recordings { upsert(r) }
         save()
         reload()
     }
