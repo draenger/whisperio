@@ -1,6 +1,10 @@
 import SwiftUI
 import AppIntents
+import CloudKit
 import WhisperioKit
+#if canImport(UIKit)
+import UIKit
+#endif
 
 // Settings — real, backed by SettingsStore: pick the transcription engine, enter
 // cloud keys, toggle AI cleanup. Appearance + models below.
@@ -24,11 +28,47 @@ struct SettingsView: View {
     @State private var showTriggerGuides = false      // presents the trigger onboarding hub
     @State private var showRestoreConfirm = false     // confirm before restoring seed templates
     @State private var selectedCategory: SettingsCategory? = nil
+    @State private var cloudAccountStatusText = "Checking iCloud status…"
+    @State private var cloudStatus: CKAccountStatus = .couldNotDetermine
+    @State private var cloudAccountRecordIDText = "Checking account ID…"
+    @State private var cloudDetailStatusText = "Awaiting sync details…"
 
     private var engine: ProviderID { settings.settings.providerChain.first ?? .onDevice }
 
     private var appVersion: String {
         Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "—"
+    }
+
+    private var buildNumber: String {
+        Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "—"
+    }
+
+    private var deviceName: String {
+#if canImport(UIKit)
+        UIDevice.current.name
+#else
+        "Device"
+#endif
+    }
+
+    private var deviceOS: String {
+#if canImport(UIKit)
+        UIDevice.current.systemVersion
+#else
+        "—"
+#endif
+    }
+
+    private var deviceModel: String {
+#if canImport(UIKit)
+        UIDevice.current.model
+#else
+        "—"
+#endif
+    }
+
+    private var deviceSummary: String {
+        "\(deviceName) · \(deviceModel) · iOS \(deviceOS)"
     }
 
     private let languages: [(name: String, code: String)] = [
@@ -120,6 +160,13 @@ struct SettingsView: View {
         }
     }
 
+    private func pullCloudNow() {
+        recordings.requestCloudRefresh()
+        cloudDetailStatusText = "Cloud refresh requested."
+        toast("Requested a cloud pull")
+        Task { await refreshCloudAccountStatus() }
+    }
+
     // A selectable Storage row — tapping picks where transcripts are persisted. Shows a teal
     // checkmark on the currently-selected mode. Change takes effect on next launch (the store's
     // ModelContainer config is fixed at init), surfaced by the footnote under the group.
@@ -181,6 +228,10 @@ struct SettingsView: View {
             Button("Cancel", role: .cancel) { }
         } message: {
             Text("This brings back the built-in templates and undoes your edits to them. Your own templates are kept.")
+        }
+        .task(id: selectedCategory?.id) {
+            guard selectedCategory == .developer else { return }
+            await refreshCloudAccountStatus()
         }
     }
 
@@ -445,32 +496,235 @@ struct SettingsView: View {
 
             SettGroup(title: "Diagnostics") {
                 VStack(alignment: .leading, spacing: 10) {
-                    HStack(spacing: 8) {
-                        privacyPill(label: settings.settings.storageMode == .iCloud ? "Auto sync" : "On device")
-                        privacyPill(label: FileManager.default.ubiquityIdentityToken == nil ? "No iCloud account" : "iCloud account")
+                    HStack(alignment: .center) {
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("CloudKit status").font(WZFont.ui(13, .semibold)).foregroundStyle(t.text)
+                            Text(cloudAccountStatusText)
+                                .font(WZFont.ui(12))
+                                .foregroundStyle(t.muted)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        Spacer(minLength: 0)
+                        Button {
+                            Task { await refreshCloudAccountStatus() }
+                        } label: {
+                            HStack(spacing: 6) {
+                                WIcon("refresh", size: 14).foregroundStyle(t.text)
+                                Text("Refresh")
+                                    .font(WZFont.ui(12, .semibold))
+                                    .foregroundStyle(t.text)
+                            }
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 8)
+                            .background(t.surfaceUp, in: Capsule())
+                            .overlay(Capsule().stroke(t.line, lineWidth: 1))
+                        }
+                        .buttonStyle(.plain)
                     }
-                    HStack(spacing: 8) {
-                        privacyPill(label: recordings.isCloudBacked ? "CloudKit live" : "Local store")
-                        privacyPill(label: recordings.isSyncing ? "Syncing" : "Idle")
+                    VStack(alignment: .leading, spacing: 12) {
+                        VStack(spacing: 10) {
+                            diagnosticRow(label: "Device", value: deviceSummary)
+                            diagnosticRow(label: "App version", value: "\(appVersion) (\(buildNumber))")
+                            diagnosticRow(label: "Cloud container", value: RecordingSyncStore.cloudKitContainerID)
+                            diagnosticRow(label: "Account status", value: accountStatusLabel)
+                            diagnosticRow(label: "Account ID", value: cloudAccountRecordIDText)
+                            diagnosticRow(label: "Storage mode",
+                                          value: settings.settings.storageMode == .iCloud ? "Auto sync" : "On this device")
+                            diagnosticRow(label: "Library backend",
+                                          value: recordings.isCloudBacked ? "CloudKit" : "Local")
+                            diagnosticRow(label: "Sync activity",
+                                          value: recordings.isSyncing ? "Import/export in flight" : "Idle")
+                            diagnosticRow(label: "Last import",
+                                          value: dateString(recordings.lastImportAt))
+                            diagnosticRow(label: "Last export",
+                                          value: dateString(recordings.lastExportAt))
+                            diagnosticRow(label: "Last local error",
+                                          value: recordings.lastErrorMessage ?? "None")
+                        }
+                        HStack(spacing: 10) {
+                            GhostButton(title: "Pull from cloud", icon: "cloud.download") {
+                                pullCloudNow()
+                            }
+                            .fixedSize()
+                            Text(cloudDetailStatusText)
+                                .font(WZFont.ui(11.5))
+                                .foregroundStyle(t.faint)
+                                .fixedSize(horizontal: false, vertical: true)
+                            Spacer(minLength: 0)
+                        }
+                        if !recordings.pendingSyncQueue.isEmpty {
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("Pending sync queue")
+                                    .font(WZFont.ui(12.5, .semibold))
+                                    .foregroundStyle(t.text)
+                                VStack(spacing: 8) {
+                                    ForEach(recordings.pendingSyncQueue) { item in
+                                        syncQueueRow(item)
+                                    }
+                                }
+                            }
+                        }
+                        if !recordings.recentSyncEvents.isEmpty {
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("Recent cloud events")
+                                    .font(WZFont.ui(12.5, .semibold))
+                                    .foregroundStyle(t.text)
+                                VStack(spacing: 8) {
+                                    ForEach(recordings.recentSyncEvents.prefix(6)) { event in
+                                        syncEventRow(event)
+                                    }
+                                }
+                            }
+                        }
                     }
-                    Text(recordings.lastErrorMessage ?? "No recent local CloudKit error.")
-                        .font(WZFont.mono(11))
-                        .foregroundStyle(recordings.lastErrorMessage == nil ? t.faint : t.amber)
-                        .fixedSize(horizontal: false, vertical: true)
                 }
                 .padding(.vertical, 12)
             }
         }
     }
 
-    private func privacyPill(label: String) -> some View {
-        Text(label)
-            .font(WZFont.mono(11))
-            .foregroundStyle(t.text)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
-            .background(t.surfaceUp, in: Capsule())
-            .overlay(Capsule().stroke(t.line, lineWidth: 1))
+    private var accountStatusLabel: String {
+        switch cloudStatus {
+        case .available: return "Available"
+        case .noAccount: return "No account"
+        case .restricted: return "Restricted"
+            case .couldNotDetermine: return "Unknown"
+            case .temporarilyUnavailable: return "Temporarily unavailable"
+            @unknown default: return "Unknown"
+        }
+    }
+
+    private func dateString(_ date: Date?) -> String {
+        guard let date else { return "None" }
+        let f = DateFormatter()
+        f.dateStyle = .short
+        f.timeStyle = .medium
+        return f.string(from: date)
+    }
+
+    private func diagnosticRow(label: String, value: String) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            Text(label)
+                .font(WZFont.ui(12.5, .semibold))
+                .foregroundStyle(t.muted)
+                .frame(width: 116, alignment: .leading)
+            Text(value)
+                .font(WZFont.ui(12.5))
+                .foregroundStyle(t.text)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(.vertical, 4)
+    }
+
+    private func syncQueueRow(_ item: RecordingsStore.SyncQueueItem) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text(item.kind.rawValue)
+                    .font(WZFont.ui(11.5, .semibold))
+                    .foregroundStyle(t.accent)
+                Text(item.title)
+                    .font(WZFont.ui(12.5, .semibold))
+                    .foregroundStyle(t.text)
+                Spacer(minLength: 0)
+                Text(dateString(item.timestamp))
+                    .font(WZFont.mono(10.5))
+                    .foregroundStyle(t.faint)
+            }
+            Text(item.detail)
+                .font(WZFont.ui(11.5))
+                .foregroundStyle(t.muted)
+                .fixedSize(horizontal: false, vertical: true)
+            if let recordID = item.recordID {
+                Text(recordID.uuidString)
+                    .font(WZFont.mono(10.5))
+                    .foregroundStyle(t.faint)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+        }
+        .padding(10)
+        .background(t.surfaceUp, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(t.lineSoft, lineWidth: 1))
+    }
+
+    private func syncEventRow(_ event: RecordingSyncStore.EventLogEntry) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text(event.kind.capitalized)
+                    .font(WZFont.ui(11.5, .semibold))
+                    .foregroundStyle(event.state == "failed" ? t.red : t.green)
+                Text(event.state.capitalized)
+                    .font(WZFont.ui(12.5, .semibold))
+                    .foregroundStyle(t.text)
+                Spacer(minLength: 0)
+                Text(dateString(event.timestamp))
+                    .font(WZFont.mono(10.5))
+                    .foregroundStyle(t.faint)
+            }
+            Text(event.detail)
+                .font(WZFont.ui(11.5))
+                .foregroundStyle(t.muted)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(10)
+        .background(t.surfaceUp, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(t.lineSoft, lineWidth: 1))
+    }
+
+    @MainActor
+    private func refreshCloudAccountStatus() async {
+        let container = CKContainer(identifier: RecordingSyncStore.cloudKitContainerID)
+        do {
+            let status = try await container.accountStatus()
+            cloudStatus = status
+            do {
+                let recordID = try await fetchUserRecordID(container)
+                cloudAccountRecordIDText = recordID.recordName
+            } catch {
+                cloudAccountRecordIDText = "Unable to fetch user record ID"
+            }
+            switch status {
+            case .available:
+                cloudAccountStatusText = "Available. CloudKit can sync against \(RecordingSyncStore.cloudKitContainerID)."
+                cloudDetailStatusText = "CloudKit account is available."
+            case .noAccount:
+                cloudAccountStatusText = "No iCloud account is signed in on this device."
+                cloudDetailStatusText = "No iCloud account on this device."
+            case .restricted:
+                cloudAccountStatusText = "iCloud is restricted on this device."
+                cloudDetailStatusText = "CloudKit is restricted."
+            case .couldNotDetermine:
+                cloudAccountStatusText = "CloudKit could not determine account status yet."
+                cloudDetailStatusText = "CloudKit could not determine account status."
+            case .temporarilyUnavailable:
+                cloudAccountStatusText = "CloudKit is temporarily unavailable."
+                cloudDetailStatusText = "CloudKit is temporarily unavailable."
+            @unknown default:
+                cloudAccountStatusText = "CloudKit returned an unknown account status."
+                cloudDetailStatusText = "CloudKit returned an unknown status."
+            }
+        } catch {
+            cloudStatus = .couldNotDetermine
+            cloudAccountStatusText = "CloudKit account check failed: \(error.localizedDescription)"
+            cloudDetailStatusText = "Account lookup failed: \(error.localizedDescription)"
+        }
+    }
+
+    private func fetchUserRecordID(_ container: CKContainer) async throws -> CKRecord.ID {
+        try await withCheckedThrowingContinuation { continuation in
+            container.fetchUserRecordID { recordID, error in
+                if let recordID {
+                    continuation.resume(returning: recordID)
+                } else {
+                    continuation.resume(throwing: error ?? NSError(
+                        domain: "Whisperio.Settings",
+                        code: -1,
+                        userInfo: [NSLocalizedDescriptionKey: "Unable to fetch user record ID."]
+                    ))
+                }
+            }
+        }
     }
 
     private var systemCategory: some View {

@@ -11,6 +11,24 @@ import WhisperioKit
 // every @EnvironmentObject consumer stays untouched.
 @MainActor
 final class RecordingsStore: ObservableObject {
+    struct SyncQueueItem: Identifiable, Equatable {
+        enum Kind: String {
+            case add = "Add"
+            case delete = "Delete"
+            case category = "Category"
+            case render = "Rewrite"
+            case migrate = "Migrate"
+            case refresh = "Pull"
+        }
+
+        let id = UUID()
+        let timestamp: Date
+        let kind: Kind
+        let title: String
+        let detail: String
+        let recordID: UUID?
+    }
+
     @Published private(set) var items: [Recording] = []
 
     // True while the CloudKit-backed store is actively importing/exporting. Forwarded from the
@@ -23,6 +41,10 @@ final class RecordingsStore: ObservableObject {
 
     // Last local CloudKit/SwiftData error reported by the live store. Nil for JSON fallback.
     @Published private(set) var lastErrorMessage: String?
+    @Published private(set) var pendingSyncQueue: [SyncQueueItem] = []
+    @Published private(set) var recentSyncEvents: [RecordingSyncStore.EventLogEntry] = []
+    @Published private(set) var lastImportAt: Date?
+    @Published private(set) var lastExportAt: Date?
 
     // Exactly one backend is live for the process. `.sync` delegates to the synced store and
     // mirrors its published items; `.json` keeps the original file-backed behaviour.
@@ -38,6 +60,9 @@ final class RecordingsStore: ObservableObject {
     private var syncStateCancellable: AnyCancellable?
     // Keeps our published `lastErrorMessage` in step with the synced store's own diagnostics.
     private var syncErrorCancellable: AnyCancellable?
+    private var syncEventsCancellable: AnyCancellable?
+    private var syncImportCancellable: AnyCancellable?
+    private var syncExportCancellable: AnyCancellable?
 
     init() {
         // iOS 17+ (the app's deployment floor) with a reachable container → synced store, which
@@ -68,6 +93,8 @@ final class RecordingsStore: ObservableObject {
         guard #available(iOS 17, macOS 14, *) else { return }
         let cloudConfig = ModelConfiguration(cloudKitDatabase: .private(RecordingSyncStore.cloudKitContainerID))
         let cloudStore = try RecordingSyncStore(configuration: cloudConfig, isCloudBacked: true)
+        queueSync(.migrate, title: "Library migration",
+                  detail: "Moving local library to CloudKit", recordID: nil)
         cloudStore.add(items)
         backend = .sync(cloudStore)
         attach(syncStore: cloudStore)
@@ -77,18 +104,34 @@ final class RecordingsStore: ObservableObject {
         syncCancellable = nil
         syncStateCancellable = nil
         syncErrorCancellable = nil
+        syncEventsCancellable = nil
+        syncImportCancellable = nil
+        syncExportCancellable = nil
         isCloudBacked = syncStore.isCloudBacked
         items = syncStore.items
         isSyncing = syncStore.isSyncing
         lastErrorMessage = syncStore.lastErrorMessage
+        recentSyncEvents = syncStore.recentEvents
+        lastImportAt = syncStore.lastImportAt
+        lastExportAt = syncStore.lastExportAt
         syncCancellable = syncStore.$items.sink { [weak self] in self?.items = $0 }
         syncStateCancellable = syncStore.$isSyncing.sink { [weak self] in self?.isSyncing = $0 }
         syncErrorCancellable = syncStore.$lastErrorMessage.sink { [weak self] in self?.lastErrorMessage = $0 }
+        syncEventsCancellable = syncStore.$recentEvents.sink { [weak self] in self?.recentSyncEvents = $0 }
+        syncImportCancellable = syncStore.$lastImportAt.sink { [weak self] in
+            self?.lastImportAt = $0
+            self?.flushPendingQueue()
+        }
+        syncExportCancellable = syncStore.$lastExportAt.sink { [weak self] in
+            self?.lastExportAt = $0
+            self?.flushPendingQueue()
+        }
     }
 
     func add(_ r: Recording) {
         switch backend {
         case .sync(let store):
+            queueSync(.add, title: r.transcription ?? "Recording", detail: r.id.uuidString, recordID: r.id)
             store.add(r)
         case .json(let url):
             upsertJSON(r)
@@ -112,6 +155,7 @@ final class RecordingsStore: ObservableObject {
     func delete(_ r: Recording) {
         switch backend {
         case .sync(let store):
+            queueSync(.delete, title: r.transcription ?? "Recording", detail: r.id.uuidString, recordID: r.id)
             store.delete(r)
         case .json(let url):
             items.removeAll { $0.id == r.id }
@@ -133,6 +177,7 @@ final class RecordingsStore: ObservableObject {
         guard let sourceId = demo.sourceId else { return }
         switch backend {
         case .sync(let store):
+            queueSync(.category, title: demo.title, detail: "Category -> \(id)", recordID: sourceId)
             store.setCategory(id, for: sourceId)
         case .json(let url):
             guard let idx = items.firstIndex(where: { $0.id == sourceId }) else { return }
@@ -151,6 +196,7 @@ final class RecordingsStore: ObservableObject {
         guard let sourceId = demo.sourceId else { return }
         switch backend {
         case .sync(let store):
+            queueSync(.render, title: demo.title, detail: presetID, recordID: sourceId)
             store.setRender(text, presetID: presetID, for: sourceId)
         case .json(let url):
             guard let idx = items.firstIndex(where: { $0.id == sourceId }) else { return }
@@ -159,6 +205,28 @@ final class RecordingsStore: ObservableObject {
             items[idx].updatedAt = Date()   // bump LWW clock so this edit wins over stale copies
             saveJSON(to: url)
         }
+    }
+
+    func requestCloudRefresh() {
+        switch backend {
+        case .sync(let store):
+            store.requestRefresh()
+        case .json:
+            break
+        }
+    }
+
+    private func queueSync(_ kind: SyncQueueItem.Kind, title: String, detail: String, recordID: UUID?) {
+        guard isCloudBacked || kind == .migrate else { return }
+        pendingSyncQueue.insert(.init(timestamp: Date(), kind: kind, title: title, detail: detail, recordID: recordID), at: 0)
+        if pendingSyncQueue.count > 20 {
+            pendingSyncQueue = Array(pendingSyncQueue.prefix(20))
+        }
+    }
+
+    private func flushPendingQueue() {
+        guard let exportAt = lastExportAt else { return }
+        pendingSyncQueue.removeAll { $0.timestamp <= exportAt }
     }
 
     // MARK: - JSON fallback

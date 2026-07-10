@@ -1,8 +1,8 @@
 import SwiftUI
 import WhisperioKit
 
-// Native iOS keyboard replica + a single branded add-on: the real Whisperio logo
-// (bundled image "WhisperioLogo") with a mic, sitting in the predictive bar.
+// A more product-like keyboard surface: branded controls on top, softer key tiles below,
+// same extension behavior under the hood.
 
 private enum KBPlane { case letters, numbers, symbols }
 
@@ -11,148 +11,182 @@ struct KeyboardRootView: View {
     @Environment(\.colorScheme) private var scheme
     @State private var plane: KBPlane = .letters
 
-    private let accent = Color(red: 0x8b/255, green: 0x5c/255, blue: 0xf6/255)
+    private let accent = Color(red: 0x8b / 255, green: 0x5c / 255, blue: 0xf6 / 255)
 
-    // Letter planes
     private static let lRow1 = Array("qwertyuiop").map(String.init)
     private static let lRow2 = Array("asdfghjkl").map(String.init)
     private static let lRow3 = Array("zxcvbnm").map(String.init)
-    // Numbers plane
     private static let nRow1 = Array("1234567890").map(String.init)
     private static let nRow2 = ["-", "/", ":", ";", "(", ")", "$", "&", "@", "\""]
     private static let pRow3 = [".", ",", "?", "!", "'"]
-    // Symbols plane
     private static let sRow1 = ["[", "]", "{", "}", "#", "%", "^", "*", "+", "="]
     private static let sRow2 = ["_", "\\", "|", "~", "<", ">", "€", "£", "¥", "•"]
 
-    // MARK: Native adaptive palette
-
     private var dark: Bool { scheme == .dark }
-    private var kbBg: Color {
-        dark ? Color(red: 0.11, green: 0.11, blue: 0.12)
-             : Color(red: 209/255, green: 211/255, blue: 217/255)
+    private var background: Color {
+        dark ? Color(red: 0.08, green: 0.08, blue: 0.10)
+             : Color(red: 0.94, green: 0.93, blue: 0.97)
     }
-    private var letterBg: Color {
-        dark ? Color(red: 0.42, green: 0.42, blue: 0.44) : .white
+    private var surface: Color {
+        dark ? Color(red: 0.13, green: 0.13, blue: 0.16)
+             : Color.white
     }
-    private var specialBg: Color {
-        dark ? Color(red: 0.27, green: 0.27, blue: 0.29)
-             : Color(red: 172/255, green: 177/255, blue: 185/255)
+    private var surfaceUp: Color {
+        dark ? Color(red: 0.18, green: 0.18, blue: 0.22)
+             : Color(red: 0.98, green: 0.98, blue: 1.0)
     }
-    private var keyText: Color { dark ? .white : .black }
-    private var keyShadow: Color {
-        dark ? Color.black.opacity(0.55) : Color(red: 137/255, green: 139/255, blue: 143/255)
+    private var keyFill: Color {
+        dark ? Color.white.opacity(0.11) : Color(red: 0.975, green: 0.974, blue: 0.992)
     }
+    private var specialFill: Color {
+        dark ? Color.white.opacity(0.08) : Color(red: 0.92, green: 0.91, blue: 0.96)
+    }
+    private var keyText: Color { dark ? .white : Color(red: 0.12, green: 0.10, blue: 0.19) }
+    private var mutedText: Color { dark ? Color.white.opacity(0.72) : Color(red: 0.38, green: 0.36, blue: 0.47) }
+    private var border: Color { dark ? Color.white.opacity(0.08) : Color.black.opacity(0.06) }
 
     var body: some View {
-        VStack(spacing: 0) {
-            topBar
-            if model.showFullAccessHint && !model.hasFullAccess { fullAccessBanner }
-            VStack(spacing: 11) {
-                row1
-                row2
-                row3
-                row4
+        ZStack {
+            background.ignoresSafeArea()
+            VStack(spacing: 10) {
+                header
+                if model.showFullAccessHint && !model.hasFullAccess {
+                    fullAccessBanner
+                }
+                keySurface
             }
-            .padding(.horizontal, 3)
+            .padding(.horizontal, 8)
             .padding(.top, 8)
-            .padding(.bottom, 4)
+            .padding(.bottom, 8)
         }
-        .frame(maxWidth: .infinity)
-        .background(kbBg)
     }
 
-    // MARK: - Predictive bar: Whisperio logo button + live suggestions
-
-    private var topBar: some View {
-        HStack(spacing: 0) {
-            Button(action: { model.mic() }) {
-                HStack(spacing: 5) {
-                    Image("WhisperioLogo")
-                        .resizable()
-                        .frame(width: 26, height: 26)
-                        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                                .stroke(Color.primary.opacity(0.15), lineWidth: 0.5)
-                        )
-                        .saturation(model.hasFullAccess ? 1 : 0.2)
-                    Image(systemName: "mic.fill")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(model.hasFullAccess ? accent : Color.secondary)
-                    if let last = model.lastInserted, !last.isEmpty {
-                        Image(systemName: "checkmark")
-                            .font(.system(size: 10, weight: .bold))
-                            .foregroundStyle(.green)
-                    }
-                }
-                .padding(.horizontal, 9).padding(.vertical, 5)
-                .background(specialBg.opacity(dark ? 0.9 : 0.55), in: Capsule())
-                .contentShape(Capsule())
-            }
-            .buttonStyle(.plain)
-            .padding(.leading, 6)
-
-            if let _ = model.lastInserted {
-                Menu {
-                    ForEach(RewritePresetCatalog.seeds.filter { !$0.isMeta }) { preset in
-                        Button(preset.name) { model.rewrite(presetID: preset.id) }
-                    }
-                } label: {
-                    HStack(spacing: 5) {
-                        Image(systemName: "sparkles")
-                            .font(.system(size: 12, weight: .semibold))
-                        Text("Rewrite")
-                    }
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(keyText)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 5)
-                    .background(specialBg.opacity(dark ? 0.85 : 0.55), in: Capsule())
-                }
-                .menuStyle(.borderlessButton)
-                .padding(.leading, 6)
-            }
-
-            // Live suggestions (offline, from UITextChecker). Empty when there's nothing to predict.
-            if model.suggestions.isEmpty {
+    private var header: some View {
+        VStack(spacing: 8) {
+            HStack(spacing: 8) {
+                brandChip
                 Spacer(minLength: 0)
-            } else {
-                HStack(spacing: 0) {
-                    ForEach(Array(model.suggestions.prefix(3).enumerated()), id: \.offset) { i, word in
-                        if i > 0 {
-                            Rectangle().fill(Color.primary.opacity(0.16)).frame(width: 0.5, height: 22)
-                        }
-                        Button(action: { model.pickSuggestion(word) }) {
-                            Text(word)
-                                .font(.system(size: 16))
-                                .foregroundStyle(keyText)
-                                .lineLimit(1)
-                                .frame(maxWidth: .infinity, minHeight: 40)
-                                .contentShape(Rectangle())
-                        }
-                        .buttonStyle(KBPressStyle())
-                    }
+                if let _ = model.lastInserted {
+                    rewriteMenu
                 }
-                .padding(.horizontal, 4)
+                dictateButton
+            }
+            if model.suggestions.isEmpty {
+                Rectangle().fill(border).frame(height: 1)
+            } else {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(Array(model.suggestions.prefix(3).enumerated()), id: \.offset) { _, word in
+                            suggestionButton(word)
+                        }
+                    }
+                    .padding(.vertical, 1)
+                }
             }
         }
-        .frame(height: 46)
-        .overlay(alignment: .bottom) {
-            Rectangle().fill(Color.primary.opacity(0.10)).frame(height: 0.5)
+        .padding(10)
+        .background(surface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(border, lineWidth: 1))
+    }
+
+    private var brandChip: some View {
+        HStack(spacing: 8) {
+            Image("WhisperioLogo")
+                .resizable()
+                .frame(width: 22, height: 22)
+                .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+            VStack(alignment: .leading, spacing: 1) {
+                Text("Whisperio").font(.system(size: 13, weight: .semibold)).foregroundStyle(keyText)
+                Text(model.hasFullAccess ? "Keyboard ready" : "Needs Full Access")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(mutedText)
+                    .lineLimit(1)
+            }
         }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(specialFill, in: Capsule())
+        .overlay(Capsule().stroke(border, lineWidth: 1))
+    }
+
+    private var dictateButton: some View {
+        Button(action: { model.mic() }) {
+            HStack(spacing: 7) {
+                Image(systemName: "mic.fill")
+                    .font(.system(size: 12, weight: .semibold))
+                Text("Dictate")
+                    .font(.system(size: 13, weight: .semibold))
+            }
+            .foregroundStyle(.white)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 9)
+            .background(accent, in: Capsule())
+        }
+        .buttonStyle(KBPressStyle())
+    }
+
+    private var rewriteMenu: some View {
+        Menu {
+            ForEach(RewritePresetCatalog.seeds.filter { !$0.isMeta }) { preset in
+                Button(preset.name) { model.rewrite(presetID: preset.id) }
+            }
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "sparkles")
+                    .font(.system(size: 12, weight: .semibold))
+                Text("Rewrite")
+                    .font(.system(size: 13, weight: .semibold))
+            }
+            .foregroundStyle(keyText)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 9)
+            .background(specialFill, in: Capsule())
+            .overlay(Capsule().stroke(border, lineWidth: 1))
+        }
+        .menuStyle(.borderlessButton)
+    }
+
+    private func suggestionButton(_ word: String) -> some View {
+        Button(action: { model.pickSuggestion(word) }) {
+            Text(word)
+                .font(.system(size: 15, weight: .medium))
+                .foregroundStyle(keyText)
+                .lineLimit(1)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(specialFill, in: Capsule())
+                .overlay(Capsule().stroke(border, lineWidth: 1))
+        }
+        .buttonStyle(KBPressStyle())
     }
 
     private var fullAccessBanner: some View {
-        Text("Włącz „Pełny dostęp” w Ustawieniach › Klawiatury, aby dyktować.")
-            .font(.system(size: 12, weight: .medium))
-            .foregroundStyle(accent)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 12).padding(.vertical, 7)
-            .background(accent.opacity(0.12))
+        HStack(spacing: 8) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.system(size: 12, weight: .semibold))
+            Text("Turn on Full Access in Settings > Keyboard to use the mic.")
+                .font(.system(size: 12.5, weight: .medium))
+                .lineLimit(2)
+        }
+        .foregroundStyle(accent)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .background(accent.opacity(dark ? 0.16 : 0.10), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(accent.opacity(0.20), lineWidth: 1))
     }
 
-    // MARK: - Rows (plane-aware)
+    private var keySurface: some View {
+        VStack(spacing: 8) {
+            row1
+            row2
+            row3
+            row4
+        }
+        .padding(8)
+        .background(surface, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).stroke(border, lineWidth: 1))
+    }
 
     @ViewBuilder private var row1: some View {
         switch plane {
@@ -204,24 +238,26 @@ struct KeyboardRootView: View {
             Button(action: { model.space() }) {
                 Text("space")
                     .font(.system(size: 15))
-                    .foregroundStyle(keyText.opacity(0.85))
+                    .foregroundStyle(keyText.opacity(0.9))
                     .frame(maxWidth: .infinity, minHeight: 44)
-                    .background(letterBg, in: keyShape)
-                    .shadow(color: keyShadow, radius: 0, x: 0, y: 1)
+                    .background(keyFill, in: keyShape)
+                    .overlay(keyShape.stroke(border, lineWidth: 1))
             }
             .buttonStyle(KBPressStyle())
             specialKey(text: "return", flex: 1.7) { model.returnKey() }
         }
     }
 
-    // MARK: - Key builders
-
-    private var keyShape: RoundedRectangle { RoundedRectangle(cornerRadius: 5, style: .continuous) }
+    private var keyShape: RoundedRectangle {
+        RoundedRectangle(cornerRadius: 8, style: .continuous)
+    }
 
     private func charRow(_ keys: [String], raw: Bool, inset: CGFloat = 0) -> some View {
         HStack(spacing: 6) {
             if inset > 0 { Spacer().frame(width: inset) }
-            ForEach(keys, id: \.self) { k in raw ? AnyView(symKey(k)) : AnyView(letterKey(k)) }
+            ForEach(keys, id: \.self) { k in
+                raw ? AnyView(symKey(k)) : AnyView(letterKey(k))
+            }
             if inset > 0 { Spacer().frame(width: inset) }
         }
     }
@@ -229,11 +265,11 @@ struct KeyboardRootView: View {
     private func letterKey(_ k: String) -> some View {
         Button(action: { model.tap(k) }) {
             Text(model.shifted ? k.uppercased() : k)
-                .font(.system(size: 22))
+                .font(.system(size: 21, weight: .regular))
                 .foregroundStyle(keyText)
-                .frame(maxWidth: .infinity, minHeight: 44)
-                .background(letterBg, in: keyShape)
-                .shadow(color: keyShadow, radius: 0, x: 0, y: 1)
+                .frame(maxWidth: .infinity, minHeight: 46)
+                .background(keyFill, in: keyShape)
+                .overlay(keyShape.stroke(border, lineWidth: 1))
         }
         .buttonStyle(KBPressStyle())
     }
@@ -241,36 +277,40 @@ struct KeyboardRootView: View {
     private func symKey(_ k: String) -> some View {
         Button(action: { model.type(k) }) {
             Text(k)
-                .font(.system(size: 20))
+                .font(.system(size: 19, weight: .regular))
                 .foregroundStyle(keyText)
-                .frame(maxWidth: .infinity, minHeight: 44)
-                .background(letterBg, in: keyShape)
-                .shadow(color: keyShadow, radius: 0, x: 0, y: 1)
+                .frame(maxWidth: .infinity, minHeight: 46)
+                .background(keyFill, in: keyShape)
+                .overlay(keyShape.stroke(border, lineWidth: 1))
         }
         .buttonStyle(KBPressStyle())
     }
 
-    private func specialKey(icon: String? = nil, text: String? = nil,
-                            flex: CGFloat, action: @escaping () -> Void) -> some View {
+    private func specialKey(icon: String? = nil, text: String? = nil, flex: CGFloat, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Group {
-                if let icon { Image(systemName: icon).font(.system(size: 18, weight: .regular)) }
-                else if let text { Text(text).font(.system(size: 15, weight: .regular)) }
+                if let icon {
+                    Image(systemName: icon)
+                        .font(.system(size: 17, weight: .regular))
+                } else if let text {
+                    Text(text)
+                        .font(.system(size: 14.5, weight: .medium))
+                }
             }
             .foregroundStyle(keyText)
-            .frame(maxWidth: .infinity, minHeight: 44)
-            .background(specialBg, in: keyShape)
-            .shadow(color: keyShadow, radius: 0, x: 0, y: 1)
+            .frame(maxWidth: .infinity, minHeight: 46)
+            .background(specialFill, in: keyShape)
+            .overlay(keyShape.stroke(border, lineWidth: 1))
         }
         .buttonStyle(KBPressStyle())
-        .frame(maxWidth: 44 * flex)
+        .frame(width: 44 * flex)
     }
 }
 
-// Native-style press feedback: key dims briefly while held.
 private struct KBPressStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .opacity(configuration.isPressed ? 0.55 : 1)
+            .scaleEffect(configuration.isPressed ? 0.97 : 1.0)
+            .opacity(configuration.isPressed ? 0.68 : 1.0)
     }
 }

@@ -3,6 +3,9 @@ import SwiftData
 import CoreData
 import CloudKit
 import os
+#if canImport(UIKit)
+import UIKit
+#endif
 
 /// Pure, container-free helpers backing `RecordingSyncStore`. Kept off the `@available`
 /// SwiftData surface so the migration/dedup logic stays unit-testable headlessly (no
@@ -38,6 +41,14 @@ public enum RecordingSync {
 @available(iOS 17, macOS 14, *)
 @MainActor
 public final class RecordingSyncStore: ObservableObject {
+    public struct EventLogEntry: Identifiable, Equatable {
+        public let id = UUID()
+        public let timestamp: Date
+        public let kind: String
+        public let state: String
+        public let detail: String
+    }
+
     /// Current recordings, newest first, deduped on id. Recomputed after every mutation.
     @Published public private(set) var items: [Recording] = []
 
@@ -52,6 +63,13 @@ public final class RecordingSyncStore: ObservableObject {
     /// Last local CloudKit/SwiftData error surfaced by this store. Useful for in-app diagnostics
     /// when sync silently falls back or a save/fetch starts failing.
     @Published public private(set) var lastErrorMessage: String?
+
+    /// Most recent CloudKit sync events, newest first, capped for diagnostics.
+    @Published public private(set) var recentEvents: [EventLogEntry] = []
+
+    /// Last successful import/export timestamps. Useful for cross-device comparison.
+    @Published public private(set) var lastImportAt: Date?
+    @Published public private(set) var lastExportAt: Date?
 
     private let container: ModelContainer
     private var context: ModelContext { container.mainContext }
@@ -125,10 +143,42 @@ public final class RecordingSyncStore: ObservableObject {
             guard let event = note.userInfo?[NSPersistentCloudKitContainer.eventNotificationUserInfoKey]
                     as? NSPersistentCloudKitContainer.Event else { return }
             guard event.type == .import || event.type == .export else { return }
-            let syncing = (event.endDate == nil)
+            let kind = (event.type == .import ? "import" : "export")
+            let type = event.type
+            let endDate = event.endDate
+            let succeeded = event.succeeded
+            let error = event.error
+            let syncing = (endDate == nil)
             MainActor.assumeIsolated {
                 self?.isSyncing = syncing
+                if let endDate {
+                    let state = succeeded ? "succeeded" : "failed"
+                    let detail = error?.localizedDescription ?? "done"
+                    self?.appendEvent(
+                        timestamp: endDate,
+                        kind: kind,
+                        state: state,
+                        detail: detail
+                    )
+                    if succeeded {
+                        if type == .import {
+                            self?.lastImportAt = endDate
+                            self?.reload()
+                        } else if type == .export {
+                            self?.lastExportAt = endDate
+                        }
+                    } else if let error {
+                        self?.recordError("CloudKit \(kind) failed: \(error.localizedDescription)")
+                    }
+                }
             }
+        }
+    }
+
+    private func appendEvent(timestamp: Date, kind: String, state: String, detail: String) {
+        recentEvents.insert(.init(timestamp: timestamp, kind: kind, state: state, detail: detail), at: 0)
+        if recentEvents.count > 12 {
+            recentEvents = Array(recentEvents.prefix(12))
         }
     }
 
@@ -174,6 +224,14 @@ public final class RecordingSyncStore: ObservableObject {
         entity.renderPresetID = presetID
         entity.modifiedAt = Date()
         save()
+        reload()
+    }
+
+    /// Nudge CloudKit to check for remote changes and refresh the local snapshot.
+    public func requestRefresh() {
+#if canImport(UIKit)
+        NotificationCenter.default.post(name: UIApplication.didBecomeActiveNotification, object: nil)
+#endif
         reload()
     }
 
