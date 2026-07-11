@@ -63,8 +63,13 @@ public final class RecordingEntity {
 
 @available(iOS 17, macOS 14, *)
 public extension RecordingEntity {
-    /// Build an entity from a `Recording` value. `modifiedAt` seeds to now unless supplied.
-    convenience init(_ r: Recording, modifiedAt: Date = Date()) {
+    /// Build an entity from a `Recording` value. `modifiedAt` seeds to the recording's own
+    /// `lastWriteAt` (its `updatedAt` if set, else its `timestamp`) unless supplied — *not*
+    /// wall-clock `Date()`. This keeps the `modifiedAt == timestamp` "never edited" convention
+    /// that `recording` (below) relies on: a never-edited `Recording` has `updatedAt == nil`,
+    /// so `lastWriteAt == timestamp`, so the projected entity's `modifiedAt` matches `timestamp`
+    /// and round-trips back to `updatedAt == nil` again.
+    convenience init(_ r: Recording, modifiedAt: Date? = nil) {
         self.init(
             id: r.id,
             filename: r.filename,
@@ -77,13 +82,19 @@ public extension RecordingEntity {
             category: r.category,
             render: r.render,
             renderPresetID: r.renderPresetID,
-            modifiedAt: modifiedAt
+            modifiedAt: modifiedAt ?? r.lastWriteAt
         )
     }
 
     /// Project back to the pure `Recording` value type. Unknown raw strings decode
     /// tolerantly: an unrecognised status falls back to `.pending`, an unrecognised
     /// provider to nil — mirroring the value type's optional-or-default decode stance.
+    ///
+    /// `updatedAt` carries the LWW clock across the projection: when the row has actually
+    /// been edited (`modifiedAt != timestamp`) we pass `modifiedAt` through so
+    /// `Recording.lastWriteAt` reflects the true last-edit time, not the creation
+    /// timestamp. A never-edited row passes `nil` so serialization/equality of freshly
+    /// created records is unchanged.
     var recording: Recording {
         Recording(
             id: id,
@@ -96,7 +107,8 @@ public extension RecordingEntity {
             error: error,
             category: category,
             render: render,
-            renderPresetID: renderPresetID
+            renderPresetID: renderPresetID,
+            updatedAt: (modifiedAt == timestamp) ? nil : modifiedAt
         )
     }
 

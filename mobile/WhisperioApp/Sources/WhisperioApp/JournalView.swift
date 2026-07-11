@@ -27,6 +27,9 @@ struct JournalView: View {
                         }
                         .padding(.horizontal, 16).padding(.top, 16).padding(.bottom, 40)
                     }
+                    // Re-reads whatever CloudKit has already imported locally for the journal —
+                    // same recourse Home's pull-to-refresh gives the recordings list.
+                    .refreshable { digests.requestCloudRefresh() }
                 }
             }
         }

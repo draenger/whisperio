@@ -30,7 +30,10 @@ final class PhoneConnectivity: NSObject, ObservableObject, WCSessionDelegate {
                 let text = store.cleanup(tr.text)
                 let rec = Recording(filename: clip.filename, duration: clip.duration,
                                     status: .completed, provider: tr.provider, transcription: text)
-                recordings?.add(rec)
+                // Match RecordingView.swift:228/:255 — a watch dictation is still transcribed
+                // and returned to the watch even when history saving is off, but it must not be
+                // persisted (and thus synced to every other device) unless the user opted in.
+                if store.settings.saveRecordings { recordings?.add(rec) }
                 reply(["transcript": text])
             case .failure(let err):
                 let msg: String

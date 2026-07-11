@@ -12,6 +12,7 @@ struct SettingsView: View {
     @Environment(\.wz) private var t
     @EnvironmentObject private var settings: SettingsStore
     @EnvironmentObject private var recordings: RecordingsStore
+    @EnvironmentObject private var digests: DigestStore
     @EnvironmentObject private var presets: PresetStore
     var onBack: () -> Void
     @Binding var dark: Bool
@@ -153,17 +154,33 @@ struct SettingsView: View {
     private func moveLibraryToCloud() {
         do {
             try recordings.migrateCurrentLibraryToCloud()
-            setStorageMode(.iCloud)
-            toast("Library moved to iCloud sync")
         } catch {
             toast("Couldn't move library to iCloud")
+            return
+        }
+        setStorageMode(.iCloud)
+        do {
+            try digests.migrateCurrentLibraryToCloud()
+            toast("Library moved to iCloud sync")
+        } catch {
+            toast("Recordings moved to iCloud, but the journal is still local — retry from the sync banner")
         }
     }
 
+    // Re-reads the local library snapshot and refreshes the CloudKit account/status diagnostics.
+    // This does NOT force a network pull — SwiftData exposes no public API for that, and
+    // `RecordingsStore.requestCloudRefresh()` only re-reads what's already been imported locally.
+    // Real cross-device delivery is push-driven (silent remote-notification push).
     private func pullCloudNow() {
         recordings.requestCloudRefresh()
-        cloudDetailStatusText = "Cloud refresh requested."
-        toast("Requested a cloud pull")
+        if recordings.isSyncing {
+            cloudDetailStatusText = "A CloudKit import/export is currently in flight."
+        } else if let lastImportAt = recordings.lastImportAt {
+            cloudDetailStatusText = "Re-read local library. Last CloudKit import: \(dateString(lastImportAt))."
+        } else {
+            cloudDetailStatusText = "Re-read local library. No CloudKit import has landed yet on this device."
+        }
+        toast("Re-read the local library")
         Task { await refreshCloudAccountStatus() }
     }
 
@@ -460,9 +477,31 @@ struct SettingsView: View {
         }
     }
 
+    // Persistent (non-dismissable) — shown whenever the user's choice is iCloud sync but EITHER
+    // the library or the journal fell back to local-only (no iCloud account at launch, or a
+    // CloudKit container init failed) and is pinned there for the process's lifetime. Without
+    // this, two devices in this state each silently accumulate their own recordings/digests that
+    // the other never sees.
+    private var iCloudSyncMismatch: Bool {
+        settings.settings.storageMode == .iCloud && (!recordings.isCloudBacked || !digests.isCloudBacked)
+    }
+
+    private var iCloudMismatchBanner: some View {
+        Button(action: moveLibraryToCloud) {
+            StateBanner(tone: .warn, icon: "cloud",
+                        title: "iCloud sync is paused on this device",
+                        sub: "Storage is set to Auto sync, but this device is local-only right now — recordings and journal entries made here won't reach your other devices until sync resumes.",
+                        action: "Resume iCloud sync")
+        }
+        .buttonStyle(.plain)
+    }
+
     private var syncCategory: some View {
         VStack(alignment: .leading, spacing: 10) {
             SectionLabel(text: "Sync settings").padding(.leading, 4)
+            if iCloudSyncMismatch {
+                iCloudMismatchBanner
+            }
             VStack(alignment: .leading, spacing: 6) {
                 SettGroup(title: "Storage") {
                     storageRow(.iCloud, "Auto sync",
@@ -540,17 +579,34 @@ struct SettingsView: View {
                                           value: dateString(recordings.lastExportAt))
                             diagnosticRow(label: "Last local error",
                                           value: recordings.lastErrorMessage ?? "None")
+                            diagnosticRow(label: "Journal backend",
+                                          value: digests.isCloudBacked ? "CloudKit" : "Local")
+                            diagnosticRow(label: "Journal sync activity",
+                                          value: digests.isSyncing ? "Import/export in flight" : "Idle")
+                            diagnosticRow(label: "Journal last import",
+                                          value: dateString(digests.lastImportAt))
+                            diagnosticRow(label: "Journal last error",
+                                          value: digests.lastErrorMessage ?? "None")
                         }
-                        HStack(spacing: 10) {
-                            GhostButton(title: "Pull from cloud", icon: "cloud.download") {
-                                pullCloudNow()
+                        if recordings.isCloudBacked {
+                            HStack(spacing: 10) {
+                                GhostButton(title: "Refresh local view", icon: "refresh") {
+                                    pullCloudNow()
+                                }
+                                .fixedSize()
+                                .opacity(recordings.isSyncing ? 0.5 : 1)
+                                .allowsHitTesting(!recordings.isSyncing)
+                                Text(cloudDetailStatusText)
+                                    .font(WZFont.ui(11.5))
+                                    .foregroundStyle(t.faint)
+                                    .fixedSize(horizontal: false, vertical: true)
+                                Spacer(minLength: 0)
                             }
-                            .fixedSize()
-                            Text(cloudDetailStatusText)
+                        } else {
+                            Text("Library backend is local — there is no CloudKit connection to refresh from.")
                                 .font(WZFont.ui(11.5))
                                 .foregroundStyle(t.faint)
                                 .fixedSize(horizontal: false, vertical: true)
-                            Spacer(minLength: 0)
                         }
                         if !recordings.pendingSyncQueue.isEmpty {
                             VStack(alignment: .leading, spacing: 8) {

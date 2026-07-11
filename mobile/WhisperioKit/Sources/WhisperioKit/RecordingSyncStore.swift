@@ -3,9 +3,6 @@ import SwiftData
 import CoreData
 import CloudKit
 import os
-#if canImport(UIKit)
-import UIKit
-#endif
 
 /// Pure, container-free helpers backing `RecordingSyncStore`. Kept off the `@available`
 /// SwiftData surface so the migration/dedup logic stays unit-testable headlessly (no
@@ -31,6 +28,41 @@ public enum RecordingSync {
             out.append(r)
         }
         return out
+    }
+
+    /// True when the user's storage choice is `.iCloud` but the live library backend isn't
+    /// CloudKit-backed — the "split history" mismatch where a device fell back to local-only
+    /// (e.g. no iCloud account at launch, or CloudKit container init failed) and got pinned
+    /// there because the `ModelConfiguration` is fixed for the process's lifetime. Two devices
+    /// in this state each keep accumulating recordings nobody else ever sees.
+    public static func iCloudResumeMismatch(storageMode: StorageMode, isCloudBacked: Bool) -> Bool {
+        storageMode == .iCloud && !isCloudBacked
+    }
+
+    /// Resolves (creating if missing) the per-app "Application Support" directory that backs
+    /// both `RecordingSyncStore`'s and `DigestSyncStore`'s on-disk SwiftData caches. Shared here
+    /// (rather than duplicated per store) so the two stores — and the app's migration call
+    /// sites, which must reopen the identical file — can never disagree on where "Application
+    /// Support" is. `FileManager` resolves the same well-known directory on both iOS and macOS,
+    /// just under a different sandbox container, so no platform branching is needed.
+    public static func applicationSupportDirectory() throws -> URL {
+        try FileManager.default.url(
+            for: .applicationSupportDirectory,
+            in: .userDomainMask,
+            appropriateFor: nil,
+            create: true
+        )
+    }
+
+    /// On-disk cache file for `RecordingSyncStore`. Given an explicit name (rather than the
+    /// default unnamed `ModelConfiguration`, which SwiftData resolves to a shared
+    /// `default.store`), so it can never collide with `DigestSync.storeURL()`'s file — the two
+    /// stores register disjoint single-entity schemas (`RecordingEntity`-only vs
+    /// `DigestEntity`-only) and SwiftData throws on init if two configs with different schemas
+    /// point at the same file. Used by both the convenience init and
+    /// `RecordingsStore.migrateCurrentLibraryToCloud()`, which must open the identical file.
+    public static func storeURL() throws -> URL {
+        try applicationSupportDirectory().appendingPathComponent("Recordings.store")
     }
 }
 
@@ -110,9 +142,13 @@ public final class RecordingSyncStore: ObservableObject {
         let mode = RecordingSyncStore.persistedStorageMode()
         let useCloudKit = (mode == .iCloud)
             && FileManager.default.ubiquityIdentityToken != nil
+        // Explicit, distinct on-disk file (not the unnamed-config default `default.store`) so
+        // this store never collides with `DigestSyncStore`'s own cache file — see
+        // `RecordingSync.storeURL()`.
+        let url = try RecordingSync.storeURL()
         let config = useCloudKit
-            ? ModelConfiguration(cloudKitDatabase: .private(RecordingSyncStore.cloudKitContainerID))
-            : ModelConfiguration()
+            ? ModelConfiguration(url: url, cloudKitDatabase: .private(RecordingSyncStore.cloudKitContainerID))
+            : ModelConfiguration(url: url)
         try self.init(configuration: config, isCloudBacked: useCloudKit)
     }
 
@@ -142,8 +178,11 @@ public final class RecordingSyncStore: ObservableObject {
         ) { [weak self] note in
             guard let event = note.userInfo?[NSPersistentCloudKitContainer.eventNotificationUserInfoKey]
                     as? NSPersistentCloudKitContainer.Event else { return }
-            guard event.type == .import || event.type == .export else { return }
-            let kind = (event.type == .import ? "import" : "export")
+            // `.setup` is the one-time zone/subscription bootstrap the push-driven import path
+            // depends on; admitted here (not just `.import`/`.export`) so a setup failure is
+            // surfaced instead of silently dropped — see `syncEffect(type:succeeded:endDate:error:)`.
+            guard event.type == .setup || event.type == .import || event.type == .export else { return }
+            let kind = Self.kindLabel(for: event.type)
             let type = event.type
             let endDate = event.endDate
             let succeeded = event.succeeded
@@ -160,19 +199,73 @@ public final class RecordingSyncStore: ObservableObject {
                         state: state,
                         detail: detail
                     )
-                    if succeeded {
-                        if type == .import {
-                            self?.lastImportAt = endDate
-                            self?.reload()
-                        } else if type == .export {
-                            self?.lastExportAt = endDate
-                        }
-                    } else if let error {
-                        self?.recordError("CloudKit \(kind) failed: \(error.localizedDescription)")
+                    switch Self.syncEffect(type: type, succeeded: succeeded, endDate: endDate, error: error) {
+                    case .importSucceeded(let endDate):
+                        self?.lastImportAt = endDate
+                        self?.reload()
+                    case .exportSucceeded(let endDate):
+                        self?.lastExportAt = endDate
+                    case .recordError(let message):
+                        self?.recordError(message)
+                    case .none:
+                        break
                     }
                 }
             }
         }
+    }
+
+    /// Human-readable label for a CloudKit sync event's type, used both for the diagnostic event
+    /// log (`appendEvent`) and to compose `recordError` messages.
+    nonisolated static func kindLabel(for type: NSPersistentCloudKitContainer.EventType) -> String {
+        if type == .setup { return "setup" }
+        if type == .import { return "import" }
+        if type == .export { return "export" }
+        return "sync"
+    }
+
+    /// The follow-up effect for a CloudKit sync event, once it has already been appended to the
+    /// diagnostic log (that append happens unconditionally in `observeCloudKitEvents` for every
+    /// terminal event; this decides what — if anything — else changes). Pulled out as a pure,
+    /// `nonisolated` function so the `.setup` / `.import` / `.export` × succeeded/failed decision
+    /// matrix is unit-testable without a running `NSPersistentCloudKitContainer` — see
+    /// `CloudKitEventHandlingTests`.
+    enum SyncEffect: Equatable {
+        /// Nothing further to do: the event is still in flight (`endDate == nil`), or it's a
+        /// terminal event with no store mutation of its own — e.g. `.setup` succeeding, which has
+        /// already been logged but has no rows to reload.
+        case none
+        /// A terminal failure with a concrete error — surface it via `recordError`.
+        case recordError(message: String)
+        /// A terminal `.import` success — reload rows and stamp `lastImportAt`.
+        case importSucceeded(endDate: Date)
+        /// A terminal `.export` success — stamp `lastExportAt`.
+        case exportSucceeded(endDate: Date)
+    }
+
+    nonisolated static func syncEffect(
+        type: NSPersistentCloudKitContainer.EventType,
+        succeeded: Bool,
+        endDate: Date?,
+        error: Error?
+    ) -> SyncEffect {
+        guard let endDate else { return .none }
+        if succeeded {
+            if type == .import {
+                return .importSucceeded(endDate: endDate)
+            } else if type == .export {
+                return .exportSucceeded(endDate: endDate)
+            } else {
+                // `.setup` (or any other future terminal-success type) — already logged above,
+                // nothing else to mutate.
+                return .none
+            }
+        }
+        // Terminal failure. Mirrors the previous behavior: only surface `recordError` when
+        // CloudKit actually attached an error; a failed event with no error is logged (above) but
+        // not otherwise actionable.
+        guard let error else { return .none }
+        return .recordError(message: "CloudKit \(kindLabel(for: type)) failed: \(error.localizedDescription)")
     }
 
     private func appendEvent(timestamp: Date, kind: String, state: String, detail: String) {
@@ -227,11 +320,17 @@ public final class RecordingSyncStore: ObservableObject {
         reload()
     }
 
-    /// Nudge CloudKit to check for remote changes and refresh the local snapshot.
+    /// Re-read the local SwiftData snapshot into `items`. This is honest about what it can and
+    /// can't do: SwiftData exposes no public API to force an `NSPersistentCloudKitContainer`
+    /// fetch, so this call does **not** reach out to CloudKit. The previous implementation posted
+    /// `UIApplication.didBecomeActiveNotification` here, which was misleading busywork — nothing
+    /// in this process observes that notification, and it isn't wired to CloudKit's import
+    /// machinery regardless. All this method actually does is surface rows CloudKit has *already*
+    /// imported into the local store since the last read (e.g. an import that landed in the
+    /// background). Real cross-device delivery is push-driven: a silent remote-notification push
+    /// wakes the process so `NSPersistentCloudKitContainer` can import on its own; there is no
+    /// foreground call that substitutes for that.
     public func requestRefresh() {
-#if canImport(UIKit)
-        NotificationCenter.default.post(name: UIApplication.didBecomeActiveNotification, object: nil)
-#endif
         reload()
     }
 

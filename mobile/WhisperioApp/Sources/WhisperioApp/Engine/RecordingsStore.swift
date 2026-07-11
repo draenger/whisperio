@@ -46,6 +46,13 @@ final class RecordingsStore: ObservableObject {
     @Published private(set) var lastImportAt: Date?
     @Published private(set) var lastExportAt: Date?
 
+    // True when the user's storage choice is iCloud but the live library isn't CloudKit-backed
+    // — the device fell back to local-only (no account at launch, or container init failed) and
+    // is pinned there for the process's lifetime (the ModelConfiguration is fixed at init; see
+    // the NOTE on RecordingSyncStore.init). Read by the Settings banner to offer a one-tap
+    // "Resume iCloud sync" instead of leaving this silent.
+    @Published private(set) var iCloudResumeAvailable = false
+
     // Exactly one backend is live for the process. `.sync` delegates to the synced store and
     // mirrors its published items; `.json` keeps the original file-backed behaviour.
     private enum Backend {
@@ -64,6 +71,15 @@ final class RecordingsStore: ObservableObject {
     private var syncImportCancellable: AnyCancellable?
     private var syncExportCancellable: AnyCancellable?
 
+    // Retained token for the iCloud account-availability observer (see `observeICloudAvailability`).
+    // Kept for the store's lifetime, same as `RecordingSyncStore.cloudEventObserver`.
+    private var ubiquityObserver: NSObjectProtocol?
+    // Guards `attemptICloudResume()` against re-entrancy: the ubiquity notification can fire
+    // more than once in quick succession, and a migration is already in flight the moment it's
+    // kicked off (before `isCloudBacked` flips), so this is the only signal that stops a second
+    // call from racing the first and double-migrating the library.
+    private var resumeInFlight = false
+
     init() {
         // iOS 17+ (the app's deployment floor) with a reachable container → synced store, which
         // also runs the one-time recordings.json → SwiftData migration on init. Any init failure
@@ -73,6 +89,7 @@ final class RecordingsStore: ObservableObject {
                 let store = try RecordingSyncStore()
                 backend = .sync(store)
                 attach(syncStore: store)
+                observeICloudAvailability()
                 return
             } catch {
                 Self.log.error("RecordingSyncStore init failed, falling back to JSON: \(error.localizedDescription)")
@@ -83,6 +100,73 @@ final class RecordingsStore: ObservableObject {
         backend = .json(url)
         isCloudBacked = false
         loadJSON(from: url)
+        updateICloudResumeAvailability()
+        observeICloudAvailability()
+    }
+
+    deinit {
+        if let ubiquityObserver {
+            NotificationCenter.default.removeObserver(ubiquityObserver)
+        }
+    }
+
+    /// The user's persisted storage choice, decoded straight from the same UserDefaults blob
+    /// `RecordingSyncStore` reads (`RecordingSyncStore.settingsDefaultsKey`). Mirrors that
+    /// store's own `persistedStorageMode()` (private there — WhisperioApp has no compile
+    /// dependency on `SettingsStore`, so it decodes the blob itself rather than reaching across
+    /// the module boundary).
+    private static func persistedStorageMode() -> StorageMode {
+        guard let data = UserDefaults.standard.data(forKey: RecordingSyncStore.settingsDefaultsKey),
+              let s = try? JSONDecoder().decode(WhisperioSettings.self, from: data) else {
+            return .iCloud
+        }
+        return s.storageMode
+    }
+
+    private func updateICloudResumeAvailability() {
+        iCloudResumeAvailable = RecordingSync.iCloudResumeMismatch(
+            storageMode: Self.persistedStorageMode(),
+            isCloudBacked: isCloudBacked
+        )
+    }
+
+    /// Watches for the iCloud account identity changing — in particular, becoming available
+    /// again after being absent, which is exactly the moment a device that fell back to
+    /// local-only at launch can resume syncing without waiting for the user to stumble onto the
+    /// manual "Move library to iCloud" toggle. When the account returns, the user's choice is
+    /// still `.iCloud`, and this device is still non-cloud-backed, proactively migrate the
+    /// current library into a fresh CloudKit-backed store. `resumeInFlight` guards against a
+    /// second notification racing the first; `iCloudResumeAvailable` itself is recomputed after
+    /// the attempt so the Settings banner still offers a manual retry if the migration failed
+    /// (e.g. the account flickered again before the migration completed).
+    private func observeICloudAvailability() {
+        // The observer delivers on the main queue, so — mirroring
+        // `RecordingSyncStore.observeCloudKitEvents` — we hop to the MainActor via
+        // `assumeIsolated` rather than a `Task` hop.
+        ubiquityObserver = NotificationCenter.default.addObserver(
+            forName: .NSUbiquityIdentityDidChange,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.attemptICloudResumeIfNeeded()
+            }
+        }
+    }
+
+    @MainActor
+    private func attemptICloudResumeIfNeeded() {
+        updateICloudResumeAvailability()
+        guard iCloudResumeAvailable, !resumeInFlight else { return }
+        guard FileManager.default.ubiquityIdentityToken != nil else { return }
+        resumeInFlight = true
+        defer { resumeInFlight = false }
+        do {
+            try migrateCurrentLibraryToCloud()
+        } catch {
+            Self.log.error("Auto-resume iCloud sync failed: \(error.localizedDescription)")
+        }
+        updateICloudResumeAvailability()
     }
 
     /// Promote the current library into the iCloud-backed SwiftData store and switch the live
@@ -91,7 +175,13 @@ final class RecordingsStore: ObservableObject {
     @MainActor
     func migrateCurrentLibraryToCloud() throws {
         guard #available(iOS 17, macOS 14, *) else { return }
-        let cloudConfig = ModelConfiguration(cloudKitDatabase: .private(RecordingSyncStore.cloudKitContainerID))
+        // Same on-disk file the convenience init opens (`RecordingSync.storeURL()`), not the
+        // unnamed-config default — otherwise this migration would collide with
+        // `DigestSyncStore`'s cache file on the shared `default.store` path.
+        let cloudConfig = ModelConfiguration(
+            url: try RecordingSync.storeURL(),
+            cloudKitDatabase: .private(RecordingSyncStore.cloudKitContainerID)
+        )
         let cloudStore = try RecordingSyncStore(configuration: cloudConfig, isCloudBacked: true)
         queueSync(.migrate, title: "Library migration",
                   detail: "Moving local library to CloudKit", recordID: nil)
@@ -126,6 +216,7 @@ final class RecordingsStore: ObservableObject {
             self?.lastExportAt = $0
             self?.flushPendingQueue()
         }
+        updateICloudResumeAvailability()
     }
 
     func add(_ r: Recording) {

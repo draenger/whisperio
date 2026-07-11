@@ -1,9 +1,56 @@
 import SwiftUI
 import Combine
 import WhisperioKit
+#if os(iOS)
+import UIKit
+#endif
 
 // App shell — custom screen routing + toast, mirroring WZPhone() in wz-iphone.jsx.
 // (The concept uses a bespoke transition shell rather than NavigationStack.)
+
+#if os(iOS)
+// Registers for remote (silent) push notifications so NSPersistentCloudKitContainer can
+// receive the CloudKit "database changed" push and wake background sync for
+// RecordingSyncStore / DigestStore. A didReceiveRemoteNotification(fetchCompletionHandler:)
+// handler is required below — without it iOS never opens a background execution window for
+// the silent push, so the persistent container's import only runs while the app happens to
+// already be foregrounded/active, not on the "device changed remotely while backgrounded" case
+// this exists to solve.
+@MainActor
+final class WhisperioAppDelegate: NSObject, UIApplicationDelegate {
+    // Created here — eagerly, at delegate-instantiation time — rather than by the SwiftUI
+    // @StateObject in WhisperioApp.body, which only runs on first view render. A Watch dictation
+    // can relaunch the app in the background purely to deliver a WCSessionFile; this guarantees
+    // there's already a live store for PhoneConnectivity to add into before that ever happens.
+    // WhisperioApp's own `recordings` StateObject wraps this same instance (see below) so there
+    // is exactly one RecordingsStore for the process, not two out-of-sync copies.
+    static let sharedRecordings = RecordingsStore()
+
+    func application(_ application: UIApplication,
+                      didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
+        UIApplication.shared.registerForRemoteNotifications()
+        // Activate the Watch bridge from the delegate, not from RootView.onAppear: a background
+        // relaunch to deliver a WCSessionFile can invoke session(_:didReceive:) as soon as a
+        // delegate exists. If activation instead waited for the SwiftUI view to appear, the
+        // framework could call in — and delete the transferred file when the callback returns —
+        // before the delegate was ever assigned, silently dropping the dictation with no retry.
+        PhoneConnectivity.shared.recordings = Self.sharedRecordings
+        PhoneConnectivity.shared.activate()
+        return true
+    }
+
+    // Apple's NSPersistentCloudKitContainer sample pattern: implementing this handler — even
+    // with a trivial body — is what makes iOS grant a background execution window for the
+    // CloudKit "database changed" silent push in the first place. The persistent container's
+    // remote-change import is already wired to run off that push; this just gives it the time
+    // to do so while the app is backgrounded, instead of only importing on next foreground.
+    func application(_ application: UIApplication,
+                      didReceiveRemoteNotification userInfo: [AnyHashable: Any],
+                      fetchCompletionHandler completionHandler: @escaping (UIBackgroundFetchResult) -> Void) {
+        completionHandler(.newData)
+    }
+}
+#endif
 
 enum WZScreen { case onboarding, home, recording, detail, settings, models, keyboardSetup, keyboardReturn, keyboardRewrite, presetEditor, journal, digestDay, githubSync, digestPromptEditor }
 
@@ -69,7 +116,15 @@ struct WZPhoneView: View {
             // isn't retained in the shared container past its freshness window (a fresh one
             // awaiting swipe-back is kept).
             SharedStore.purgeStalePendingTranscript()
-            if phase == .active { consumePending(); runAutoJournaling() }
+            if phase == .active {
+                consumePending()
+                runAutoJournaling()
+                // A CloudKit import can land silently while backgrounded (or without a push at
+                // all, if remote-notification wasn't delivered) — re-check on every foreground so
+                // a stalled sync always has recourse beyond waiting for a push.
+                recordings.requestCloudRefresh()
+                digests.requestCloudRefresh()
+            }
             // Don't leave the app parked on the post-dictation return screen: once the
             // user leaves (backgrounds the app to go paste / swipe back), drop to home so
             // re-opening — or a Back Tap — lands on a fresh state instead of a dead end.
@@ -218,8 +273,18 @@ struct WZPhoneView: View {
 
 @main
 struct WhisperioApp: App {
+#if os(iOS)
+    @UIApplicationDelegateAdaptor(WhisperioAppDelegate.self) private var appDelegate
+#endif
     @StateObject private var settings = SettingsStore()
+#if os(iOS)
+    // Same instance the AppDelegate already handed to PhoneConnectivity at launch (see
+    // WhisperioAppDelegate.sharedRecordings) — one store for the process, created before this
+    // StateObject would otherwise lazily construct its own on first render.
+    @StateObject private var recordings = WhisperioAppDelegate.sharedRecordings
+#else
     @StateObject private var recordings = RecordingsStore()
+#endif
     @StateObject private var presets = PresetStore()
     @StateObject private var digests = DigestStore()
     @StateObject private var digestPrompts = DigestPromptStore()
@@ -234,12 +299,41 @@ struct WhisperioApp: App {
                 .environmentObject(digests)
                 .environmentObject(digestPrompts)
                 .onAppear {
+                    // Both the store assignment and activation now happen in
+                    // WhisperioAppDelegate.application(_:didFinishLaunchingWithOptions:), which
+                    // runs before this view can ever appear. `recordings` here is already
+                    // `WhisperioAppDelegate.sharedRecordings`, so this is a harmless no-op
+                    // reassignment kept only as a defensive fallback; PhoneConnectivity.activate()
+                    // itself no-ops on an already-activated session, so it's not called again here.
                     PhoneConnectivity.shared.recordings = recordings
-                    PhoneConnectivity.shared.activate()
+                    #if DEBUG
+                    seedCloudKitSchema()
+                    #endif
                 }
                 .onOpenURL { incomingURL = $0 }
         }
     }
+
+#if DEBUG
+    /// One-time explicit CloudKit schema creation via `initializeCloudKitSchema(options:)`,
+    /// covering both `RecordingEntity` and `DigestEntity`, in the DEVELOPMENT environment. Run
+    /// this Debug build once on an iOS device/simulator signed into iCloud, then Deploy Schema
+    /// Changes to Production in the CloudKit Console. No-ops after the first run. Never ships
+    /// (#if DEBUG). Shares the `wz.cloudkit.schema.seeded` UserDefaults gate with the Mac target
+    /// (`WhisperioMacApp.seedCloudKitSchema()`) so seeding on either platform satisfies both —
+    /// the schema itself is per-container, not per-device.
+    @MainActor private func seedCloudKitSchema() {
+        let key = "wz.cloudkit.schema.seeded"
+        guard !UserDefaults.standard.bool(forKey: key) else { return }
+        do {
+            try WhisperioCloudKit.initializeSchemaForDevelopment()
+            UserDefaults.standard.set(true, forKey: key)
+            NSLog("[Whisperio] CloudKit schema initialized (RecordingEntity + DigestEntity) — check CloudKit Console (Development).")
+        } catch {
+            NSLog("[Whisperio] CloudKit schema initialization failed: \(error)")
+        }
+    }
+#endif
 }
 
 // Gate: first run shows the engine picker; afterwards the app.

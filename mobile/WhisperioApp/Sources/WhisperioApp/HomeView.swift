@@ -73,6 +73,10 @@ struct HomeView: View {
                                 }
                                 .padding(.horizontal, 16).padding(.top, 16).padding(.bottom, 140)
                             }
+                            // Re-reads whatever CloudKit has already imported locally — this is
+                            // not a network push/pull (SwiftData exposes no such API), so it only
+                            // surfaces rows that landed silently since the last read.
+                            .refreshable { recordings.requestCloudRefresh() }
                         }
                     }
                 }
