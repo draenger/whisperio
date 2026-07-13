@@ -1,4 +1,4 @@
-import { vi, describe, it, expect, beforeEach } from 'vitest'
+import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest'
 
 const mockLoadSettings = vi.fn()
 vi.mock('../src/main/settingsManager', () => ({
@@ -59,7 +59,7 @@ vi.mock('electron', () => ({
   }
 }))
 
-import { transcribeAudio } from '../src/main/transcribe'
+import { transcribeAudio, cleanupOnDemand } from '../src/main/transcribe'
 
 describe('transcribeAudio', () => {
   beforeEach(() => {
@@ -356,102 +356,313 @@ describe('isProviderConfigured edges', () => {
   })
 })
 
-describe('postProcessWithLLM', () => {
+// AI cleanup (v1.4 Work Item A) is now wired through the LLMProvider
+// abstraction (llm/provider.ts, via global `fetch`) instead of an inline
+// `net.request` call — see postprocess.test.ts for the cleanup logic itself
+// (guard rails, prompt modes, abort handling). These tests cover only the
+// wiring in transcribeAudio(): when cleanup runs at all, how the provider is
+// selected from settings, and the dictation-cycle abort behavior.
+describe('AI cleanup wiring (transcribeAudio)', () => {
   beforeEach(() => {
     vi.clearAllMocks()
   })
 
-  it('post-processes transcript when aiPostProcessing enabled and vocab present', async () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('cleans up the transcript through the configured LLM provider when cleanupAuto is on', async () => {
     mockLoadSettings.mockReturnValue({
       sttProvider: 'openai',
       openaiApiKey: 'sk-test',
       transcriptionPrompt: '',
       customVocabulary: 'git, GitHub',
-      aiPostProcessing: true
+      cleanupAuto: true,
+      cleanupMode: 'full',
+      aiProvider: 'openai'
     })
     const transcribeReq = createMockNetRequest(200, JSON.stringify({ text: 'i use get hub' }))
-    const postReq = createMockNetRequest(
-      200,
-      JSON.stringify({ choices: [{ message: { content: 'I use GitHub' } }] })
-    )
-    mockNetRequest.mockReturnValueOnce(transcribeReq).mockReturnValueOnce(postReq)
+    mockNetRequest.mockReturnValueOnce(transcribeReq)
+
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ choices: [{ message: { content: 'I use GitHub' } }] })
+    })
+    vi.stubGlobal('fetch', fetchMock)
 
     const result = await transcribeAudio(Buffer.from('audio'), 'rec.webm')
+
     expect(result).toBe('I use GitHub')
-    expect(mockNetRequest).toHaveBeenCalledTimes(2)
-    expect(mockNetRequest).toHaveBeenLastCalledWith({
-      method: 'POST',
-      url: 'https://api.openai.com/v1/chat/completions'
-    })
-    const postBody = (postReq.write.mock.calls[0][0] as Buffer).toString()
-    expect(postBody).toContain('gpt-4o-mini')
-    expect(postBody).toContain('git, GitHub')
+    // The STT call still goes through net.request; cleanup goes through fetch
+    // (LLMProvider) — never a second net.request call (invariant: zero inline
+    // fetch to an LLM in feature code).
+    expect(mockNetRequest).toHaveBeenCalledTimes(1)
+    const completionCall = fetchMock.mock.calls.find(([url]) => String(url).includes('/chat/completions'))
+    expect(completionCall).toBeDefined()
+    const body = JSON.parse((completionCall as [string, RequestInit])[1].body as string)
+    expect(JSON.stringify(body)).toContain('git, GitHub')
+    expect(body.temperature).toBe(0.2)
   })
 
-  it('falls back to raw transcript when post-processing fails', async () => {
+  it('does not run cleanup when cleanupAuto is unset (legacy aiPostProcessing alone no longer triggers it)', async () => {
     mockLoadSettings.mockReturnValue({
       sttProvider: 'openai',
       openaiApiKey: 'sk-test',
       transcriptionPrompt: '',
       customVocabulary: 'git',
-      aiPostProcessing: true
+      aiPostProcessing: true // real loadSettings() would have migrated this; the mock here does not
     })
     const transcribeReq = createMockNetRequest(200, JSON.stringify({ text: 'raw text' }))
-    const postReq = createMockNetRequest(500, '{"error":"chat down"}')
-    mockNetRequest.mockReturnValueOnce(transcribeReq).mockReturnValueOnce(postReq)
+    mockNetRequest.mockReturnValueOnce(transcribeReq)
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
 
     const result = await transcribeAudio(Buffer.from('audio'), 'rec.webm')
+
+    expect(result).toBe('raw text')
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('does not run cleanup when cleanupAuto is true but cleanupEnabled is false (on-demand-only gate has no bearing on auto)', async () => {
+    mockLoadSettings.mockReturnValue({
+      sttProvider: 'openai',
+      openaiApiKey: 'sk-test',
+      transcriptionPrompt: '',
+      customVocabulary: 'git, GitHub',
+      cleanupEnabled: false,
+      cleanupAuto: true,
+      cleanupMode: 'full',
+      aiProvider: 'openai'
+    })
+    const transcribeReq = createMockNetRequest(200, JSON.stringify({ text: 'i use get hub' }))
+    mockNetRequest.mockReturnValueOnce(transcribeReq)
+
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ choices: [{ message: { content: 'I use GitHub' } }] })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const result = await transcribeAudio(Buffer.from('audio'), 'rec.webm')
+
+    // cleanupAuto alone drives the auto path — cleanupEnabled (on-demand
+    // availability) has no bearing on it.
+    expect(result).toBe('I use GitHub')
+    expect(fetchMock).toHaveBeenCalled()
+  })
+
+  it('skips cleanup when cleanupMode is "off" even though cleanupAuto is true', async () => {
+    mockLoadSettings.mockReturnValue({
+      sttProvider: 'openai',
+      openaiApiKey: 'sk-test',
+      transcriptionPrompt: '',
+      customVocabulary: 'git',
+      cleanupAuto: true,
+      cleanupMode: 'off',
+      aiProvider: 'openai'
+    })
+    const transcribeReq = createMockNetRequest(200, JSON.stringify({ text: 'raw text' }))
+    mockNetRequest.mockReturnValueOnce(transcribeReq)
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+
+    const result = await transcribeAudio(Buffer.from('audio'), 'rec.webm')
+
+    expect(result).toBe('raw text')
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('falls back to the raw transcript, without throwing, when no LLM provider is reachable (offline)', async () => {
+    mockLoadSettings.mockReturnValue({
+      sttProvider: 'openai',
+      openaiApiKey: 'sk-test',
+      transcriptionPrompt: '',
+      customVocabulary: 'git',
+      cleanupAuto: true,
+      cleanupMode: 'full',
+      aiProvider: 'openai'
+    })
+    const transcribeReq = createMockNetRequest(200, JSON.stringify({ text: 'raw text' }))
+    mockNetRequest.mockReturnValueOnce(transcribeReq)
+    // Every reachability check (configured provider + local fallback) fails —
+    // simulates being fully offline. selectProvider must resolve to null and
+    // cleanupTranscription must fall back to raw rather than reject.
+    const fetchMock = vi.fn().mockRejectedValue(new Error('network down'))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const result = await transcribeAudio(Buffer.from('audio'), 'rec.webm')
+
     expect(result).toBe('raw text')
   })
 
-  it('falls back to raw transcript when post-process response is unparseable', async () => {
+  it('aborts a still-pending cleanup call when a new dictation cycle starts', async () => {
     mockLoadSettings.mockReturnValue({
       sttProvider: 'openai',
       openaiApiKey: 'sk-test',
       transcriptionPrompt: '',
       customVocabulary: 'git',
-      aiPostProcessing: true
+      cleanupAuto: true,
+      cleanupMode: 'full',
+      aiProvider: 'openai'
     })
-    const transcribeReq = createMockNetRequest(200, JSON.stringify({ text: 'raw fallback' }))
-    const postReq = createMockNetRequest(200, 'not-json')
-    mockNetRequest.mockReturnValueOnce(transcribeReq).mockReturnValueOnce(postReq)
+    mockNetRequest
+      .mockReturnValueOnce(createMockNetRequest(200, JSON.stringify({ text: 'first raw' })))
+      .mockReturnValueOnce(createMockNetRequest(200, JSON.stringify({ text: 'second raw' })))
 
-    const result = await transcribeAudio(Buffer.from('audio'), 'rec.webm')
-    expect(result).toBe('raw fallback')
+    let firstSignal: AbortSignal | undefined
+    const fetchMock = vi.fn((_url: string, init?: RequestInit) => {
+      const isCompletion = init?.method === 'POST'
+      if (isCompletion && !firstSignal) {
+        // First dictation's cleanup call — hang until aborted by the second
+        // dictation cycle starting, mirroring a slow/never-returning LLM call.
+        firstSignal = init?.signal as AbortSignal
+        return new Promise((_resolve, reject) => {
+          firstSignal?.addEventListener('abort', () => {
+            const err = new Error('aborted')
+            err.name = 'AbortError'
+            reject(err)
+          })
+        })
+      }
+      if (isCompletion) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: async () => ({ choices: [{ message: { content: 'second cleaned' } }] })
+        })
+      }
+      // available() reachability check (GET)
+      return Promise.resolve({ ok: true, status: 200, json: async () => ({}) })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const firstPromise = transcribeAudio(Buffer.from('a1'), 'a1.webm')
+    await vi.waitFor(() => {
+      expect(firstSignal).toBeDefined()
+    })
+
+    const secondPromise = transcribeAudio(Buffer.from('a2'), 'a2.webm')
+    const [firstResult, secondResult] = await Promise.all([firstPromise, secondPromise])
+
+    expect(firstSignal?.aborted).toBe(true)
+    // The aborted call falls back to its own raw transcript (fail-soft) —
+    // the dictation session-id check (hotkeyManager.ts) is what actually
+    // drops it from being pasted, not this promise rejecting.
+    expect(firstResult).toBe('first raw')
+    expect(secondResult).toBe('second cleaned')
+  })
+})
+
+// ROUGH-FIRST UX (v1.4 PR2): on-demand cleanup for an already-saved recording
+// (RecordingsPanel's "Clean up" action), independent of the dictation-cycle
+// abort wiring covered above.
+describe('cleanupOnDemand', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
   })
 
-  it('returns raw text when post-process content is empty', async () => {
-    mockLoadSettings.mockReturnValue({
-      sttProvider: 'openai',
-      openaiApiKey: 'sk-test',
-      transcriptionPrompt: '',
-      customVocabulary: 'git',
-      aiPostProcessing: true
-    })
-    const transcribeReq = createMockNetRequest(200, JSON.stringify({ text: 'original' }))
-    const postReq = createMockNetRequest(
-      200,
-      JSON.stringify({ choices: [{ message: { content: '   ' } }] })
-    )
-    mockNetRequest.mockReturnValueOnce(transcribeReq).mockReturnValueOnce(postReq)
-
-    const result = await transcribeAudio(Buffer.from('audio'), 'rec.webm')
-    expect(result).toBe('original')
+  afterEach(() => {
+    vi.unstubAllGlobals()
   })
 
-  it('skips post-processing when no vocabulary is set', async () => {
-    mockLoadSettings.mockReturnValue({
-      sttProvider: 'openai',
-      openaiApiKey: 'sk-test',
-      transcriptionPrompt: '',
-      customVocabulary: '',
-      aiPostProcessing: true
-    })
-    const transcribeReq = createMockNetRequest(200, JSON.stringify({ text: 'no post-process' }))
-    mockNetRequest.mockReturnValue(transcribeReq)
+  const templates = [
+    { id: 'email', name: 'Email', prompt: 'Reformat as an email.' },
+    { id: 'notes', name: 'Notes', prompt: 'Reformat as bullet notes.' }
+  ]
 
-    const result = await transcribeAudio(Buffer.from('audio'), 'rec.webm')
-    expect(result).toBe('no post-process')
-    expect(mockNetRequest).toHaveBeenCalledTimes(1)
+  it('applies a template by id and reports cleanedWith as the template name', async () => {
+    mockLoadSettings.mockReturnValue({
+      openaiApiKey: 'sk-test',
+      aiProvider: 'openai',
+      cleanupTemplates: templates
+    })
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ choices: [{ message: { content: 'Dear team, ...' } }] })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const result = await cleanupOnDemand('raw transcript', { templateId: 'email' })
+
+    expect(result).toEqual({ text: 'Dear team, ...', ok: true, cleanedWith: 'Email' })
+    const completionCall = fetchMock.mock.calls.find(([url]) => String(url).includes('/chat/completions'))
+    const body = JSON.parse((completionCall as [string, RequestInit])[1].body as string)
+    expect(JSON.stringify(body)).toContain('Reformat as an email.')
+  })
+
+  it('a custom instruction takes priority over templateId/mode', async () => {
+    mockLoadSettings.mockReturnValue({
+      openaiApiKey: 'sk-test',
+      aiProvider: 'openai',
+      cleanupTemplates: templates
+    })
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ choices: [{ message: { content: 'Summarized text' } }] })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const result = await cleanupOnDemand('raw transcript', {
+      templateId: 'email',
+      customInstruction: 'Summarize in one sentence'
+    })
+
+    expect(result).toEqual({ text: 'Summarized text', ok: true, cleanedWith: 'Custom instruction' })
+    const completionCall = fetchMock.mock.calls.find(([url]) => String(url).includes('/chat/completions'))
+    const body = JSON.parse((completionCall as [string, RequestInit])[1].body as string)
+    expect(JSON.stringify(body)).toContain('Summarize in one sentence')
+  })
+
+  it('falls back to raw with cleanedWith "unknown template" for a stale/unknown templateId', async () => {
+    mockLoadSettings.mockReturnValue({ openaiApiKey: 'sk-test', aiProvider: 'openai', cleanupTemplates: templates })
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+
+    const result = await cleanupOnDemand('raw transcript', { templateId: 'does-not-exist' })
+
+    expect(result).toEqual({ text: 'raw transcript', ok: false, cleanedWith: 'unknown template' })
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('defaults to mode "full" when no mode/template/instruction is given', async () => {
+    mockLoadSettings.mockReturnValue({ openaiApiKey: 'sk-test', aiProvider: 'openai', cleanupTemplates: [] })
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ choices: [{ message: { content: 'Cleaned.' } }] })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const result = await cleanupOnDemand('raw transcript', {})
+
+    expect(result).toEqual({ text: 'Cleaned.', ok: true, cleanedWith: 'full' })
+  })
+
+  it('treats mode "off" as "full" for an explicit on-demand request (never a no-op)', async () => {
+    mockLoadSettings.mockReturnValue({ openaiApiKey: 'sk-test', aiProvider: 'openai', cleanupTemplates: [] })
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ choices: [{ message: { content: 'Cleaned.' } }] })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const result = await cleanupOnDemand('raw transcript', { mode: 'off' })
+
+    expect(result).toEqual({ text: 'Cleaned.', ok: true, cleanedWith: 'full' })
+  })
+
+  it('fails soft (ok: false, raw kept) when no provider is reachable', async () => {
+    mockLoadSettings.mockReturnValue({ openaiApiKey: 'sk-test', aiProvider: 'openai', cleanupTemplates: [] })
+    const fetchMock = vi.fn().mockRejectedValue(new Error('network down'))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const result = await cleanupOnDemand('raw transcript', { mode: 'full' })
+
+    expect(result).toEqual({ text: 'raw transcript', ok: false, cleanedWith: 'full' })
   })
 })

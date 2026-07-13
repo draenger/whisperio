@@ -25,6 +25,7 @@ import {
   getSetting,
   getActiveVocabulary,
   DEFAULT_VOCABULARY_TERMS,
+  DEFAULT_CLEANUP_TEMPLATES,
   type AppSettings
 } from '../src/main/settingsManager'
 
@@ -42,6 +43,14 @@ const DEFAULT_SETTINGS = {
   customVocabulary: '',
   removedDefaultVocabulary: [],
   aiPostProcessing: false,
+  cleanupEnabled: true,
+  cleanupMode: 'full',
+  cleanupAuto: false,
+  cleanupTemplates: DEFAULT_CLEANUP_TEMPLATES,
+  aiProvider: 'openai',
+  aiBaseUrl: '',
+  aiModel: '',
+  anthropicApiKey: '',
   launchAtStartup: true,
   dictationHotkey: '',
   dictateAndSendHotkey: '',
@@ -171,6 +180,167 @@ describe('settingsManager', () => {
 
       expect(result.removedDefaultVocabulary).toEqual(['git'])
       expect(result.customVocabulary).toBe('Svelte')
+    })
+  })
+
+  describe('legacy aiPostProcessing -> cleanupAuto migration (ROUGH-FIRST v1.4 PR2)', () => {
+    it('migrates aiPostProcessing: true to cleanupAuto: true, cleanupMode: "full"', () => {
+      mockExistsSync.mockReturnValue(true)
+      mockReadFileSync.mockReturnValue(JSON.stringify({ aiPostProcessing: true }))
+
+      const result = loadSettings()
+
+      expect(result.cleanupAuto).toBe(true)
+      expect(result.cleanupMode).toBe('full')
+      // cleanupEnabled is untouched by this migration — it now means "the
+      // on-demand action is available at all" and defaults to true
+      // regardless of the legacy auto-cleanup flag.
+      expect(result.cleanupEnabled).toBe(true)
+      // aiPostProcessing itself is never dropped (settings invariant).
+      expect(result.aiPostProcessing).toBe(true)
+    })
+
+    it('migrates aiPostProcessing: false to cleanupAuto: false', () => {
+      mockExistsSync.mockReturnValue(true)
+      mockReadFileSync.mockReturnValue(JSON.stringify({ aiPostProcessing: false }))
+
+      const result = loadSettings()
+
+      expect(result.cleanupAuto).toBe(false)
+      expect(result.cleanupEnabled).toBe(true)
+      // cleanupMode isn't addressed by the false-branch migration — it keeps
+      // its default.
+      expect(result.cleanupMode).toBe('full')
+      expect(result.aiPostProcessing).toBe(false)
+    })
+
+    it('does not clobber an already-chosen cleanupMode when migrating aiPostProcessing: true', () => {
+      mockExistsSync.mockReturnValue(true)
+      // A file that went through PR1's migration (cleanupMode set to 'light'
+      // by the user) but predates cleanupAuto entirely.
+      mockReadFileSync.mockReturnValue(JSON.stringify({ aiPostProcessing: true, cleanupMode: 'light' }))
+
+      const result = loadSettings()
+
+      expect(result.cleanupAuto).toBe(true)
+      expect(result.cleanupMode).toBe('light')
+    })
+
+    it('is idempotent: loading the same legacy file twice yields the same result', () => {
+      mockExistsSync.mockReturnValue(true)
+      mockReadFileSync.mockReturnValue(JSON.stringify({ aiPostProcessing: true }))
+
+      const first = loadSettings()
+      const second = loadSettings()
+
+      expect(second).toEqual(first)
+    })
+
+    it('is idempotent: feeding an already-migrated file back in is a no-op', () => {
+      mockExistsSync.mockReturnValue(true)
+      mockReadFileSync.mockReturnValue(JSON.stringify({ aiPostProcessing: true }))
+      const migratedOnce = loadSettings()
+
+      mockReadFileSync.mockReturnValue(JSON.stringify(migratedOnce))
+      const migratedTwice = loadSettings()
+
+      expect(migratedTwice).toEqual(migratedOnce)
+    })
+
+    it('does not run when cleanupAuto is already present, even if it disagrees with the legacy flag', () => {
+      mockExistsSync.mockReturnValue(true)
+      // Already-migrated (or explicitly user-edited) file: cleanupAuto is
+      // present, so the legacy flag must not override it even though it
+      // disagrees.
+      mockReadFileSync.mockReturnValue(
+        JSON.stringify({ aiPostProcessing: true, cleanupAuto: false, cleanupMode: 'light' })
+      )
+
+      const result = loadSettings()
+
+      expect(result.cleanupAuto).toBe(false)
+      expect(result.cleanupMode).toBe('light')
+      expect(result.aiPostProcessing).toBe(true)
+    })
+
+    it('leaves defaults untouched when neither the legacy flag nor cleanupAuto are present', () => {
+      mockExistsSync.mockReturnValue(true)
+      mockReadFileSync.mockReturnValue(JSON.stringify({ openaiApiKey: 'sk-test' }))
+
+      const result = loadSettings()
+
+      expect(result.cleanupAuto).toBe(false)
+      expect(result.cleanupEnabled).toBe(true)
+      expect(result.cleanupMode).toBe('full')
+      expect(result.aiPostProcessing).toBe(false)
+      expect(result.cleanupTemplates).toEqual(DEFAULT_CLEANUP_TEMPLATES)
+    })
+  })
+
+  describe('legacy violet theme/accent migration (VIOLET-OUT)', () => {
+    it('maps a saved theme "violet-legacy" to "dark"', () => {
+      mockExistsSync.mockReturnValue(true)
+      mockReadFileSync.mockReturnValue(JSON.stringify({ theme: 'violet-legacy' }))
+
+      const result = loadSettings()
+
+      expect(result.theme).toBe('dark')
+    })
+
+    it('maps a saved accentColor "violet" to "teal"', () => {
+      mockExistsSync.mockReturnValue(true)
+      mockReadFileSync.mockReturnValue(JSON.stringify({ accentColor: 'violet' }))
+
+      const result = loadSettings()
+
+      expect(result.accentColor).toBe('teal')
+    })
+
+    it('maps both together when a legacy file has both violet values set', () => {
+      mockExistsSync.mockReturnValue(true)
+      mockReadFileSync.mockReturnValue(
+        JSON.stringify({ theme: 'violet-legacy', accentColor: 'violet' })
+      )
+
+      const result = loadSettings()
+
+      expect(result.theme).toBe('dark')
+      expect(result.accentColor).toBe('teal')
+    })
+
+    it('leaves other keys untouched by the migration (additive, no drops)', () => {
+      mockExistsSync.mockReturnValue(true)
+      mockReadFileSync.mockReturnValue(
+        JSON.stringify({ theme: 'violet-legacy', accentColor: 'violet', openaiApiKey: 'sk-test' })
+      )
+
+      const result = loadSettings()
+
+      expect(result.openaiApiKey).toBe('sk-test')
+    })
+
+    it('is idempotent: loading the same legacy file twice yields the same result', () => {
+      mockExistsSync.mockReturnValue(true)
+      mockReadFileSync.mockReturnValue(
+        JSON.stringify({ theme: 'violet-legacy', accentColor: 'violet' })
+      )
+
+      const first = loadSettings()
+      const second = loadSettings()
+
+      expect(second).toEqual(first)
+      expect(second.theme).toBe('dark')
+      expect(second.accentColor).toBe('teal')
+    })
+
+    it('leaves already-current theme/accent values untouched', () => {
+      mockExistsSync.mockReturnValue(true)
+      mockReadFileSync.mockReturnValue(JSON.stringify({ theme: 'light', accentColor: 'amber' }))
+
+      const result = loadSettings()
+
+      expect(result.theme).toBe('light')
+      expect(result.accentColor).toBe('amber')
     })
   })
 })

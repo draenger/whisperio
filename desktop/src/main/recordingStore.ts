@@ -13,6 +13,15 @@ export interface RecordingEntry {
   transcription?: string
   error?: string
   size: number
+  // ROUGH-FIRST on-demand cleanup result (v1.4 PR2, RecordingsPanel's "Clean
+  // up" action — see transcribe.ts's cleanupOnDemand()). Both optional and
+  // additive: entries written before PR2 simply don't have them, and they
+  // load fine as `undefined`. `cleanedText` is the last on-demand cleanup
+  // result for this recording (raw is untouched — `transcription` stays the
+  // original STT output); `cleanedWith` labels what produced it ('full',
+  // 'light', a template name, or 'Custom instruction') for display.
+  cleanedText?: string
+  cleanedWith?: string
   // Last-write-wins sync metadata (PT-offline-first-lww-sync). `updatedAt` is the
   // LWW key bumped on every mutation; `deletedAt`, when set, marks a tombstone —
   // a soft delete that survives in the index so the removal can converge across

@@ -64,11 +64,19 @@ export interface AppSettings {
   customVocabulary: string
   removedDefaultVocabulary: string[]
   aiPostProcessing: boolean
+  cleanupEnabled: boolean
+  cleanupMode: 'off' | 'light' | 'full'
+  cleanupAuto: boolean
+  cleanupTemplates: CleanupTemplate[]
+  aiProvider: 'openai' | 'anthropic' | 'local'
+  aiBaseUrl: string
+  aiModel: string
+  anthropicApiKey: string
   launchAtStartup: boolean
   dictationHotkey: string
   dictateAndSendHotkey: string
   theme: 'dark' | 'light'
-  accentColor: 'graphite' | 'blue' | 'teal' | 'emerald' | 'amber' | 'violet'
+  accentColor: 'graphite' | 'blue' | 'teal' | 'emerald' | 'amber'
   inputDeviceId: string
   outputDeviceId: string
   saveRecordings: boolean
@@ -77,6 +85,12 @@ export interface AppSettings {
   githubUser: string
   githubRepo: string
   githubBranch: string
+}
+
+export interface CleanupTemplate {
+  id: string
+  name: string
+  prompt: string
 }
 
 export interface SettingsAPI {
@@ -98,6 +112,30 @@ export interface RecordingEntry {
   transcription?: string
   error?: string
   size: number
+  // ROUGH-FIRST on-demand cleanup result (v1.4 PR2) — additive, absent on
+  // recordings that were never run through "Clean up". See recordingStore.ts.
+  cleanedText?: string
+  cleanedWith?: string
+}
+
+export interface CleanupRequestOptions {
+  /** Rule-based mode for the plain "Clean up (full/light)" menu item. Ignored
+   * when templateId/customInstruction is set. */
+  mode?: 'off' | 'light' | 'full'
+  /** Id into settings.cleanupTemplates. Takes priority over `mode`. */
+  templateId?: string
+  /** Free-text instruction from the "Custom instruction..." field. Takes
+   * priority over both `mode` and `templateId`. */
+  customInstruction?: string
+}
+
+export interface CleanupRequestResult {
+  text: string
+  /** True only when the provider was reachable and produced a usable result.
+   * False means fail-soft-to-raw — RecordingsPanel shows an inline
+   * "AI unreachable — raw kept" hint rather than an error dialog. */
+  ok: boolean
+  cleanedWith: string
 }
 
 export interface RecordingsAPI {
@@ -111,6 +149,13 @@ export interface RecordingsAPI {
   deleteByDate: (date: string) => Promise<void>
   getAudio: (id: string) => Promise<Buffer | null>
   reprocess: (id: string) => Promise<RecordingEntry | null>
+  // ROUGH-FIRST on-demand cleanup (v1.4 PR2). See transcribe.ts's
+  // cleanupOnDemand() for the main-process implementation this invokes —
+  // NOTE: the ipcMain.handle('recordings:cleanup', ...) registration lives in
+  // src/main/index.ts (analogous to the existing 'recordings:reprocess'
+  // handler) and is NOT added here; wiring it up is a follow-up outside this
+  // package's assigned files.
+  cleanup: (id: string, options: CleanupRequestOptions) => Promise<CleanupRequestResult>
 }
 
 export interface WhisperioError {

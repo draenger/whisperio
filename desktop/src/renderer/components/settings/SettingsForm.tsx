@@ -1,9 +1,10 @@
 import { useState, useEffect, useCallback, useRef, type ReactElement, type ReactNode } from 'react'
 import { useTheme } from '../../ThemeContext'
 import { TitleBar } from '../common/TitleBar'
-import type { Theme } from '../../theme'
+import type { Theme, ThemeMode } from '../../theme'
 import { ACCENTS, ACCENT_ORDER, ACCENT_LABELS } from '../../theme'
 import { RecordingsView } from '../recordings/RecordingsPanel'
+import { CleanupPanel, type CleanupMode, type AiProvider } from './CleanupPanel'
 
 // Derived from the global window.api typings (preload) without a cross-project import
 type UpdaterState = Awaited<ReturnType<Window['api']['updater']['getStatus']>>
@@ -152,12 +153,12 @@ function Keycap({ children, theme }: { children: ReactNode; theme: Theme }): Rea
 function StatusHeader({
   dictationHotkey,
   providerChain,
-  aiPostProcessing,
+  cleanupEnabled,
   theme
 }: {
   dictationHotkey: string
   providerChain: string[]
-  aiPostProcessing: boolean
+  cleanupEnabled: boolean
   theme: Theme
 }): ReactElement {
   const keys = (dictationHotkey || 'Ctrl+Shift+Space').split('+')
@@ -214,8 +215,8 @@ function StatusHeader({
 
       <div style={{ flex: 1 }} />
 
-      {/* AI cleanup chip — only when post-processing is on */}
-      {aiPostProcessing && (
+      {/* AI cleanup chip — only when the AI Cleanup panel's toggle is on */}
+      {cleanupEnabled && (
         <span style={{
           display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0,
           padding: '4px 10px', borderRadius: '999px',
@@ -336,6 +337,25 @@ function UpdatesTab({ state, s, theme }: { state: UpdaterState | null; s: Return
   )
 }
 
+/*
+ * AI Cleanup settings keys — owned by the parallel "A-core" package
+ * (settingsManager.ts DEFAULT_SETTINGS / preload's AppSettings). Declared
+ * locally here so this file typechecks independently of merge order between
+ * packages: `settings.load()`'s declared return type (preload's AppSettings)
+ * doesn't include these fields yet, so reads are cast through
+ * `SettingsWithCleanup` below. Once preload's AppSettings natively includes
+ * them this cast becomes a no-op and can be deleted.
+ */
+interface CleanupSettings {
+  cleanupEnabled: boolean
+  cleanupMode: CleanupMode
+  aiProvider: AiProvider
+  aiBaseUrl: string
+  aiModel: string
+  anthropicApiKey: string
+}
+type SettingsWithCleanup = Awaited<ReturnType<Window['api']['settings']['load']>> & Partial<CleanupSettings>
+
 export function SettingsForm(): ReactElement {
   const { theme } = useTheme()
 
@@ -406,6 +426,14 @@ export function SettingsForm(): ReactElement {
   const [aiPostProcessing, setAiPostProcessing] = useState(false)
   const [fallbackEnabled, setFallbackEnabled] = useState(false)
 
+  // AI Cleanup (supersedes the old aiPostProcessing toggle in the UI — see CleanupPanel)
+  const [cleanupEnabled, setCleanupEnabled] = useState(false)
+  const [cleanupMode, setCleanupMode] = useState<CleanupMode>('light')
+  const [aiProvider, setAiProvider] = useState<AiProvider>('openai')
+  const [aiBaseUrl, setAiBaseUrl] = useState('')
+  const [aiModel, setAiModel] = useState('')
+  const [anthropicApiKey, setAnthropicApiKey] = useState('')
+
   // Audio
   const [inputDeviceId, setInputDeviceId] = useState('')
   const [outputDeviceId, setOutputDeviceId] = useState('')
@@ -420,7 +448,8 @@ export function SettingsForm(): ReactElement {
 
   // --- Load settings ---
   useEffect(() => {
-    window.api.settings.load().then((settings) => {
+    window.api.settings.load().then((loaded) => {
+      const settings = loaded as SettingsWithCleanup
       setSttProvider(settings.sttProvider ?? 'openai')
       setProviderChain(settings.providerChain ?? [settings.sttProvider ?? 'openai'])
       setApiKey(settings.openaiApiKey ?? '')
@@ -440,6 +469,12 @@ export function SettingsForm(): ReactElement {
       setSaveRecordings(settings.saveRecordings ?? true)
       setOutputRecordingHotkey(settings.outputRecordingHotkey ?? '')
       setFallbackEnabled(settings.fallbackEnabled ?? false)
+      setCleanupEnabled(settings.cleanupEnabled ?? false)
+      setCleanupMode(settings.cleanupMode ?? 'light')
+      setAiProvider(settings.aiProvider ?? 'openai')
+      setAiBaseUrl(settings.aiBaseUrl ?? '')
+      setAiModel(settings.aiModel ?? '')
+      setAnthropicApiKey(settings.anthropicApiKey ?? '')
       setLoading(false)
     })
   }, [])
@@ -472,7 +507,11 @@ export function SettingsForm(): ReactElement {
 
   // --- Save ---
   const handleSave = useCallback(async () => {
-    await window.api.settings.save({
+    // Built as a plain `const` (not passed inline) so the AI Cleanup fields —
+    // not yet on preload's AppSettings type, see SettingsWithCleanup above —
+    // don't trip TS's excess-property check the way an inline object literal
+    // argument would. Once AppSettings includes them this is just a normal payload.
+    const payload = {
       sttProvider: providerChain[0] as 'openai' | 'elevenlabs' || 'openai',
       providerChain,
       openaiApiKey: apiKey,
@@ -491,15 +530,22 @@ export function SettingsForm(): ReactElement {
       outputDeviceId,
       saveRecordings,
       outputRecordingHotkey,
-      fallbackEnabled: providerChain.length > 1
-    })
+      fallbackEnabled: providerChain.length > 1,
+      cleanupEnabled,
+      cleanupMode,
+      aiProvider,
+      aiBaseUrl,
+      aiModel,
+      anthropicApiKey
+    }
+    await window.api.settings.save(payload)
     setSaved(true)
     setTimeout(() => setSaved(false), 2000)
   }, [
     providerChain, apiKey, openaiBaseUrl, whisperModel, elevenlabsApiKey, transcriptionLanguage, prompt,
     vocabulary, removedDefaultVocabulary, aiPostProcessing, launchAtStartup, dictationHotkey,
     dictateAndSendHotkey, inputDeviceId, outputDeviceId, saveRecordings,
-    outputRecordingHotkey
+    outputRecordingHotkey, cleanupEnabled, cleanupMode, aiProvider, aiBaseUrl, aiModel, anthropicApiKey
   ])
 
   // Auto-save: persist whenever any setting changes (debounced). Skips the initial
@@ -538,7 +584,7 @@ export function SettingsForm(): ReactElement {
         <StatusHeader
           dictationHotkey={dictationHotkey}
           providerChain={providerChain}
-          aiPostProcessing={aiPostProcessing}
+          cleanupEnabled={cleanupEnabled}
           theme={theme}
         />
       )}
@@ -655,8 +701,18 @@ export function SettingsForm(): ReactElement {
                       setVocabulary={setVocabulary}
                       removedDefaultVocabulary={removedDefaultVocabulary}
                       setRemovedDefaultVocabulary={setRemovedDefaultVocabulary}
-                      aiPostProcessing={aiPostProcessing}
-                      setAiPostProcessing={setAiPostProcessing}
+                      cleanupEnabled={cleanupEnabled}
+                      setCleanupEnabled={setCleanupEnabled}
+                      cleanupMode={cleanupMode}
+                      setCleanupMode={setCleanupMode}
+                      aiProvider={aiProvider}
+                      setAiProvider={setAiProvider}
+                      aiBaseUrl={aiBaseUrl}
+                      setAiBaseUrl={setAiBaseUrl}
+                      aiModel={aiModel}
+                      setAiModel={setAiModel}
+                      anthropicApiKey={anthropicApiKey}
+                      setAnthropicApiKey={setAnthropicApiKey}
                       s={s}
                       theme={theme}
                     />
@@ -727,6 +783,68 @@ export function SettingsForm(): ReactElement {
 
 /* ─── Tab: General ─── */
 
+/* Theme mode picker (Segmented, per docs/design/wz-parts.jsx). Module-level
+   so the array identity is stable across renders. */
+const THEME_MODE_OPTIONS: { value: ThemeMode; label: string }[] = [
+  { value: 'dark', label: 'Dark' },
+  { value: 'light', label: 'Light' }
+]
+
+/** Segmented control — ported from docs/design/wz-parts.jsx's Segmented().
+ * Exported so feature panels (e.g. CleanupPanel) reuse this instead of a fork. */
+export function Segmented<T extends string>({
+  options,
+  value,
+  onChange,
+  theme
+}: {
+  options: { value: T; label: string }[]
+  value: T
+  onChange: (value: T) => void
+  theme: Theme
+}): ReactElement {
+  return (
+    <div
+      style={{
+        display: 'inline-flex',
+        padding: 3,
+        gap: 2,
+        borderRadius: 10,
+        background: theme.bgTertiary,
+        border: `1px solid ${theme.border}`
+      }}
+    >
+      {options.map((o) => {
+        const on = o.value === value
+        return (
+          <button
+            key={o.value}
+            onClick={() => onChange(o.value)}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 7,
+              fontFamily: 'IBM Plex Sans, sans-serif',
+              fontSize: 12.5,
+              fontWeight: 600,
+              cursor: 'pointer',
+              border: 'none',
+              borderRadius: 8,
+              padding: '7px 14px',
+              whiteSpace: 'nowrap',
+              background: on ? theme.accent : 'transparent',
+              color: on ? theme.accentInk : theme.textSecondary,
+              transition: 'background .15s, color .15s'
+            }}
+          >
+            {o.label}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
 function GeneralTab({
   launchAtStartup,
   setLaunchAtStartup,
@@ -738,7 +856,7 @@ function GeneralTab({
   s: ReturnType<typeof makeStyles>
   theme: Theme
 }): ReactElement {
-  const { mode, toggleTheme, accent, setAccent } = useThemeHook()
+  const { mode, setMode, accent, setAccent } = useThemeHook()
 
   return (
     <>
@@ -755,13 +873,15 @@ function GeneralTab({
 
       <div style={s.card}>
         <h3 style={s.cardTitle}>Appearance</h3>
-        <ToggleRow
-          label="Dark theme"
-          description={mode === 'dark' ? 'Currently using dark theme' : 'Currently using light theme'}
-          checked={mode === 'dark'}
-          onChange={() => toggleTheme()}
-          theme={theme}
-        />
+        <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 14, fontWeight: 500, color: theme.text }}>Theme</div>
+            <div style={{ fontSize: 12.5, color: theme.textMuted, marginTop: 2 }}>
+              {THEME_MODE_OPTIONS.find((o) => o.value === mode)?.label ?? 'Dark'}
+            </div>
+          </div>
+          <Segmented options={THEME_MODE_OPTIONS} value={mode} onChange={setMode} theme={theme} />
+        </div>
         <div
           style={{
             display: 'flex',
@@ -1021,7 +1141,12 @@ function ProvidersTab({
   prompt, setPrompt,
   vocabulary, setVocabulary,
   removedDefaultVocabulary, setRemovedDefaultVocabulary,
-  aiPostProcessing, setAiPostProcessing,
+  cleanupEnabled, setCleanupEnabled,
+  cleanupMode, setCleanupMode,
+  aiProvider, setAiProvider,
+  aiBaseUrl, setAiBaseUrl,
+  aiModel, setAiModel,
+  anthropicApiKey, setAnthropicApiKey,
   s, theme
 }: {
   providerChain: string[]
@@ -1042,8 +1167,18 @@ function ProvidersTab({
   setVocabulary: (v: string) => void
   removedDefaultVocabulary: string[]
   setRemovedDefaultVocabulary: (v: string[]) => void
-  aiPostProcessing: boolean
-  setAiPostProcessing: (v: boolean) => void
+  cleanupEnabled: boolean
+  setCleanupEnabled: (v: boolean) => void
+  cleanupMode: CleanupMode
+  setCleanupMode: (v: CleanupMode) => void
+  aiProvider: AiProvider
+  setAiProvider: (v: AiProvider) => void
+  aiBaseUrl: string
+  setAiBaseUrl: (v: string) => void
+  aiModel: string
+  setAiModel: (v: string) => void
+  anthropicApiKey: string
+  setAnthropicApiKey: (v: string) => void
   s: ReturnType<typeof makeStyles>
   theme: Theme
 }): ReactElement {
@@ -1164,7 +1299,6 @@ function ProvidersTab({
                         <input type="password" value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder="sk-..." style={s.input} />
                         <label style={{ ...s.label, marginTop: '8px' }}>Transcription Prompt</label>
                         <textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} rows={2} style={s.textarea} />
-                        <ToggleRow label="AI vocabulary correction" description="LLM pass to fix technical terms after transcription" checked={aiPostProcessing} onChange={setAiPostProcessing} theme={theme} />
                       </>
                     )}
                     {provider.id === 'elevenlabs' && (
@@ -1190,6 +1324,23 @@ function ProvidersTab({
           })}
         </div>
       </div>
+
+      <CleanupPanel
+        cleanupEnabled={cleanupEnabled}
+        setCleanupEnabled={setCleanupEnabled}
+        cleanupMode={cleanupMode}
+        setCleanupMode={setCleanupMode}
+        aiProvider={aiProvider}
+        setAiProvider={setAiProvider}
+        aiBaseUrl={aiBaseUrl}
+        setAiBaseUrl={setAiBaseUrl}
+        aiModel={aiModel}
+        setAiModel={setAiModel}
+        anthropicApiKey={anthropicApiKey}
+        setAnthropicApiKey={setAnthropicApiKey}
+        s={s}
+        theme={theme}
+      />
 
       <div style={s.card}>
         <h3 style={s.cardTitle}>Language</h3>
@@ -2109,7 +2260,8 @@ function HotkeysTab({
 
 /* ─── Shared: Toggle Row ─── */
 
-function ToggleRow({
+/** Exported so feature panels (e.g. CleanupPanel) reuse this instead of a fork. */
+export function ToggleRow({
   label,
   description,
   checked,

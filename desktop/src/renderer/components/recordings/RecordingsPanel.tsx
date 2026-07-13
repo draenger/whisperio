@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, type ReactElement } from 'react'
+import { useState, useEffect, useCallback, useRef, type CSSProperties, type ReactElement } from 'react'
 import { useTheme } from '../../ThemeContext'
 import { TitleBar } from '../common/TitleBar'
 import type { Theme } from '../../theme'
@@ -14,7 +14,44 @@ interface RecordingEntry {
   transcription?: string
   error?: string
   size: number
+  // ROUGH-FIRST on-demand cleanup result (v1.4 PR2) — additive, absent on
+  // recordings that were never run through "Clean up". See recordingStore.ts.
+  cleanedText?: string
+  cleanedWith?: string
 }
+
+/* ─── ROUGH-FIRST on-demand cleanup (v1.4 PR2) ───
+ *
+ * By default (settings.cleanupAuto === false) the raw transcript pastes
+ * instantly after dictation — this panel is where cleanup becomes something
+ * you ask for afterward, per recording: plain full/light cleanup, one of the
+ * user's "format to X" templates, or a one-off custom instruction. Fail-soft
+ * mirrors the auto path's invariant, just surfaced differently: a provider
+ * failure never throws or shows an error dialog, it shows a quiet inline
+ * "AI unreachable — raw kept" hint next to the action instead.
+ */
+
+type CleanupMode = 'off' | 'light' | 'full'
+
+interface CleanupTemplate {
+  id: string
+  name: string
+  prompt: string
+}
+
+interface CleanupRequestOptions {
+  mode?: CleanupMode
+  templateId?: string
+  customInstruction?: string
+}
+
+interface CleanupUIResult {
+  text: string
+  ok: boolean
+  cleanedWith: string
+}
+
+const CLEANUP_UNREACHABLE_HINT = 'AI unreachable — raw kept.'
 
 export function RecordingsView(): ReactElement {
   const { theme } = useTheme()
@@ -24,6 +61,24 @@ export function RecordingsView(): ReactElement {
   const [deleteAllConfirm, setDeleteAllConfirm] = useState(false)
   const [copiedId, setCopiedId] = useState<string | null>(null)
   const [selectedId, setSelectedId] = useState<string | null>(null)
+
+  // On-demand cleanup UI state (v1.4 PR2). `cleanupResults` holds the
+  // in-memory result of the most recent "Clean up" call per recording id —
+  // it's seeded from rec.cleanedText/cleanedWith (persisted on the entry by
+  // the main process) the first time a recording is looked at, and updated
+  // in place after a fresh on-demand call so the panel doesn't need a full
+  // reload to show a new result.
+  const [cleanupResults, setCleanupResults] = useState<Record<string, CleanupUIResult>>({})
+  const [cleanupBusyId, setCleanupBusyId] = useState<string | null>(null)
+  // IPC/transport-level failure (e.g. no handler registered) is distinct
+  // from a fail-soft `ok: false` result — both render the same quiet inline
+  // hint, but this one means the call never got a structured answer back.
+  const [cleanupIpcError, setCleanupIpcError] = useState<Record<string, string | undefined>>({})
+  const [cleanedCopiedId, setCleanedCopiedId] = useState<string | null>(null)
+  const [cleanupDefaults, setCleanupDefaults] = useState<{ mode: CleanupMode; templates: CleanupTemplate[] }>({
+    mode: 'full',
+    templates: []
+  })
 
   const s = makeStyles(theme)
 
@@ -41,6 +96,47 @@ export function RecordingsView(): ReactElement {
   useEffect(() => {
     loadRecordings()
   }, [loadRecordings])
+
+  useEffect(() => {
+    let cancelled = false
+    window.api.settings
+      .load()
+      .then((settings) => {
+        if (cancelled) return
+        setCleanupDefaults({
+          mode: (settings.cleanupMode as CleanupMode | undefined) ?? 'full',
+          templates: settings.cleanupTemplates ?? []
+        })
+      })
+      .catch(() => {
+        // Fail-soft: keep the built-in 'full' / no-templates default rather
+        // than blocking the recordings list on a settings load error.
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  const handleCleanup = useCallback(async (id: string, options: CleanupRequestOptions) => {
+    setCleanupBusyId(id)
+    setCleanupIpcError((prev) => ({ ...prev, [id]: undefined }))
+    try {
+      const result = await window.api.recordings.cleanup(id, options)
+      setCleanupResults((prev) => ({ ...prev, [id]: result }))
+    } catch {
+      // Fail-soft: never a dialog, just the same quiet inline hint a
+      // provider-level failure would show.
+      setCleanupIpcError((prev) => ({ ...prev, [id]: CLEANUP_UNREACHABLE_HINT }))
+    } finally {
+      setCleanupBusyId(null)
+    }
+  }, [])
+
+  const handleCopyCleaned = useCallback(async (id: string, text: string) => {
+    await navigator.clipboard.writeText(text)
+    setCleanedCopiedId(id)
+    setTimeout(() => setCleanedCopiedId(null), 1500)
+  }, [])
 
   const handleDelete = useCallback(async (id: string) => {
     await window.api.recordings.delete(id)
@@ -115,6 +211,13 @@ export function RecordingsView(): ReactElement {
 
   const selectedRec = selectedId ? recordings.find((r) => r.id === selectedId) ?? null : null
   if (selectedRec) {
+    // Seed from the persisted cleanedText/cleanedWith (main process) until a
+    // fresh on-demand call in this session produces a newer in-memory result.
+    const cleaned: CleanupUIResult | null =
+      cleanupResults[selectedRec.id] ??
+      (selectedRec.cleanedText ? { text: selectedRec.cleanedText, ok: true, cleanedWith: selectedRec.cleanedWith ?? '' } : null)
+    const cleanupHint = cleanupIpcError[selectedRec.id] ?? (cleaned && !cleaned.ok ? CLEANUP_UNREACHABLE_HINT : undefined)
+
     return (
       <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
         <div style={s.scrollArea}>
@@ -134,6 +237,14 @@ export function RecordingsView(): ReactElement {
             formatDuration={formatDuration}
             formatSize={formatSize}
             statusIcon={statusIcon}
+            cleanupMode={cleanupDefaults.mode}
+            cleanupTemplates={cleanupDefaults.templates}
+            cleanupBusy={cleanupBusyId === selectedRec.id}
+            cleanupResult={cleaned}
+            cleanupHint={cleanupHint}
+            cleanedCopied={cleanedCopiedId === selectedRec.id}
+            onCleanup={(options) => handleCleanup(selectedRec.id, options)}
+            onCopyCleaned={() => cleaned?.text && handleCopyCleaned(selectedRec.id, cleaned.text)}
           />
         </div>
       </div>
@@ -387,7 +498,15 @@ function RecordingDetail({
   formatDate,
   formatDuration,
   formatSize,
-  statusIcon
+  statusIcon,
+  cleanupMode,
+  cleanupTemplates,
+  cleanupBusy,
+  cleanupResult,
+  cleanupHint,
+  cleanedCopied,
+  onCleanup,
+  onCopyCleaned
 }: {
   theme: Theme
   s: ReturnType<typeof makeStyles>
@@ -401,6 +520,14 @@ function RecordingDetail({
   formatDuration: (s: number) => string
   formatSize: (b: number) => string
   statusIcon: (status: string) => { char: string; color: string }
+  cleanupMode: CleanupMode
+  cleanupTemplates: CleanupTemplate[]
+  cleanupBusy: boolean
+  cleanupResult: CleanupUIResult | null
+  cleanupHint?: string
+  cleanedCopied: boolean
+  onCleanup: (options: CleanupRequestOptions) => void
+  onCopyCleaned: () => void
 }): ReactElement {
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const [audioUrl, setAudioUrl] = useState<string | null>(null)
@@ -617,6 +744,16 @@ function RecordingDetail({
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10" /><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" /></svg>
           Re-transcribe
         </button>
+        {!failed && rec.transcription && (
+          <CleanupMenu
+            theme={theme}
+            ghostBtn={ghostBtn}
+            busy={cleanupBusy}
+            mode={cleanupMode}
+            templates={cleanupTemplates}
+            onSelect={onCleanup}
+          />
+        )}
         <button
           onClick={onDelete}
           style={{ ...ghostBtn, color: theme.danger }}
@@ -627,6 +764,212 @@ function RecordingDetail({
           Delete
         </button>
       </div>
+
+      {!failed && rec.transcription && (cleanupResult || cleanupHint || cleanupBusy) && (
+        <div
+          style={{
+            marginTop: 16,
+            padding: '12px 14px',
+            borderRadius: 12,
+            border: `1px solid ${theme.border}`,
+            background: theme.bgSecondary,
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 8
+          }}
+          data-testid="cleanup-result"
+        >
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+            <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10.5, letterSpacing: '.16em', textTransform: 'uppercase', color: theme.textMuted }}>
+              {cleanupBusy ? 'Cleaning up…' : cleanupResult ? `Cleaned (${cleanupResult.cleanedWith})` : 'Clean up'}
+            </span>
+            {cleanupResult && cleanupResult.ok && (
+              <button
+                onClick={onCopyCleaned}
+                style={{ ...ghostBtn, padding: '4px 10px', fontSize: 12 }}
+                onMouseEnter={(e) => { e.currentTarget.style.borderColor = theme.accent; e.currentTarget.style.color = theme.text }}
+                onMouseLeave={(e) => { e.currentTarget.style.borderColor = theme.border; e.currentTarget.style.color = theme.textSecondary }}
+              >
+                {cleanedCopied ? (
+                  <span style={{ color: theme.success }}>{'✓'} Copied</span>
+                ) : (
+                  'Copy'
+                )}
+              </button>
+            )}
+          </div>
+          {cleanupResult && cleanupResult.ok && (
+            <div style={{ fontSize: 14, color: theme.text, lineHeight: 1.65, whiteSpace: 'pre-wrap' }}>
+              {cleanupResult.text}
+            </div>
+          )}
+          {cleanupHint && (
+            <span style={{ fontSize: 11.5, color: theme.textMuted, fontStyle: 'italic', lineHeight: 1.4 }} data-testid="cleanup-hint">
+              {cleanupHint}
+            </span>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+/**
+ * "Clean up" trigger + menu: plain full/light cleanup, the user's format-to-X
+ * templates (settings.cleanupTemplates), and a one-off custom instruction.
+ * Self-contained (no portal/positioning library) — a simple absolutely-
+ * positioned panel anchored to the trigger button, matching the rest of this
+ * file's "plain inline React, no extra deps" style.
+ */
+function CleanupMenu({
+  theme, ghostBtn, busy, mode, templates, onSelect
+}: {
+  theme: Theme
+  ghostBtn: CSSProperties
+  busy: boolean
+  mode: CleanupMode
+  templates: CleanupTemplate[]
+  onSelect: (options: CleanupRequestOptions) => void
+}): ReactElement {
+  const [open, setOpen] = useState(false)
+  const [customOpen, setCustomOpen] = useState(false)
+  const [customText, setCustomText] = useState('')
+  const defaultMode: 'light' | 'full' = mode === 'off' ? 'full' : mode
+
+  const closeMenu = (): void => {
+    setOpen(false)
+    setCustomOpen(false)
+    setCustomText('')
+  }
+
+  const menuItemStyle: CSSProperties = {
+    display: 'block',
+    width: '100%',
+    textAlign: 'left',
+    background: 'transparent',
+    border: 'none',
+    borderRadius: 6,
+    padding: '7px 10px',
+    fontSize: 13,
+    color: theme.text,
+    cursor: 'pointer',
+    fontFamily: 'inherit'
+  }
+
+  return (
+    <div style={{ position: 'relative', display: 'inline-block' }}>
+      <button
+        onClick={() => setOpen((v) => !v)}
+        disabled={busy}
+        style={{ ...ghostBtn, opacity: busy ? 0.6 : 1, cursor: busy ? 'default' : 'pointer' }}
+        onMouseEnter={(e) => { if (!busy) { e.currentTarget.style.borderColor = theme.accent; e.currentTarget.style.color = theme.text } }}
+        onMouseLeave={(e) => { e.currentTarget.style.borderColor = theme.border; e.currentTarget.style.color = theme.textSecondary }}
+      >
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3v4M12 17v4M5 5l2.5 2.5M16.5 16.5L19 19M3 12h4M17 12h4M5 19l2.5-2.5M16.5 7.5L19 5" /></svg>
+        {busy ? 'Cleaning up…' : 'Clean up'}
+      </button>
+
+      {open && !busy && (
+        <div
+          data-testid="cleanup-menu"
+          style={{
+            position: 'absolute',
+            top: 'calc(100% + 6px)',
+            left: 0,
+            zIndex: 20,
+            minWidth: 220,
+            background: theme.bgSecondary,
+            border: `1px solid ${theme.border}`,
+            borderRadius: 10,
+            boxShadow: '0 12px 28px -12px rgba(0,0,0,.4)',
+            padding: 6,
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 2
+          }}
+        >
+          <button
+            style={menuItemStyle}
+            onClick={() => {
+              closeMenu()
+              onSelect({ mode: defaultMode })
+            }}
+            onMouseEnter={(e) => (e.currentTarget.style.background = theme.bgTertiary)}
+            onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+          >
+            Clean up ({defaultMode})
+          </button>
+
+          {templates.map((t) => (
+            <button
+              key={t.id}
+              style={menuItemStyle}
+              onClick={() => {
+                closeMenu()
+                onSelect({ templateId: t.id })
+              }}
+              onMouseEnter={(e) => (e.currentTarget.style.background = theme.bgTertiary)}
+              onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+            >
+              {t.name || 'Untitled template'}
+            </button>
+          ))}
+
+          {!customOpen ? (
+            <button
+              style={menuItemStyle}
+              onClick={() => setCustomOpen(true)}
+              onMouseEnter={(e) => (e.currentTarget.style.background = theme.bgTertiary)}
+              onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+            >
+              Custom instruction…
+            </button>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, padding: '6px 4px 2px' }}>
+              <textarea
+                autoFocus
+                value={customText}
+                onChange={(e) => setCustomText(e.target.value)}
+                placeholder="e.g. Summarize in two sentences"
+                rows={2}
+                style={{
+                  fontSize: 13,
+                  padding: '6px 8px',
+                  borderRadius: 6,
+                  border: `1px solid ${theme.inputBorder}`,
+                  background: theme.inputBg,
+                  color: theme.text,
+                  fontFamily: 'inherit',
+                  resize: 'vertical'
+                }}
+              />
+              <button
+                disabled={!customText.trim()}
+                onClick={() => {
+                  const instruction = customText.trim()
+                  closeMenu()
+                  onSelect({ customInstruction: instruction })
+                }}
+                style={{
+                  alignSelf: 'flex-end',
+                  background: theme.accent,
+                  color: theme.accentInk,
+                  border: 'none',
+                  borderRadius: 6,
+                  padding: '5px 12px',
+                  fontSize: 12,
+                  fontWeight: 600,
+                  cursor: customText.trim() ? 'pointer' : 'default',
+                  opacity: customText.trim() ? 1 : 0.5,
+                  fontFamily: 'inherit'
+                }}
+              >
+                Apply
+              </button>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   )
 }

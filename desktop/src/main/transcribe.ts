@@ -1,6 +1,9 @@
 import { net, app } from 'electron'
-import { loadSettings, AppSettings, getActiveVocabulary, type ProviderId } from './settingsManager'
+import { loadSettings, AppSettings, getActiveVocabulary, type ProviderId, type CleanupMode } from './settingsManager'
 import { handleTranscriptionError, notifyInfo } from './errorHandler'
+import { OpenAICompatibleProvider, AnthropicProvider, selectProvider, type LLMProvider } from './llm/provider'
+import { cleanupTranscription, cleanupTranscriptionDetailed, formatTranscription, type CleanupResult } from './postprocess'
+import { getServerStatus } from './localServer'
 
 // True only in unpackaged (development) builds. Used to gate logging of
 // privacy-sensitive transcript content so it never reaches production stdout.
@@ -29,8 +32,171 @@ interface TranscribeResult {
   text: string
 }
 
-interface ChatResponse {
-  choices: { message: { content: string } }[]
+// Default models used when the user leaves `aiModel` blank — one sensible
+// choice per provider flavor rather than a single global default, since
+// OpenAI/Anthropic/local-server model namespaces don't overlap.
+const DEFAULT_CLEANUP_MODEL = 'gpt-4o-mini'
+const DEFAULT_ANTHROPIC_CLEANUP_MODEL = 'claude-3-5-haiku-20241022'
+const DEFAULT_LOCAL_CLEANUP_MODEL = 'local-model'
+
+/**
+ * Build the LLM candidates for transcript cleanup from settings, per the
+ * DI contract in llm/provider.ts — this is the ONLY place transcribe.ts
+ * decides which backends exist; `selectProvider` (STEP1) then picks one and
+ * `cleanupTranscription` (this module's postprocess.ts sibling) does the
+ * actual call. No inline fetch here or anywhere downstream.
+ */
+function buildCleanupCandidates(settings: AppSettings): LLMProvider[] {
+  const candidates: LLMProvider[] = []
+  const baseUrl = settings.aiBaseUrl?.trim() || ''
+  const model = settings.aiModel?.trim() || ''
+
+  if (settings.openaiApiKey || settings.aiProvider === 'openai') {
+    candidates.push(
+      new OpenAICompatibleProvider({
+        id: 'openai',
+        baseUrl: baseUrl || 'https://api.openai.com',
+        apiKey: settings.openaiApiKey || undefined,
+        model: model || DEFAULT_CLEANUP_MODEL
+      })
+    )
+  }
+
+  if (settings.anthropicApiKey) {
+    candidates.push(
+      new AnthropicProvider({
+        id: 'anthropic',
+        apiKey: settings.anthropicApiKey,
+        model: model || DEFAULT_ANTHROPIC_CLEANUP_MODEL
+      })
+    )
+  }
+
+  // Local candidate: an offline-safe fallback (STEP1 selectProvider falls back
+  // to it when the configured remote provider is unreachable), and the
+  // primary candidate when aiProvider === 'local'. Default to the app's own
+  // local model server's port (see localServer.ts) when the user hasn't set
+  // an explicit aiBaseUrl for it.
+  const localBaseUrl =
+    settings.aiProvider === 'local' && baseUrl ? baseUrl : `http://127.0.0.1:${getServerStatus().port}`
+  candidates.push(
+    new OpenAICompatibleProvider({
+      id: 'local',
+      baseUrl: localBaseUrl,
+      model: model || DEFAULT_LOCAL_CLEANUP_MODEL
+    })
+  )
+
+  return candidates
+}
+
+// Tied to the dictation cycle, NOT to any single transcribeAudio() call: a
+// new dictation starting while a previous one's cleanup call is still in
+// flight aborts that older call. cleanupTranscription() (postprocess.ts)
+// treats an aborted call as fail-soft and returns its own raw transcript, so
+// the older transcribeAudio() promise still resolves normally — the
+// dictation session-id check in dictation/hotkeyManager.ts is what actually
+// drops the stale result from being pasted.
+let activeCleanupAbort: AbortController | null = null
+
+// ROUGH-FIRST UX (v1.4 PR2): auto-cleanup-after-STT is now gated on
+// `cleanupAuto` alone (default OFF — see settingsManager.ts), NOT on
+// `cleanupEnabled`. cleanupEnabled now only gates whether the on-demand
+// "Clean up" action (RecordingsPanel, see cleanupOnDemand() below) is
+// available at all; it has no bearing on whether cleanup runs automatically.
+// The cleanupMode === 'off' check is kept as a belt-and-braces guard (a user
+// could in principle have cleanupAuto on with mode 'off', though the
+// settings UI doesn't offer that combination) so a stray 'off' mode can never
+// reach the provider.
+async function applyCleanup(settings: AppSettings, raw: string): Promise<string> {
+  if (!settings.cleanupAuto || settings.cleanupMode === 'off') {
+    return raw
+  }
+
+  activeCleanupAbort?.abort()
+  const controller = new AbortController()
+  activeCleanupAbort = controller
+
+  try {
+    const vocab = getActiveVocabulary(settings)
+    const provider = await selectProvider(settings, buildCleanupCandidates(settings))
+    return await cleanupTranscription(raw, {
+      cleanupMode: settings.cleanupMode,
+      vocab,
+      // Tone profile isn't wired to settings yet (Work Item B).
+      tone: undefined,
+      provider,
+      signal: controller.signal
+    })
+  } finally {
+    if (activeCleanupAbort === controller) {
+      activeCleanupAbort = null
+    }
+  }
+}
+
+// ROUGH-FIRST UX (v1.4 PR2): on-demand "Clean up" action for an already-saved
+// recording (RecordingsPanel), as opposed to applyCleanup() above (which only
+// runs automatically, right after STT, when cleanupAuto is on). Not tied to
+// the dictation-cycle abort controller above — on-demand calls are
+// independent per-recording actions, not superseded by a new dictation.
+export interface OnDemandCleanupRequest {
+  /** Rule-based mode for the plain "Clean up (full/light)" menu item. Ignored
+   * when `templateId` or `customInstruction` is set. Defaults to 'full' if
+   * omitted or 'off' (an on-demand action is explicit; it should never be a
+   * no-op just because the user's default auto-cleanup mode is 'off'). */
+  mode?: CleanupMode
+  /** Id into settings.cleanupTemplates. Takes priority over `mode`. */
+  templateId?: string
+  /** Free-text instruction from RecordingsPanel's "Custom instruction..."
+   * field. Takes priority over both `mode` and `templateId`. */
+  customInstruction?: string
+}
+
+export interface OnDemandCleanupResult extends CleanupResult {
+  /** What was actually applied — 'full'/'light', a template's name, or
+   * 'Custom instruction' — for display next to the result. */
+  cleanedWith: string
+}
+
+export async function cleanupOnDemand(raw: string, req: OnDemandCleanupRequest): Promise<OnDemandCleanupResult> {
+  const settings = loadSettings()
+
+  // Resolve WHAT to do (and validate it) before touching selectProvider —
+  // selectProvider's availability checks hit the network, so a stale/unknown
+  // templateId should fail soft immediately rather than paying for a
+  // reachability check it doesn't need.
+  let instruction: string | null = null
+  let mode: CleanupMode | null = null
+  let cleanedWith: string
+
+  if (req.customInstruction && req.customInstruction.trim()) {
+    instruction = req.customInstruction
+    cleanedWith = 'Custom instruction'
+  } else if (req.templateId) {
+    const template = settings.cleanupTemplates.find((t) => t.id === req.templateId)
+    if (!template) {
+      // Stale UI state (template removed since the menu was rendered) —
+      // fail-soft to raw rather than throwing.
+      return { text: raw, ok: false, cleanedWith: 'unknown template' }
+    }
+    instruction = template.prompt
+    cleanedWith = template.name
+  } else {
+    mode = req.mode && req.mode !== 'off' ? req.mode : 'full'
+    cleanedWith = mode
+  }
+
+  const provider = await selectProvider(settings, buildCleanupCandidates(settings))
+
+  if (instruction !== null) {
+    const result = await formatTranscription(raw, { instruction, provider })
+    return { ...result, cleanedWith }
+  }
+
+  const vocab = getActiveVocabulary(settings)
+  const result = await cleanupTranscriptionDetailed(raw, { cleanupMode: mode as CleanupMode, vocab, provider })
+  return { ...result, cleanedWith }
 }
 
 export async function transcribeAudio(audioBuffer: Buffer, filename: string): Promise<string> {
@@ -60,7 +226,8 @@ export async function transcribeAudio(audioBuffer: Buffer, filename: string): Pr
   for (let i = 0; i < configuredChain.length; i++) {
     const provider = configuredChain[i]
     try {
-      return await transcribeWithProvider(settings, provider, audioBuffer, filename)
+      const text = await transcribeWithProvider(settings, provider, audioBuffer, filename)
+      return await applyCleanup(settings, text)
     } catch (err) {
       if (!firstError) firstError = err instanceof Error ? err : new Error(String(err))
       if (i < configuredChain.length - 1) {
@@ -135,17 +302,10 @@ async function transcribeWithProvider(
     : basePrompt
 
   const lang = settings.transcriptionLanguage?.trim() || 'auto'
-  let text = await whisperTranscribe(apiKey, audioBuffer, filename, prompt, baseUrl, model, false, lang)
-
-  if (settings.aiPostProcessing && text && vocab) {
-    try {
-      text = await postProcessWithLLM(apiKey, text, vocab, baseUrl)
-    } catch (err) {
-      console.error('[Whisperio] AI post-processing failed, using raw transcript:', err)
-    }
-  }
-
-  return text
+  // AI cleanup (settings.cleanupEnabled/cleanupMode) is applied uniformly to
+  // whichever STT provider produced the transcript — see applyCleanup() in
+  // transcribeAudio(), not per-provider here.
+  return whisperTranscribe(apiKey, audioBuffer, filename, prompt, baseUrl, model, false, lang)
 }
 
 function whisperTranscribe(apiKey: string, audioBuffer: Buffer, filename: string, prompt: string, baseUrl: string, model: string, directUrl = false, language = 'auto'): Promise<string> {
@@ -367,83 +527,3 @@ function elevenLabsTranscribe(apiKey: string, audioBuffer: Buffer, filename: str
   })
 }
 
-function postProcessWithLLM(apiKey: string, text: string, vocabulary: string, baseUrl: string): Promise<string> {
-  const body = JSON.stringify({
-    model: 'gpt-4o-mini',
-    temperature: 0,
-    messages: [
-      {
-        role: 'system',
-        content:
-          `Fix misrecognized technical terms in this speech-to-text transcript. ` +
-          `Use these exact spellings: ${vocabulary}\n\n` +
-          `Rules:\n` +
-          `- Only fix obvious speech recognition errors (e.g. "get" → "git", "get hub" → "GitHub")\n` +
-          `- Do NOT change meaning, rephrase, add words, or remove words\n` +
-          `- Preserve the original language (Polish/English)\n` +
-          `- Return ONLY the corrected text, nothing else`
-      },
-      { role: 'user', content: text }
-    ]
-  })
-
-  return new Promise<string>((resolve, reject) => {
-    // Mirror the 45s timeout+abort guard used by the transcription helpers so a
-    // hung chat endpoint (slow proxy / custom baseUrl) can't leave the dictation
-    // flow stuck and the socket/promise dangling forever.
-    let settled = false
-    const timeout = setTimeout(() => {
-      if (!settled) {
-        settled = true
-        request.abort()
-        reject(new Error('OpenAI chat post-processing request timed out after 45s'))
-      }
-    }, 45_000)
-
-    const settle = <T>(fn: (val: T) => void) => (val: T): void => {
-      if (!settled) {
-        settled = true
-        clearTimeout(timeout)
-        fn(val)
-      }
-    }
-
-    const request = net.request({
-      method: 'POST',
-      url: `${baseUrl}/chat/completions`
-    })
-
-    if (apiKey) {
-      request.setHeader('Authorization', `Bearer ${apiKey}`)
-    }
-    request.setHeader('Content-Type', 'application/json')
-
-    const chunks: Buffer[] = []
-
-    request.on('response', (response) => {
-      response.on('data', (chunk: Buffer) => {
-        chunks.push(chunk)
-      })
-      response.on('end', () => {
-        const responseBody = Buffer.concat(chunks).toString('utf-8')
-        if (response.statusCode !== 200) {
-          if (isDev()) console.error(`[Whisperio] OpenAI Chat API error body: ${responseBody}`)
-          settle(reject)(new Error(`OpenAI Chat API error ${response.statusCode}`))
-          return
-        }
-        try {
-          const data = JSON.parse(responseBody) as ChatResponse
-          const corrected = data.choices?.[0]?.message?.content?.trim()
-          settle(resolve)(corrected || text)
-        } catch {
-          settle(reject)(new Error(`Failed to parse Chat response (HTTP ${response.statusCode})`))
-        }
-      })
-      response.on('error', (err: Error) => settle(reject)(err))
-    })
-
-    request.on('error', (err: Error) => settle(reject)(err))
-    request.write(body)
-    request.end()
-  })
-}

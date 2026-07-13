@@ -1,11 +1,37 @@
 import { createContext, useContext, useState, useEffect, useCallback, type ReactNode, type ReactElement } from 'react'
-import { type ThemeMode, type Theme, type AccentColor, buildTheme, DEFAULT_ACCENT } from './theme'
+import { type ThemeMode, type Theme, type AccentColor, buildTheme, DEFAULT_ACCENT, ACCENT_ORDER } from './theme'
+
+/* Known theme modes, in the order the settings Segmented control renders them.
+   Anything else coming out of persisted settings (old build, corrupted JSON,
+   a future mode this build doesn't know about yet) falls back to 'dark' —
+   never throws, never leaves the UI in an undefined-var(--wsp-*) state.
+   'violet-legacy' was removed from the product (VIOLET-OUT): it is mapped to
+   'dark' below rather than just falling through to the generic default, so
+   users who had it saved land on the closest still-supported look. */
+const KNOWN_MODES: ThemeMode[] = ['dark', 'light']
+
+function coerceMode(value: unknown): ThemeMode {
+  if (value === 'violet-legacy') return 'dark'
+  return KNOWN_MODES.includes(value as ThemeMode) ? (value as ThemeMode) : 'dark'
+}
+
+/* Same fallback contract as coerceMode, for the accent picker. 'violet' was
+   removed from the product (VIOLET-OUT) — settings saved by older shipped
+   builds may still carry it, so it's mapped explicitly to 'teal' (the
+   current default accent) rather than falling through to a generic
+   fallback that would happen to be the same value today but wouldn't be if
+   DEFAULT_ACCENT ever changes. */
+function coerceAccent(value: unknown): AccentColor {
+  if (value === 'violet') return 'teal'
+  return ACCENT_ORDER.includes(value as AccentColor) ? (value as AccentColor) : DEFAULT_ACCENT
+}
 
 interface ThemeContextValue {
   mode: ThemeMode
   accent: AccentColor
   theme: Theme
   toggleTheme: () => void
+  setMode: (mode: ThemeMode) => void
   setAccent: (accent: AccentColor) => void
 }
 
@@ -14,30 +40,36 @@ const ThemeContext = createContext<ThemeContextValue>({
   accent: DEFAULT_ACCENT,
   theme: buildTheme('dark', DEFAULT_ACCENT),
   toggleTheme: () => {},
+  setMode: () => {},
   setAccent: () => {}
 })
 
 export function ThemeProvider({ children }: { children: ReactNode }): ReactElement {
-  const [mode, setMode] = useState<ThemeMode>('dark')
+  const [mode, setModeState] = useState<ThemeMode>('dark')
   const [accent, setAccentState] = useState<AccentColor>(DEFAULT_ACCENT)
 
   useEffect(() => {
     window.api.settings.load().then((settings) => {
-      if (settings.theme === 'light' || settings.theme === 'dark') {
-        setMode(settings.theme)
+      if (settings.theme) {
+        setModeState(coerceMode(settings.theme))
       }
       if (settings.accentColor) {
-        setAccentState(settings.accentColor as AccentColor)
+        setAccentState(coerceAccent(settings.accentColor))
       }
     })
   }, [])
 
   const toggleTheme = useCallback(() => {
-    setMode((prev) => {
+    setModeState((prev) => {
       const next = prev === 'dark' ? 'light' : 'dark'
       window.api.settings.save({ theme: next })
       return next
     })
+  }, [])
+
+  const setMode = useCallback((next: ThemeMode) => {
+    setModeState(next)
+    window.api.settings.save({ theme: next })
   }, [])
 
   const setAccent = useCallback((next: AccentColor) => {
@@ -46,6 +78,13 @@ export function ThemeProvider({ children }: { children: ReactNode }): ReactEleme
   }, [])
 
   const theme = buildTheme(mode, accent)
+
+  // Stamp <html data-theme/data-accent> so tokens.css's [data-theme]/[data-accent]
+  // selectors resolve the right --wsp-* literal for the CSS-var Theme above.
+  useEffect(() => {
+    document.documentElement.dataset.theme = mode
+    document.documentElement.dataset.accent = accent
+  }, [mode, accent])
 
   // Update background and global styles to match theme
   useEffect(() => {
@@ -59,6 +98,7 @@ export function ThemeProvider({ children }: { children: ReactNode }): ReactEleme
       style.id = styleId
       document.head.appendChild(style)
     }
+    const colorScheme = mode === 'light' ? 'light' : 'dark'
     style.textContent = `
       html, body, #root {
         min-height: 100%;
@@ -71,7 +111,7 @@ export function ThemeProvider({ children }: { children: ReactNode }): ReactEleme
         -webkit-font-smoothing: antialiased;
         -moz-osx-font-smoothing: grayscale;
         text-rendering: geometricPrecision;
-        color-scheme: ${theme.bg === '#070d15' ? 'dark' : 'light'};
+        color-scheme: ${colorScheme};
       }
       ::selection {
         background: rgba(${theme.accentRgb}, 0.28);
@@ -119,16 +159,18 @@ export function ThemeProvider({ children }: { children: ReactNode }): ReactEleme
       select {
         -webkit-appearance: none;
         appearance: none;
-        background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='${encodeURIComponent(theme.textMuted)}' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M6 9l6 6 6-6'/></svg>");
+        /* Per-theme literal-color data-URI baked into tokens.css — var() can't
+           be resolved inside a data-URI, so this can't be theme.textMuted. */
+        background-image: var(--wsp-select-arrow);
         background-repeat: no-repeat;
         background-position: right 11px center;
         padding-right: 32px !important;
       }
     `
-  }, [theme])
+  }, [theme, mode])
 
   return (
-    <ThemeContext.Provider value={{ mode, accent, theme, toggleTheme, setAccent }}>
+    <ThemeContext.Provider value={{ mode, accent, theme, toggleTheme, setMode, setAccent }}>
       {children}
     </ThemeContext.Provider>
   )
