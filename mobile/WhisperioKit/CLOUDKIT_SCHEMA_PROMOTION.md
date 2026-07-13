@@ -55,8 +55,9 @@ automate this away; the checklist below is the guardrail.
 
 | Date | Record type(s) / field(s) | Status | Notes |
 |------|----------------------------|--------|-------|
-| _(unrecorded)_ | `CD_RecordingEntity` | PROMOTED | Promoted prior to this checklist existing; predates `DigestEntity`. |
-| _(none yet)_ | `CD_DigestEntity` | PENDING | **Not yet confirmed promoted to Production.** Steps 1–3 above have not been run against a real iCloud account/CloudKit Console as of this file's last edit — that requires a human with a signed-in Apple ID and Xcode/CloudKit Console access, which this checklist can prescribe but not perform. Must complete steps 1–3 and flip this row to `PROMOTED` with a real date before shipping any build that syncs digests to a device that isn't running a Development-signed build. |
+| 2026-06 (approx) | `CD_RecordingEntity` (8 fields: id, filename, timestamp, duration, statusRaw, transcription, modifiedAt, entityName) | PROMOTED | Original lazy-created schema. **Stale for weeks**: the model grew `providerRaw`/`error`/`category`/`render`/`renderPresetID` but Production never learned them → every export batch failed → **nothing synced on TestFlight**. Root cause of the "recorded on iPhone, never appears on iPad" bug. |
+| 2026-07-13 | `CD_RecordingEntity` +5 fields (`providerRaw`, `error`, `category`, `render`, `renderPresetID`) | PROMOTED | Imported to Development via `xcrun cktool import-schema` (management token, `--method file`), then Console → Deploy Schema Changes to Production. `cktool import-schema --environment production` is rejected by Apple ("endpoint not applicable") — the Console click is mandatory. |
+| 2026-07-13 | `CD_DigestEntity` (dayKey, date, recordingIDsData, groupsData, summary, summaryGeneratedAt, modifiedAt, entityName) | PROMOTED | Same import + Console deploy as above. Verified by `cktool export-schema --environment production` showing both record types with full field lists. Schema source: `scratchpad` ckdb generated from `CloudKitSchema.swift` field lists. |
 
 ## Release gate — do not ship digest sync while `CD_DigestEntity` is `PENDING`
 
