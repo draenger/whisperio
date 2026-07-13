@@ -1,4 +1,4 @@
-export type ThemeMode = 'dark' | 'light'
+export type ThemeMode = 'dark' | 'light' | 'violet-legacy'
 
 export type AccentColor = 'graphite' | 'blue' | 'teal' | 'emerald' | 'amber' | 'violet'
 
@@ -82,60 +82,76 @@ const lightBaseAurora = {
 }
 --- end original aurora surfaces --- */
 
-/* Rezme teal surfaces — the redesign default (ported 1:1 from buildRezmeTheme('teal')). */
+/* --- Pre-tokens.css literal surfaces (Rezme teal, ported 1:1 from buildRezmeTheme('teal')).
+   Superseded by docs/design/tokens.css --wsp-* custom properties (STEP0 theming wiring).
+   Kept here only as a historical reference for the literal values each var replaces.
 const darkBase = {
-  bg: '#070d15',
-  bgSecondary: '#101b2a',
-  bgTertiary: '#16243a',
-  text: '#ecf2f9',
-  textSecondary: '#b4c1d0',
-  textMuted: '#7e91a4',
-  border: '#202b3b',
-  borderHover: '#2c3a4e',
-  inputBg: '#0c1826',
-  inputBorder: '#243244',
-  danger: '#ef4444',
-  dangerGlow: 'rgba(239,68,68,0.3)',
-  success: '#22c55e',
-  successGlow: 'rgba(34,197,94,0.3)',
+  bg: '#070d15', bgSecondary: '#101b2a', bgTertiary: '#16243a',
+  text: '#ecf2f9', textSecondary: '#b4c1d0', textMuted: '#7e91a4',
+  border: '#202b3b', borderHover: '#2c3a4e',
+  inputBg: '#0c1826', inputBorder: '#243244',
+  danger: '#ef4444', dangerGlow: 'rgba(239,68,68,0.3)',
+  success: '#22c55e', successGlow: 'rgba(34,197,94,0.3)',
   shadow: '0 40px 90px -30px rgba(0,0,0,.85)'
 }
-
 const lightBase = {
-  bg: '#f6f8fa',
-  bgSecondary: '#ffffff',
-  bgTertiary: '#eef2f6',
-  text: '#0c1822',
-  textSecondary: '#3f4f5e',
-  textMuted: '#74859a',
-  border: '#e3e9ef',
-  borderHover: '#d2dbe4',
-  inputBg: '#ffffff',
-  inputBorder: '#d2dbe4',
-  danger: '#dc2626',
-  dangerGlow: 'rgba(220,38,38,0.2)',
-  success: '#16a34a',
-  successGlow: 'rgba(22,163,74,0.2)',
+  bg: '#f6f8fa', bgSecondary: '#ffffff', bgTertiary: '#eef2f6',
+  text: '#0c1822', textSecondary: '#3f4f5e', textMuted: '#74859a',
+  border: '#e3e9ef', borderHover: '#d2dbe4',
+  inputBg: '#ffffff', inputBorder: '#d2dbe4',
+  danger: '#dc2626', dangerGlow: 'rgba(220,38,38,0.2)',
+  success: '#16a34a', successGlow: 'rgba(22,163,74,0.2)',
   shadow: '0 40px 90px -34px rgba(20,40,50,.28)'
 }
+--- end pre-tokens.css literal surfaces --- */
 
-export function buildTheme(mode: ThemeMode, accent: AccentColor): Theme {
-  const pal = ACCENTS[accent] || ACCENTS.blue
-  const base = mode === 'dark' ? darkBase : lightBase
-  // dark: accent = base, light = light ; light mode: accent = deep, light = base
-  const accentColor = mode === 'dark' ? pal.base : pal.deep
-  const accentLight = mode === 'dark' ? pal.light : pal.base
-  return {
-    ...base,
-    accent: accentColor,
-    accentHover: accentLight,
-    accentLight,
-    accentGlow: `rgba(${pal.rgb},${mode === 'dark' ? 0.3 : 0.2})`,
-    accentInk: mode === 'dark' ? pal.ink : '#ffffff',
-    accentRgb: pal.rgb
-  }
+/*
+ * CSS-var Theme (STEP0 theming wiring).
+ *
+ * Every Theme field is now a `var(--wsp-*)` reference into
+ * docs/design/tokens.css instead of a literal color. tokens.css already
+ * encodes the full mode × accent cross-product via the `[data-theme]` /
+ * `[data-accent]` attribute selectors on <html> (stamped by ThemeProvider —
+ * see ThemeContext.tsx), so the browser's CSS cascade resolves the right
+ * literal color at paint time. That means buildTheme() no longer needs to
+ * branch on `mode`/`accent` to pick a literal value — the same var()
+ * reference is correct in every mode/accent combination. The (mode, accent)
+ * signature is kept unchanged so existing callers (and the ACCENTS-driven
+ * accent-swatch UI, which still needs literal hex for the picker dots) don't
+ * need to change.
+ */
+const VAR_THEME: Theme = {
+  bg: 'var(--wsp-bg)',
+  bgSecondary: 'var(--wsp-bg-secondary)',
+  bgTertiary: 'var(--wsp-bg-tertiary)',
+  text: 'var(--wsp-text)',
+  textSecondary: 'var(--wsp-text-secondary)',
+  textMuted: 'var(--wsp-text-muted)',
+  accent: 'var(--wsp-accent)',
+  accentHover: 'var(--wsp-accent-hover)',
+  accentLight: 'var(--wsp-accent-light)',
+  accentGlow: 'var(--wsp-accent-glow)',
+  accentInk: 'var(--wsp-accent-ink)',
+  accentRgb: 'var(--wsp-accent-rgb)',
+  border: 'var(--wsp-border)',
+  borderHover: 'var(--wsp-border-hover)',
+  inputBg: 'var(--wsp-input-bg)',
+  inputBorder: 'var(--wsp-input-border)',
+  danger: 'var(--wsp-danger)',
+  dangerGlow: 'var(--wsp-danger-glow)',
+  success: 'var(--wsp-success)',
+  successGlow: 'var(--wsp-success-glow)',
+  shadow: 'var(--wsp-shadow)'
 }
 
-/* Default exports (Rezme teal accent) for any direct importers. */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+export function buildTheme(mode: ThemeMode, accent: AccentColor): Theme {
+  return { ...VAR_THEME }
+}
+
+/* Default exports for any direct importers. Identical across modes now that
+   colors are resolved by the CSS cascade rather than computed here — the
+   (mode, accent) args are retained for API compatibility. */
 export const darkTheme: Theme = buildTheme('dark', DEFAULT_ACCENT)
 export const lightTheme: Theme = buildTheme('light', DEFAULT_ACCENT)
+export const violetLegacyTheme: Theme = buildTheme('violet-legacy', DEFAULT_ACCENT)

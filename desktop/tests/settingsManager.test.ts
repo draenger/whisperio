@@ -42,6 +42,12 @@ const DEFAULT_SETTINGS = {
   customVocabulary: '',
   removedDefaultVocabulary: [],
   aiPostProcessing: false,
+  cleanupEnabled: true,
+  cleanupMode: 'full',
+  aiProvider: 'openai',
+  aiBaseUrl: '',
+  aiModel: '',
+  anthropicApiKey: '',
   launchAtStartup: true,
   dictationHotkey: '',
   dictateAndSendHotkey: '',
@@ -171,6 +177,70 @@ describe('settingsManager', () => {
 
       expect(result.removedDefaultVocabulary).toEqual(['git'])
       expect(result.customVocabulary).toBe('Svelte')
+    })
+  })
+
+  describe('legacy aiPostProcessing -> cleanup migration', () => {
+    it('migrates aiPostProcessing: true to cleanupEnabled: true, cleanupMode: "full"', () => {
+      mockExistsSync.mockReturnValue(true)
+      mockReadFileSync.mockReturnValue(JSON.stringify({ aiPostProcessing: true }))
+
+      const result = loadSettings()
+
+      expect(result.cleanupEnabled).toBe(true)
+      expect(result.cleanupMode).toBe('full')
+      // aiPostProcessing itself is never dropped (settings invariant).
+      expect(result.aiPostProcessing).toBe(true)
+    })
+
+    it('migrates aiPostProcessing: false to cleanupEnabled: false', () => {
+      mockExistsSync.mockReturnValue(true)
+      mockReadFileSync.mockReturnValue(JSON.stringify({ aiPostProcessing: false }))
+
+      const result = loadSettings()
+
+      expect(result.cleanupEnabled).toBe(false)
+      // cleanupMode isn't addressed by the false-branch migration — it keeps
+      // its default.
+      expect(result.cleanupMode).toBe('full')
+      expect(result.aiPostProcessing).toBe(false)
+    })
+
+    it('is idempotent: loading the same legacy file twice yields the same result', () => {
+      mockExistsSync.mockReturnValue(true)
+      mockReadFileSync.mockReturnValue(JSON.stringify({ aiPostProcessing: true }))
+
+      const first = loadSettings()
+      const second = loadSettings()
+
+      expect(second).toEqual(first)
+    })
+
+    it('does not run when the new keys are already present, even if they disagree with the legacy flag', () => {
+      mockExistsSync.mockReturnValue(true)
+      // Already-migrated (or explicitly user-edited) file: cleanupEnabled is
+      // present, so the legacy flag must not override it even though it
+      // disagrees.
+      mockReadFileSync.mockReturnValue(
+        JSON.stringify({ aiPostProcessing: true, cleanupEnabled: false, cleanupMode: 'light' })
+      )
+
+      const result = loadSettings()
+
+      expect(result.cleanupEnabled).toBe(false)
+      expect(result.cleanupMode).toBe('light')
+      expect(result.aiPostProcessing).toBe(true)
+    })
+
+    it('leaves defaults untouched when neither the legacy flag nor the new keys are present', () => {
+      mockExistsSync.mockReturnValue(true)
+      mockReadFileSync.mockReturnValue(JSON.stringify({ openaiApiKey: 'sk-test' }))
+
+      const result = loadSettings()
+
+      expect(result.cleanupEnabled).toBe(true)
+      expect(result.cleanupMode).toBe('full')
+      expect(result.aiPostProcessing).toBe(false)
     })
   })
 })

@@ -7,12 +7,15 @@ import {
   buildTheme,
   darkTheme,
   lightTheme,
+  violetLegacyTheme,
   type Theme,
   type ThemeMode,
   type AccentColor
 } from '../src/renderer/theme'
 
 const ACCENT_COLORS: AccentColor[] = ['graphite', 'blue', 'teal', 'emerald', 'amber', 'violet']
+
+const MODES: ThemeMode[] = ['dark', 'light', 'violet-legacy']
 
 const THEME_KEYS: (keyof Theme)[] = [
   'bg',
@@ -38,9 +41,36 @@ const THEME_KEYS: (keyof Theme)[] = [
   'shadow'
 ]
 
-// Matches any plausible CSS color/value token: hex, rgb(a), hsl, or a shadow/rgb-tuple string.
-const COLOR_LIKE = /^(#|rgb|hsl)/
-const RGB_TUPLE = /^\d{1,3},\d{1,3},\d{1,3}$/
+// STEP0 theming wiring: every Theme field is a var(--wsp-*) reference into
+// docs/design/tokens.css. tokens.css itself owns the mode x accent
+// cross-product (via [data-theme]/[data-accent] selectors on <html>,
+// stamped by ThemeProvider), so buildTheme() no longer computes a literal
+// color per mode/accent — the same var() reference is correct everywhere.
+const EXPECTED_VAR: Record<keyof Theme, string> = {
+  bg: 'var(--wsp-bg)',
+  bgSecondary: 'var(--wsp-bg-secondary)',
+  bgTertiary: 'var(--wsp-bg-tertiary)',
+  text: 'var(--wsp-text)',
+  textSecondary: 'var(--wsp-text-secondary)',
+  textMuted: 'var(--wsp-text-muted)',
+  accent: 'var(--wsp-accent)',
+  accentHover: 'var(--wsp-accent-hover)',
+  accentLight: 'var(--wsp-accent-light)',
+  accentGlow: 'var(--wsp-accent-glow)',
+  accentInk: 'var(--wsp-accent-ink)',
+  accentRgb: 'var(--wsp-accent-rgb)',
+  border: 'var(--wsp-border)',
+  borderHover: 'var(--wsp-border-hover)',
+  inputBg: 'var(--wsp-input-bg)',
+  inputBorder: 'var(--wsp-input-border)',
+  danger: 'var(--wsp-danger)',
+  dangerGlow: 'var(--wsp-danger-glow)',
+  success: 'var(--wsp-success)',
+  successGlow: 'var(--wsp-success-glow)',
+  shadow: 'var(--wsp-shadow)'
+}
+
+const VAR_LIKE = /^var\(--wsp-[a-z-]+\)$/
 
 describe('theme constants', () => {
   describe('ACCENTS palette map', () => {
@@ -49,6 +79,8 @@ describe('theme constants', () => {
     })
 
     it('every accent palette is fully populated with well-formed values', () => {
+      const COLOR_LIKE = /^(#|rgb|hsl)/
+      const RGB_TUPLE = /^\d{1,3},\d{1,3},\d{1,3}$/
       for (const accent of ACCENT_COLORS) {
         const pal = ACCENTS[accent]
         expect(pal, accent).toBeDefined()
@@ -86,8 +118,6 @@ describe('theme constants', () => {
 })
 
 describe('buildTheme', () => {
-  const MODES: ThemeMode[] = ['dark', 'light']
-
   it('returns the full set of theme tokens for every mode/accent combo', () => {
     for (const mode of MODES) {
       for (const accent of ACCENT_COLORS) {
@@ -101,76 +131,41 @@ describe('buildTheme', () => {
     }
   })
 
-  it('produces color-like values for color tokens', () => {
-    const colorTokens: (keyof Theme)[] = THEME_KEYS.filter((k) => k !== 'accentRgb' && k !== 'shadow')
+  it('returns a var(--wsp-*) reference for every token, matching tokens.css naming', () => {
     for (const mode of MODES) {
       for (const accent of ACCENT_COLORS) {
         const theme = buildTheme(mode, accent)
-        for (const key of colorTokens) {
-          expect(theme[key], `${mode}/${accent}.${key}`).toMatch(COLOR_LIKE)
+        for (const key of THEME_KEYS) {
+          expect(theme[key], `${mode}/${accent}.${key}`).toMatch(VAR_LIKE)
+          expect(theme[key], `${mode}/${accent}.${key}`).toBe(EXPECTED_VAR[key])
         }
-        expect(theme.accentRgb, `${mode}/${accent}.accentRgb`).toMatch(RGB_TUPLE)
-        expect(theme.shadow).toContain('rgba')
       }
     }
   })
 
-  describe('dark mode branch', () => {
-    it('uses accent base as accent and light as accentLight', () => {
-      const pal = ACCENTS.teal
-      const theme = buildTheme('dark', 'teal')
-      expect(theme.accent).toBe(pal.base)
-      expect(theme.accentLight).toBe(pal.light)
-      expect(theme.accentHover).toBe(pal.light)
-    })
-
-    it('uses the accent ink color for accentInk', () => {
-      expect(buildTheme('dark', 'teal').accentInk).toBe(ACCENTS.teal.ink)
-    })
-
-    it('uses 0.3 alpha for the accent glow', () => {
-      expect(buildTheme('dark', 'blue').accentGlow).toBe(`rgba(${ACCENTS.blue.rgb},0.3)`)
-    })
-
-    it('uses the dark surface base tokens', () => {
-      expect(buildTheme('dark', 'blue').bg).toBe('#070d15')
-    })
-  })
-
-  describe('light mode branch', () => {
-    it('uses accent deep as accent and base as accentLight', () => {
-      const pal = ACCENTS.teal
-      const theme = buildTheme('light', 'teal')
-      expect(theme.accent).toBe(pal.deep)
-      expect(theme.accentLight).toBe(pal.base)
-      expect(theme.accentHover).toBe(pal.base)
-    })
-
-    it('always uses white ink in light mode regardless of accent', () => {
-      expect(buildTheme('light', 'graphite').accentInk).toBe('#ffffff')
-      expect(buildTheme('light', 'teal').accentInk).toBe('#ffffff')
-    })
-
-    it('uses 0.2 alpha for the accent glow', () => {
-      expect(buildTheme('light', 'blue').accentGlow).toBe(`rgba(${ACCENTS.blue.rgb},0.2)`)
-    })
-
-    it('uses the light surface base tokens', () => {
-      expect(buildTheme('light', 'blue').bg).toBe('#f6f8fa')
-    })
-  })
-
-  it('carries the accent rgb tuple through unchanged', () => {
-    for (const accent of ACCENT_COLORS) {
-      expect(buildTheme('dark', accent).accentRgb).toBe(ACCENTS[accent].rgb)
+  it('is invariant across mode and accent — the CSS cascade in tokens.css resolves the literal color', () => {
+    // Once colors are var() refs, tokens.css's [data-theme]/[data-accent]
+    // selectors (not buildTheme's JS branching) decide the final literal
+    // value at paint time. buildTheme keeps the (mode, accent) signature for
+    // API compatibility but no longer needs the args to pick a value.
+    const reference = buildTheme('dark', 'teal')
+    for (const mode of MODES) {
+      for (const accent of ACCENT_COLORS) {
+        expect(buildTheme(mode, accent), `${mode}/${accent}`).toEqual(reference)
+      }
     }
   })
 
-  it('falls back to the blue accent for an unknown accent value', () => {
-    const unknown = 'chartreuse' as AccentColor
-    const fallback = buildTheme('dark', unknown)
-    const blue = buildTheme('dark', 'blue')
-    expect(fallback).toEqual(blue)
+  it('exposes accentRgb as a var() reference usable inside rgba(...)', () => {
+    // A hard invariant from the ThemeContext global-style wiring:
+    // `rgba(${theme.accentRgb}, 0.3)` must stay valid CSS.
+    const theme = buildTheme('dark', 'blue')
+    expect(theme.accentRgb).toBe('var(--wsp-accent-rgb)')
+    expect(`rgba(${theme.accentRgb}, 0.3)`).toBe('rgba(var(--wsp-accent-rgb), 0.3)')
+  })
+
+  it('accepts violet-legacy as a mode without throwing', () => {
+    expect(() => buildTheme('violet-legacy', DEFAULT_ACCENT)).not.toThrow()
   })
 })
 
@@ -183,11 +178,21 @@ describe('default theme exports', () => {
     expect(lightTheme).toEqual(buildTheme('light', DEFAULT_ACCENT))
   })
 
-  it('dark and light themes expose identical key sets', () => {
-    expect(Object.keys(darkTheme).sort()).toEqual(Object.keys(lightTheme).sort())
+  it('violetLegacyTheme equals the default-accent violet-legacy build', () => {
+    expect(violetLegacyTheme).toEqual(buildTheme('violet-legacy', DEFAULT_ACCENT))
   })
 
-  it('default themes differ in their surface background', () => {
-    expect(darkTheme.bg).not.toBe(lightTheme.bg)
+  it('dark, light and violet-legacy themes expose identical key sets', () => {
+    expect(Object.keys(darkTheme).sort()).toEqual(Object.keys(lightTheme).sort())
+    expect(Object.keys(darkTheme).sort()).toEqual(Object.keys(violetLegacyTheme).sort())
+  })
+
+  it('are structurally identical var()-reference objects (literal colors now live in tokens.css)', () => {
+    // Pre-STEP0 this asserted darkTheme.bg !== lightTheme.bg (literal hex).
+    // Now both are 'var(--wsp-bg)' — the actual different literal per mode is
+    // resolved by tokens.css's :root vs :root[data-theme='light'] blocks.
+    expect(darkTheme).toEqual(lightTheme)
+    expect(darkTheme).toEqual(violetLegacyTheme)
+    expect(darkTheme.bg).toBe('var(--wsp-bg)')
   })
 })

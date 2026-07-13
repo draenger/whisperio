@@ -83,6 +83,13 @@
   --wsp-motion: 180ms;
   --wsp-ease: cubic-bezier(0.16, 0.84, 0.44, 1);
 
+  /* ===== FORM CONTROLS =====
+     Native <select> chevrons are painted as a data-URI background-image, so
+     they can't reference --wsp-text-muted via var() (data URIs don't resolve
+     custom properties). Each theme below bakes its own textMuted hex into the
+     SVG literal instead. Keep this in sync with that theme's --wsp-text-muted. */
+  --wsp-select-arrow: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%237e91a4' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+
   color-scheme: dark;
 }
 
@@ -122,6 +129,9 @@
   --wsp-e2: 0 8px 28px rgba(13, 27, 38, 0.07), 0 2px 6px rgba(13, 27, 38, 0.04);
   --wsp-e3: 0 20px 52px rgba(13, 27, 38, 0.12), 0 6px 16px rgba(13, 27, 38, 0.06);
   --wsp-shadow: 0 40px 90px -34px rgba(20, 40, 50, 0.28);
+
+  /* textMuted #74859a baked into the arrow — see --wsp-select-arrow note above. */
+  --wsp-select-arrow: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%2374859a' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
 
   color-scheme: light;
 }
@@ -163,6 +173,9 @@
   --wsp-pill-border: rgba(139, 92, 246, 0.3);
   --wsp-progress-gradient: linear-gradient(90deg, #a78bfa, #6366f1);
   --wsp-shadow: 0 40px 90px -30px rgba(0, 0, 0, 0.85);
+
+  /* textMuted #6a6880 baked into the arrow — see --wsp-select-arrow note above. */
+  --wsp-select-arrow: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%236a6880' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
 
   color-scheme: dark;
 }

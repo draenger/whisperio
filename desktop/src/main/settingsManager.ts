@@ -6,6 +6,12 @@ export type ProviderId = 'openai' | 'elevenlabs' | 'selfhosted'
 
 export type AccentColor = 'graphite' | 'blue' | 'teal' | 'emerald' | 'amber' | 'violet'
 
+// AI transcript-cleanup settings (v1.4 Work Item A). 'off' disables cleanup
+// entirely; 'light'/'full' select the prompt-rule set in llm/prompts.ts.
+export type CleanupMode = 'off' | 'light' | 'full'
+
+export type AiProvider = 'openai' | 'anthropic' | 'local'
+
 export interface AppSettings {
   sttProvider: 'openai' | 'elevenlabs'
   providerChain: ProviderId[]
@@ -17,11 +23,29 @@ export interface AppSettings {
   transcriptionPrompt: string
   customVocabulary: string
   removedDefaultVocabulary: string[]
+  // Legacy AI-post-processing toggle — superseded by cleanupEnabled/cleanupMode
+  // below (STEP1/Work Item A). Kept and never dropped (settings invariant): old
+  // settings.json files still carry it, and migrateCleanupSettings() below reads
+  // it once to seed the new keys the first time a legacy file is loaded.
   aiPostProcessing: boolean
+  // Additive v1.4 cleanup settings. All migrated losslessly from
+  // aiPostProcessing on first load of a pre-v1.4 settings.json — see
+  // migrateCleanupSettings().
+  cleanupEnabled: boolean
+  cleanupMode: CleanupMode
+  aiProvider: AiProvider
+  // Empty string = provider-appropriate default (e.g. api.openai.com for 'openai').
+  aiBaseUrl: string
+  // Empty string = a sensible built-in default model for the selected provider.
+  aiModel: string
+  anthropicApiKey: string
   launchAtStartup: boolean
   dictationHotkey: string
   dictateAndSendHotkey: string
-  theme: 'dark' | 'light'
+  // 'violet-legacy' added in STEP0 theming wiring — additive, no migration
+  // needed: old settings.json files only ever contain 'dark'/'light' and the
+  // renderer's ThemeProvider coerces any unrecognized string to 'dark'.
+  theme: 'dark' | 'light' | 'violet-legacy'
   accentColor: AccentColor
   inputDeviceId: string
   outputDeviceId: string
@@ -93,6 +117,12 @@ const DEFAULT_SETTINGS: AppSettings = {
   customVocabulary: '',
   removedDefaultVocabulary: [],
   aiPostProcessing: false,
+  cleanupEnabled: true,
+  cleanupMode: 'full',
+  aiProvider: 'openai',
+  aiBaseUrl: '',
+  aiModel: '',
+  anthropicApiKey: '',
   launchAtStartup: true,
   dictationHotkey: '',
   dictateAndSendHotkey: '',
@@ -131,6 +161,29 @@ function migrateVocabulary(parsed: Partial<AppSettings>): Partial<AppSettings> {
   return { ...parsed, removedDefaultVocabulary, customVocabulary: additions.join(', ') }
 }
 
+/**
+ * Migrate the legacy `aiPostProcessing` boolean into the v1.4 cleanup keys.
+ * Runs ONLY when the saved JSON has neither `cleanupEnabled` nor
+ * `cleanupMode` yet — that makes it idempotent (a second load of the same
+ * file, migrated or not, is a no-op) and additive: `aiPostProcessing` itself
+ * is never dropped from the returned object, so older app versions (or a
+ * future rollback) can still read it.
+ *
+ * true  -> cleanupEnabled: true,  cleanupMode: 'full' (previous behavior: on)
+ * false -> cleanupEnabled: false                       (mode stays default)
+ */
+function migrateCleanupSettings(parsed: Partial<AppSettings>): Partial<AppSettings> {
+  if (parsed.cleanupEnabled !== undefined || parsed.cleanupMode !== undefined) {
+    return parsed
+  }
+  if (parsed.aiPostProcessing === undefined) {
+    return parsed
+  }
+  return parsed.aiPostProcessing
+    ? { ...parsed, cleanupEnabled: true, cleanupMode: 'full' }
+    : { ...parsed, cleanupEnabled: false }
+}
+
 export function loadSettings(): AppSettings {
   const filePath = getSettingsPath()
   if (!existsSync(filePath)) {
@@ -139,7 +192,8 @@ export function loadSettings(): AppSettings {
   try {
     const raw = readFileSync(filePath, 'utf-8')
     const parsed = JSON.parse(raw) as Partial<AppSettings>
-    return { ...DEFAULT_SETTINGS, ...migrateVocabulary(parsed) }
+    const migrated = migrateCleanupSettings(migrateVocabulary(parsed))
+    return { ...DEFAULT_SETTINGS, ...migrated }
   } catch (err) {
     // A corrupt settings.json (e.g. truncated by a crash/power-loss mid-write)
     // must not silently wipe the user's API keys + config. Preserve the bad

@@ -64,10 +64,16 @@ export interface AppSettings {
   customVocabulary: string
   removedDefaultVocabulary: string[]
   aiPostProcessing: boolean
+  cleanupEnabled: boolean
+  cleanupMode: 'off' | 'light' | 'full'
+  aiProvider: 'openai' | 'anthropic' | 'local'
+  aiBaseUrl: string
+  aiModel: string
+  anthropicApiKey: string
   launchAtStartup: boolean
   dictationHotkey: string
   dictateAndSendHotkey: string
-  theme: 'dark' | 'light'
+  theme: 'dark' | 'light' | 'violet-legacy'
   accentColor: 'graphite' | 'blue' | 'teal' | 'emerald' | 'amber' | 'violet'
   inputDeviceId: string
   outputDeviceId: string
