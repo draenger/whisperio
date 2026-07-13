@@ -61,6 +61,9 @@ export interface AppSettings {
   openaiBaseUrl: string
   whisperModel: string
   elevenlabsApiKey: string
+  replicateApiKey: string
+  sttReplicateModel: string
+  sttApiKey: string
   transcriptionLanguage: string
   transcriptionPrompt: string
   customVocabulary: string
@@ -261,6 +264,28 @@ export interface GithubAPI {
   pull: () => Promise<GithubSyncResult>
 }
 
+// PACZKA METERING (v1.6): per-provider/per-month usage + estimated cost. See
+// src/main/usageTracker.ts for the ProviderMonthlyUsage shape this mirrors —
+// kept as a separate type here (repo convention: preload's AppSettings/
+// RecordingEntry etc. are their own copies too, not re-exports of main-process
+// types) so the renderer bundle never pulls in main-process-only modules.
+export interface UsageMonthly {
+  requests: number
+  inputTokens: number
+  outputTokens: number
+  audioSeconds: number
+  estimatedCostUsd: number
+  credits: number
+}
+
+/** providerId -> "YYYY-MM" -> usage for that provider that month. */
+export type UsageStore = Record<string, Record<string, UsageMonthly>>
+
+export interface UsageAPI {
+  get: () => Promise<UsageStore>
+  reset: () => Promise<UsageStore>
+}
+
 export interface WhisperioAPI {
   dictation: DictationAPI
   settings: SettingsAPI
@@ -271,6 +296,7 @@ export interface WhisperioAPI {
   window: WindowAPI
   updater: UpdaterAPI
   github: GithubAPI
+  usage: UsageAPI
 }
 
 const dictationApi: DictationAPI = {
@@ -434,6 +460,11 @@ const githubApi: GithubAPI = {
   pull: () => ipcRenderer.invoke('github:pull')
 }
 
+const usageApi: UsageAPI = {
+  get: () => ipcRenderer.invoke('usage:get'),
+  reset: () => ipcRenderer.invoke('usage:reset')
+}
+
 contextBridge.exposeInMainWorld('api', {
   dictation: dictationApi,
   settings: settingsApi,
@@ -444,4 +475,5 @@ contextBridge.exposeInMainWorld('api', {
   window: windowApi,
   updater: updaterApi,
   github: githubApi,
+  usage: usageApi,
 })

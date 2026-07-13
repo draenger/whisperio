@@ -1,6 +1,7 @@
 import { useMemo, type CSSProperties, type ReactElement } from 'react'
 import type { Theme } from '../../theme'
 import { ToggleRow, Segmented } from './SettingsForm'
+import { ModelPicker } from './ModelPicker'
 
 /*
  * AI Cleanup panel (desktop v1.4 cleanup line).
@@ -17,9 +18,16 @@ import { ToggleRow, Segmented } from './SettingsForm'
  * 'off' here just means cleanupEnabled's effect, i.e. "don't call the LLM at
  * all", so it never reaches the prompt builder. The two types don't need to
  * match; they describe different layers (UI toggle vs. prompt shape).
+ *
+ * AiProvider similarly is a UI-local superset of settingsManager.ts's own
+ * `AiProvider` export (still 'openai' | 'anthropic' | 'local' as of this
+ * writing) — 'replicate' lands here first (v1.5 PACZKA UI) ahead of the
+ * parallel LLM+ package's settingsManager/preload update landing the same
+ * value on their side. SettingsForm.tsx's save path documents the one cast
+ * this temporarily requires.
  */
 export type CleanupMode = 'off' | 'light' | 'full'
-export type AiProvider = 'openai' | 'anthropic' | 'local'
+export type AiProvider = 'openai' | 'anthropic' | 'replicate' | 'local'
 
 /** UI-facing mirror of settingsManager.ts's CleanupTemplate — same three
  * fields, kept as its own local type for the same reason CleanupMode above
@@ -63,14 +71,9 @@ const CLEANUP_MODE_HINTS: Record<CleanupMode, string> = {
 const AI_PROVIDER_OPTIONS: { value: AiProvider; label: string }[] = [
   { value: 'openai', label: 'OpenAI (cloud)' },
   { value: 'anthropic', label: 'Anthropic (cloud)' },
+  { value: 'replicate', label: 'Replicate (cloud)' },
   { value: 'local', label: 'Local (on-device)' }
 ]
-
-const AI_MODEL_PLACEHOLDER: Record<AiProvider, string> = {
-  openai: 'gpt-4o-mini',
-  anthropic: 'claude-haiku',
-  local: 'llama3'
-}
 
 /*
  * Loopback / RFC1918-private / mDNS-local hostname check, used ONLY to decide
@@ -108,8 +111,10 @@ export function isOnDeviceBaseUrl(rawUrl: string): boolean {
 }
 
 /** Quiet green "on-device" badge — ported from docs/design/wz-overlay.jsx's
- * OvlOnDevice, using the --wsp-ondevice-* tokens (no hardcoded hex). */
-function OnDeviceBadge(): ReactElement {
+ * OvlOnDevice, using the --wsp-ondevice-* tokens (no hardcoded hex). Exported
+ * so the Usage panel (UsagePanel.tsx) can reuse it for free/local rows
+ * instead of forking a second copy. */
+export function OnDeviceBadge(): ReactElement {
   return (
     <span
       style={{
@@ -168,6 +173,14 @@ export interface CleanupPanelProps {
   setAiModel: (v: string) => void
   anthropicApiKey: string
   setAnthropicApiKey: (v: string) => void
+  /**
+   * Shared with the STT Replicate chain entry (ProvidersTab) — settingsManager.ts
+   * stores this under one `replicateApiKey` key, not a separate LLM-only one,
+   * so the same value/setter is threaded into both places. See the KONTRAKT
+   * note at the top of this file.
+   */
+  replicateApiKey: string
+  setReplicateApiKey: (v: string) => void
   s: SettingsStyles
   theme: Theme
 }
@@ -198,6 +211,7 @@ export function CleanupPanel({
   aiBaseUrl, setAiBaseUrl,
   aiModel, setAiModel,
   anthropicApiKey, setAnthropicApiKey,
+  replicateApiKey, setReplicateApiKey,
   s, theme
 }: CleanupPanelProps): ReactElement {
   const onDevice = useMemo(() => isOnDeviceBaseUrl(aiBaseUrl), [aiBaseUrl])
@@ -275,15 +289,17 @@ export function CleanupPanel({
             </div>
             <span style={s.hint}>
               e.g. http://127.0.0.1:11434 for Ollama — loopback = processing stays on this machine.
+              http:// only for local/private hosts — public endpoints require https://.
             </span>
 
             <label style={{ ...s.label, marginTop: '8px' }}>AI Model</label>
-            <input
-              type="text"
-              value={aiModel}
-              onChange={(e) => setAiModel(e.target.value)}
-              placeholder={AI_MODEL_PLACEHOLDER[aiProvider]}
-              style={s.input}
+            <ModelPicker
+              aiProvider={aiProvider}
+              aiModel={aiModel}
+              setAiModel={setAiModel}
+              onDevice={onDevice}
+              s={s}
+              theme={theme}
             />
 
             {aiProvider === 'anthropic' && (
@@ -296,6 +312,22 @@ export function CleanupPanel({
                   placeholder="sk-ant-..."
                   style={s.input}
                 />
+              </>
+            )}
+
+            {aiProvider === 'replicate' && (
+              <>
+                <label style={{ ...s.label, marginTop: '8px' }}>Replicate API Key</label>
+                <input
+                  type="password"
+                  value={replicateApiKey}
+                  onChange={(e) => setReplicateApiKey(e.target.value)}
+                  placeholder="r8_..."
+                  style={s.input}
+                />
+                <span style={s.hint}>
+                  Shared with the Replicate speech-to-text provider (Providers tab) — one key, both uses.
+                </span>
               </>
             )}
           </div>

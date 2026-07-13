@@ -59,6 +59,9 @@ export interface AppSettings {
   openaiBaseUrl: string
   whisperModel: string
   elevenlabsApiKey: string
+  replicateApiKey: string
+  sttReplicateModel: string
+  sttApiKey: string
   transcriptionLanguage: string
   transcriptionPrompt: string
   customVocabulary: string
@@ -263,6 +266,25 @@ export interface GithubAPI {
   pull: () => Promise<GithubSyncResult>
 }
 
+// PACZKA METERING (v1.6): per-provider/per-month usage + estimated cost. See
+// src/main/usageTracker.ts for the ProviderMonthlyUsage shape this mirrors.
+export interface UsageMonthly {
+  requests: number
+  inputTokens: number
+  outputTokens: number
+  audioSeconds: number
+  estimatedCostUsd: number
+  credits: number
+}
+
+/** providerId -> "YYYY-MM" -> usage for that provider that month. */
+export type UsageStore = Record<string, Record<string, UsageMonthly>>
+
+export interface UsageAPI {
+  get: () => Promise<UsageStore>
+  reset: () => Promise<UsageStore>
+}
+
 export interface WhisperioAPI {
   dictation: DictationAPI
   settings: SettingsAPI
@@ -273,6 +295,7 @@ export interface WhisperioAPI {
   window: WindowAPI
   updater: UpdaterAPI
   github: GithubAPI
+  usage: UsageAPI
 }
 
 declare global {

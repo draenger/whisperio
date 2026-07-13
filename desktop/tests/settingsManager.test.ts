@@ -36,6 +36,9 @@ const DEFAULT_SETTINGS = {
   openaiBaseUrl: '',
   whisperModel: '',
   elevenlabsApiKey: '',
+  replicateApiKey: '',
+  sttReplicateModel: '',
+  sttApiKey: '',
   transcriptionLanguage: 'auto',
   transcriptionPrompt: '',
   // The built-in vocabulary now lives in DEFAULT_VOCABULARY_TERMS; the stored
@@ -274,6 +277,57 @@ describe('settingsManager', () => {
       expect(result.cleanupMode).toBe('full')
       expect(result.aiPostProcessing).toBe(false)
       expect(result.cleanupTemplates).toEqual(DEFAULT_CLEANUP_TEMPLATES)
+    })
+  })
+
+  describe('STT+ additive settings (Replicate STT + priv server key)', () => {
+    it('seeds replicateApiKey, sttReplicateModel, sttApiKey to empty-string defaults on a file predating them', () => {
+      mockExistsSync.mockReturnValue(true)
+      mockReadFileSync.mockReturnValue(JSON.stringify({ openaiApiKey: 'sk-test' }))
+
+      const result = loadSettings()
+
+      expect(result.replicateApiKey).toBe('')
+      expect(result.sttReplicateModel).toBe('')
+      expect(result.sttApiKey).toBe('')
+      // Existing keys are untouched (additive, nothing dropped).
+      expect(result.openaiApiKey).toBe('sk-test')
+    })
+
+    it('preserves explicit values for the new keys when already present', () => {
+      mockExistsSync.mockReturnValue(true)
+      mockReadFileSync.mockReturnValue(
+        JSON.stringify({
+          replicateApiKey: 'r8_test',
+          sttReplicateModel: 'vaibhavs10/incredibly-fast-whisper',
+          sttApiKey: 'priv-secret'
+        })
+      )
+
+      const result = loadSettings()
+
+      expect(result.replicateApiKey).toBe('r8_test')
+      expect(result.sttReplicateModel).toBe('vaibhavs10/incredibly-fast-whisper')
+      expect(result.sttApiKey).toBe('priv-secret')
+    })
+
+    it('is idempotent: loading a pre-STT+ file twice yields the same result', () => {
+      mockExistsSync.mockReturnValue(true)
+      mockReadFileSync.mockReturnValue(JSON.stringify({ openaiApiKey: 'sk-test' }))
+
+      const first = loadSettings()
+      const second = loadSettings()
+
+      expect(second).toEqual(first)
+    })
+
+    it("'replicate' is accepted as a providerChain entry alongside the existing provider ids", () => {
+      mockExistsSync.mockReturnValue(true)
+      mockReadFileSync.mockReturnValue(JSON.stringify({ providerChain: ['replicate', 'openai'] }))
+
+      const result = loadSettings()
+
+      expect(result.providerChain).toEqual(['replicate', 'openai'])
     })
   })
 

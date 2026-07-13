@@ -13,6 +13,7 @@
 
 import type { LLMProvider, LLMMessage } from './llm/provider'
 import { buildCleanupMessages, buildFormatMessages, type CleanupMode as PromptCleanupMode } from './llm/prompts'
+import { recordLLM } from './usageTracker'
 
 export type CleanupMode = 'off' | PromptCleanupMode
 
@@ -110,7 +111,19 @@ async function runCleanupCore(raw: string, messages: LLMMessage[], provider: LLM
     const completion = await provider.complete({
       messages,
       temperature: CLEANUP_TEMPERATURE,
-      signal
+      signal,
+      // PACZKA METERING (v1.6): report cost/usage after every successful
+      // completion, regardless of cleanup mode/caller. recordLLM() never
+      // throws, so this can't turn a metering hiccup into a broken cleanup.
+      onUsage: (usage) => {
+        recordLLM({
+          provider: usage.provider,
+          inputTokens: usage.promptTokens,
+          outputTokens: usage.completionTokens,
+          predictTimeSeconds: usage.predictTimeSeconds,
+          isLocal: provider.isLocal
+        })
+      }
     })
 
     const cleaned = stripWrapping(completion)

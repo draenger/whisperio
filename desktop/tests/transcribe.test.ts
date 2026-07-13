@@ -307,6 +307,281 @@ describe('selfhosted (directUrl) provider', () => {
       'No self-hosted server URL configured'
     )
   })
+
+  it('adds Authorization Bearer header when sttApiKey is set for a private self-hosted server', async () => {
+    mockLoadSettings.mockReturnValue({
+      sttProvider: 'selfhosted',
+      openaiBaseUrl: 'http://localhost:8080',
+      sttApiKey: 'priv-secret-key'
+    })
+    const mockReq = createMockNetRequest(200, JSON.stringify({ text: 'ok' }))
+    mockNetRequest.mockReturnValue(mockReq)
+
+    await transcribeAudio(Buffer.from('audio'), 'rec.webm')
+    expect(mockReq.setHeader).toHaveBeenCalledWith('Authorization', 'Bearer priv-secret-key')
+  })
+
+  it('sends no Authorization header when sttApiKey is unset (unchanged default behavior)', async () => {
+    mockLoadSettings.mockReturnValue({
+      sttProvider: 'selfhosted',
+      openaiBaseUrl: 'http://localhost:8080',
+      sttApiKey: ''
+    })
+    const mockReq = createMockNetRequest(200, JSON.stringify({ text: 'ok' }))
+    mockNetRequest.mockReturnValue(mockReq)
+
+    await transcribeAudio(Buffer.from('audio'), 'rec.webm')
+    expect(mockReq.setHeader).not.toHaveBeenCalledWith('Authorization', expect.anything())
+  })
+
+  it('rejects (and never calls net.request) a self-hosted URL that is http:// on a public host', async () => {
+    mockLoadSettings.mockReturnValue({
+      sttProvider: 'selfhosted',
+      openaiBaseUrl: 'http://example.com:8080',
+      fallbackEnabled: false
+    })
+
+    await expect(transcribeAudio(Buffer.from('audio'), 'rec.webm')).rejects.toThrow(
+      'must use https://'
+    )
+    expect(mockNetRequest).not.toHaveBeenCalled()
+  })
+
+  it('allows http:// self-hosted URLs on loopback/private hosts (127.x, 10.x, 192.168.x, .local)', async () => {
+    for (const host of ['127.0.0.1:8080', '10.0.0.5:8080', '192.168.1.20:8080', 'mybox.local:8080']) {
+      mockNetRequest.mockClear()
+      mockLoadSettings.mockReturnValue({
+        sttProvider: 'selfhosted',
+        openaiBaseUrl: `http://${host}`
+      })
+      const mockReq = createMockNetRequest(200, JSON.stringify({ text: 'ok' }))
+      mockNetRequest.mockReturnValue(mockReq)
+
+      const result = await transcribeAudio(Buffer.from('audio'), 'rec.webm')
+      expect(result).toBe('ok')
+      expect(mockNetRequest).toHaveBeenCalledWith({ method: 'POST', url: `http://${host}/inference` })
+    }
+  })
+
+  it('allows https:// self-hosted URLs on public hosts', async () => {
+    mockLoadSettings.mockReturnValue({
+      sttProvider: 'selfhosted',
+      openaiBaseUrl: 'https://my-private-whisper.example.com'
+    })
+    const mockReq = createMockNetRequest(200, JSON.stringify({ text: 'secure ok' }))
+    mockNetRequest.mockReturnValue(mockReq)
+
+    const result = await transcribeAudio(Buffer.from('audio'), 'rec.webm')
+    expect(result).toBe('secure ok')
+  })
+})
+
+// STT+ (v1.5): Replicate-hosted Whisper provider. Unlike the other STT
+// providers in this file (which go through electron's `net.request`),
+// replicateTranscribe uses global `fetch` — mirroring llm/provider.ts's
+// fetch-based providers — so these tests stub `fetch` instead of net.request.
+describe('replicate provider', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('throws when the Replicate API key is empty', async () => {
+    mockLoadSettings.mockReturnValue({ sttProvider: 'openai', providerChain: ['replicate'], replicateApiKey: '' })
+    await expect(transcribeAudio(Buffer.from('audio'), 'test.webm')).rejects.toThrow(
+      'No Replicate API key configured'
+    )
+  })
+
+  it('posts to the model predictions URL with Prefer: wait, Bearer auth, and a base64 data URI', async () => {
+    mockLoadSettings.mockReturnValue({
+      providerChain: ['replicate'],
+      replicateApiKey: 'r8_test_key',
+      transcriptionPrompt: '',
+      customVocabulary: ''
+    })
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      text: async () => JSON.stringify({ status: 'succeeded', output: { transcription: 'hello from replicate' } })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const result = await transcribeAudio(Buffer.from('audio-bytes'), 'rec.webm')
+
+    expect(result).toBe('hello from replicate')
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(url).toBe('https://api.replicate.com/v1/models/openai/whisper/predictions')
+    expect(init.method).toBe('POST')
+    const headers = init.headers as Record<string, string>
+    expect(headers.Authorization).toBe('Bearer r8_test_key')
+    expect(headers.Prefer).toBe('wait')
+    const body = JSON.parse(init.body as string)
+    const expectedDataUri = `data:audio/webm;base64,${Buffer.from('audio-bytes').toString('base64')}`
+    expect(body.input.audio).toBe(expectedDataUri)
+  })
+
+  it('uses the user-configured sttReplicateModel instead of the default', async () => {
+    mockLoadSettings.mockReturnValue({
+      providerChain: ['replicate'],
+      replicateApiKey: 'r8_test_key',
+      sttReplicateModel: 'vaibhavs10/incredibly-fast-whisper',
+      transcriptionPrompt: '',
+      customVocabulary: ''
+    })
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      text: async () => JSON.stringify({ status: 'succeeded', output: { text: 'fast whisper text' } })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const result = await transcribeAudio(Buffer.from('audio'), 'rec.webm')
+
+    expect(result).toBe('fast whisper text')
+    const [url] = fetchMock.mock.calls[0] as [string]
+    expect(url).toBe('https://api.replicate.com/v1/models/vaibhavs10/incredibly-fast-whisper/predictions')
+  })
+
+  it('parses a plain-string output shape', async () => {
+    mockLoadSettings.mockReturnValue({
+      providerChain: ['replicate'],
+      replicateApiKey: 'r8_test_key',
+      transcriptionPrompt: '',
+      customVocabulary: ''
+    })
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      text: async () => JSON.stringify({ status: 'succeeded', output: 'bare string transcript' })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const result = await transcribeAudio(Buffer.from('audio'), 'rec.webm')
+    expect(result).toBe('bare string transcript')
+  })
+
+  it('falls back to the next provider in the chain when Replicate errors', async () => {
+    mockLoadSettings.mockReturnValue({
+      providerChain: ['replicate', 'openai'],
+      replicateApiKey: 'r8_test_key',
+      openaiApiKey: 'sk-test',
+      transcriptionPrompt: '',
+      customVocabulary: ''
+    })
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 500,
+      text: async () => 'internal error'
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const netReq = createMockNetRequest(200, JSON.stringify({ text: 'fallback openai text' }))
+    mockNetRequest.mockReturnValue(netReq)
+
+    const result = await transcribeAudio(Buffer.from('audio'), 'rec.webm')
+
+    expect(result).toBe('fallback openai text')
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(mockNetRequest).toHaveBeenCalledTimes(1)
+  })
+
+  it('treats a non-succeeded status (e.g. still "processing") as a failure so the chain can fall back', async () => {
+    mockLoadSettings.mockReturnValue({
+      providerChain: ['replicate', 'openai'],
+      replicateApiKey: 'r8_test_key',
+      openaiApiKey: 'sk-test',
+      transcriptionPrompt: '',
+      customVocabulary: ''
+    })
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      text: async () => JSON.stringify({ status: 'processing', output: null })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const netReq = createMockNetRequest(200, JSON.stringify({ text: 'fallback text' }))
+    mockNetRequest.mockReturnValue(netReq)
+
+    const result = await transcribeAudio(Buffer.from('audio'), 'rec.webm')
+    expect(result).toBe('fallback text')
+  })
+
+  it('treats an unparseable response body as a failure', async () => {
+    mockLoadSettings.mockReturnValue({
+      providerChain: ['replicate'],
+      replicateApiKey: 'r8_test_key',
+      transcriptionPrompt: '',
+      customVocabulary: ''
+    })
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      text: async () => 'not-json'
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(transcribeAudio(Buffer.from('audio'), 'rec.webm')).rejects.toThrow(
+      'Failed to parse Replicate response'
+    )
+  })
+
+  it('fails soft (rejects) when the fetch call itself throws (e.g. network unreachable)', async () => {
+    mockLoadSettings.mockReturnValue({
+      providerChain: ['replicate'],
+      replicateApiKey: 'r8_test_key',
+      transcriptionPrompt: '',
+      customVocabulary: ''
+    })
+    const fetchMock = vi.fn().mockRejectedValue(new Error('network down'))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(transcribeAudio(Buffer.from('audio'), 'rec.webm')).rejects.toThrow('network down')
+  })
+
+  it('throws a descriptive error when the response has no recognizable transcription shape', async () => {
+    mockLoadSettings.mockReturnValue({
+      providerChain: ['replicate'],
+      replicateApiKey: 'r8_test_key',
+      transcriptionPrompt: '',
+      customVocabulary: ''
+    })
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      text: async () => JSON.stringify({ status: 'succeeded', output: { segments: [] } })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(transcribeAudio(Buffer.from('audio'), 'rec.webm')).rejects.toThrow(
+      'Replicate response did not contain a transcription'
+    )
+  })
+
+  it('includes a language input field only when transcriptionLanguage is not auto', async () => {
+    mockLoadSettings.mockReturnValue({
+      providerChain: ['replicate'],
+      replicateApiKey: 'r8_test_key',
+      transcriptionLanguage: 'pl',
+      transcriptionPrompt: '',
+      customVocabulary: ''
+    })
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      text: async () => JSON.stringify({ status: 'succeeded', output: { transcription: 'ok' } })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await transcribeAudio(Buffer.from('audio'), 'rec.webm')
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    const body = JSON.parse(init.body as string)
+    expect(body.input.language).toBe('pl')
+  })
 })
 
 describe('isProviderConfigured edges', () => {

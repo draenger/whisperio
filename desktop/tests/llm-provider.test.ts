@@ -167,6 +167,63 @@ describe('OpenAICompatibleProvider', () => {
     )
   })
 
+  describe('HTTPS enforcement', () => {
+    it('rejects an http:// baseUrl on a public host', () => {
+      expect(
+        () => new OpenAICompatibleProvider({ baseUrl: 'http://api.example.com', model: 'gpt-4o-mini' })
+      ).toThrow(/https/i)
+    })
+
+    it('allows http:// on a loopback host', () => {
+      expect(
+        () => new OpenAICompatibleProvider({ baseUrl: 'http://127.0.0.1:11434', model: 'llama3' })
+      ).not.toThrow()
+    })
+
+    it('allows http:// on a private LAN host', () => {
+      expect(
+        () => new OpenAICompatibleProvider({ baseUrl: 'http://192.168.1.50:11434', model: 'llama3' })
+      ).not.toThrow()
+    })
+
+    it('allows a public https:// baseUrl', () => {
+      expect(
+        () => new OpenAICompatibleProvider({ baseUrl: 'https://api.openai.com', model: 'gpt-4o-mini' })
+      ).not.toThrow()
+    })
+  })
+
+  describe('usage passthrough', () => {
+    it('calls onUsage with prompt/completion tokens when the response includes usage', async () => {
+      fetchMock.mockResolvedValue(
+        jsonResponse({
+          choices: [{ message: { content: 'ok' } }],
+          usage: { prompt_tokens: 12, completion_tokens: 34 }
+        })
+      )
+      const provider = new OpenAICompatibleProvider({ baseUrl: 'https://api.openai.com', model: 'gpt-4o-mini' })
+      const onUsage = vi.fn()
+
+      await provider.complete({ messages: [{ role: 'user', content: 'hi' }], onUsage })
+
+      expect(onUsage).toHaveBeenCalledWith({
+        provider: 'openai-compatible',
+        promptTokens: 12,
+        completionTokens: 34
+      })
+    })
+
+    it('does not call onUsage when the response has no usage field', async () => {
+      fetchMock.mockResolvedValue(jsonResponse({ choices: [{ message: { content: 'ok' } }] }))
+      const provider = new OpenAICompatibleProvider({ baseUrl: 'https://api.openai.com', model: 'gpt-4o-mini' })
+      const onUsage = vi.fn()
+
+      await provider.complete({ messages: [{ role: 'user', content: 'hi' }], onUsage })
+
+      expect(onUsage).not.toHaveBeenCalled()
+    })
+  })
+
   describe('available() caching', () => {
     it('caches the result for ~30s using an injected clock, then re-checks', async () => {
       const clock = makeClock(0)
@@ -326,6 +383,61 @@ describe('AnthropicProvider', () => {
     clock.advance(2_000) // total 31s
     expect(await provider.available()).toBe(true)
     expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
+
+  describe('HTTPS enforcement', () => {
+    it('rejects an http:// baseUrl override on a public host', () => {
+      expect(
+        () =>
+          new AnthropicProvider({
+            apiKey: 'sk-ant',
+            model: 'claude-haiku-4-5',
+            baseUrl: 'http://api.anthropic.com'
+          })
+      ).toThrow(/https/i)
+    })
+
+    it('allows an http:// baseUrl override on a loopback host', () => {
+      expect(
+        () =>
+          new AnthropicProvider({
+            apiKey: 'sk-ant',
+            model: 'claude-haiku-4-5',
+            baseUrl: 'http://127.0.0.1:4010'
+          })
+      ).not.toThrow()
+    })
+
+    it('allows the default (https) baseUrl', () => {
+      expect(() => new AnthropicProvider({ apiKey: 'sk-ant', model: 'claude-haiku-4-5' })).not.toThrow()
+    })
+  })
+
+  describe('usage passthrough', () => {
+    it('calls onUsage with input/output tokens when the response includes usage', async () => {
+      fetchMock.mockResolvedValue(
+        jsonResponse({
+          content: [{ type: 'text', text: 'cleaned' }],
+          usage: { input_tokens: 20, output_tokens: 40 }
+        })
+      )
+      const provider = new AnthropicProvider({ apiKey: 'sk-ant', model: 'claude-3-5-sonnet' })
+      const onUsage = vi.fn()
+
+      await provider.complete({ messages: [{ role: 'user', content: 'hi' }], onUsage })
+
+      expect(onUsage).toHaveBeenCalledWith({ provider: 'anthropic', promptTokens: 20, completionTokens: 40 })
+    })
+
+    it('does not call onUsage when the response has no usage field', async () => {
+      fetchMock.mockResolvedValue(jsonResponse({ content: [{ type: 'text', text: 'ok' }] }))
+      const provider = new AnthropicProvider({ apiKey: 'sk-ant', model: 'claude-3-5-sonnet' })
+      const onUsage = vi.fn()
+
+      await provider.complete({ messages: [{ role: 'user', content: 'hi' }], onUsage })
+
+      expect(onUsage).not.toHaveBeenCalled()
+    })
   })
 })
 

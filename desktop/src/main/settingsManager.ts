@@ -2,7 +2,7 @@ import { app } from 'electron'
 import { readFileSync, writeFileSync, existsSync, renameSync } from 'fs'
 import { join } from 'path'
 
-export type ProviderId = 'openai' | 'elevenlabs' | 'selfhosted'
+export type ProviderId = 'openai' | 'elevenlabs' | 'selfhosted' | 'replicate'
 
 export type AccentColor = 'graphite' | 'blue' | 'teal' | 'emerald' | 'amber'
 
@@ -31,6 +31,21 @@ export interface AppSettings {
   openaiBaseUrl: string
   whisperModel: string
   elevenlabsApiKey: string
+  // STT+ (v1.5): Replicate-hosted Whisper. `replicateApiKey` is shared with the
+  // LLM side of the app (settings UI presents one "Replicate API key" field
+  // that both the STT provider here and any future Replicate LLM candidate in
+  // llm/provider.ts read from) — hence it's not named `sttReplicateApiKey`.
+  // Empty string = provider unconfigured (see isProviderConfigured in
+  // transcribe.ts). `sttReplicateModel` empty = the built-in default model
+  // (see DEFAULT_REPLICATE_MODEL in transcribe.ts).
+  replicateApiKey: string
+  sttReplicateModel: string
+  // STT+ (v1.5): Bearer token for a private/self-hosted STT server (the
+  // `selfhosted` provider, which posts to `openaiBaseUrl`). Empty string (the
+  // default) preserves today's behavior — no Authorization header is sent —
+  // so existing self-hosted setups that don't require auth keep working
+  // unchanged.
+  sttApiKey: string
   transcriptionLanguage: string
   transcriptionPrompt: string
   customVocabulary: string
@@ -170,6 +185,9 @@ const DEFAULT_SETTINGS: AppSettings = {
   openaiBaseUrl: '',
   whisperModel: '',
   elevenlabsApiKey: '',
+  replicateApiKey: '',
+  sttReplicateModel: '',
+  sttApiKey: '',
   transcriptionLanguage: 'auto',
   transcriptionPrompt: '',
   // `customVocabulary` now holds only the user's own additional terms; the
