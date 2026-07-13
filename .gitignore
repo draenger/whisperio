@@ -30,3 +30,4 @@ mobile/**/build/
 # test coverage artifacts (do not track)
 desktop/coverage/
 coverage/
+DerivedData-Sim/
