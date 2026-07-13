@@ -1,0 +1,27 @@
+{
+  "object" : {
+    "artifacts" : [
+
+    ],
+    "dependencies" : [
+      {
+        "basedOn" : null,
+        "packageRef" : {
+          "identity" : "whisperiokit",
+          "kind" : "fileSystem",
+          "location" : "/Volumes/DevDisk/Projects/whisperio/mobile/WhisperioKit",
+          "name" : "WhisperioKit"
+        },
+        "state" : {
+          "name" : "fileSystem",
+          "path" : "/Volumes/DevDisk/Projects/whisperio/mobile/WhisperioKit"
+        },
+        "subpath" : "whisperiokit"
+      }
+    ],
+    "prebuilts" : [
+
+    ]
+  },
+  "version" : 7
+}

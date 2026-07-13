@@ -54,15 +54,35 @@ public enum RecordingSync {
         )
     }
 
-    /// On-disk cache file for `RecordingSyncStore`. Given an explicit name (rather than the
-    /// default unnamed `ModelConfiguration`, which SwiftData resolves to a shared
-    /// `default.store`), so it can never collide with `DigestSync.storeURL()`'s file — the two
-    /// stores register disjoint single-entity schemas (`RecordingEntity`-only vs
-    /// `DigestEntity`-only) and SwiftData throws on init if two configs with different schemas
-    /// point at the same file. Used by both the convenience init and
-    /// `RecordingsStore.migrateCurrentLibraryToCloud()`, which must open the identical file.
+    /// On-disk file explicitly named `Recordings.store`. **Not** what `RecordingSyncStore`'s
+    /// convenience init opens day to day — see BUG 1 in that init's doc comment for why it
+    /// reverted to SwiftData's anonymous default file (the one build 37 shipped with). This name
+    /// lives on for two narrower callers only: (a) `RecordingsStore.migrateCurrentLibraryToCloud()`,
+    /// which deliberately opens a FRESH, distinctly-named file when promoting an on-device library
+    /// to CloudKit (it copies rows across via `add(_:)`, it doesn't reuse the old file), and (b)
+    /// `RecordingSyncStore.recoverMisplacedRecordingsStoreIfNeeded()`, the one-time recovery for
+    /// anyone who ran an interim build of this branch that wrote here by mistake.
     public static func storeURL() throws -> URL {
         try applicationSupportDirectory().appendingPathComponent("Recordings.store")
+    }
+
+    /// Whether a `NSPersistentCloudKitContainer.eventChangedNotification` originated from THIS
+    /// store's own persistent store file, rather than the OTHER SwiftData+CloudKit store sharing
+    /// the process (`RecordingSyncStore`'s notifications vs `DigestSyncStore`'s). The notification
+    /// is posted with `object: nil` — process-wide — so every observer in the process receives
+    /// every container's events. Without this filter (BUG 8), `DigestSyncStore`'s sync events flip
+    /// this store's `isSyncing` / `lastImportAt` / `lastExportAt`, and — via
+    /// `RecordingsStore`'s import/export sinks — silently drain the recordings pending queue on a
+    /// digest-only sync. Pulled out as a pure URL comparison, rather than inlined in the observer
+    /// closure, so the filtering decision is unit-testable without a live
+    /// `NSPersistentCloudKitContainer`.
+    ///
+    /// `eventStoreURL` is `nil` when the notification's `object` isn't the
+    /// `NSPersistentCloudKitContainer` we expect, or that container reports no store description —
+    /// either way we can't prove the event is ours, so it's rejected rather than assumed to be.
+    public static func isOwnStoreEvent(ownStoreURL: URL, eventStoreURL: URL?) -> Bool {
+        guard let eventStoreURL else { return false }
+        return eventStoreURL.standardizedFileURL == ownStoreURL.standardizedFileURL
     }
 }
 
@@ -106,6 +126,12 @@ public final class RecordingSyncStore: ObservableObject {
     private let container: ModelContainer
     private var context: ModelContext { container.mainContext }
 
+    /// This store's own persistent store file, captured from the `ModelConfiguration` before the
+    /// `ModelContainer` (and its underlying `NSPersistentCloudKitContainer`) exists. Used to tell
+    /// this store's CloudKit sync events apart from `DigestSyncStore`'s in
+    /// `observeCloudKitEvents()` — see BUG 8 / `RecordingSync.isOwnStoreEvent(ownStoreURL:eventStoreURL:)`.
+    private let ownStoreURL: URL
+
     /// Retained token for the `NSPersistentCloudKitContainer` event observer. Kept for the
     /// store's lifetime (the store lives as long as the app), so we never remove it.
     private var cloudEventObserver: NSObjectProtocol?
@@ -142,14 +168,58 @@ public final class RecordingSyncStore: ObservableObject {
         let mode = RecordingSyncStore.persistedStorageMode()
         let useCloudKit = (mode == .iCloud)
             && FileManager.default.ubiquityIdentityToken != nil
-        // Explicit, distinct on-disk file (not the unnamed-config default `default.store`) so
-        // this store never collides with `DigestSyncStore`'s own cache file — see
-        // `RecordingSync.storeURL()`.
-        let url = try RecordingSync.storeURL()
+        // BUG 1 (CONFIRMED, data-loss on upgrade): build 37 shipped `RecordingSyncStore` on
+        // SwiftData's anonymous `ModelConfiguration` — no explicit name/url — which SwiftData
+        // resolves to a shared `default.store` in Application Support. An interim commit on this
+        // branch pointed both the cloud and local configs here at an explicitly-named file
+        // instead (`RecordingSync.storeURL()`, i.e. `Recordings.store`), to keep this store's file
+        // from colliding with `DigestSyncStore`'s. That collateral rename IS the bug: on upgrade
+        // from build 37, `Recordings.store` doesn't exist yet, so SwiftData opens it as a
+        // brand-new EMPTY store — and `migrateLegacyJSONIfNeeded()`'s `migratedV2` flag (already
+        // set by build 37, since it already ran the JSON migration once) blocks the JSON fallback
+        // from ever re-importing into it. The user's whole recording history silently vanishes.
+        //
+        // Fix: keep using build 37's anonymous default config, exactly as before — this is the
+        // one and only file real users' history has ever lived in. This does not reopen the
+        // collision the explicit rename was meant to prevent: isolation from `DigestSyncStore` now
+        // lives entirely on the OTHER side, since `DigestSyncStore` names ITS OWN file explicitly
+        // (`Digests.store`) — the two stores' files stay disjoint regardless of which one uses the
+        // anonymous default.
+        RecordingSyncStore.recoverMisplacedRecordingsStoreIfNeeded()
         let config = useCloudKit
-            ? ModelConfiguration(url: url, cloudKitDatabase: .private(RecordingSyncStore.cloudKitContainerID))
-            : ModelConfiguration(url: url)
+            ? ModelConfiguration(cloudKitDatabase: .private(RecordingSyncStore.cloudKitContainerID))
+            : ModelConfiguration()
         try self.init(configuration: config, isCloudBacked: useCloudKit)
+    }
+
+    /// One-time, idempotent safety net for anyone who ran an interim build of this branch, where
+    /// an earlier revision of this file (incorrectly) pointed the convenience init's config at
+    /// `RecordingSync.storeURL()` (`Recordings.store`) instead of build 37's anonymous default —
+    /// see BUG 1 above. Only devs who checked out this branch mid-flight can have a
+    /// `Recordings.store`; it does not exist on any build 37 install or fresh one. Fires only when
+    /// SwiftData's default file is missing AND `Recordings.store` is present, so it's a no-op for
+    /// real build-37 upgraders (who already have the default file) and for fresh installs (who
+    /// have neither). Must run BEFORE the `ModelContainer` for the default config is created —
+    /// SwiftData creates that file on first open, so afterward "missing" stops being a reliable
+    /// signal that recovery is needed.
+    private static func recoverMisplacedRecordingsStoreIfNeeded() {
+        guard let legacyURL = try? RecordingSync.storeURL() else { return }
+        let defaultURL = ModelConfiguration().url
+        let fm = FileManager.default
+        guard !fm.fileExists(atPath: defaultURL.path), fm.fileExists(atPath: legacyURL.path) else { return }
+        // SQLite's WAL mode splits a store across up to three files on disk; only `.store` itself
+        // is guaranteed to exist (a fully-checkpointed store has no `-shm`/`-wal` siblings), so
+        // each sibling is moved independently and a missing one is simply skipped.
+        for suffix in ["", "-shm", "-wal"] {
+            let from = URL(fileURLWithPath: legacyURL.path + suffix)
+            let to = URL(fileURLWithPath: defaultURL.path + suffix)
+            guard fm.fileExists(atPath: from.path) else { continue }
+            do {
+                try fm.moveItem(at: from, to: to)
+            } catch {
+                log.error("Recovery move of \(from.lastPathComponent, privacy: .public) to default.store failed: \(error.localizedDescription, privacy: .public)")
+            }
+        }
     }
 
     /// Designated init — takes an explicit `ModelConfiguration` so tests can inject an
@@ -157,6 +227,8 @@ public final class RecordingSyncStore: ObservableObject {
     /// CloudKit; when true the store observes sync events to drive `isSyncing`.
     public init(configuration: ModelConfiguration, isCloudBacked: Bool = false) throws {
         self.isCloudBacked = isCloudBacked
+        // Captured BEFORE the container exists — see `ownStoreURL`'s doc comment.
+        self.ownStoreURL = configuration.url.standardizedFileURL
         container = try ModelContainer(for: RecordingEntity.self, configurations: configuration)
         migrateLegacyJSONIfNeeded()
         reload()
@@ -171,11 +243,27 @@ public final class RecordingSyncStore: ObservableObject {
     /// their in-flight state (`endDate == nil`) onto `isSyncing`. The observer delivers on the
     /// main queue, so we hop to the MainActor to mutate the published property.
     private func observeCloudKitEvents() {
+        // Captured by value (not via `self`) so the filter below works even after `self` has
+        // been deallocated and the `[weak self]` capture below has gone nil-y — the notification
+        // is process-wide, so a store that's already torn down could otherwise still be asked to
+        // service someone else's event.
+        let ownStoreURL = self.ownStoreURL
         cloudEventObserver = NotificationCenter.default.addObserver(
             forName: NSPersistentCloudKitContainer.eventChangedNotification,
             object: nil,
             queue: .main
         ) { [weak self] note in
+            // BUG 8 (CONFIRMED): this notification is posted with `object: nil` — app-wide — so
+            // this observer also receives `DigestSyncStore`'s events (and vice versa) since both
+            // stores run an `NSPersistentCloudKitContainer` in the same process. Unfiltered, a
+            // digest-only sync flips THIS store's `isSyncing`/`lastImportAt`/`lastExportAt`, and —
+            // via `RecordingsStore`'s `$lastImportAt`/`$lastExportAt` sinks, which flush the
+            // pending queue on every stamp — silently drains the recordings pending queue on a
+            // sync event that had nothing to do with recordings. Reject anything that isn't
+            // provably from this store's own persistent store file.
+            let eventStoreURL = (note.object as? NSPersistentCloudKitContainer)?
+                .persistentStoreDescriptions.first?.url
+            guard RecordingSync.isOwnStoreEvent(ownStoreURL: ownStoreURL, eventStoreURL: eventStoreURL) else { return }
             guard let event = note.userInfo?[NSPersistentCloudKitContainer.eventNotificationUserInfoKey]
                     as? NSPersistentCloudKitContainer.Event else { return }
             // `.setup` is the one-time zone/subscription bootstrap the push-driven import path

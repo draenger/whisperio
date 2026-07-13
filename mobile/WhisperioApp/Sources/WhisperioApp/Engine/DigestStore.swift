@@ -163,8 +163,14 @@ final class DigestStore: ObservableObject {
             cloudKitDatabase: .private(RecordingSyncStore.cloudKitContainerID)
         )
         let cloudStore = try DigestSyncStore(configuration: cloudConfig, isCloudBacked: true)
+        // Carry each digest's real last-write time (not "now") into the upsert — `upsert`
+        // defaults `modifiedAt` to the current instant, which would stamp every migrated digest
+        // as freshly written and let a week-old local entry win last-writer-wins over a genuinely
+        // newer copy already synced down from another device (e.g. an iPad that summarized today
+        // while this device was offline). `DigestSync.lastWriteAt` is the same real-timestamp
+        // source `DigestSyncStore.migrateLegacyJSONIfNeeded` already uses for the JSON migration.
         for digest in digests {
-            cloudStore.upsert(digest)
+            cloudStore.upsert(digest, modifiedAt: DigestSync.lastWriteAt(for: digest))
         }
         backend = .sync(cloudStore)
         attach(syncStore: cloudStore)

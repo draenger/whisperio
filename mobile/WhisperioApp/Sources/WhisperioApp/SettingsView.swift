@@ -151,19 +151,56 @@ struct SettingsView: View {
         settings.settings = s
     }
 
+    // Entry point for both the "Move library to iCloud" row and the mismatch-banner's "Resume
+    // iCloud sync" action. Mirrors `RecordingsStore.attemptICloudResumeIfNeeded`'s account guard —
+    // without it, a signed-out user tapping this gets a silent no-op from SwiftData's CloudKit
+    // plumbing but we'd still flip `storageMode` to `.iCloud` and claim success, burying the one
+    // banner that would have told them to sign in.
+    //
+    // Each store is migrated independently and only if it isn't already cloud-backed. Both
+    // `RecordingsStore` and `DigestStore` open their own `ModelConfiguration` pinned to their own
+    // on-disk file (`RecordingSync.storeURL()` / the digest equivalent), so calling
+    // `migrateCurrentLibraryToCloud()` on a store that's already cloud-backed doesn't just no-op —
+    // it stands up a *second* live CloudKit container on top of the same store file the first one
+    // is still using, which is exactly the state this banner exists to recover from, not cause.
     private func moveLibraryToCloud() {
-        do {
-            try recordings.migrateCurrentLibraryToCloud()
-        } catch {
-            toast("Couldn't move library to iCloud")
+        guard FileManager.default.ubiquityIdentityToken != nil else {
+            toast("Sign in to iCloud in Settings to sync your library")
             return
         }
+
+        let recordingsNeedsMigration = !recordings.isCloudBacked
+        let digestsNeedsMigration = !digests.isCloudBacked
+
+        if recordingsNeedsMigration {
+            do {
+                try recordings.migrateCurrentLibraryToCloud()
+            } catch {
+                toast("Couldn't move library to iCloud")
+                return
+            }
+        }
+
         setStorageMode(.iCloud)
-        do {
-            try digests.migrateCurrentLibraryToCloud()
+
+        if digestsNeedsMigration {
+            do {
+                try digests.migrateCurrentLibraryToCloud()
+            } catch {
+                toast("Recordings moved to iCloud, but the journal is still local — retry from the sync banner")
+                return
+            }
+        }
+
+        switch (recordingsNeedsMigration, digestsNeedsMigration) {
+        case (true, true):
             toast("Library moved to iCloud sync")
-        } catch {
-            toast("Recordings moved to iCloud, but the journal is still local — retry from the sync banner")
+        case (true, false):
+            toast("Recordings moved to iCloud sync")
+        case (false, true):
+            toast("Journal moved to iCloud sync")
+        case (false, false):
+            toast("Already syncing with iCloud")
         }
     }
 

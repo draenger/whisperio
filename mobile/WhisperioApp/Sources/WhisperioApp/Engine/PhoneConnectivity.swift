@@ -30,10 +30,13 @@ final class PhoneConnectivity: NSObject, ObservableObject, WCSessionDelegate {
                 let text = store.cleanup(tr.text)
                 let rec = Recording(filename: clip.filename, duration: clip.duration,
                                     status: .completed, provider: tr.provider, transcription: text)
-                // Match RecordingView.swift:228/:255 — a watch dictation is still transcribed
-                // and returned to the watch even when history saving is off, but it must not be
-                // persisted (and thus synced to every other device) unless the user opted in.
-                if store.settings.saveRecordings { recordings?.add(rec) }
+                // Unlike RecordingView's transcribe()/finalizeLive(), the saveRecordings gate
+                // does NOT apply here: this transcript's only copy is the in-memory reply we're
+                // about to send over WCSession. The watch app doesn't keep its own history — if
+                // this message is lost (session not reachable, watch backgrounded, app killed)
+                // and we didn't persist to the phone's history first, the dictation is gone with
+                // no trace anywhere. Saving unconditionally is the one durable copy that exists.
+                recordings?.add(rec)
                 reply(["transcript": text])
             case .failure(let err):
                 let msg: String

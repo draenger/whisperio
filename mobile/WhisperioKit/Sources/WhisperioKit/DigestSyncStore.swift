@@ -18,17 +18,31 @@ public enum DigestSync {
         (try? JSONDecoder().decode([DailyDigest].self, from: data)) ?? []
     }
 
-    /// Collapse duplicate day keys, keeping the first occurrence. CloudKit can't enforce
-    /// uniqueness, so the same logical day may arrive as two rows after a sync; this makes
-    /// reads deterministic.
-    public static func dedupByDayKey(_ digests: [DailyDigest]) -> [DailyDigest] {
-        var seen = Set<String>()
-        var out: [DailyDigest] = []
-        out.reserveCapacity(digests.count)
-        for d in digests where seen.insert(d.id).inserted {
-            out.append(d)
+    /// Collapse duplicate day keys, keeping the row with the newest `modifiedAt` — true
+    /// last-writer-wins, independent of the order `rows` arrives in. Dedup keys on the real
+    /// write clock (max-by-`modifiedAt` per `dayKey`, via a dictionary) rather than on any
+    /// particular fetch/sort order.
+    ///
+    /// This deliberately does NOT dedup by sorting on `DailyDigest.date` and keeping the first
+    /// duplicate: `date` is the journaled *day*, not a write clock, and CloudKit can produce two
+    /// rows for the same `dayKey` with different `date` values — e.g. a digest backfilled from
+    /// one device at 11pm and regenerated on another device at 7am the next day both stamp
+    /// `dayKey` the same but `date` differently. Whichever happened to sort first by `date` would
+    /// then silently win even if it held the older write. Only `modifiedAt` (see
+    /// `DigestEntity.modifiedAt`) is a real write clock, so dedup must key on it directly.
+    /// Callers are responsible for sorting the survivors for display afterward — see
+    /// `DigestSyncStore.reload()`.
+    public static func dedupByDayKeyLastWriterWins(
+        _ rows: [(digest: DailyDigest, modifiedAt: Date)]
+    ) -> [DailyDigest] {
+        var winners: [String: (digest: DailyDigest, modifiedAt: Date)] = [:]
+        for row in rows {
+            if let current = winners[row.digest.id], current.modifiedAt >= row.modifiedAt {
+                continue
+            }
+            winners[row.digest.id] = row
         }
-        return out
+        return winners.values.map(\.digest)
     }
 
     /// `DailyDigest` has no `updatedAt`/`lastWriteAt` field of its own (unlike `Recording`), so
@@ -50,6 +64,46 @@ public enum DigestSync {
     /// which must open the identical file.
     public static func storeURL() throws -> URL {
         try RecordingSync.applicationSupportDirectory().appendingPathComponent("Digests.store")
+    }
+
+    /// Resolve the identifier Core Data stamps into a SQLite store's metadata the first time it's
+    /// created (`NSStoreUUIDKey`) — the same identifier `NSPersistentCloudKitContainer.Event
+    /// .storeIdentifier` reports on every sync event for that store. Read back from the on-disk
+    /// file rather than a live store object because SwiftData's `ModelContainer` doesn't expose
+    /// the underlying `NSPersistentStoreCoordinator`/`NSPersistentStore` to ask directly — this is
+    /// the only piece of a `ModelConfiguration` that's both retrievable through public API and
+    /// stable for the store's lifetime, which is what lets `eventBelongsToStore` below tell "an
+    /// event about MY on-disk store" apart from "an event about the sibling `RecordingSyncStore`'s
+    /// store" despite both stores sharing one process-wide notification (see
+    /// `DigestSyncStore.observeCloudKitEvents()`). Returns `nil` for an in-memory configuration
+    /// (nothing on disk to read — used by tests, which never call `observeCloudKitEvents()`
+    /// anyway) or if the metadata read fails for any other reason; callers must treat `nil` as
+    /// "can't determine ownership", not "belongs to nobody" — see `eventBelongsToStore`.
+    @available(iOS 17, macOS 14, *)
+    public static func ownStoreIdentifier(for configuration: ModelConfiguration) -> String? {
+        guard !configuration.isStoredInMemoryOnly else { return nil }
+        let metadata = try? NSPersistentStoreCoordinator.metadataForPersistentStore(
+            type: .sqlite,
+            at: configuration.url
+        )
+        return metadata?[NSStoreUUIDKey] as? String
+    }
+
+    /// True when a CloudKit sync event's `storeIdentifier` names this store's own persistent
+    /// store rather than a sibling store's. `NSPersistentCloudKitContainer
+    /// .eventChangedNotification` is posted process-wide with `object == nil` regardless of which
+    /// container triggered it, so a `DigestSyncStore` and a `RecordingSyncStore` alive in the same
+    /// process both see every event — this is the filter that tells them apart. Pulled out as a
+    /// pure `Bool`-in/`Bool`-out function (mirrors `syncEffect` below) so the filtering decision
+    /// is unit-testable without a running `NSPersistentCloudKitContainer`.
+    public static func eventBelongsToStore(storeIdentifier: String, ownStoreIdentifier: String?) -> Bool {
+        guard let ownStoreIdentifier else {
+            // Ownership undeterminable (see `ownStoreIdentifier(for:)`) — fail OPEN rather than
+            // silently dropping every event, which would be worse than the imprecise-but-working
+            // status quo this replaces.
+            return true
+        }
+        return storeIdentifier == ownStoreIdentifier
     }
 }
 
@@ -85,6 +139,12 @@ public final class DigestSyncStore: ObservableObject {
     /// Retained token for the `NSPersistentCloudKitContainer` event observer. Kept for the
     /// store's lifetime (the store lives as long as the app), so we never remove it.
     private var cloudEventObserver: NSObjectProtocol?
+
+    /// This store's own persistent store identifier, resolved once at init — see
+    /// `DigestSync.ownStoreIdentifier(for:)`. Used by `observeCloudKitEvents()` to filter out the
+    /// sibling `RecordingSyncStore`'s sync events, which land on the same process-wide
+    /// notification. `nil` when it couldn't be determined (e.g. an in-memory test store).
+    private let ownStoreIdentifier: String?
 
     private static let log = Logger(subsystem: "ai.whisperio", category: "DigestSyncStore")
 
@@ -129,6 +189,10 @@ public final class DigestSyncStore: ObservableObject {
     public init(configuration: ModelConfiguration, isCloudBacked: Bool = false) throws {
         self.isCloudBacked = isCloudBacked
         container = try ModelContainer(for: DigestEntity.self, configurations: configuration)
+        // Resolved from the same `configuration` right after the container opens the file, so the
+        // on-disk metadata this reads is guaranteed to already exist — see
+        // `DigestSync.ownStoreIdentifier(for:)`.
+        ownStoreIdentifier = DigestSync.ownStoreIdentifier(for: configuration)
         migrateLegacyJSONIfNeeded()
         reload()
         if isCloudBacked {
@@ -142,9 +206,12 @@ public final class DigestSyncStore: ObservableObject {
     /// their in-flight state (`endDate == nil`) onto `isSyncing`. The observer delivers on the
     /// main queue, so we hop to the MainActor to mutate the published property.
     ///
-    /// Note: this notification isn't scoped per-container, so if `RecordingSyncStore` is also
-    /// live in-process this store's observer also fires on ITS import/export events (and vice
-    /// versa) — harmless (a spurious `reload()`/spinner blip), just not perfectly precise.
+    /// This notification isn't scoped per-container — its `object` is always `nil`, and
+    /// `RecordingSyncStore`'s sibling store posts on the very same name in the same process — so
+    /// without a second filter this store's `isSyncing`/`lastImportAt`/`lastExportAt` would flap
+    /// on the *other* store's sync activity, not just its own. `event.storeIdentifier` is the one
+    /// field the notification carries that's specific to which physical store triggered it;
+    /// `DigestSync.eventBelongsToStore` gates every mutation below on it matching `ownStoreIdentifier`.
     private func observeCloudKitEvents() {
         cloudEventObserver = NotificationCenter.default.addObserver(
             forName: NSPersistentCloudKitContainer.eventChangedNotification,
@@ -161,8 +228,16 @@ public final class DigestSyncStore: ObservableObject {
             let endDate = event.endDate
             let succeeded = event.succeeded
             let error = event.error
+            let storeIdentifier = event.storeIdentifier
             let syncing = (endDate == nil)
             MainActor.assumeIsolated {
+                // Drop events from the sibling `RecordingSyncStore`'s Recordings container
+                // BEFORE touching any published state — `isSyncing` included, which previously
+                // flapped on the other store's activity (see doc comment above).
+                guard DigestSync.eventBelongsToStore(
+                    storeIdentifier: storeIdentifier,
+                    ownStoreIdentifier: self?.ownStoreIdentifier
+                ) else { return }
                 self?.isSyncing = syncing
                 switch Self.syncEffect(type: type, succeeded: succeeded, endDate: endDate, error: error) {
                 case .importSucceeded(let endDate):
@@ -254,15 +329,13 @@ public final class DigestSyncStore: ObservableObject {
     // MARK: - Reads
 
     private func reload() {
-        // Newest day first (by the journaled date); among CloudKit-produced duplicates of the
-        // same day (identical date), the newest `modifiedAt` sorts first so the keep-first dedup
-        // below resolves the collision last-writer-wins.
-        let descriptor = FetchDescriptor<DigestEntity>(
-            sortBy: [
-                SortDescriptor(\.date, order: .reverse),
-                SortDescriptor(\.modifiedAt, order: .reverse)
-            ]
-        )
+        // Dedup on the real write clock (`modifiedAt`, max-by-dayKey) FIRST, independent of fetch
+        // order — see `DigestSync.dedupByDayKeyLastWriterWins`. Sorting by `date` up front and
+        // keeping the first duplicate (the previous approach) is NOT last-writer-wins: `date` is
+        // the journaled day, not a write clock, so two devices can produce rows for the same
+        // `dayKey` with the same `date` but different times of day, and the wrong one could sort
+        // first. Only sort for display AFTER the dedup has already picked the true winner.
+        let descriptor = FetchDescriptor<DigestEntity>()
         let entities: [DigestEntity]
         do {
             entities = try context.fetch(descriptor)
@@ -270,7 +343,10 @@ public final class DigestSyncStore: ObservableObject {
             recordError("Failed to fetch digests: \(error.localizedDescription)")
             return
         }
-        digests = DigestSync.dedupByDayKey(entities.map(\.digest))
+        let deduped = DigestSync.dedupByDayKeyLastWriterWins(
+            entities.map { (digest: $0.digest, modifiedAt: $0.modifiedAt) }
+        )
+        digests = deduped.sorted { $0.date > $1.date }
     }
 
     private func firstEntity(dayKey: String) -> DigestEntity? {
@@ -298,11 +374,19 @@ public final class DigestSyncStore: ObservableObject {
         }
     }
 
-    private func save() {
+    /// Persist pending context changes. Returns whether the save actually succeeded — callers
+    /// that gate a durable side effect on "the write landed" (e.g. `migrateLegacyJSONIfNeeded()`
+    /// setting the one-time migration flag) must check this rather than assume success just
+    /// because `save()` was called; a save failure is already surfaced via `recordError`, so
+    /// callers that don't need the outcome (`upsert`) can ignore the return value.
+    @discardableResult
+    private func save() -> Bool {
         do {
             try context.save()
+            return true
         } catch {
             recordError("Failed to save context: \(error.localizedDescription)")
+            return false
         }
     }
 
@@ -318,8 +402,15 @@ public final class DigestSyncStore: ObservableObject {
     /// legacy `journal.json` is deliberately LEFT IN PLACE as a durable local backup: if the
     /// CloudKit-backed container later fails to init (e.g. the user signs out of iCloud) the
     /// store falls back to the JSON backend, which must still find the history. The flag — not
-    /// deleting the file — is what prevents a re-import. Mirrors
-    /// `RecordingSyncStore.migrateLegacyJSONIfNeeded()`.
+    /// deleting the file — is what prevents a re-import.
+    ///
+    /// The flag is set ONLY after `save()` reports success. `context.save()` can fail (disk full,
+    /// CloudKit schema not ready yet, etc.) and previously that failure was only logged — the
+    /// migration flag was still set unconditionally right after, so a failed import was never
+    /// retried and the imported-but-unsaved rows vanished with the context, silently losing the
+    /// journal history for good. Leaving the flag unset on failure means the next launch retries;
+    /// `upsertEntity`'s day-key upsert keeps that retry idempotent, so partially-saved rows from a
+    /// prior attempt can't be duplicated. Mirrors `RecordingSyncStore.migrateLegacyJSONIfNeeded()`.
     private func migrateLegacyJSONIfNeeded() {
         let defaults = UserDefaults.standard
         guard !defaults.bool(forKey: DigestSync.migratedFlagKey) else { return }
@@ -339,7 +430,11 @@ public final class DigestSyncStore: ObservableObject {
         }
         let legacy = DigestSync.decodeLegacy(data)
         for d in legacy { upsertEntity(d, modifiedAt: DigestSync.lastWriteAt(for: d)) }
-        save()
+        guard save() else {
+            // `save()` already called `recordError` — don't mark the migration done so it's
+            // retried on the next launch instead of silently dropping the journal history.
+            return
+        }
 
         // The flag (not deleting the file) prevents re-import; journal.json stays as the
         // JSON-backend fallback's durable copy.

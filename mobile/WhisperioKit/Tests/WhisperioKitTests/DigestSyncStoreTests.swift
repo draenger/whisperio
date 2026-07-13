@@ -37,15 +37,62 @@ struct DigestSyncStoreTests {
         #expect(digests.isEmpty)
     }
 
-    // Duplicate day keys collapse to the first occurrence; order is otherwise preserved.
-    @Test func dedupByDayKeyKeepsFirst() {
-        let a = DailyDigest(id: "2026-07-01", date: Date(), summary: "first")
-        let b = DailyDigest(id: "2026-07-01", date: Date(), summary: "second")
-        let c = DailyDigest(id: "2026-07-02", date: Date())
-        let deduped = DigestSync.dedupByDayKey([a, b, c])
+    // Duplicate day keys collapse to the row with the newest modifiedAt, regardless of input order.
+    @Test func dedupByDayKeyKeepsNewestModifiedAt() {
+        let base = Date()
+        let a = (digest: DailyDigest(id: "2026-07-01", date: base, summary: "first"), modifiedAt: base)
+        let b = (digest: DailyDigest(id: "2026-07-01", date: base, summary: "second"), modifiedAt: base.addingTimeInterval(10))
+        let c = (digest: DailyDigest(id: "2026-07-02", date: base), modifiedAt: base)
+        let deduped = DigestSync.dedupByDayKeyLastWriterWins([a, b, c])
         #expect(deduped.count == 2)
-        #expect(deduped[0].summary == "first")
-        #expect(deduped[1].id == "2026-07-02")
+        #expect(deduped.first { $0.id == "2026-07-01" }?.summary == "second")
+        #expect(deduped.contains { $0.id == "2026-07-02" })
+    }
+
+    // BUG 3 regression: two rows share a dayKey, but the one with the OLDER `date` (earlier
+    // time-of-day journaled, e.g. a backfilled digest) actually has the NEWER `modifiedAt`
+    // (write clock). A sort-by-date-then-keep-first dedup would wrongly keep the earlier `date`
+    // row; last-writer-wins must key on `modifiedAt` alone and pick the newer write regardless of
+    // where it falls once sorted by `date`.
+    @Test func dedupByDayKeyLastWriterWinsIgnoresDateOrdering() {
+        let day = Date(timeIntervalSince1970: 1_700_000_000)
+        // Earlier time-of-day within the journaled day, but written most recently.
+        let newerWriteEarlierTimeOfDay = (
+            digest: DailyDigest(id: "2026-07-01", date: day, summary: "newer write, earlier time-of-day"),
+            modifiedAt: Date(timeIntervalSince1970: 2_000_000_000)
+        )
+        // Later time-of-day within the journaled day, but written first (stale).
+        let staleWriteLaterTimeOfDay = (
+            digest: DailyDigest(id: "2026-07-01", date: day.addingTimeInterval(3_600), summary: "stale write, later time-of-day"),
+            modifiedAt: Date(timeIntervalSince1970: 1_000_000_000)
+        )
+        let deduped = DigestSync.dedupByDayKeyLastWriterWins([staleWriteLaterTimeOfDay, newerWriteEarlierTimeOfDay])
+        #expect(deduped.count == 1)
+        #expect(deduped.first?.summary == "newer write, earlier time-of-day")
+
+        // Order of the input shouldn't matter either.
+        let dedupedReversed = DigestSync.dedupByDayKeyLastWriterWins([newerWriteEarlierTimeOfDay, staleWriteLaterTimeOfDay])
+        #expect(dedupedReversed.first?.summary == "newer write, earlier time-of-day")
+    }
+
+    // MARK: - CloudKit event store filtering (BUG 8 mirror)
+
+    // An event's storeIdentifier matching our own resolved identifier belongs to us.
+    @Test func eventBelongsToStoreMatchesOwnIdentifier() {
+        #expect(DigestSync.eventBelongsToStore(storeIdentifier: "abc", ownStoreIdentifier: "abc"))
+    }
+
+    // An event from the sibling RecordingSyncStore's container (different storeIdentifier) is
+    // rejected — this is the fix for the cross-container contamination of isSyncing/
+    // lastImportAt/lastExportAt.
+    @Test func eventBelongsToStoreRejectsSiblingIdentifier() {
+        #expect(!DigestSync.eventBelongsToStore(storeIdentifier: "recordings-store-id", ownStoreIdentifier: "digests-store-id"))
+    }
+
+    // When ownership can't be determined (e.g. an in-memory store with nothing on disk to read),
+    // fail open rather than silently dropping every event.
+    @Test func eventBelongsToStoreFailsOpenWhenOwnIdentifierUnknown() {
+        #expect(DigestSync.eventBelongsToStore(storeIdentifier: "anything", ownStoreIdentifier: nil))
     }
 
     // lastWriteAt(for:) prefers summaryGeneratedAt (the real write time) over the journaled day.
@@ -176,5 +223,45 @@ struct DigestSyncStoreTests {
         let config2 = ModelConfiguration(isStoredInMemoryOnly: true)
         guard let store2 = try? DigestSyncStore(configuration: config2) else { return }
         #expect(store2.digests.isEmpty)
+    }
+
+    // BUG 5 regression: a migration whose import succeeds (rows built in the context) but whose
+    // `save()` fails must NOT set `digestMigratedV1` — otherwise the failed write is never
+    // retried and the journal history is gone for good. `allowsSave: false` is SwiftData's own
+    // fault-injection lever for a read-only store, which is what lets this run headlessly (no
+    // real disk-full / CloudKit-schema failure needed) — every `context.save()` on such a
+    // configuration fails, which is exactly the condition this test needs to exercise.
+    @available(iOS 17, macOS 14, *)
+    @MainActor
+    @Test func migrationDoesNotSetFlagWhenSaveFails() throws {
+        let defaults = UserDefaults.standard
+        let flagKey = DigestSync.migratedFlagKey
+        let originallySet = defaults.bool(forKey: flagKey)
+        defer { if !originallySet { defaults.removeObject(forKey: flagKey) } }
+        defaults.set(false, forKey: flagKey)
+
+        let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        let jsonURL = docs.appendingPathComponent("journal.json")
+        let hadExistingFile = FileManager.default.fileExists(atPath: jsonURL.path)
+        var existingBackup: Data?
+        if hadExistingFile { existingBackup = try? Data(contentsOf: jsonURL) }
+        defer {
+            if let existingBackup {
+                try? existingBackup.write(to: jsonURL)
+            } else if !hadExistingFile {
+                try? FileManager.default.removeItem(at: jsonURL)
+            }
+        }
+
+        let seeded = [DailyDigest(id: "2026-07-01", date: Date(), summary: "seeded")]
+        try JSONEncoder().encode(seeded).write(to: jsonURL)
+
+        let config = ModelConfiguration(isStoredInMemoryOnly: true, allowsSave: false)
+        guard let store = try? DigestSyncStore(configuration: config) else { return }
+
+        // The import attempt ran, but the store can't persist it — the flag must stay unset so a
+        // later launch (against a writable store) retries the import instead of skipping it.
+        #expect(!defaults.bool(forKey: flagKey))
+        #expect(store.lastErrorMessage != nil)
     }
 }
