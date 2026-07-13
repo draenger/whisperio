@@ -787,8 +787,7 @@ export function SettingsForm(): ReactElement {
    so the array identity is stable across renders. */
 const THEME_MODE_OPTIONS: { value: ThemeMode; label: string }[] = [
   { value: 'dark', label: 'Dark' },
-  { value: 'light', label: 'Light' },
-  { value: 'violet-legacy', label: 'Violet Legacy' }
+  { value: 'light', label: 'Light' }
 ]
 
 /** Segmented control — ported from docs/design/wz-parts.jsx's Segmented().

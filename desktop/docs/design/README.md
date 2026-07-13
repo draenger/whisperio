@@ -9,9 +9,14 @@ shipping Electron app.
 
 - **`tokens.css`** — THE contract. All renderer colors/fonts/radius/motion come
   from these `--wsp-*` variables; components must not hardcode hex. Themes:
-  `data-theme="dark"` (default) / `"light"` / `"violet-legacy"` (frozen pre-Rezme
-  aurora palette); accent picker via `data-accent`. Derived 1:1 from
-  `src/renderer/theme.ts` + the design project's `wz2/wz-data.jsx`.
+  `data-theme="dark"` (default) / `"light"`; accent picker via `data-accent`.
+  Derived 1:1 from `src/renderer/theme.ts` + the design project's
+  `wz2/wz-data.jsx`.
+  **Violet has been removed from the product entirely** (VIOLET-OUT): no
+  `violet-legacy` theme, no `violet` accent, on any renderer surface. The
+  `wz-*.jsx` files below are the source design project's own files and may
+  still mention violet historically — that's expected, they're a design
+  reference, not shipped product code, and are left untouched.
 - **`wz-parts.jsx`** — design-source UI primitives (Section, ToggleRow, Segmented,
   Keycaps, StatusDot, buttons) in the "redesign" style: bordered cards radius
   12–14, accent tick on section titles, quiet density. Match new settings UI
@@ -29,8 +34,9 @@ tabs), `wz2/wz-data.jsx` (theme builders — already captured by tokens.css),
 
 ## Rules (UI / theming contract)
 
-- Brand: teal-forward (`--wsp-accent` #1cc8b4 lead, `--wsp-accent-2` #3da2f7
-  support). Violet is legacy-only (`data-theme="violet-legacy"`).
+- Brand: blue-and-teal (`--wsp-accent` #1cc8b4 teal lead, `--wsp-accent-2`
+  #3da2f7 blue/sky support). No violet anywhere in the product — removed
+  entirely (VIOLET-OUT).
 - Recording signal: red dot on a cool-dark pill — never violet, never orange.
 - Transcribing: teal→sky accent progress, visually distinct from recording.
 - Reuse the On-device / Cloud badge vocabulary everywhere.

@@ -7,15 +7,14 @@ import {
   buildTheme,
   darkTheme,
   lightTheme,
-  violetLegacyTheme,
   type Theme,
   type ThemeMode,
   type AccentColor
 } from '../src/renderer/theme'
 
-const ACCENT_COLORS: AccentColor[] = ['graphite', 'blue', 'teal', 'emerald', 'amber', 'violet']
+const ACCENT_COLORS: AccentColor[] = ['graphite', 'blue', 'teal', 'emerald', 'amber']
 
-const MODES: ThemeMode[] = ['dark', 'light', 'violet-legacy']
+const MODES: ThemeMode[] = ['dark', 'light']
 
 const THEME_KEYS: (keyof Theme)[] = [
   'bg',
@@ -115,6 +114,15 @@ describe('theme constants', () => {
       }
     })
   })
+
+  describe('VIOLET-OUT', () => {
+    it('has no violet accent anywhere on the surface', () => {
+      expect(Object.keys(ACCENTS)).not.toContain('violet')
+      expect(ACCENT_ORDER).not.toContain('violet')
+      expect(Object.keys(ACCENT_LABELS)).not.toContain('violet')
+      expect(Object.values(ACCENT_LABELS).map((l) => l.toLowerCase())).not.toContain('violet')
+    })
+  })
 })
 
 describe('buildTheme', () => {
@@ -164,9 +172,6 @@ describe('buildTheme', () => {
     expect(`rgba(${theme.accentRgb}, 0.3)`).toBe('rgba(var(--wsp-accent-rgb), 0.3)')
   })
 
-  it('accepts violet-legacy as a mode without throwing', () => {
-    expect(() => buildTheme('violet-legacy', DEFAULT_ACCENT)).not.toThrow()
-  })
 })
 
 describe('default theme exports', () => {
@@ -178,13 +183,8 @@ describe('default theme exports', () => {
     expect(lightTheme).toEqual(buildTheme('light', DEFAULT_ACCENT))
   })
 
-  it('violetLegacyTheme equals the default-accent violet-legacy build', () => {
-    expect(violetLegacyTheme).toEqual(buildTheme('violet-legacy', DEFAULT_ACCENT))
-  })
-
-  it('dark, light and violet-legacy themes expose identical key sets', () => {
+  it('dark and light themes expose identical key sets', () => {
     expect(Object.keys(darkTheme).sort()).toEqual(Object.keys(lightTheme).sort())
-    expect(Object.keys(darkTheme).sort()).toEqual(Object.keys(violetLegacyTheme).sort())
   })
 
   it('are structurally identical var()-reference objects (literal colors now live in tokens.css)', () => {
@@ -192,7 +192,6 @@ describe('default theme exports', () => {
     // Now both are 'var(--wsp-bg)' — the actual different literal per mode is
     // resolved by tokens.css's :root vs :root[data-theme='light'] blocks.
     expect(darkTheme).toEqual(lightTheme)
-    expect(darkTheme).toEqual(violetLegacyTheme)
     expect(darkTheme.bg).toBe('var(--wsp-bg)')
   })
 })

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildCleanupMessages, buildCommandMessages } from '../src/main/llm/prompts'
+import { buildCleanupMessages, buildCommandMessages, buildFormatMessages } from '../src/main/llm/prompts'
 
 describe('buildCleanupMessages', () => {
   it('mode "full" includes all 7 numbered rules in order', () => {
@@ -94,5 +94,30 @@ describe('buildCommandMessages', () => {
     const [system] = buildCommandMessages({ command: 'fix grammar', selection: 'text' })
     expect(system.content).toContain('return ONLY the')
     expect(system.content).toContain('no commentary')
+  })
+})
+
+describe('buildFormatMessages', () => {
+  it('embeds the instruction in the system prompt and passes raw through verbatim as the user message', () => {
+    const raw = 'we need to finish the report by friday'
+    const messages = buildFormatMessages({ raw, instruction: 'Reformat this text into a polite email.' })
+
+    expect(messages).toHaveLength(2)
+    expect(messages[0].role).toBe('system')
+    expect(messages[0].content).toContain('Reformat this text into a polite email.')
+    expect(messages[1]).toEqual({ role: 'user', content: raw })
+  })
+
+  it('asks the model to preserve the input language and return only the resulting text', () => {
+    const [system] = buildFormatMessages({ raw: 'hi', instruction: 'Reformat as notes.' })
+    expect(system.content).toContain('reply in that SAME language')
+    expect(system.content).toContain('never translate')
+    expect(system.content).toContain('Return ONLY the resulting text')
+  })
+
+  it('trims the instruction before embedding it', () => {
+    const [system] = buildFormatMessages({ raw: 'hi', instruction: '  Reformat as a task list.  ' })
+    expect(system.content).toContain('Instruction: Reformat as a task list.')
+    expect(system.content).not.toContain('Instruction:   Reformat')
   })
 })

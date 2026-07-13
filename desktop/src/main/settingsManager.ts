@@ -4,13 +4,25 @@ import { join } from 'path'
 
 export type ProviderId = 'openai' | 'elevenlabs' | 'selfhosted'
 
-export type AccentColor = 'graphite' | 'blue' | 'teal' | 'emerald' | 'amber' | 'violet'
+export type AccentColor = 'graphite' | 'blue' | 'teal' | 'emerald' | 'amber'
 
 // AI transcript-cleanup settings (v1.4 Work Item A). 'off' disables cleanup
 // entirely; 'light'/'full' select the prompt-rule set in llm/prompts.ts.
 export type CleanupMode = 'off' | 'light' | 'full'
 
 export type AiProvider = 'openai' | 'anthropic' | 'local'
+
+// A user-editable "format to X" preset for on-demand cleanup (ROUGH-FIRST
+// UX: full cleanup only runs automatically when cleanupAuto is on; by
+// default the raw transcript pastes instantly and the user picks one of
+// these — or a one-off custom instruction — from RecordingsPanel afterward).
+// `prompt` is handed to llm/prompts.ts's buildFormatMessages() verbatim as
+// the transform instruction.
+export interface CleanupTemplate {
+  id: string
+  name: string
+  prompt: string
+}
 
 export interface AppSettings {
   sttProvider: 'openai' | 'elevenlabs'
@@ -28,11 +40,24 @@ export interface AppSettings {
   // settings.json files still carry it, and migrateCleanupSettings() below reads
   // it once to seed the new keys the first time a legacy file is loaded.
   aiPostProcessing: boolean
-  // Additive v1.4 cleanup settings. All migrated losslessly from
-  // aiPostProcessing on first load of a pre-v1.4 settings.json — see
-  // migrateCleanupSettings().
+  // Additive v1.4 cleanup settings. `cleanupEnabled` gates whether the
+  // on-demand "Clean up" action (RecordingsPanel) is available at all —
+  // default true, since it's an explicit per-recording opt-in action and
+  // never runs on its own. `cleanupMode` is the rule-set used both by
+  // auto-cleanup (when cleanupAuto is on) and as the default level for the
+  // on-demand "Clean up" action.
   cleanupEnabled: boolean
   cleanupMode: CleanupMode
+  // ROUGH-FIRST UX (v1.4 PR2): whether cleanup runs automatically right
+  // after STT, before paste. Default OFF — by default the raw transcript
+  // pastes instantly (zero latency, predictable) and cleanup becomes an
+  // explicit on-demand action instead. See migrateCleanupSettings() below
+  // for how this is seeded from the legacy aiPostProcessing boolean.
+  cleanupAuto: boolean
+  // On-demand "format to X" presets, editable in CleanupPanel. Additive —
+  // always present (seeded from DEFAULT_CLEANUP_TEMPLATES), never migrated
+  // away from a legacy shape since this key didn't exist before PR2.
+  cleanupTemplates: CleanupTemplate[]
   aiProvider: AiProvider
   // Empty string = provider-appropriate default (e.g. api.openai.com for 'openai').
   aiBaseUrl: string
@@ -42,10 +67,10 @@ export interface AppSettings {
   launchAtStartup: boolean
   dictationHotkey: string
   dictateAndSendHotkey: string
-  // 'violet-legacy' added in STEP0 theming wiring — additive, no migration
-  // needed: old settings.json files only ever contain 'dark'/'light' and the
-  // renderer's ThemeProvider coerces any unrecognized string to 'dark'.
-  theme: 'dark' | 'light' | 'violet-legacy'
+  // 'violet-legacy' (added in STEP0 theming wiring) was removed from the
+  // product in VIOLET-OUT — see migrateLegacyTheme() below, which maps any
+  // saved 'violet-legacy' value back to 'dark' on load.
+  theme: 'dark' | 'light'
   accentColor: AccentColor
   inputDeviceId: string
   outputDeviceId: string
@@ -72,6 +97,42 @@ export const DEFAULT_VOCABULARY_TERMS: string[] = [
   'PostgreSQL', 'MongoDB', 'Redis', 'AWS', 'Azure', 'Terraform', 'CI/CD', 'DevOps',
   'localhost', 'regex', 'boolean', 'middleware', 'endpoint', 'repository', 'README',
   'Vite', 'Vitest', 'Electron', 'Python', 'FastAPI', 'Whisper', 'OpenAI'
+]
+
+// Seed presets for the on-demand cleanup template picker (RecordingsPanel).
+// Prompts are written in English but are language-agnostic in effect: each
+// one explicitly tells the model to keep the input's language and never
+// translate — see buildFormatMessages() in llm/prompts.ts, which also adds
+// its own "keep the language" instruction on top of these regardless.
+export const DEFAULT_CLEANUP_TEMPLATES: CleanupTemplate[] = [
+  {
+    id: 'email',
+    name: 'Email',
+    prompt:
+      'Reformat this text into a polite, well-structured email. Keep the original language — do not translate. ' +
+      'Add a brief greeting and sign-off if none are present. Preserve the meaning; do not invent details.'
+  },
+  {
+    id: 'notes',
+    name: 'Notes',
+    prompt:
+      'Reformat this text into concise, well-organized bullet-point notes. Keep the original language — do not ' +
+      'translate. Group related points together and drop filler, but never drop meaningful content.'
+  },
+  {
+    id: 'tasks',
+    name: 'Task list',
+    prompt:
+      'Reformat this text into a checklist of concrete action items, one per line. Keep the original language — ' +
+      'do not translate. Extract only actionable tasks; drop filler and commentary that isn\'t a task.'
+  },
+  {
+    id: 'message',
+    name: 'Message',
+    prompt:
+      'Reformat this text into a short, casual chat message, as if sending it to a colleague or friend. Keep the ' +
+      'original language — do not translate. Keep it brief and natural.'
+  }
 ]
 
 function splitTerms(value: string): string[] {
@@ -119,6 +180,8 @@ const DEFAULT_SETTINGS: AppSettings = {
   aiPostProcessing: false,
   cleanupEnabled: true,
   cleanupMode: 'full',
+  cleanupAuto: false,
+  cleanupTemplates: DEFAULT_CLEANUP_TEMPLATES,
   aiProvider: 'openai',
   aiBaseUrl: '',
   aiModel: '',
@@ -162,26 +225,57 @@ function migrateVocabulary(parsed: Partial<AppSettings>): Partial<AppSettings> {
 }
 
 /**
- * Migrate the legacy `aiPostProcessing` boolean into the v1.4 cleanup keys.
- * Runs ONLY when the saved JSON has neither `cleanupEnabled` nor
- * `cleanupMode` yet — that makes it idempotent (a second load of the same
- * file, migrated or not, is a no-op) and additive: `aiPostProcessing` itself
- * is never dropped from the returned object, so older app versions (or a
- * future rollback) can still read it.
+ * Migrate the legacy `aiPostProcessing` boolean into the ROUGH-FIRST v1.4 PR2
+ * cleanup keys. Runs ONLY when the saved JSON has no `cleanupAuto` yet —
+ * that's the one key this migration owns, so guarding on it (rather than
+ * `cleanupEnabled`/`cleanupMode`, which an earlier PR1 migration may already
+ * have set) makes this idempotent AND still fires exactly once for a file
+ * that went through PR1's migration but predates `cleanupAuto` entirely.
+ * `aiPostProcessing` itself is never dropped (settings invariant).
  *
- * true  -> cleanupEnabled: true,  cleanupMode: 'full' (previous behavior: on)
- * false -> cleanupEnabled: false                       (mode stays default)
+ * Note this seeds `cleanupAuto`, NOT `cleanupEnabled`: cleanupEnabled now
+ * means "the on-demand Clean up action is available at all" (default true,
+ * unrelated to whether the user used to have auto-cleanup on), so the
+ * legacy flag no longer touches it — only whether auto-cleanup opts in.
+ *
+ * true  -> cleanupAuto: true,  cleanupMode: 'full' if not already set
+ *          (previous behavior: cleanup ran automatically on every dictation)
+ * false -> cleanupAuto: false                        (mode untouched)
  */
 function migrateCleanupSettings(parsed: Partial<AppSettings>): Partial<AppSettings> {
-  if (parsed.cleanupEnabled !== undefined || parsed.cleanupMode !== undefined) {
+  if (parsed.cleanupAuto !== undefined) {
     return parsed
   }
   if (parsed.aiPostProcessing === undefined) {
     return parsed
   }
   return parsed.aiPostProcessing
-    ? { ...parsed, cleanupEnabled: true, cleanupMode: 'full' }
-    : { ...parsed, cleanupEnabled: false }
+    ? { ...parsed, cleanupAuto: true, cleanupMode: parsed.cleanupMode ?? 'full' }
+    : { ...parsed, cleanupAuto: false }
+}
+
+/**
+ * Migrate the removed 'violet-legacy' theme and 'violet' accent values
+ * (VIOLET-OUT: violet is gone from the product entirely) into their closest
+ * still-supported equivalents. Old shipped builds may have persisted either
+ * value to settings.json; this only ever remaps those two literal values, so
+ * it's idempotent — a second load of an already-migrated (or never-violet)
+ * file is a no-op. Keys are never dropped, only the value is mapped, per the
+ * settings invariant.
+ *
+ * theme:       'violet-legacy' -> 'dark'
+ * accentColor: 'violet'        -> 'teal'
+ */
+function migrateLegacyTheme(parsed: Partial<AppSettings>): Partial<AppSettings> {
+  const raw = parsed as Record<string, unknown>
+  const migrated: Partial<AppSettings> = { ...parsed }
+  if (raw.theme === 'violet-legacy') {
+    migrated.theme = 'dark'
+  }
+  if (raw.accentColor === 'violet') {
+    migrated.accentColor = 'teal'
+  }
+  return migrated
 }
 
 export function loadSettings(): AppSettings {
@@ -192,7 +286,7 @@ export function loadSettings(): AppSettings {
   try {
     const raw = readFileSync(filePath, 'utf-8')
     const parsed = JSON.parse(raw) as Partial<AppSettings>
-    const migrated = migrateCleanupSettings(migrateVocabulary(parsed))
+    const migrated = migrateLegacyTheme(migrateCleanupSettings(migrateVocabulary(parsed)))
     return { ...DEFAULT_SETTINGS, ...migrated }
   } catch (err) {
     // A corrupt settings.json (e.g. truncated by a crash/power-loss mid-write)

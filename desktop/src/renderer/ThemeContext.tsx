@@ -1,14 +1,29 @@
 import { createContext, useContext, useState, useEffect, useCallback, type ReactNode, type ReactElement } from 'react'
-import { type ThemeMode, type Theme, type AccentColor, buildTheme, DEFAULT_ACCENT } from './theme'
+import { type ThemeMode, type Theme, type AccentColor, buildTheme, DEFAULT_ACCENT, ACCENT_ORDER } from './theme'
 
 /* Known theme modes, in the order the settings Segmented control renders them.
    Anything else coming out of persisted settings (old build, corrupted JSON,
    a future mode this build doesn't know about yet) falls back to 'dark' —
-   never throws, never leaves the UI in an undefined-var(--wsp-*) state. */
-const KNOWN_MODES: ThemeMode[] = ['dark', 'light', 'violet-legacy']
+   never throws, never leaves the UI in an undefined-var(--wsp-*) state.
+   'violet-legacy' was removed from the product (VIOLET-OUT): it is mapped to
+   'dark' below rather than just falling through to the generic default, so
+   users who had it saved land on the closest still-supported look. */
+const KNOWN_MODES: ThemeMode[] = ['dark', 'light']
 
 function coerceMode(value: unknown): ThemeMode {
+  if (value === 'violet-legacy') return 'dark'
   return KNOWN_MODES.includes(value as ThemeMode) ? (value as ThemeMode) : 'dark'
+}
+
+/* Same fallback contract as coerceMode, for the accent picker. 'violet' was
+   removed from the product (VIOLET-OUT) — settings saved by older shipped
+   builds may still carry it, so it's mapped explicitly to 'teal' (the
+   current default accent) rather than falling through to a generic
+   fallback that would happen to be the same value today but wouldn't be if
+   DEFAULT_ACCENT ever changes. */
+function coerceAccent(value: unknown): AccentColor {
+  if (value === 'violet') return 'teal'
+  return ACCENT_ORDER.includes(value as AccentColor) ? (value as AccentColor) : DEFAULT_ACCENT
 }
 
 interface ThemeContextValue {
@@ -39,7 +54,7 @@ export function ThemeProvider({ children }: { children: ReactNode }): ReactEleme
         setModeState(coerceMode(settings.theme))
       }
       if (settings.accentColor) {
-        setAccentState(settings.accentColor as AccentColor)
+        setAccentState(coerceAccent(settings.accentColor))
       }
     })
   }, [])
@@ -83,8 +98,6 @@ export function ThemeProvider({ children }: { children: ReactNode }): ReactEleme
       style.id = styleId
       document.head.appendChild(style)
     }
-    // violet-legacy is dark-only (see tokens.css) — treat it as dark for the
-    // native color-scheme hint (scrollbars, form controls, etc).
     const colorScheme = mode === 'light' ? 'light' : 'dark'
     style.textContent = `
       html, body, #root {

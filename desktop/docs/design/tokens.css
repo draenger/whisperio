@@ -7,10 +7,10 @@
    CONTRACT (v1.4+ feature line):
    - ALL renderer colors/fonts/radius/motion come from these --wsp-* vars.
      No hardcoded hex in components.
-   - Themes switch via <html data-theme="dark|light|violet-legacy">.
-     dark is the default (:root == dark).
+   - Themes switch via <html data-theme="dark|light">. dark is the default
+     (:root == dark). No violet accent or theme anywhere on the surface.
    - Accent picker switches via <html data-accent="graphite|blue|teal|
-     emerald|amber|violet"> (teal is the default; values differ per mode).
+     emerald|amber"> (teal is the default; values differ per mode).
    - Recording signal is ALWAYS the red dot on a cool-dark pill
      (--wsp-rec-dot / --wsp-pill-bg) — never violet, never orange.
      Transcribing is the teal→sky gradient (--wsp-progress-gradient),
@@ -136,50 +136,6 @@
   color-scheme: light;
 }
 
-/* ============ VIOLET LEGACY (the pre-Rezme shipped "aurora" palette) ============
-   Frozen mapping of the original violet app so nothing breaks for users who
-   prefer the old look. Dark-only (the legacy app default). Recording signal
-   stays red — the legacy violet was never a recording color. */
-:root[data-theme='violet-legacy'] {
-  --wsp-accent: #8b5cf6;
-  --wsp-accent-hover: #a78bfa;
-  --wsp-accent-light: #a78bfa;
-  --wsp-accent-ink: #ffffff;
-  --wsp-accent-rgb: 139, 92, 246;
-  --wsp-accent-glow: rgba(139, 92, 246, 0.3);
-  --wsp-accent-2: #6366f1;
-  --wsp-accent-2-light: #818cf8;
-  --wsp-accent-2-rgb: 99, 102, 241;
-  --wsp-gradient: linear-gradient(118deg, #a78bfa, #8b5cf6);
-  --wsp-gradient-hover: linear-gradient(118deg, #8b5cf6, #7c3aed);
-
-  --wsp-bg: #0a0911;
-  --wsp-bg-secondary: #15121f;
-  --wsp-bg-tertiary: #221d33;
-  --wsp-text: #ecebf4;
-  --wsp-text-secondary: #9d9bb4;
-  --wsp-text-muted: #6a6880;
-  --wsp-border: rgba(255, 255, 255, 0.08);
-  --wsp-border-hover: rgba(255, 255, 255, 0.16);
-  --wsp-input-bg: #1c1830;
-  --wsp-input-border: rgba(255, 255, 255, 0.08);
-  --wsp-titlebar-bg: rgba(10, 10, 20, 0.85);
-
-  --wsp-danger: #f0556b;
-  --wsp-danger-glow: rgba(240, 85, 107, 0.3);
-  --wsp-success: #34d399;
-  --wsp-success-glow: rgba(52, 211, 153, 0.3);
-
-  --wsp-pill-border: rgba(139, 92, 246, 0.3);
-  --wsp-progress-gradient: linear-gradient(90deg, #a78bfa, #6366f1);
-  --wsp-shadow: 0 40px 90px -30px rgba(0, 0, 0, 0.85);
-
-  /* textMuted #6a6880 baked into the arrow — see --wsp-select-arrow note above. */
-  --wsp-select-arrow: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%236a6880' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
-
-  color-scheme: dark;
-}
-
 /* ============ ACCENT PICKER OVERRIDES ============
    The shipped accent picker (settings.accentColor) keeps working: each accent
    remaps the --wsp-accent-* family. Values match theme.ts ACCENTS —
@@ -204,11 +160,6 @@
   --wsp-accent-ink: #241600; --wsp-accent-rgb: 245, 158, 11; --wsp-accent-glow: rgba(245, 158, 11, 0.3);
   --wsp-gradient: linear-gradient(118deg, #fbbf24, #f59e0b);
 }
-:root[data-accent='violet'] {
-  --wsp-accent: #8b5cf6; --wsp-accent-hover: #a78bfa; --wsp-accent-light: #a78bfa;
-  --wsp-accent-ink: #ffffff; --wsp-accent-rgb: 139, 92, 246; --wsp-accent-glow: rgba(139, 92, 246, 0.3);
-  --wsp-gradient: linear-gradient(118deg, #a78bfa, #8b5cf6);
-}
 /* light-mode accent variants: deep as accent, base as light */
 :root[data-theme='light'][data-accent='graphite'] {
   --wsp-accent: #475569; --wsp-accent-hover: #94a3b8; --wsp-accent-light: #94a3b8;
@@ -225,8 +176,4 @@
 :root[data-theme='light'][data-accent='amber'] {
   --wsp-accent: #b45309; --wsp-accent-hover: #f59e0b; --wsp-accent-light: #f59e0b;
   --wsp-accent-ink: #ffffff; --wsp-accent-glow: rgba(245, 158, 11, 0.2);
-}
-:root[data-theme='light'][data-accent='violet'] {
-  --wsp-accent: #7c3aed; --wsp-accent-hover: #8b5cf6; --wsp-accent-light: #8b5cf6;
-  --wsp-accent-ink: #ffffff; --wsp-accent-glow: rgba(139, 92, 246, 0.2);
 }

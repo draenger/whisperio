@@ -1,5 +1,5 @@
 import { vi, describe, it, expect } from 'vitest'
-import { cleanupTranscription } from '../src/main/postprocess'
+import { cleanupTranscription, cleanupTranscriptionDetailed, formatTranscription } from '../src/main/postprocess'
 import type { LLMProvider, LLMRequest } from '../src/main/llm/provider'
 
 function fakeProvider(complete: (req: LLMRequest) => Promise<string>): LLMProvider {
@@ -241,5 +241,107 @@ describe('cleanupTranscription', () => {
       })
       expect(result).toBe(expected)
     }
+  })
+})
+
+describe('cleanupTranscriptionDetailed', () => {
+  it('reports ok: true and the cleaned text on a successful completion', async () => {
+    const complete = vi.fn().mockResolvedValue('Cleaned text.')
+    const result = await cleanupTranscriptionDetailed('raw text here', {
+      cleanupMode: 'full',
+      vocab: '',
+      provider: fakeProvider(complete)
+    })
+    expect(result).toEqual({ text: 'Cleaned text.', ok: true })
+  })
+
+  it('reports ok: false (raw kept) when there is no provider', async () => {
+    const result = await cleanupTranscriptionDetailed('raw text here', {
+      cleanupMode: 'full',
+      vocab: '',
+      provider: null
+    })
+    expect(result).toEqual({ text: 'raw text here', ok: false })
+  })
+
+  it('reports ok: false (raw kept) when mode is "off", without calling the provider', async () => {
+    const complete = vi.fn().mockResolvedValue('should not be used')
+    const result = await cleanupTranscriptionDetailed('raw text here', {
+      cleanupMode: 'off',
+      vocab: '',
+      provider: fakeProvider(complete)
+    })
+    expect(result).toEqual({ text: 'raw text here', ok: false })
+    expect(complete).not.toHaveBeenCalled()
+  })
+
+  it('reports ok: false (raw kept) when the provider call rejects', async () => {
+    const complete = vi.fn().mockRejectedValue(new Error('HTTP 500'))
+    const result = await cleanupTranscriptionDetailed('raw text here', {
+      cleanupMode: 'full',
+      vocab: '',
+      provider: fakeProvider(complete)
+    })
+    expect(result).toEqual({ text: 'raw text here', ok: false })
+  })
+})
+
+describe('formatTranscription', () => {
+  it('applies the instruction and returns ok: true with the formatted text', async () => {
+    let captured: LLMRequest | undefined
+    const complete = vi.fn().mockImplementation(async (req: LLMRequest) => {
+      captured = req
+      return 'Dear team,\n\nPlease see the notes below.\n\nBest,'
+    })
+
+    const result = await formatTranscription('we need to finish the report by friday', {
+      instruction: 'Reformat this text into a polite email.',
+      provider: fakeProvider(complete)
+    })
+
+    expect(result).toEqual({ text: 'Dear team,\n\nPlease see the notes below.\n\nBest,', ok: true })
+    const system = captured?.messages.find((m) => m.role === 'system')
+    expect(system?.content).toContain('Reformat this text into a polite email.')
+    expect(system?.content).toContain('Return ONLY the resulting text')
+    const user = captured?.messages.find((m) => m.role === 'user')
+    expect(user).toEqual({ role: 'user', content: 'we need to finish the report by friday' })
+  })
+
+  it('falls back to raw (ok: false) when there is no provider', async () => {
+    const result = await formatTranscription('raw text', {
+      instruction: 'Reformat as bullet notes.',
+      provider: null
+    })
+    expect(result).toEqual({ text: 'raw text', ok: false })
+  })
+
+  it('falls back to raw (ok: false) when the instruction is empty, without calling the provider', async () => {
+    const complete = vi.fn().mockResolvedValue('should not be used')
+    const result = await formatTranscription('raw text', {
+      instruction: '   ',
+      provider: fakeProvider(complete)
+    })
+    expect(result).toEqual({ text: 'raw text', ok: false })
+    expect(complete).not.toHaveBeenCalled()
+  })
+
+  it('falls back to raw (ok: false) when the provider call rejects', async () => {
+    const complete = vi.fn().mockRejectedValue(new Error('network down'))
+    const result = await formatTranscription('raw text', {
+      instruction: 'Reformat as a task list.',
+      provider: fakeProvider(complete)
+    })
+    expect(result).toEqual({ text: 'raw text', ok: false })
+  })
+
+  it('guards against hallucination the same way cleanupTranscription does', async () => {
+    const raw = 'short input'
+    const hallucinated = 'this is a way way way way way way way way way too long fabricated continuation'
+    const complete = vi.fn().mockResolvedValue(hallucinated)
+    const result = await formatTranscription(raw, {
+      instruction: 'Reformat as a message.',
+      provider: fakeProvider(complete)
+    })
+    expect(result).toEqual({ text: raw, ok: false })
   })
 })

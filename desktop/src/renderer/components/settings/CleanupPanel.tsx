@@ -21,6 +21,16 @@ import { ToggleRow, Segmented } from './SettingsForm'
 export type CleanupMode = 'off' | 'light' | 'full'
 export type AiProvider = 'openai' | 'anthropic' | 'local'
 
+/** UI-facing mirror of settingsManager.ts's CleanupTemplate — same three
+ * fields, kept as its own local type for the same reason CleanupMode above
+ * is: this file only takes a *value* import from SettingsForm, never a type
+ * import from main-process code (different electron-vite build target). */
+export interface CleanupTemplate {
+  id: string
+  name: string
+  prompt: string
+}
+
 /** Minimal shape of SettingsForm's `makeStyles(theme)` output this panel touches.
  * Kept as a narrow local type (rather than importing `makeStyles` itself) so this
  * file only takes on a *value* import from SettingsForm (ToggleRow/Segmented) — the
@@ -32,6 +42,7 @@ interface SettingsStyles {
   input: CSSProperties
   select: CSSProperties
   hint: CSSProperties
+  textarea: CSSProperties
 }
 
 const CLEANUP_MODE_OPTIONS: { value: CleanupMode; label: string }[] = [
@@ -132,6 +143,23 @@ export interface CleanupPanelProps {
   setCleanupEnabled: (v: boolean) => void
   cleanupMode: CleanupMode
   setCleanupMode: (v: CleanupMode) => void
+  /**
+   * ROUGH-FIRST UX (v1.4 PR2): whether cleanup runs automatically right after
+   * dictation, before paste. Optional + defaulted below (to `false`/no-op) so
+   * this component keeps compiling and rendering correctly against callers
+   * that haven't been updated to thread this state through yet — same
+   * cross-package handoff contract as the KONTRAKT note above for
+   * cleanupEnabled/cleanupMode when those first landed. SettingsForm.tsx
+   * needs a follow-up pass to actually pass these two props (and the
+   * template ones below) for the auto-toggle/template editor to do anything
+   * in the real settings screen.
+   */
+  cleanupAuto?: boolean
+  setCleanupAuto?: (v: boolean) => void
+  /** On-demand "format to X" presets (RecordingsPanel's Clean up menu),
+   * editable here. Same optional/defaulted handoff as cleanupAuto above. */
+  cleanupTemplates?: CleanupTemplate[]
+  setCleanupTemplates?: (v: CleanupTemplate[]) => void
   aiProvider: AiProvider
   setAiProvider: (v: AiProvider) => void
   aiBaseUrl: string
@@ -151,6 +179,12 @@ export interface CleanupPanelProps {
  * `aiPostProcessing` key via load/save so existing installs don't lose it,
  * it's just no longer surfaced here).
  *
+ * ROUGH-FIRST UX (v1.4 PR2): `cleanupEnabled` now only gates whether the
+ * on-demand "Clean up" action (RecordingsPanel) is available at all — it no
+ * longer implies cleanup runs automatically. `cleanupAuto` is the separate,
+ * default-OFF opt-in for that: by default the raw transcript pastes
+ * instantly and cleanup becomes something you ask for afterward.
+ *
  * Fail-soft is a hard invariant: if the configured AI provider can't be
  * reached, the raw transcription is pasted — this panel never blocks
  * dictation on an LLM call succeeding, and says so under the section.
@@ -158,6 +192,8 @@ export interface CleanupPanelProps {
 export function CleanupPanel({
   cleanupEnabled, setCleanupEnabled,
   cleanupMode, setCleanupMode,
+  cleanupAuto = false, setCleanupAuto,
+  cleanupTemplates = [], setCleanupTemplates,
   aiProvider, setAiProvider,
   aiBaseUrl, setAiBaseUrl,
   aiModel, setAiModel,
@@ -171,8 +207,8 @@ export function CleanupPanel({
       <h3 style={s.cardTitle}>AI Cleanup</h3>
 
       <ToggleRow
-        label="Clean up transcriptions"
-        description="Removes filler words, fixes punctuation, and smooths self-corrections — language-aware, works in 100+ languages."
+        label="Enable AI cleanup"
+        description="Turns on the on-demand Clean up action for recordings, and unlocks the options below."
         checked={cleanupEnabled}
         onChange={setCleanupEnabled}
         theme={theme}
@@ -180,15 +216,30 @@ export function CleanupPanel({
 
       {cleanupEnabled && (
         <>
+          <ToggleRow
+            label="Clean up automatically after dictation"
+            description="Off (default): the raw transcript pastes instantly. On: cleanup runs before paste, adding a little latency."
+            checked={cleanupAuto}
+            onChange={(v) => setCleanupAuto?.(v)}
+            theme={theme}
+          />
+
           <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
             <div style={{ flex: 1 }}>
               <div style={{ fontSize: '14px', fontWeight: 500, color: theme.text }}>Cleanup level</div>
               <div style={{ fontSize: '12.5px', color: theme.textMuted, marginTop: '2px' }}>
-                {CLEANUP_MODE_HINTS[cleanupMode]}
+                {CLEANUP_MODE_HINTS[cleanupMode]} Used for auto-cleanup and as the default for the on-demand Clean up action.
               </div>
             </div>
             <Segmented options={CLEANUP_MODE_OPTIONS} value={cleanupMode} onChange={setCleanupMode} theme={theme} />
           </div>
+
+          <CleanupTemplatesEditor
+            templates={cleanupTemplates}
+            setTemplates={(v) => setCleanupTemplates?.(v)}
+            s={s}
+            theme={theme}
+          />
 
           <div
             style={{
@@ -254,6 +305,127 @@ export function CleanupPanel({
       <span style={{ ...s.hint, fontStyle: 'italic' }}>
         If the AI provider is unreachable, the raw transcription is pasted — dictation never breaks.
       </span>
+    </div>
+  )
+}
+
+function newTemplateId(): string {
+  // crypto.randomUUID is available in every Electron renderer (Chromium-backed
+  // window.crypto) — no fallback needed, unlike the Node-only fallbacks main-
+  // process code sometimes needs for older runtimes.
+  return `custom-${crypto.randomUUID()}`
+}
+
+/**
+ * Editable list of on-demand cleanup templates (RecordingsPanel's Clean up
+ * menu). Deliberately simple — name + prompt fields and add/remove, same
+ * "flat list, no drag-reorder, no validation beyond non-empty" spirit as
+ * SettingsForm.tsx's VocabularyEditor for custom terms — this is a rough-first
+ * feature, not a template marketplace. Fully controlled: no internal list
+ * state, every edit goes straight through `setTemplates`.
+ */
+function CleanupTemplatesEditor({
+  templates, setTemplates, s, theme
+}: {
+  templates: CleanupTemplate[]
+  setTemplates: (v: CleanupTemplate[]) => void
+  s: SettingsStyles
+  theme: Theme
+}): ReactElement {
+  const updateAt = (index: number, patch: Partial<CleanupTemplate>): void => {
+    setTemplates(templates.map((t, i) => (i === index ? { ...t, ...patch } : t)))
+  }
+  const removeAt = (index: number): void => {
+    setTemplates(templates.filter((_, i) => i !== index))
+  }
+  const addTemplate = (): void => {
+    setTemplates([...templates, { id: newTemplateId(), name: '', prompt: '' }])
+  }
+
+  return (
+    <div
+      style={{
+        marginTop: '4px',
+        paddingTop: '14px',
+        borderTop: `1px solid ${theme.border}`,
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '8px'
+      }}
+    >
+      <label style={s.label}>Cleanup templates</label>
+      <span style={s.hint}>
+        Format-to-X presets offered in the recordings list&apos;s Clean up menu, alongside plain full/light cleanup.
+      </span>
+
+      {templates.map((t, i) => (
+        <div
+          key={t.id}
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '6px',
+            padding: '10px',
+            borderRadius: '8px',
+            border: `1px solid ${theme.border}`,
+            marginTop: '4px'
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <input
+              type="text"
+              value={t.name}
+              onChange={(e) => updateAt(i, { name: e.target.value })}
+              placeholder="Template name (e.g. Email)"
+              style={{ ...s.input, flex: 1 }}
+            />
+            <button
+              onClick={() => removeAt(i)}
+              title={`Remove "${t.name || 'template'}"`}
+              style={{
+                background: 'transparent',
+                border: `1px solid ${theme.border}`,
+                borderRadius: '6px',
+                padding: '4px 10px',
+                fontSize: '11px',
+                fontWeight: 600,
+                color: theme.danger,
+                cursor: 'pointer',
+                fontFamily: 'inherit',
+                flexShrink: 0
+              }}
+            >
+              Remove
+            </button>
+          </div>
+          <textarea
+            value={t.prompt}
+            onChange={(e) => updateAt(i, { prompt: e.target.value })}
+            rows={2}
+            placeholder="Instruction the AI applies to the raw transcript…"
+            style={s.textarea}
+          />
+        </div>
+      ))}
+
+      <button
+        onClick={addTemplate}
+        style={{
+          alignSelf: 'flex-start',
+          marginTop: '4px',
+          background: 'transparent',
+          border: `1px solid ${theme.inputBorder}`,
+          borderRadius: '6px',
+          padding: '6px 12px',
+          fontSize: '12px',
+          fontWeight: 600,
+          color: theme.accent,
+          cursor: 'pointer',
+          fontFamily: 'inherit'
+        }}
+      >
+        + Add template
+      </button>
     </div>
   )
 }

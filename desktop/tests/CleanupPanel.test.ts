@@ -2,7 +2,14 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import { createElement, type CSSProperties } from 'react'
 import { render, cleanup, fireEvent, screen } from '@testing-library/react'
-import { CleanupPanel, isOnDeviceBaseUrl, type CleanupPanelProps, type CleanupMode, type AiProvider } from '../src/renderer/components/settings/CleanupPanel'
+import {
+  CleanupPanel,
+  isOnDeviceBaseUrl,
+  type CleanupPanelProps,
+  type CleanupMode,
+  type AiProvider,
+  type CleanupTemplate
+} from '../src/renderer/components/settings/CleanupPanel'
 import { darkTheme } from '../src/renderer/theme'
 
 /**
@@ -21,13 +28,14 @@ import { darkTheme } from '../src/renderer/theme'
 // Minimal stand-in for makeStyles(theme)'s output — CleanupPanel only reads
 // these six keys (see its local SettingsStyles type), so this fake only
 // needs to be *structurally* wide enough to satisfy that, not a full replica.
-const FAKE_STYLES: Record<'card' | 'cardTitle' | 'label' | 'input' | 'select' | 'hint', CSSProperties> = {
+const FAKE_STYLES: Record<'card' | 'cardTitle' | 'label' | 'input' | 'select' | 'hint' | 'textarea', CSSProperties> = {
   card: {},
   cardTitle: {},
   label: {},
   input: {},
   select: {},
-  hint: {}
+  hint: {},
+  textarea: {}
 }
 
 function makeProps(overrides: Partial<CleanupPanelProps> = {}): CleanupPanelProps {
@@ -36,6 +44,10 @@ function makeProps(overrides: Partial<CleanupPanelProps> = {}): CleanupPanelProp
     setCleanupEnabled: vi.fn(),
     cleanupMode: 'light' as CleanupMode,
     setCleanupMode: vi.fn(),
+    cleanupAuto: false,
+    setCleanupAuto: vi.fn(),
+    cleanupTemplates: [],
+    setCleanupTemplates: vi.fn(),
     aiProvider: 'openai' as AiProvider,
     setAiProvider: vi.fn(),
     aiBaseUrl: '',
@@ -80,7 +92,8 @@ describe('isOnDeviceBaseUrl', () => {
 describe('CleanupPanel', () => {
   it('renders the master toggle and hides mode/provider fields while disabled', () => {
     render(createElement(CleanupPanel, makeProps({ cleanupEnabled: false })))
-    expect(screen.getByText('Clean up transcriptions')).toBeTruthy()
+    expect(screen.getByText('Enable AI cleanup')).toBeTruthy()
+    expect(screen.queryByText('Clean up automatically after dictation')).toBeNull()
     expect(screen.queryByText('Cleanup level')).toBeNull()
     expect(screen.queryByText('AI Provider')).toBeNull()
     // Fail-soft hint is always visible, enabled or not.
@@ -106,6 +119,28 @@ describe('CleanupPanel', () => {
     expect(setCleanupMode).toHaveBeenCalledWith('full')
   })
 
+  it('renders the auto-cleanup toggle (default OFF) once enabled, and emits a change when clicked', () => {
+    const setCleanupAuto = vi.fn()
+    const { container } = render(
+      createElement(CleanupPanel, makeProps({ cleanupEnabled: true, cleanupAuto: false, setCleanupAuto }))
+    )
+    expect(screen.getByText('Clean up automatically after dictation')).toBeTruthy()
+
+    const checkboxes = container.querySelectorAll('input[type="checkbox"]')
+    // First checkbox is "Enable AI cleanup", second is the auto toggle.
+    fireEvent.click(checkboxes[1])
+    expect(setCleanupAuto).toHaveBeenCalledWith(true)
+  })
+
+  it('does not crash when cleanupAuto/setCleanupAuto are omitted (pre-wiring callers)', () => {
+    const props = makeProps({ cleanupEnabled: true })
+    delete (props as Partial<CleanupPanelProps>).cleanupAuto
+    delete (props as Partial<CleanupPanelProps>).setCleanupAuto
+    expect(() => render(createElement(CleanupPanel, props))).not.toThrow()
+    // Defaults to unchecked (false) when the prop isn't supplied.
+    expect(screen.getByText('Clean up automatically after dictation')).toBeTruthy()
+  })
+
   it('shows the Anthropic API key field only when aiProvider is anthropic', () => {
     const { rerender } = render(createElement(CleanupPanel, makeProps({ cleanupEnabled: true, aiProvider: 'openai' })))
     expect(screen.queryByText('Anthropic API Key')).toBeNull()
@@ -122,5 +157,51 @@ describe('CleanupPanel', () => {
 
     rerender(createElement(CleanupPanel, makeProps({ cleanupEnabled: true, aiBaseUrl: 'https://api.openai.com' })))
     expect(screen.queryByTestId('ondevice-badge')).toBeNull()
+  })
+
+  describe('cleanup templates editor', () => {
+    const templates: CleanupTemplate[] = [
+      { id: 'email', name: 'Email', prompt: 'Reformat as an email.' }
+    ]
+
+    it('renders existing templates and edits emit through setCleanupTemplates', () => {
+      const setCleanupTemplates = vi.fn()
+      render(createElement(CleanupPanel, makeProps({ cleanupEnabled: true, cleanupTemplates: templates, setCleanupTemplates })))
+
+      const nameInput = screen.getByPlaceholderText('Template name (e.g. Email)') as HTMLInputElement
+      expect(nameInput.value).toBe('Email')
+
+      fireEvent.change(nameInput, { target: { value: 'Work email' } })
+      expect(setCleanupTemplates).toHaveBeenCalledWith([{ id: 'email', name: 'Work email', prompt: 'Reformat as an email.' }])
+    })
+
+    it('adds a blank template when "+ Add template" is clicked', () => {
+      const setCleanupTemplates = vi.fn()
+      render(createElement(CleanupPanel, makeProps({ cleanupEnabled: true, cleanupTemplates: [], setCleanupTemplates })))
+
+      fireEvent.click(screen.getByText('+ Add template'))
+      expect(setCleanupTemplates).toHaveBeenCalledTimes(1)
+      const added = setCleanupTemplates.mock.calls[0][0]
+      expect(added).toHaveLength(1)
+      expect(added[0]).toMatchObject({ name: '', prompt: '' })
+      expect(typeof added[0].id).toBe('string')
+      expect(added[0].id.length).toBeGreaterThan(0)
+    })
+
+    it('removes a template when its Remove button is clicked', () => {
+      const setCleanupTemplates = vi.fn()
+      render(createElement(CleanupPanel, makeProps({ cleanupEnabled: true, cleanupTemplates: templates, setCleanupTemplates })))
+
+      fireEvent.click(screen.getByTitle('Remove "Email"'))
+      expect(setCleanupTemplates).toHaveBeenCalledWith([])
+    })
+
+    it('does not crash when cleanupTemplates/setCleanupTemplates are omitted (pre-wiring callers)', () => {
+      const props = makeProps({ cleanupEnabled: true })
+      delete (props as Partial<CleanupPanelProps>).cleanupTemplates
+      delete (props as Partial<CleanupPanelProps>).setCleanupTemplates
+      expect(() => render(createElement(CleanupPanel, props))).not.toThrow()
+      expect(screen.getByText('+ Add template')).toBeTruthy()
+    })
   })
 })

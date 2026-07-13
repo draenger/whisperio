@@ -61,11 +61,36 @@ describe('ThemeProvider data-theme/data-accent stamping', () => {
     })
   })
 
-  it('stamps violet-legacy correctly (new mode, additive)', async () => {
-    mockSettingsApi({ theme: 'violet-legacy', accentColor: 'violet' })
+  it('maps legacy theme "violet-legacy" to "dark" (VIOLET-OUT)', async () => {
+    mockSettingsApi({ theme: 'violet-legacy' })
     renderProvider()
     await waitFor(() => {
-      expect(document.documentElement.dataset.theme).toBe('violet-legacy')
+      expect(document.documentElement.dataset.theme).toBe('dark')
+    })
+  })
+
+  it('maps legacy accent "violet" to "teal" (VIOLET-OUT)', async () => {
+    mockSettingsApi({ accentColor: 'violet' })
+    renderProvider()
+    await waitFor(() => {
+      expect(document.documentElement.dataset.accent).toBe('teal')
+    })
+  })
+
+  it('maps both legacy theme and accent together, idempotently on repeated loads', async () => {
+    const api = mockSettingsApi({ theme: 'violet-legacy', accentColor: 'violet' })
+    renderProvider()
+    await waitFor(() => {
+      expect(document.documentElement.dataset.theme).toBe('dark')
+      expect(document.documentElement.dataset.accent).toBe('teal')
+    })
+    // Simulate a second load (e.g. re-mount) resolving the same persisted
+    // legacy values — mapping must be stable, not compound further.
+    await api.load()
+    renderProvider()
+    await waitFor(() => {
+      expect(document.documentElement.dataset.theme).toBe('dark')
+      expect(document.documentElement.dataset.accent).toBe('teal')
     })
   })
 

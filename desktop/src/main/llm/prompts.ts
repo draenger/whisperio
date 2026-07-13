@@ -66,6 +66,37 @@ export function buildCleanupMessages({ raw, vocab, tone, mode }: CleanupPromptIn
   ]
 }
 
+export interface FormatPromptInput {
+  raw: string
+  /** A cleanupTemplates[].prompt from settingsManager.ts, or a one-off free-text
+   * instruction typed by the user in RecordingsPanel's "Custom instruction..." field. */
+  instruction: string
+}
+
+// Used for the ROUGH-FIRST on-demand cleanup action (RecordingsPanel "Clean
+// up" -> template or custom instruction), as opposed to buildCleanupMessages'
+// full/light rule-based cleanup. Same output discipline (language preserved,
+// text only) but the transform itself is whatever `instruction` says, not a
+// fixed rule set — so, unlike CLEANUP_RULES, there's nothing to numbers/render
+// per mode here.
+const FORMAT_SYSTEM_PROMPT_PREFIX =
+  'You are a speech-to-text formatting engine. Transform the input text below according to the instruction. ' +
+  'Detect the input language and reply in that SAME language — never translate unless the instruction explicitly ' +
+  'asks you to. Return ONLY the resulting text — no commentary, no quotes, no preamble.\n\nInstruction: '
+
+/**
+ * Build the messages for an on-demand "format this transcript per a
+ * template/custom instruction" completion call. Pure builder, same shape as
+ * buildCleanupMessages: system prompt carries the instructions, `raw` passes
+ * through verbatim as the user message.
+ */
+export function buildFormatMessages({ raw, instruction }: FormatPromptInput): LLMMessage[] {
+  return [
+    { role: 'system', content: `${FORMAT_SYSTEM_PROMPT_PREFIX}${instruction.trim()}` },
+    { role: 'user', content: raw }
+  ]
+}
+
 export interface CommandPromptInput {
   /** The user's instruction, e.g. "make this more formal", "fix grammar". */
   command: string

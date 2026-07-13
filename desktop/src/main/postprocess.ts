@@ -11,8 +11,8 @@
 // (never break dictation because AI cleanup couldn't reach the network) is
 // enforced here, not by callers remembering to catch.
 
-import type { LLMProvider } from './llm/provider'
-import { buildCleanupMessages, type CleanupMode as PromptCleanupMode } from './llm/prompts'
+import type { LLMProvider, LLMMessage } from './llm/provider'
+import { buildCleanupMessages, buildFormatMessages, type CleanupMode as PromptCleanupMode } from './llm/prompts'
 
 export type CleanupMode = 'off' | PromptCleanupMode
 
@@ -26,6 +26,24 @@ export interface CleanupOptions {
   /** Already-resolved provider (DI) — `null` when none is configured/available. */
   provider: LLMProvider | null
   /** Tied to the dictation cycle: a new dictation aborts a cleanup in flight. */
+  signal?: AbortSignal
+}
+
+// Richer result for callers that need to distinguish "the provider actually
+// produced this" from "we fell back to raw" — the plain-string
+// cleanupTranscription() below can't express that distinction, but the
+// on-demand RecordingsPanel action (transcribe.ts's cleanupOnDemand) needs it
+// to show its inline "AI unreachable — raw kept" hint instead of a full error.
+export interface CleanupResult {
+  text: string
+  /** True only when the provider was called and returned a usable result. */
+  ok: boolean
+}
+
+export interface FormatOptions {
+  /** A cleanupTemplates[].prompt or a free-text custom instruction. */
+  instruction: string
+  provider: LLMProvider | null
   signal?: AbortSignal
 }
 
@@ -74,19 +92,65 @@ function stripWrapping(text: string): string {
   return result
 }
 
+// Shared core for both cleanupTranscription (full/light auto+on-demand) and
+// formatTranscription (template/custom-instruction on-demand): given a raw
+// transcript, a pre-built `messages` array, and a resolved provider, calls
+// the provider and applies the same fail-soft guard rails (no provider,
+// empty/whitespace raw, empty completion, hallucination-length guard, abort)
+// either way. Never throws.
+async function runCleanupCore(raw: string, messages: LLMMessage[], provider: LLMProvider | null, signal?: AbortSignal): Promise<CleanupResult> {
+  if (!raw || !raw.trim()) return { text: raw, ok: false }
+
+  if (!provider) {
+    console.info('[Whisperio] Cleanup skipped: no LLM provider available, using raw transcript.')
+    return { text: raw, ok: false }
+  }
+
+  try {
+    const completion = await provider.complete({
+      messages,
+      temperature: CLEANUP_TEMPERATURE,
+      signal
+    })
+
+    const cleaned = stripWrapping(completion)
+    if (!cleaned) return { text: raw, ok: false }
+    if (cleaned.length > raw.length * HALLUCINATION_LENGTH_RATIO) return { text: raw, ok: false }
+    return { text: cleaned, ok: true }
+  } catch (err) {
+    if (isAbort(err, signal)) {
+      console.info('[Whisperio] Cleanup aborted (new dictation started), using raw transcript.')
+    } else {
+      console.info(
+        '[Whisperio] Cleanup failed, using raw transcript:',
+        err instanceof Error ? err.message : String(err)
+      )
+    }
+    return { text: raw, ok: false }
+  }
+}
+
 /**
- * Clean up a raw STT transcript via the given provider. Never throws — any
- * failure to safely produce a cleaned transcript resolves to `raw`.
+ * Clean up a raw STT transcript via the given provider (rule-based full/light
+ * mode). Never throws — any failure to safely produce a cleaned transcript
+ * resolves to `raw`. Used both by the auto-cleanup path (transcribe.ts, when
+ * cleanupAuto is on) and by the on-demand "Clean up (full/light)" action —
+ * see cleanupTranscriptionDetailed() for a variant exposing the ok/fail-soft
+ * distinction those on-demand callers need for their inline hint.
  */
 export async function cleanupTranscription(raw: string, opts: CleanupOptions): Promise<string> {
-  const mode = opts.cleanupMode
-  if (mode === 'off') return raw
-  if (!raw || !raw.trim()) return raw
+  return (await cleanupTranscriptionDetailed(raw, opts)).text
+}
 
-  if (!opts.provider) {
-    console.info('[Whisperio] Cleanup skipped: no LLM provider available, using raw transcript.')
-    return raw
-  }
+/**
+ * Same rule-based full/light cleanup as cleanupTranscription(), but returns
+ * the ok/fail-soft distinction instead of collapsing it to a plain string —
+ * for on-demand callers (transcribe.ts's cleanupOnDemand) that need to show
+ * "AI unreachable — raw kept" rather than silently pasting raw.
+ */
+export async function cleanupTranscriptionDetailed(raw: string, opts: CleanupOptions): Promise<CleanupResult> {
+  const mode = opts.cleanupMode
+  if (mode === 'off') return { text: raw, ok: false }
 
   const messages = buildCleanupMessages({
     raw,
@@ -95,26 +159,18 @@ export async function cleanupTranscription(raw: string, opts: CleanupOptions): P
     mode
   })
 
-  try {
-    const completion = await opts.provider.complete({
-      messages,
-      temperature: CLEANUP_TEMPERATURE,
-      signal: opts.signal
-    })
+  return runCleanupCore(raw, messages, opts.provider, opts.signal)
+}
 
-    const cleaned = stripWrapping(completion)
-    if (!cleaned) return raw
-    if (cleaned.length > raw.length * HALLUCINATION_LENGTH_RATIO) return raw
-    return cleaned
-  } catch (err) {
-    if (isAbort(err, opts.signal)) {
-      console.info('[Whisperio] Cleanup aborted (new dictation started), using raw transcript.')
-    } else {
-      console.info(
-        '[Whisperio] Cleanup failed, using raw transcript:',
-        err instanceof Error ? err.message : String(err)
-      )
-    }
-    return raw
-  }
+/**
+ * On-demand "format this transcript per a template/custom instruction"
+ * (ROUGH-FIRST UX — RecordingsPanel's "Clean up" menu). Same fail-soft
+ * contract as cleanupTranscription: no provider, a provider error, or an
+ * empty/hallucinated completion all resolve to `{ text: raw, ok: false }`
+ * rather than throwing.
+ */
+export async function formatTranscription(raw: string, opts: FormatOptions): Promise<CleanupResult> {
+  if (!opts.instruction || !opts.instruction.trim()) return { text: raw, ok: false }
+  const messages = buildFormatMessages({ raw, instruction: opts.instruction })
+  return runCleanupCore(raw, messages, opts.provider, opts.signal)
 }

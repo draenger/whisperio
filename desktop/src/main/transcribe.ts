@@ -1,8 +1,8 @@
 import { net, app } from 'electron'
-import { loadSettings, AppSettings, getActiveVocabulary, type ProviderId } from './settingsManager'
+import { loadSettings, AppSettings, getActiveVocabulary, type ProviderId, type CleanupMode } from './settingsManager'
 import { handleTranscriptionError, notifyInfo } from './errorHandler'
 import { OpenAICompatibleProvider, AnthropicProvider, selectProvider, type LLMProvider } from './llm/provider'
-import { cleanupTranscription } from './postprocess'
+import { cleanupTranscription, cleanupTranscriptionDetailed, formatTranscription, type CleanupResult } from './postprocess'
 import { getServerStatus } from './localServer'
 
 // True only in unpackaged (development) builds. Used to gate logging of
@@ -99,8 +99,17 @@ function buildCleanupCandidates(settings: AppSettings): LLMProvider[] {
 // drops the stale result from being pasted.
 let activeCleanupAbort: AbortController | null = null
 
+// ROUGH-FIRST UX (v1.4 PR2): auto-cleanup-after-STT is now gated on
+// `cleanupAuto` alone (default OFF — see settingsManager.ts), NOT on
+// `cleanupEnabled`. cleanupEnabled now only gates whether the on-demand
+// "Clean up" action (RecordingsPanel, see cleanupOnDemand() below) is
+// available at all; it has no bearing on whether cleanup runs automatically.
+// The cleanupMode === 'off' check is kept as a belt-and-braces guard (a user
+// could in principle have cleanupAuto on with mode 'off', though the
+// settings UI doesn't offer that combination) so a stray 'off' mode can never
+// reach the provider.
 async function applyCleanup(settings: AppSettings, raw: string): Promise<string> {
-  if (!settings.cleanupEnabled || settings.cleanupMode === 'off') {
+  if (!settings.cleanupAuto || settings.cleanupMode === 'off') {
     return raw
   }
 
@@ -124,6 +133,70 @@ async function applyCleanup(settings: AppSettings, raw: string): Promise<string>
       activeCleanupAbort = null
     }
   }
+}
+
+// ROUGH-FIRST UX (v1.4 PR2): on-demand "Clean up" action for an already-saved
+// recording (RecordingsPanel), as opposed to applyCleanup() above (which only
+// runs automatically, right after STT, when cleanupAuto is on). Not tied to
+// the dictation-cycle abort controller above — on-demand calls are
+// independent per-recording actions, not superseded by a new dictation.
+export interface OnDemandCleanupRequest {
+  /** Rule-based mode for the plain "Clean up (full/light)" menu item. Ignored
+   * when `templateId` or `customInstruction` is set. Defaults to 'full' if
+   * omitted or 'off' (an on-demand action is explicit; it should never be a
+   * no-op just because the user's default auto-cleanup mode is 'off'). */
+  mode?: CleanupMode
+  /** Id into settings.cleanupTemplates. Takes priority over `mode`. */
+  templateId?: string
+  /** Free-text instruction from RecordingsPanel's "Custom instruction..."
+   * field. Takes priority over both `mode` and `templateId`. */
+  customInstruction?: string
+}
+
+export interface OnDemandCleanupResult extends CleanupResult {
+  /** What was actually applied — 'full'/'light', a template's name, or
+   * 'Custom instruction' — for display next to the result. */
+  cleanedWith: string
+}
+
+export async function cleanupOnDemand(raw: string, req: OnDemandCleanupRequest): Promise<OnDemandCleanupResult> {
+  const settings = loadSettings()
+
+  // Resolve WHAT to do (and validate it) before touching selectProvider —
+  // selectProvider's availability checks hit the network, so a stale/unknown
+  // templateId should fail soft immediately rather than paying for a
+  // reachability check it doesn't need.
+  let instruction: string | null = null
+  let mode: CleanupMode | null = null
+  let cleanedWith: string
+
+  if (req.customInstruction && req.customInstruction.trim()) {
+    instruction = req.customInstruction
+    cleanedWith = 'Custom instruction'
+  } else if (req.templateId) {
+    const template = settings.cleanupTemplates.find((t) => t.id === req.templateId)
+    if (!template) {
+      // Stale UI state (template removed since the menu was rendered) —
+      // fail-soft to raw rather than throwing.
+      return { text: raw, ok: false, cleanedWith: 'unknown template' }
+    }
+    instruction = template.prompt
+    cleanedWith = template.name
+  } else {
+    mode = req.mode && req.mode !== 'off' ? req.mode : 'full'
+    cleanedWith = mode
+  }
+
+  const provider = await selectProvider(settings, buildCleanupCandidates(settings))
+
+  if (instruction !== null) {
+    const result = await formatTranscription(raw, { instruction, provider })
+    return { ...result, cleanedWith }
+  }
+
+  const vocab = getActiveVocabulary(settings)
+  const result = await cleanupTranscriptionDetailed(raw, { cleanupMode: mode as CleanupMode, vocab, provider })
+  return { ...result, cleanedWith }
 }
 
 export async function transcribeAudio(audioBuffer: Buffer, filename: string): Promise<string> {
