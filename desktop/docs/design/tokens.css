@@ -1,0 +1,219 @@
+/* ============================================================
+   Whisperio Desktop — Design Tokens (single source of truth)
+   Derived from the Claude Design project "Whisperio" (wz2/) and the
+   Rezme Design System "Technical Confidence" (colors_and_type.css).
+   See docs/design/README.md for provenance.
+
+   CONTRACT (v1.4+ feature line):
+   - ALL renderer colors/fonts/radius/motion come from these --wsp-* vars.
+     No hardcoded hex in components.
+   - Themes switch via <html data-theme="dark|light|violet-legacy">.
+     dark is the default (:root == dark).
+   - Accent picker switches via <html data-accent="graphite|blue|teal|
+     emerald|amber|violet"> (teal is the default; values differ per mode).
+   - Recording signal is ALWAYS the red dot on a cool-dark pill
+     (--wsp-rec-dot / --wsp-pill-bg) — never violet, never orange.
+     Transcribing is the teal→sky gradient (--wsp-progress-gradient),
+     visually distinct from recording.
+   ============================================================ */
+
+:root {
+  /* ===== BRAND ===== */
+  --wsp-accent: #1cc8b4;            /* lead — Rezme bright teal (dark) */
+  --wsp-accent-hover: #5ee0d0;
+  --wsp-accent-light: #5ee0d0;
+  --wsp-accent-ink: #02110f;        /* text on accent */
+  --wsp-accent-rgb: 28, 200, 180;   /* raw triplet for rgba() composition */
+  --wsp-accent-glow: rgba(28, 200, 180, 0.3);
+  --wsp-accent-2: #3da2f7;          /* support — sky (dark) */
+  --wsp-accent-2-light: #7cc0fb;
+  --wsp-accent-2-rgb: 61, 162, 247;
+  --wsp-gradient: linear-gradient(100deg, #15bca8, #3da2f7);
+  --wsp-gradient-hover: linear-gradient(100deg, #0f8478, #1d7fd6);
+
+  /* ===== SURFACES — dark default ("Refined Technical") ===== */
+  --wsp-bg: #070d15;
+  --wsp-bg-secondary: #101b2a;
+  --wsp-bg-tertiary: #16243a;
+  --wsp-text: #ecf2f9;
+  --wsp-text-secondary: #b4c1d0;
+  --wsp-text-muted: #7e91a4;
+  --wsp-border: #202b3b;
+  --wsp-border-hover: #2c3a4e;
+  --wsp-input-bg: #0c1826;
+  --wsp-input-border: #243244;
+  --wsp-titlebar-bg: rgba(9, 16, 26, 0.86);
+
+  /* ===== STATUS ===== */
+  --wsp-danger: #ef4444;
+  --wsp-danger-glow: rgba(239, 68, 68, 0.3);
+  --wsp-success: #22c55e;
+  --wsp-success-glow: rgba(34, 197, 94, 0.3);
+  --wsp-warning: #f59e0b;
+  --wsp-info: #3da2f7;
+
+  /* ===== DICTATION SIGNALS (theme-invariant semantics) ===== */
+  --wsp-rec-dot: #ef4444;                      /* recording = red dot…   */
+  --wsp-pill-bg: rgba(9, 15, 24, 0.94);        /* …on a cool-dark pill   */
+  --wsp-pill-border: rgba(28, 200, 180, 0.30);
+  --wsp-progress-gradient: linear-gradient(90deg, #1cc8b4, #3da2f7); /* transcribing */
+  --wsp-ondevice-fg: #4ade80;                  /* On-device badge        */
+  --wsp-ondevice-bg: rgba(34, 197, 94, 0.10);
+  --wsp-ondevice-border: rgba(34, 197, 94, 0.26);
+
+  /* ===== TYPE ===== */
+  --wsp-font-display: 'Space Grotesk', ui-sans-serif, system-ui, sans-serif;
+  --wsp-font-sans: 'IBM Plex Sans', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  --wsp-font-mono: 'JetBrains Mono', ui-monospace, monospace;
+
+  /* ===== GEOMETRY (Rezme R2: radius 12 base) ===== */
+  --wsp-radius-sm: 6px;
+  --wsp-radius: 12px;
+  --wsp-radius-lg: 18px;
+  --wsp-radius-pill: 9999px;
+
+  /* ===== ELEVATION (solid surfaces, no blur) ===== */
+  --wsp-e1: 0 1px 2px rgba(0, 0, 0, 0.45);
+  --wsp-e2: 0 6px 22px rgba(0, 0, 0, 0.38), 0 2px 5px rgba(0, 0, 0, 0.28);
+  --wsp-e3: 0 0 0 1px rgba(61, 162, 247, 0.12), 0 22px 60px rgba(0, 0, 0, 0.5);
+  --wsp-shadow: 0 40px 90px -30px rgba(0, 0, 0, 0.85);
+
+  /* ===== MOTION (restrained: 120–200ms fades) ===== */
+  --wsp-motion-fast: 120ms;
+  --wsp-motion: 180ms;
+  --wsp-ease: cubic-bezier(0.16, 0.84, 0.44, 1);
+
+  color-scheme: dark;
+}
+
+/* ============ LIGHT ("Light Editorial": paper bg, deep ink, teal = actions) ============ */
+:root[data-theme='light'] {
+  --wsp-accent: #0f8478;
+  --wsp-accent-hover: #1cc8b4;
+  --wsp-accent-light: #1cc8b4;
+  --wsp-accent-ink: #ffffff;
+  --wsp-accent-glow: rgba(28, 200, 180, 0.2);
+  --wsp-accent-2: #1d7fd6;
+  --wsp-accent-2-light: #3da2f7;
+  --wsp-accent-2-rgb: 29, 127, 214;
+  --wsp-gradient: linear-gradient(100deg, #0f9b8b, #1d7fd6);
+  --wsp-gradient-hover: linear-gradient(100deg, #0f8478, #1668ad);
+
+  --wsp-bg: #f6f8fa;
+  --wsp-bg-secondary: #ffffff;
+  --wsp-bg-tertiary: #eef2f6;
+  --wsp-text: #0c1822;
+  --wsp-text-secondary: #3f4f5e;
+  --wsp-text-muted: #74859a;
+  --wsp-border: #e3e9ef;
+  --wsp-border-hover: #d2dbe4;
+  --wsp-input-bg: #ffffff;
+  --wsp-input-border: #d2dbe4;
+  --wsp-titlebar-bg: rgba(255, 255, 255, 0.9);
+
+  --wsp-danger: #dc2626;
+  --wsp-danger-glow: rgba(220, 38, 38, 0.2);
+  --wsp-success: #16a34a;
+  --wsp-success-glow: rgba(22, 163, 74, 0.2);
+  --wsp-warning: #d97706;
+  --wsp-info: #1d7fd6;
+
+  --wsp-e1: 0 1px 2px rgba(13, 27, 38, 0.05), 0 1px 1px rgba(13, 27, 38, 0.03);
+  --wsp-e2: 0 8px 28px rgba(13, 27, 38, 0.07), 0 2px 6px rgba(13, 27, 38, 0.04);
+  --wsp-e3: 0 20px 52px rgba(13, 27, 38, 0.12), 0 6px 16px rgba(13, 27, 38, 0.06);
+  --wsp-shadow: 0 40px 90px -34px rgba(20, 40, 50, 0.28);
+
+  color-scheme: light;
+}
+
+/* ============ VIOLET LEGACY (the pre-Rezme shipped "aurora" palette) ============
+   Frozen mapping of the original violet app so nothing breaks for users who
+   prefer the old look. Dark-only (the legacy app default). Recording signal
+   stays red — the legacy violet was never a recording color. */
+:root[data-theme='violet-legacy'] {
+  --wsp-accent: #8b5cf6;
+  --wsp-accent-hover: #a78bfa;
+  --wsp-accent-light: #a78bfa;
+  --wsp-accent-ink: #ffffff;
+  --wsp-accent-rgb: 139, 92, 246;
+  --wsp-accent-glow: rgba(139, 92, 246, 0.3);
+  --wsp-accent-2: #6366f1;
+  --wsp-accent-2-light: #818cf8;
+  --wsp-accent-2-rgb: 99, 102, 241;
+  --wsp-gradient: linear-gradient(118deg, #a78bfa, #8b5cf6);
+  --wsp-gradient-hover: linear-gradient(118deg, #8b5cf6, #7c3aed);
+
+  --wsp-bg: #0a0911;
+  --wsp-bg-secondary: #15121f;
+  --wsp-bg-tertiary: #221d33;
+  --wsp-text: #ecebf4;
+  --wsp-text-secondary: #9d9bb4;
+  --wsp-text-muted: #6a6880;
+  --wsp-border: rgba(255, 255, 255, 0.08);
+  --wsp-border-hover: rgba(255, 255, 255, 0.16);
+  --wsp-input-bg: #1c1830;
+  --wsp-input-border: rgba(255, 255, 255, 0.08);
+  --wsp-titlebar-bg: rgba(10, 10, 20, 0.85);
+
+  --wsp-danger: #f0556b;
+  --wsp-danger-glow: rgba(240, 85, 107, 0.3);
+  --wsp-success: #34d399;
+  --wsp-success-glow: rgba(52, 211, 153, 0.3);
+
+  --wsp-pill-border: rgba(139, 92, 246, 0.3);
+  --wsp-progress-gradient: linear-gradient(90deg, #a78bfa, #6366f1);
+  --wsp-shadow: 0 40px 90px -30px rgba(0, 0, 0, 0.85);
+
+  color-scheme: dark;
+}
+
+/* ============ ACCENT PICKER OVERRIDES ============
+   The shipped accent picker (settings.accentColor) keeps working: each accent
+   remaps the --wsp-accent-* family. Values match theme.ts ACCENTS —
+   dark mode uses base/light, light mode uses deep/base. Teal = default above. */
+:root[data-accent='graphite'] {
+  --wsp-accent: #94a3b8; --wsp-accent-hover: #cbd5e1; --wsp-accent-light: #cbd5e1;
+  --wsp-accent-ink: #0b0e16; --wsp-accent-rgb: 148, 163, 184; --wsp-accent-glow: rgba(148, 163, 184, 0.3);
+  --wsp-gradient: linear-gradient(118deg, #cbd5e1, #94a3b8);
+}
+:root[data-accent='blue'] {
+  --wsp-accent: #4a8cf7; --wsp-accent-hover: #6ea9fb; --wsp-accent-light: #6ea9fb;
+  --wsp-accent-ink: #ffffff; --wsp-accent-rgb: 74, 140, 247; --wsp-accent-glow: rgba(74, 140, 247, 0.3);
+  --wsp-gradient: linear-gradient(118deg, #6ea9fb, #4a8cf7);
+}
+:root[data-accent='emerald'] {
+  --wsp-accent: #34d399; --wsp-accent-hover: #6ee7b7; --wsp-accent-light: #6ee7b7;
+  --wsp-accent-ink: #04231a; --wsp-accent-rgb: 52, 211, 153; --wsp-accent-glow: rgba(52, 211, 153, 0.3);
+  --wsp-gradient: linear-gradient(118deg, #6ee7b7, #34d399);
+}
+:root[data-accent='amber'] {
+  --wsp-accent: #f59e0b; --wsp-accent-hover: #fbbf24; --wsp-accent-light: #fbbf24;
+  --wsp-accent-ink: #241600; --wsp-accent-rgb: 245, 158, 11; --wsp-accent-glow: rgba(245, 158, 11, 0.3);
+  --wsp-gradient: linear-gradient(118deg, #fbbf24, #f59e0b);
+}
+:root[data-accent='violet'] {
+  --wsp-accent: #8b5cf6; --wsp-accent-hover: #a78bfa; --wsp-accent-light: #a78bfa;
+  --wsp-accent-ink: #ffffff; --wsp-accent-rgb: 139, 92, 246; --wsp-accent-glow: rgba(139, 92, 246, 0.3);
+  --wsp-gradient: linear-gradient(118deg, #a78bfa, #8b5cf6);
+}
+/* light-mode accent variants: deep as accent, base as light */
+:root[data-theme='light'][data-accent='graphite'] {
+  --wsp-accent: #475569; --wsp-accent-hover: #94a3b8; --wsp-accent-light: #94a3b8;
+  --wsp-accent-ink: #ffffff; --wsp-accent-glow: rgba(148, 163, 184, 0.2);
+}
+:root[data-theme='light'][data-accent='blue'] {
+  --wsp-accent: #2f7df0; --wsp-accent-hover: #4a8cf7; --wsp-accent-light: #4a8cf7;
+  --wsp-accent-ink: #ffffff; --wsp-accent-glow: rgba(74, 140, 247, 0.2);
+}
+:root[data-theme='light'][data-accent='emerald'] {
+  --wsp-accent: #059669; --wsp-accent-hover: #34d399; --wsp-accent-light: #34d399;
+  --wsp-accent-ink: #ffffff; --wsp-accent-glow: rgba(52, 211, 153, 0.2);
+}
+:root[data-theme='light'][data-accent='amber'] {
+  --wsp-accent: #b45309; --wsp-accent-hover: #f59e0b; --wsp-accent-light: #f59e0b;
+  --wsp-accent-ink: #ffffff; --wsp-accent-glow: rgba(245, 158, 11, 0.2);
+}
+:root[data-theme='light'][data-accent='violet'] {
+  --wsp-accent: #7c3aed; --wsp-accent-hover: #8b5cf6; --wsp-accent-light: #8b5cf6;
+  --wsp-accent-ink: #ffffff; --wsp-accent-glow: rgba(139, 92, 246, 0.2);
+}
