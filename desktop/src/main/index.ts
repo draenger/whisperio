@@ -45,6 +45,7 @@ import {
   pushSecrets as githubPushSecrets,
   pullSecrets as githubPullSecrets
 } from './githubSync'
+import { getUsage, resetUsage } from './usageTracker'
 
 // Set app name and model ID so Windows notifications show "Whisperio"
 app.setName('Whisperio')
@@ -197,6 +198,10 @@ app.whenReady().then(() => {
   ipcMain.handle('github:disconnect', () => githubDisconnect())
   ipcMain.handle('github:push', () => githubPushSecrets())
   ipcMain.handle('github:pull', () => githubPullSecrets())
+
+  // Usage/cost metering IPC handlers (PACZKA METERING v1.6)
+  ipcMain.handle('usage:get', () => getUsage())
+  ipcMain.handle('usage:reset', () => resetUsage())
 
   // Register transcription IPC handler
   ipcMain.handle('dictation:transcribe', async (_event, audioBuffer: Buffer, filename: string) => {

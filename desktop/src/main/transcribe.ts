@@ -1,9 +1,10 @@
 import { net, app } from 'electron'
 import { loadSettings, AppSettings, getActiveVocabulary, type ProviderId, type CleanupMode } from './settingsManager'
 import { handleTranscriptionError, notifyInfo } from './errorHandler'
-import { OpenAICompatibleProvider, AnthropicProvider, selectProvider, type LLMProvider } from './llm/provider'
+import { OpenAICompatibleProvider, AnthropicProvider, selectProvider, isLocalHost, type LLMProvider } from './llm/provider'
 import { cleanupTranscription, cleanupTranscriptionDetailed, formatTranscription, type CleanupResult } from './postprocess'
 import { getServerStatus } from './localServer'
+import { recordSTT, estimateAudioSeconds } from './usageTracker'
 
 // True only in unpackaged (development) builds. Used to gate logging of
 // privacy-sensitive transcript content so it never reaches production stdout.
@@ -22,10 +23,21 @@ const DEFAULT_PROMPT = ''
 const DEFAULT_MODEL = 'gpt-4o-transcribe'
 const SELFHOSTED_MODEL = 'whisper-1'
 
+// STT+ (v1.5): Replicate-hosted STT. `openai/whisper` is Replicate's official
+// model (see https://replicate.com/openai/whisper) — verified stable input
+// (`audio`, `transcription: "plain text"`) and output (`transcription: string`)
+// shape via its docs. Used only when the user hasn't set `sttReplicateModel`.
+const DEFAULT_REPLICATE_MODEL = 'openai/whisper'
+const REPLICATE_API_BASE = 'https://api.replicate.com/v1'
+// Prefer: wait caps at 60s server-side (Replicate HTTP API docs); a dictation
+// clip is short, so this is generous headroom for the client-side abort.
+const REPLICATE_TIMEOUT_MS = 55_000
+
 const PROVIDER_LABELS: Record<ProviderId, string> = {
   openai: 'OpenAI',
   elevenlabs: 'ElevenLabs',
-  selfhosted: 'Local Model'
+  selfhosted: 'Local Model',
+  replicate: 'Replicate'
 }
 
 interface TranscribeResult {
@@ -227,6 +239,16 @@ export async function transcribeAudio(audioBuffer: Buffer, filename: string): Pr
     const provider = configuredChain[i]
     try {
       const text = await transcribeWithProvider(settings, provider, audioBuffer, filename)
+      // PACZKA METERING (v1.6): report usage after every successful STT call,
+      // including local/self-hosted (isLocal forces cost to 0 there, but the
+      // request/audio-seconds counters still stay complete). recordSTT()
+      // never throws, so this can't turn a metering hiccup into a broken
+      // transcription.
+      recordSTT({
+        provider,
+        audioSeconds: estimateAudioSeconds(audioBuffer, filename),
+        isLocal: provider === 'selfhosted'
+      })
       return await applyCleanup(settings, text)
     } catch (err) {
       if (!firstError) firstError = err instanceof Error ? err : new Error(String(err))
@@ -244,6 +266,7 @@ function isProviderConfigured(settings: AppSettings, provider: ProviderId): bool
   if (provider === 'openai') return !!(settings.openaiApiKey || settings.openaiBaseUrl?.trim())
   if (provider === 'elevenlabs') return !!settings.elevenlabsApiKey
   if (provider === 'selfhosted') return !!settings.openaiBaseUrl?.trim()
+  if (provider === 'replicate') return !!settings.replicateApiKey
   return false
 }
 
@@ -272,6 +295,25 @@ async function transcribeWithProvider(
       handleTranscriptionError(err, 'selfhosted')
       throw err
     }
+    // CONNECTION SECURITY: only allow http:// for loopback/private hosts (the
+    // isLocalHost helper shared with llm/provider.ts) — a public host must use
+    // https://, or the request is rejected before it ever leaves the machine.
+    let parsedUrl: URL
+    try {
+      parsedUrl = new URL(baseUrl)
+    } catch {
+      const err = new Error(`Self-hosted server URL is invalid: "${baseUrl}". Open Settings to fix it.`)
+      handleTranscriptionError(err, 'selfhosted')
+      throw err
+    }
+    if (parsedUrl.protocol !== 'https:' && !isLocalHost(parsedUrl.hostname)) {
+      const err = new Error(
+        `Self-hosted server URL must use https:// for a public host (got ${parsedUrl.protocol}//${parsedUrl.hostname}). ` +
+          'http:// is only allowed for loopback/private addresses. Open Settings to fix it.'
+      )
+      handleTranscriptionError(err, 'selfhosted')
+      throw err
+    }
     const model = settings.whisperModel?.trim() || SELFHOSTED_MODEL
     const basePrompt = settings.transcriptionPrompt || DEFAULT_PROMPT
     const vocab = getActiveVocabulary(settings)
@@ -281,7 +323,27 @@ async function transcribeWithProvider(
     const lang = settings.transcriptionLanguage?.trim() || 'auto'
     // whisper.cpp uses /inference, OpenAI-compatible servers use /v1/audio/transcriptions
     const endpoint = baseUrl.includes('/v1') ? `${baseUrl}/audio/transcriptions` : `${baseUrl}/inference`
-    return whisperTranscribe('', audioBuffer, filename, prompt, endpoint, model, true, lang)
+    // Bearer token for a private/self-hosted server that requires auth — empty
+    // (the default) preserves today's no-Authorization-header behavior.
+    const sttApiKey = settings.sttApiKey?.trim() || ''
+    return whisperTranscribe(sttApiKey, audioBuffer, filename, prompt, endpoint, model, true, lang)
+  }
+
+  if (provider === 'replicate') {
+    const apiKey = settings.replicateApiKey
+    if (!apiKey) {
+      const err = new Error('No Replicate API key configured. Open Settings to set it.')
+      handleTranscriptionError(err, 'replicate')
+      throw err
+    }
+    const model = settings.sttReplicateModel?.trim() || DEFAULT_REPLICATE_MODEL
+    const basePrompt = settings.transcriptionPrompt || DEFAULT_PROMPT
+    const vocab = getActiveVocabulary(settings)
+    const prompt = vocab
+      ? `${basePrompt}\n\nTechnical terms that may appear (use these exact spellings): ${vocab}`
+      : basePrompt
+    const lang = settings.transcriptionLanguage?.trim() || 'auto'
+    return replicateTranscribe(apiKey, model, audioBuffer, prompt, lang)
   }
 
   // openai
@@ -525,5 +587,116 @@ function elevenLabsTranscribe(apiKey: string, audioBuffer: Buffer, filename: str
     request.write(body)
     request.end()
   })
+}
+
+interface ReplicatePredictionResponse {
+  status?: string
+  output?: unknown
+  error?: string | null
+}
+
+// Different Replicate STT models shape their output differently: the official
+// `openai/whisper` model returns a plain string under `output.transcription`
+// (when the `transcription` input is "plain text"); several community models
+// (e.g. incredibly-fast-whisper) return the raw HF pipeline dict directly as
+// `output`, i.e. `{ text: "..." }`. Handle both shapes plus the (unlikely but
+// cheap-to-support) case where `output` is already a bare string.
+function extractReplicateTranscription(output: unknown): string | null {
+  if (typeof output === 'string') return output
+  if (output && typeof output === 'object') {
+    const obj = output as Record<string, unknown>
+    if (typeof obj.transcription === 'string') return obj.transcription
+    if (typeof obj.text === 'string') return obj.text
+  }
+  return null
+}
+
+/**
+ * STT+ (v1.5): Replicate-hosted Whisper. Uses `fetch` (not electron's `net`,
+ * unlike the other STT providers in this file) — Replicate's API is plain
+ * JSON, not multipart, so there's no benefit to net.request's streaming body
+ * builder, and this keeps the call shape consistent with llm/provider.ts's
+ * fetch-based providers for the same reasons (testability, AbortSignal).
+ *
+ * Audio is sent as a base64 data URI in `input.audio` (dictations are short,
+ * comfortably under Replicate's data-URI size guidance) to
+ * `POST /v1/models/{model}/predictions` with `Prefer: wait` so the response
+ * comes back synchronously when the model finishes in time.
+ */
+async function replicateTranscribe(
+  apiKey: string,
+  model: string,
+  audioBuffer: Buffer,
+  prompt: string,
+  language: string
+): Promise<string> {
+  const dataUri = `data:audio/webm;base64,${audioBuffer.toString('base64')}`
+  const input: Record<string, unknown> = {
+    audio: dataUri,
+    // Forces the official openai/whisper model's output.transcription to be a
+    // plain string rather than srt/vtt; harmless extra input on models that
+    // don't recognize the field.
+    transcription: 'plain text'
+  }
+  if (language && language !== 'auto') input.language = language
+  if (prompt) input.initial_prompt = prompt
+
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), REPLICATE_TIMEOUT_MS)
+
+  let response: Response
+  try {
+    response = await fetch(`${REPLICATE_API_BASE}/models/${model}/predictions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiKey}`,
+        Prefer: 'wait'
+      },
+      body: JSON.stringify({ input }),
+      signal: controller.signal
+    })
+  } catch (err) {
+    const error = err instanceof Error ? err : new Error(String(err))
+    handleTranscriptionError(error, 'replicate')
+    throw error
+  } finally {
+    clearTimeout(timeout)
+  }
+
+  const rawText = await response.text()
+
+  if (!response.ok) {
+    if (isDev()) console.error(`[Whisperio] Replicate API error body: ${rawText}`)
+    const err = new Error(`Replicate API error ${response.status}`)
+    handleTranscriptionError(err, 'replicate')
+    throw err
+  }
+
+  let body: ReplicatePredictionResponse
+  try {
+    body = JSON.parse(rawText) as ReplicatePredictionResponse
+  } catch {
+    const err = new Error(`Failed to parse Replicate response (HTTP ${response.status})`)
+    handleTranscriptionError(err, 'replicate')
+    throw err
+  }
+
+  // Prefer: wait returns a non-terminal status ("starting"/"processing") if
+  // the model didn't finish within the wait window, or "failed"/"canceled" on
+  // a model-side error — either way there's no usable output yet.
+  if (body.status && body.status !== 'succeeded') {
+    const err = new Error(`Replicate prediction did not complete in time (status: ${body.status})`)
+    handleTranscriptionError(err, 'replicate')
+    throw err
+  }
+
+  const text = extractReplicateTranscription(body.output)
+  if (text === null) {
+    const err = new Error('Replicate response did not contain a transcription')
+    handleTranscriptionError(err, 'replicate')
+    throw err
+  }
+  return text
 }
 

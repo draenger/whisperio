@@ -5,6 +5,7 @@ import type { Theme, ThemeMode } from '../../theme'
 import { ACCENTS, ACCENT_ORDER, ACCENT_LABELS } from '../../theme'
 import { RecordingsView } from '../recordings/RecordingsPanel'
 import { CleanupPanel, type CleanupMode, type AiProvider } from './CleanupPanel'
+import { UsagePanel } from './UsagePanel'
 
 // Derived from the global window.api typings (preload) without a cross-project import
 type UpdaterState = Awaited<ReturnType<Window['api']['updater']['getStatus']>>
@@ -78,7 +79,7 @@ function UpdateBanner({ state, theme }: { state: UpdaterState | null; theme: The
   )
 }
 
-type TabId = 'general' | 'providers' | 'models' | 'audio' | 'hotkeys' | 'sync' | 'recordings' | 'updates'
+type TabId = 'general' | 'providers' | 'models' | 'audio' | 'hotkeys' | 'sync' | 'recordings' | 'usage' | 'updates'
 
 type NavGroup = {
   label: string
@@ -92,6 +93,7 @@ const TAB_ICONS: Record<string, string> = {
   hotkeys: 'M3 5h18a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1zM6 9h.01M10 9h.01M14 9h.01M18 9h.01M6 13h.01M9 13h6M18 13h.01',
   sync: 'M21 2v6h-6M3 12a9 9 0 0 1 15-6.7L21 8M3 22v-6h6M21 12a9 9 0 0 1-15 6.7L3 16',
   recordings: 'M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zM12 7v5l3 2',
+  usage: 'M3 3v18h18M7 15l4-6 3 3 5-8',
   updates: 'M21 12a9 9 0 1 1-2.64-6.36M21 3v6h-6'
 }
 
@@ -114,7 +116,8 @@ interface MediaDeviceOption {
 const CHAIN_LABELS: Record<string, string> = {
   openai: 'OpenAI',
   elevenlabs: 'ElevenLabs',
-  selfhosted: 'On-Device'
+  selfhosted: 'On-Device',
+  replicate: 'Replicate'
 }
 
 function MicroLabel({ children, theme }: { children: ReactNode; theme: Theme }): ReactElement {
@@ -380,6 +383,7 @@ export function SettingsForm(): ReactElement {
     {
       label: 'System',
       tabs: [
+        { id: 'usage', label: 'Usage' },
         { id: 'updates', label: 'Updates' }
       ]
     }
@@ -419,6 +423,11 @@ export function SettingsForm(): ReactElement {
   const [openaiBaseUrl, setOpenaiBaseUrl] = useState('')
   const [whisperModel, setWhisperModel] = useState('')
   const [elevenlabsApiKey, setElevenlabsApiKey] = useState('')
+  // STT+ (v1.5): shared with the AI Cleanup Replicate provider below — one
+  // key, both uses (see settingsManager.ts's `replicateApiKey` doc comment).
+  const [replicateApiKey, setReplicateApiKey] = useState('')
+  const [sttReplicateModel, setSttReplicateModel] = useState('')
+  const [sttApiKey, setSttApiKey] = useState('')
   const [transcriptionLanguage, setTranscriptionLanguage] = useState('auto')
   const [prompt, setPrompt] = useState('')
   const [vocabulary, setVocabulary] = useState('')
@@ -456,6 +465,9 @@ export function SettingsForm(): ReactElement {
       setOpenaiBaseUrl(settings.openaiBaseUrl ?? '')
       setWhisperModel(settings.whisperModel ?? '')
       setElevenlabsApiKey(settings.elevenlabsApiKey ?? '')
+      setReplicateApiKey(settings.replicateApiKey ?? '')
+      setSttReplicateModel(settings.sttReplicateModel ?? '')
+      setSttApiKey(settings.sttApiKey ?? '')
       setTranscriptionLanguage(settings.transcriptionLanguage ?? 'auto')
       setPrompt(settings.transcriptionPrompt ?? '')
       setVocabulary(settings.customVocabulary ?? '')
@@ -518,6 +530,9 @@ export function SettingsForm(): ReactElement {
       openaiBaseUrl,
       whisperModel,
       elevenlabsApiKey,
+      replicateApiKey,
+      sttReplicateModel,
+      sttApiKey,
       transcriptionLanguage,
       transcriptionPrompt: prompt,
       customVocabulary: vocabulary,
@@ -538,11 +553,23 @@ export function SettingsForm(): ReactElement {
       aiModel,
       anthropicApiKey
     }
-    await window.api.settings.save(payload)
+    await window.api.settings.save(
+      // `aiProvider` (and `replicateApiKey` above) widen ahead of preload's
+      // AppSettings type: `aiProvider` there is still 'openai'|'anthropic'|
+      // 'local' (the parallel LLM+ package's preload update adding
+      // 'replicate' hasn't landed yet) while CleanupPanel's UI-facing
+      // AiProvider already includes it (v1.5 PACZKA UI). This is the same
+      // cross-package handoff as SettingsWithCleanup above, just on the
+      // write side — safe because settingsManager.save() persists whatever
+      // string it's given (no runtime validation against the TS union), and
+      // the cast can be dropped once preload's AiProvider catches up.
+      payload as unknown as Parameters<Window['api']['settings']['save']>[0]
+    )
     setSaved(true)
     setTimeout(() => setSaved(false), 2000)
   }, [
-    providerChain, apiKey, openaiBaseUrl, whisperModel, elevenlabsApiKey, transcriptionLanguage, prompt,
+    providerChain, apiKey, openaiBaseUrl, whisperModel, elevenlabsApiKey, replicateApiKey, sttReplicateModel,
+    sttApiKey, transcriptionLanguage, prompt,
     vocabulary, removedDefaultVocabulary, aiPostProcessing, launchAtStartup, dictationHotkey,
     dictateAndSendHotkey, inputDeviceId, outputDeviceId, saveRecordings,
     outputRecordingHotkey, cleanupEnabled, cleanupMode, aiProvider, aiBaseUrl, aiModel, anthropicApiKey
@@ -693,6 +720,12 @@ export function SettingsForm(): ReactElement {
                       setWhisperModel={setWhisperModel}
                       elevenlabsApiKey={elevenlabsApiKey}
                       setElevenlabsApiKey={setElevenlabsApiKey}
+                      replicateApiKey={replicateApiKey}
+                      setReplicateApiKey={setReplicateApiKey}
+                      sttReplicateModel={sttReplicateModel}
+                      setSttReplicateModel={setSttReplicateModel}
+                      sttApiKey={sttApiKey}
+                      setSttApiKey={setSttApiKey}
                       transcriptionLanguage={transcriptionLanguage}
                       setTranscriptionLanguage={setTranscriptionLanguage}
                       prompt={prompt}
@@ -748,6 +781,10 @@ export function SettingsForm(): ReactElement {
 
                   {activeTab === 'sync' && (
                     <SyncTab s={s} theme={theme} />
+                  )}
+
+                  {activeTab === 'usage' && (
+                    <UsagePanel s={s} theme={theme} />
                   )}
 
                   {activeTab === 'updates' && (
@@ -937,12 +974,16 @@ import { useTheme as useThemeHook } from '../../ThemeContext'
 function SelfhostedSettings({
   openaiBaseUrl, setOpenaiBaseUrl,
   whisperModel, setWhisperModel,
+  sttApiKey, setSttApiKey,
   s, theme
 }: {
   openaiBaseUrl: string
   setOpenaiBaseUrl: (v: string) => void
   whisperModel: string
   setWhisperModel: (v: string) => void
+  /** Bearer token for a private/self-hosted STT server (empty = no Authorization header, today's behavior). */
+  sttApiKey: string
+  setSttApiKey: (v: string) => void
   s: ReturnType<typeof makeStyles>
   theme: Theme
 }): ReactElement {
@@ -1007,9 +1048,20 @@ function SelfhostedSettings({
         <>
           <label style={s.label}>Server URL</label>
           <input type="text" value={openaiBaseUrl} onChange={(e) => setOpenaiBaseUrl(e.target.value)} placeholder="http://localhost:8080/v1" style={s.input} />
-          <span style={s.hint}>Any OpenAI-compatible STT server</span>
+          <span style={s.hint}>
+            Any OpenAI-compatible STT server. http:// only for local/private hosts — public endpoints require https://.
+          </span>
           <label style={{ ...s.label, marginTop: '8px' }}>Model Name</label>
           <input type="text" value={whisperModel} onChange={(e) => setWhisperModel(e.target.value)} placeholder="whisper-1" style={s.input} />
+          <label style={{ ...s.label, marginTop: '8px' }}>API Key (optional)</label>
+          <input
+            type="password"
+            value={sttApiKey}
+            onChange={(e) => setSttApiKey(e.target.value)}
+            placeholder="Bearer token, if your server requires one"
+            style={s.input}
+          />
+          <span style={s.hint}>Bearer token for your private STT server. Leave blank if it doesn&apos;t require auth.</span>
         </>
       ) : (
         <>
@@ -1108,7 +1160,8 @@ function SelfhostedSettings({
 const ALL_PROVIDERS: { id: string; label: string; desc: string }[] = [
   { id: 'openai', label: 'OpenAI', desc: 'gpt-4o-transcribe' },
   { id: 'elevenlabs', label: 'ElevenLabs', desc: 'Scribe v2' },
-  { id: 'selfhosted', label: 'Local Model', desc: 'Offline, private' }
+  { id: 'selfhosted', label: 'Local Model', desc: 'Offline, private' },
+  { id: 'replicate', label: 'Replicate', desc: 'Cloud Whisper' }
 ]
 
 // Built-in seed vocabulary shown as removable/restorable chips. Mirror of
@@ -1137,6 +1190,9 @@ function ProvidersTab({
   openaiBaseUrl, setOpenaiBaseUrl,
   whisperModel, setWhisperModel,
   elevenlabsApiKey, setElevenlabsApiKey,
+  replicateApiKey, setReplicateApiKey,
+  sttReplicateModel, setSttReplicateModel,
+  sttApiKey, setSttApiKey,
   transcriptionLanguage, setTranscriptionLanguage,
   prompt, setPrompt,
   vocabulary, setVocabulary,
@@ -1159,6 +1215,14 @@ function ProvidersTab({
   setWhisperModel: (v: string) => void
   elevenlabsApiKey: string
   setElevenlabsApiKey: (v: string) => void
+  /** Shared with the AI Cleanup Replicate provider (CleanupPanel) — one key, both uses. */
+  replicateApiKey: string
+  setReplicateApiKey: (v: string) => void
+  sttReplicateModel: string
+  setSttReplicateModel: (v: string) => void
+  /** Bearer token for a private/self-hosted STT server (empty = no Authorization header, today's behavior). */
+  sttApiKey: string
+  setSttApiKey: (v: string) => void
   transcriptionLanguage: string
   setTranscriptionLanguage: (v: string) => void
   prompt: string
@@ -1313,9 +1377,33 @@ function ProvidersTab({
                         setOpenaiBaseUrl={setOpenaiBaseUrl}
                         whisperModel={whisperModel}
                         setWhisperModel={setWhisperModel}
+                        sttApiKey={sttApiKey}
+                        setSttApiKey={setSttApiKey}
                         s={s}
                         theme={theme}
                       />
+                    )}
+                    {provider.id === 'replicate' && (
+                      <>
+                        <label style={s.label}>API Key</label>
+                        <input
+                          type="password"
+                          value={replicateApiKey}
+                          onChange={(e) => setReplicateApiKey(e.target.value)}
+                          placeholder="r8_..."
+                          style={s.input}
+                        />
+                        <span style={s.hint}>Shared with the AI Cleanup Replicate provider below — one key, both uses.</span>
+                        <label style={{ ...s.label, marginTop: '8px' }}>Model</label>
+                        <input
+                          type="text"
+                          value={sttReplicateModel}
+                          onChange={(e) => setSttReplicateModel(e.target.value)}
+                          placeholder="openai/whisper"
+                          style={s.input}
+                        />
+                        <span style={s.hint}>Any Replicate speech-to-text model, as owner/name. Defaults to openai/whisper.</span>
+                      </>
                     )}
                   </div>
                 )}
@@ -1338,6 +1426,8 @@ function ProvidersTab({
         setAiModel={setAiModel}
         anthropicApiKey={anthropicApiKey}
         setAnthropicApiKey={setAnthropicApiKey}
+        replicateApiKey={replicateApiKey}
+        setReplicateApiKey={setReplicateApiKey}
         s={s}
         theme={theme}
       />

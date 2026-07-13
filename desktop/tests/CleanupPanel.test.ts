@@ -56,6 +56,8 @@ function makeProps(overrides: Partial<CleanupPanelProps> = {}): CleanupPanelProp
     setAiModel: vi.fn(),
     anthropicApiKey: '',
     setAnthropicApiKey: vi.fn(),
+    replicateApiKey: '',
+    setReplicateApiKey: vi.fn(),
     s: FAKE_STYLES,
     theme: darkTheme,
     ...overrides
@@ -147,6 +149,43 @@ describe('CleanupPanel', () => {
 
     rerender(createElement(CleanupPanel, makeProps({ cleanupEnabled: true, aiProvider: 'anthropic' })))
     expect(screen.getByText('Anthropic API Key')).toBeTruthy()
+  })
+
+  it('lists Replicate alongside OpenAI/Anthropic/Local in the provider select', () => {
+    render(createElement(CleanupPanel, makeProps({ cleanupEnabled: true })))
+    expect(screen.getByText('Replicate (cloud)')).toBeTruthy()
+  })
+
+  it('shows the Replicate API key field only when aiProvider is replicate', () => {
+    const { rerender } = render(createElement(CleanupPanel, makeProps({ cleanupEnabled: true, aiProvider: 'openai' })))
+    expect(screen.queryByText('Replicate API Key')).toBeNull()
+
+    rerender(createElement(CleanupPanel, makeProps({ cleanupEnabled: true, aiProvider: 'replicate' })))
+    expect(screen.getByText('Replicate API Key')).toBeTruthy()
+  })
+
+  it('emits a change when the Replicate API key field is edited', () => {
+    const setReplicateApiKey = vi.fn()
+    render(createElement(CleanupPanel, makeProps({ cleanupEnabled: true, aiProvider: 'replicate', setReplicateApiKey })))
+    fireEvent.change(screen.getByPlaceholderText('r8_...'), { target: { value: 'r8_secret' } })
+    expect(setReplicateApiKey).toHaveBeenCalledWith('r8_secret')
+  })
+
+  it('renders the model picker as a dropdown for a hosted provider', () => {
+    render(createElement(CleanupPanel, makeProps({ cleanupEnabled: true, aiProvider: 'openai' })))
+    expect(screen.getByTestId('model-select')).toBeTruthy()
+  })
+
+  it('renders the model picker as free text for the local provider', () => {
+    render(createElement(CleanupPanel, makeProps({ cleanupEnabled: true, aiProvider: 'local' })))
+    expect(screen.getByTestId('model-freetext')).toBeTruthy()
+    expect(screen.queryByTestId('model-select')).toBeNull()
+  })
+
+  it('renders the model picker as free text when aiBaseUrl is on-device, even for a hosted provider', () => {
+    render(createElement(CleanupPanel, makeProps({ cleanupEnabled: true, aiProvider: 'openai', aiBaseUrl: 'http://127.0.0.1:11434' })))
+    expect(screen.getByTestId('model-freetext')).toBeTruthy()
+    expect(screen.queryByTestId('model-select')).toBeNull()
   })
 
   it('shows the on-device badge for a loopback base URL and hides it for a cloud host', () => {
