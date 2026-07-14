@@ -18,6 +18,7 @@ struct HomeView: View {
 
     // nil → the "All" filter (show every category).
     @State private var selectedCategory: String? = nil
+    @State private var searchText = ""
 
     var body: some View {
         ScreenScaffold {
@@ -33,11 +34,22 @@ struct HomeView: View {
                     // search + filters
                     VStack(spacing: 13) {
                         HStack(spacing: 9) {
-                            WIcon("search", size: 17, weight: .regular)
-                            Text("Search transcripts").font(WZFont.ui(14.5))
-                            Spacer()
+                            WIcon("search", size: 17, weight: .regular).foregroundStyle(t.faint)
+                            TextField("Search transcripts", text: $searchText)
+                                .font(WZFont.ui(14.5))
+                                .foregroundStyle(t.text)
+                                .textFieldStyle(.plain)
+                                #if os(iOS)
+                                .textInputAutocapitalization(.never)
+                                #endif
+                                .autocorrectionDisabled()
+                            if !searchText.isEmpty {
+                                Button { searchText = "" } label: {
+                                    WIcon("x", size: 13, weight: .regular).foregroundStyle(t.faint)
+                                }
+                                .buttonStyle(.plain)
+                            }
                         }
-                        .foregroundStyle(t.faint)
                         .padding(.horizontal, 13).padding(.vertical, 11)
                         .background(t.surfaceUp, in: RoundedRectangle(cornerRadius: 13, style: .continuous))
                         .overlay(RoundedRectangle(cornerRadius: 13, style: .continuous).stroke(t.line, lineWidth: 1))
@@ -85,12 +97,21 @@ struct HomeView: View {
         }
     }
 
-    // The recordings that match the active category filter (All → everything). Category is
+    // The recordings that match the active category filter (All → everything) and the search
+    // bar's text (matched against transcript/app/category, case-insensitive). Category is
     // resolved through the store so live reassignments in Detail move rows between filters.
     private var visibleItems: [Recording] {
-        guard let selectedCategory else { return recordings.items }
-        return recordings.items.filter {
-            recordings.categoryId(for: DemoRecording($0)) == selectedCategory
+        var items = recordings.items
+        if let selectedCategory {
+            items = items.filter { recordings.categoryId(for: DemoRecording($0)) == selectedCategory }
+        }
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return items }
+        return items.filter {
+            let demo = DemoRecording($0)
+            return demo.title.localizedCaseInsensitiveContains(query)
+                || demo.app.localizedCaseInsensitiveContains(query)
+                || WZCategories.of(demo.category).label.localizedCaseInsensitiveContains(query)
         }
     }
 

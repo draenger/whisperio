@@ -94,8 +94,6 @@ export function useDictation(): UseDictationReturn {
       recorder.start(250)
       setIsRecording(true)
       console.log('[Whisperio] Recording started')
-      // Notify main process so it can restore focus to the target window
-      window.api.dictation.notifyRecordingStarted()
     } catch (err) {
       console.error('[Whisperio] Failed to start recording:', err)
     }
@@ -147,7 +145,6 @@ export function useDictation(): UseDictationReturn {
       recorder.start(250)
       setIsRecording(true)
       console.log('[Whisperio] Output recording started')
-      window.api.dictation.notifyRecordingStarted()
     } catch (err) {
       console.error('[Whisperio] Failed to start output recording:', err)
     }
@@ -199,17 +196,20 @@ export function useDictation(): UseDictationReturn {
       console.log('[Whisperio] Sending to transcription via IPC...')
       const arrayBuffer = await audioBlob.arrayBuffer()
 
-      // Save recording to disk before transcription
-      try {
-        const settings = await window.api.settings.load()
-        const savedRecording = await window.api.recordings.save(
-          arrayBuffer,
-          { duration: durationSec, provider: settings.sttProvider }
-        )
-        savedRecordingId = savedRecording.id
-        console.log(`[Whisperio] Recording saved: ${savedRecordingId}`)
-      } catch (saveErr) {
-        console.error('[Whisperio] Failed to save recording:', saveErr)
+      // Save recording to disk before transcription — gated on the
+      // 'Save recordings to disk' setting; transcription still happens either way.
+      const settings = await window.api.settings.load()
+      if (settings.saveRecordings) {
+        try {
+          const savedRecording = await window.api.recordings.save(
+            arrayBuffer,
+            { duration: durationSec, provider: settings.sttProvider }
+          )
+          savedRecordingId = savedRecording.id
+          console.log(`[Whisperio] Recording saved: ${savedRecordingId}`)
+        } catch (saveErr) {
+          console.error('[Whisperio] Failed to save recording:', saveErr)
+        }
       }
 
       // Convert webm to wav for selfhosted whisper.cpp (doesn't support webm)

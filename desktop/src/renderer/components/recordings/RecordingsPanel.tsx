@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, type CSSProperties, type ReactElement } from 'react'
+import { useState, useEffect, useCallback, useRef, Fragment, type CSSProperties, type ReactElement } from 'react'
 import { useTheme } from '../../ThemeContext'
 import { TitleBar } from '../common/TitleBar'
 import type { Theme } from '../../theme'
@@ -59,6 +59,10 @@ export function RecordingsView(): ReactElement {
   const [loading, setLoading] = useState(true)
   const [hoveredId, setHoveredId] = useState<string | null>(null)
   const [deleteAllConfirm, setDeleteAllConfirm] = useState(false)
+  // Per-day "Delete this day" confirm state (recordings:deleteByDate) — keyed
+  // by the YYYY-MM-DD group key so each day's confirm toggle is independent,
+  // mirroring the single-boolean deleteAllConfirm pattern above.
+  const [deleteDayConfirm, setDeleteDayConfirm] = useState<Record<string, boolean>>({})
   const [copiedId, setCopiedId] = useState<string | null>(null)
   const [selectedId, setSelectedId] = useState<string | null>(null)
 
@@ -75,7 +79,11 @@ export function RecordingsView(): ReactElement {
   // hint, but this one means the call never got a structured answer back.
   const [cleanupIpcError, setCleanupIpcError] = useState<Record<string, string | undefined>>({})
   const [cleanedCopiedId, setCleanedCopiedId] = useState<string | null>(null)
-  const [cleanupDefaults, setCleanupDefaults] = useState<{ mode: CleanupMode; templates: CleanupTemplate[] }>({
+  const [cleanupDefaults, setCleanupDefaults] = useState<{ cleanupEnabled: boolean; mode: CleanupMode; templates: CleanupTemplate[] }>({
+    // Default true (matches settingsManager.ts's DEFAULT_SETTINGS.cleanupEnabled)
+    // until settings.load() resolves, so the button doesn't flash hidden then
+    // shown on the common case where cleanup is enabled.
+    cleanupEnabled: true,
     mode: 'full',
     templates: []
   })
@@ -104,6 +112,7 @@ export function RecordingsView(): ReactElement {
       .then((settings) => {
         if (cancelled) return
         setCleanupDefaults({
+          cleanupEnabled: (settings.cleanupEnabled as boolean | undefined) ?? true,
           mode: (settings.cleanupMode as CleanupMode | undefined) ?? 'full',
           templates: settings.cleanupTemplates ?? []
         })
@@ -154,6 +163,19 @@ export function RecordingsView(): ReactElement {
     await loadRecordings()
   }, [deleteAllConfirm, loadRecordings])
 
+  const handleDeleteDay = useCallback(async (dateKey: string) => {
+    if (!deleteDayConfirm[dateKey]) {
+      setDeleteDayConfirm((prev) => ({ ...prev, [dateKey]: true }))
+      setTimeout(() => {
+        setDeleteDayConfirm((prev) => ({ ...prev, [dateKey]: false }))
+      }, 3000)
+      return
+    }
+    await window.api.recordings.deleteByDate(dateKey)
+    setDeleteDayConfirm((prev) => ({ ...prev, [dateKey]: false }))
+    await loadRecordings()
+  }, [deleteDayConfirm, loadRecordings])
+
   const handleReprocess = useCallback(async (id: string) => {
     await window.api.recordings.reprocess(id)
     await loadRecordings()
@@ -169,6 +191,17 @@ export function RecordingsView(): ReactElement {
     const d = new Date(timestamp)
     const pad = (n: number): string => n.toString().padStart(2, '0')
     return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
+  }
+
+  // Group key for recordings:deleteByDate — deliberately independent of
+  // formatDate's display string above. Must match recordingStore.ts's
+  // deleteRecordingsByDate grouping exactly (local time, zero-padded,
+  // YYYY-MM-DD) or a day header's "Delete this day" would delete the wrong
+  // set of recordings.
+  const dayKeyOf = (timestamp: number): string => {
+    const d = new Date(timestamp)
+    const pad = (n: number): string => n.toString().padStart(2, '0')
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
   }
 
   const formatDuration = (seconds: number): string => {
@@ -237,6 +270,7 @@ export function RecordingsView(): ReactElement {
             formatDuration={formatDuration}
             formatSize={formatSize}
             statusIcon={statusIcon}
+            cleanupEnabled={cleanupDefaults.cleanupEnabled}
             cleanupMode={cleanupDefaults.mode}
             cleanupTemplates={cleanupDefaults.templates}
             cleanupBusy={cleanupBusyId === selectedRec.id}
@@ -337,22 +371,71 @@ export function RecordingsView(): ReactElement {
               </p>
             </div>
           ) : (
-            recordings.map((rec) => {
-              const isHovered = hoveredId === rec.id
-              const si = statusIcon(rec.status)
+            // Recordings are already sorted latest-first (loadRecordings),
+            // so a day header only needs to fire when the group key changes
+            // relative to the previous row — no extra sort/grouping pass.
+            (() => {
+              const dayCounts = recordings.reduce<Record<string, number>>((acc, r) => {
+                const k = dayKeyOf(r.timestamp)
+                acc[k] = (acc[k] ?? 0) + 1
+                return acc
+              }, {})
+              let lastDayKey: string | null = null
 
-              return (
-                <div
-                  key={rec.id}
-                  style={{
-                    ...s.recordingRow,
-                    cursor: 'pointer',
-                    borderColor: isHovered ? theme.accent : theme.border
-                  }}
-                  onClick={() => setSelectedId(rec.id)}
-                  onMouseEnter={() => setHoveredId(rec.id)}
-                  onMouseLeave={() => setHoveredId(null)}
-                >
+              return recordings.map((rec) => {
+                const isHovered = hoveredId === rec.id
+                const si = statusIcon(rec.status)
+                const dayKey = dayKeyOf(rec.timestamp)
+                const showDayHeader = dayKey !== lastDayKey
+                lastDayKey = dayKey
+                const dayConfirming = deleteDayConfirm[dayKey] ?? false
+
+                return (
+                  <Fragment key={rec.id}>
+                    {showDayHeader && (
+                      <div style={s.dayHeader} data-testid={`day-header-${dayKey}`}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <span style={s.dayHeaderDate}>{dayKey}</span>
+                          <span style={s.recordingMeta}>{dayCounts[dayKey]} recording{dayCounts[dayKey] !== 1 ? 's' : ''}</span>
+                        </div>
+                        <button
+                          onClick={() => handleDeleteDay(dayKey)}
+                          style={{
+                            ...s.toolbarButton,
+                            padding: '4px 10px',
+                            fontSize: '11px',
+                            color: dayConfirming ? '#ffffff' : theme.danger,
+                            background: dayConfirming ? theme.danger : theme.bgSecondary,
+                            borderColor: dayConfirming ? theme.danger : theme.border
+                          }}
+                          title="Delete all recordings from this day"
+                          onMouseEnter={(e) => {
+                            if (!dayConfirming) {
+                              e.currentTarget.style.background = 'rgba(239, 68, 68, 0.15)'
+                              e.currentTarget.style.borderColor = theme.danger
+                            }
+                          }}
+                          onMouseLeave={(e) => {
+                            if (!dayConfirming) {
+                              e.currentTarget.style.background = theme.bgSecondary
+                              e.currentTarget.style.borderColor = theme.border
+                            }
+                          }}
+                        >
+                          {dayConfirming ? 'Confirm?' : 'Delete this day'}
+                        </button>
+                      </div>
+                    )}
+                    <div
+                      style={{
+                        ...s.recordingRow,
+                        cursor: 'pointer',
+                        borderColor: isHovered ? theme.accent : theme.border
+                      }}
+                      onClick={() => setSelectedId(rec.id)}
+                      onMouseEnter={() => setHoveredId(rec.id)}
+                      onMouseLeave={() => setHoveredId(null)}
+                    >
                   {/* Status icon */}
                   <div style={{ ...s.statusIcon, color: si.color }}>
                     {si.char}
@@ -455,8 +538,10 @@ export function RecordingsView(): ReactElement {
                     </svg>
                   </span>
                 </div>
-              )
-            })
+                  </Fragment>
+                )
+              })
+            })()
           )}
         </div>
       </div>
@@ -499,6 +584,7 @@ function RecordingDetail({
   formatDuration,
   formatSize,
   statusIcon,
+  cleanupEnabled,
   cleanupMode,
   cleanupTemplates,
   cleanupBusy,
@@ -520,6 +606,7 @@ function RecordingDetail({
   formatDuration: (s: number) => string
   formatSize: (b: number) => string
   statusIcon: (status: string) => { char: string; color: string }
+  cleanupEnabled: boolean
   cleanupMode: CleanupMode
   cleanupTemplates: CleanupTemplate[]
   cleanupBusy: boolean
@@ -749,6 +836,7 @@ function RecordingDetail({
             theme={theme}
             ghostBtn={ghostBtn}
             busy={cleanupBusy}
+            enabled={cleanupEnabled}
             mode={cleanupMode}
             templates={cleanupTemplates}
             onSelect={onCleanup}
@@ -822,11 +910,15 @@ function RecordingDetail({
  * file's "plain inline React, no extra deps" style.
  */
 function CleanupMenu({
-  theme, ghostBtn, busy, mode, templates, onSelect
+  theme, ghostBtn, busy, enabled, mode, templates, onSelect
 }: {
   theme: Theme
   ghostBtn: CSSProperties
   busy: boolean
+  /** Mirrors CleanupPanel.tsx's "Enable AI cleanup" toggle (settings.cleanupEnabled)
+   * — when off, the trigger is disabled rather than hidden, so the action stays
+   * discoverable with a tooltip pointing at the settings toggle. */
+  enabled: boolean
   mode: CleanupMode
   templates: CleanupTemplate[]
   onSelect: (options: CleanupRequestOptions) => void
@@ -859,17 +951,18 @@ function CleanupMenu({
   return (
     <div style={{ position: 'relative', display: 'inline-block' }}>
       <button
-        onClick={() => setOpen((v) => !v)}
-        disabled={busy}
-        style={{ ...ghostBtn, opacity: busy ? 0.6 : 1, cursor: busy ? 'default' : 'pointer' }}
-        onMouseEnter={(e) => { if (!busy) { e.currentTarget.style.borderColor = theme.accent; e.currentTarget.style.color = theme.text } }}
+        onClick={() => { if (enabled) setOpen((v) => !v) }}
+        disabled={busy || !enabled}
+        title={enabled ? undefined : 'Enable AI cleanup in Settings to use this.'}
+        style={{ ...ghostBtn, opacity: busy || !enabled ? 0.6 : 1, cursor: busy || !enabled ? 'default' : 'pointer' }}
+        onMouseEnter={(e) => { if (!busy && enabled) { e.currentTarget.style.borderColor = theme.accent; e.currentTarget.style.color = theme.text } }}
         onMouseLeave={(e) => { e.currentTarget.style.borderColor = theme.border; e.currentTarget.style.color = theme.textSecondary }}
       >
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3v4M12 17v4M5 5l2.5 2.5M16.5 16.5L19 19M3 12h4M17 12h4M5 19l2.5-2.5M16.5 7.5L19 5" /></svg>
         {busy ? 'Cleaning up…' : 'Clean up'}
       </button>
 
-      {open && !busy && (
+      {open && !busy && enabled && (
         <div
           data-testid="cleanup-menu"
           style={{
@@ -1018,6 +1111,20 @@ function makeStyles(theme: Theme) {
       alignItems: 'center',
       gap: '6px',
       transition: 'background 0.15s, border-color 0.15s, color 0.15s'
+    } as React.CSSProperties,
+    dayHeader: {
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      gap: '10px',
+      padding: '6px 2px 2px'
+    } as React.CSSProperties,
+    dayHeaderDate: {
+      fontFamily: "'JetBrains Mono', monospace",
+      fontSize: '11px',
+      fontWeight: 600,
+      letterSpacing: '.04em',
+      color: theme.textSecondary
     } as React.CSSProperties,
     recordingRow: {
       background: theme.bgSecondary,

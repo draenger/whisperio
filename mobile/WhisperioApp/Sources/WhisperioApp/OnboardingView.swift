@@ -4,6 +4,7 @@ import SwiftUI
 // engine choice + permission CTA. The hero promise is "works fully offline."
 struct OnboardingView: View {
     @Environment(\.wz) private var t
+    @EnvironmentObject private var settings: SettingsStore
     var done: () -> Void
     @State private var i = 0
     @State private var engine = "apple"
@@ -16,7 +17,7 @@ struct OnboardingView: View {
                 HStack {
                     Spacer()
                     if i < lastIndex {
-                        Button("Skip", action: done)
+                        Button("Skip") { persistEngineChoice(); done() }
                             .font(WZFont.ui(14, .semibold)).foregroundStyle(t.faint)
                     }
                 }
@@ -39,7 +40,7 @@ struct OnboardingView: View {
                     GradButton(title: i < lastIndex ? "Continue" : "Get started",
                                icon: i == lastIndex ? "check" : nil) {
                         if i < lastIndex { withAnimation(.easeInOut(duration: 0.35)) { i += 1 } }
-                        else { done() }
+                        else { persistEngineChoice(); done() }
                     }
                 }
                 .padding(.top, 18).padding(.bottom, 26)
@@ -188,5 +189,18 @@ struct OnboardingView: View {
             }
         }
         .padding(.top, 22)
+    }
+
+    /// Persists the slide-4 engine choice the same way SetupView's first-run picker does
+    /// ("cloud" maps to OpenAI — the first-listed, default cloud provider in both SetupView
+    /// and SettingsView). Unlike SetupView, onboarding never collects an API key or shows the
+    /// cloud-consent sheet, so we deliberately only write `providerChain` here and leave
+    /// `cloudConsentGranted` untouched — SettingsView's existing consent gate (`selectEngine`)
+    /// will prompt for consent + a key the first time the user actually tries to use it,
+    /// instead of duplicating that flow inside onboarding.
+    private func persistEngineChoice() {
+        var s = settings.settings
+        s.providerChain = [engine == "cloud" ? .openAI : .onDevice]
+        settings.settings = s
     }
 }

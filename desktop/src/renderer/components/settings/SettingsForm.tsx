@@ -4,7 +4,7 @@ import { TitleBar } from '../common/TitleBar'
 import type { Theme, ThemeMode } from '../../theme'
 import { ACCENTS, ACCENT_ORDER, ACCENT_LABELS } from '../../theme'
 import { RecordingsView } from '../recordings/RecordingsPanel'
-import { CleanupPanel, type CleanupMode, type AiProvider } from './CleanupPanel'
+import { CleanupPanel, type CleanupMode, type AiProvider, type CleanupTemplate } from './CleanupPanel'
 import { UsagePanel } from './UsagePanel'
 
 // Derived from the global window.api typings (preload) without a cross-project import
@@ -79,7 +79,83 @@ function UpdateBanner({ state, theme }: { state: UpdaterState | null; theme: The
   )
 }
 
-type TabId = 'general' | 'providers' | 'models' | 'audio' | 'hotkeys' | 'sync' | 'recordings' | 'usage' | 'updates'
+// Bridges errorHandler.ts's in-memory ring buffer (main<->preload already
+// wired: `errors:getRecent` + the `errors:new` broadcast behind
+// `window.api.errors.onError`) to the Usage tab — previously main/preload-only
+// with zero renderer consumer. Derived from the preload API's own return type
+// rather than importing WhisperioError directly, same pattern as UpdaterState
+// above.
+type RecentError = Awaited<ReturnType<Window['api']['errors']['getRecent']>>[number]
+
+/** Coarse "Xm ago" / "Xh ago" / "Xd ago" relative timestamp — good enough for
+ * a short-lived ring buffer of recent errors; no need for Intl.RelativeTimeFormat
+ * ceremony here. */
+function relativeTime(timestamp: number): string {
+  const seconds = Math.max(0, Math.round((Date.now() - timestamp) / 1000))
+  if (seconds < 60) return 'just now'
+  const minutes = Math.round(seconds / 60)
+  if (minutes < 60) return `${minutes}m ago`
+  const hours = Math.round(minutes / 60)
+  if (hours < 24) return `${hours}h ago`
+  const days = Math.round(hours / 24)
+  return `${days}d ago`
+}
+
+/**
+ * "Recent errors" section (Usage tab) — surfaces the same ring buffer
+ * RecordingsPanel/notifications already read from, so a bad API key or a
+ * flaky provider is visible somewhere other than a transient toast. Loads
+ * the backlog once on mount, then stays live via `onError`. Newest first,
+ * capped to the same ~50 entries errorHandler.ts keeps.
+ */
+function RecentErrorsPanel({ s, theme }: { s: ReturnType<typeof makeStyles>; theme: Theme }): ReactElement {
+  const [errors, setErrors] = useState<RecentError[]>([])
+
+  useEffect(() => {
+    window.api.errors.getRecent().then(setErrors).catch(() => {})
+    const off = window.api.errors.onError((err) => {
+      setErrors((prev) => [err, ...prev].slice(0, 50))
+    })
+    return off
+  }, [])
+
+  return (
+    <div style={s.card}>
+      <h3 style={s.cardTitle}>Recent errors</h3>
+      {errors.length === 0 ? (
+        <span style={s.hint}>No errors yet — provider failures (bad key, rate limit, network) will show up here.</span>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          {errors.map((err, i) => (
+            <div
+              key={`${err.timestamp}-${i}`}
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '3px',
+                padding: '9px 11px',
+                borderRadius: '8px',
+                border: `1px solid ${theme.border}`
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: '8px' }}>
+                <span style={{ fontSize: '12px', fontWeight: 600, color: theme.text }}>
+                  {err.category} · {err.provider}
+                </span>
+                <span style={{ fontSize: '11px', color: theme.textMuted, flexShrink: 0 }}>
+                  {relativeTime(err.timestamp)}
+                </span>
+              </div>
+              <span style={{ fontSize: '12.5px', color: theme.textMuted }}>{err.message}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+type TabId = 'general' | 'providers' | 'audio' | 'hotkeys' | 'sync' | 'recordings' | 'usage' | 'updates'
 
 type NavGroup = {
   label: string
@@ -395,6 +471,10 @@ export function SettingsForm(): ReactElement {
   })()
   const [activeTab, setActiveTab] = useState<TabId>(initialTab)
   const [loading, setLoading] = useState(true)
+  // Set only if settings.load() rejects — without this, a rejection left the
+  // window stuck on "Loading..." forever (setLoading(false) never ran because
+  // it lived inside the .then()). See the retry screen below the loading guard.
+  const [loadError, setLoadError] = useState(false)
   const [saved, setSaved] = useState(false)
   const [appVersion, setAppVersion] = useState('')
   const updater = useUpdater()
@@ -433,11 +513,17 @@ export function SettingsForm(): ReactElement {
   const [vocabulary, setVocabulary] = useState('')
   const [removedDefaultVocabulary, setRemovedDefaultVocabulary] = useState<string[]>([])
   const [aiPostProcessing, setAiPostProcessing] = useState(false)
-  const [fallbackEnabled, setFallbackEnabled] = useState(false)
 
   // AI Cleanup (supersedes the old aiPostProcessing toggle in the UI — see CleanupPanel)
   const [cleanupEnabled, setCleanupEnabled] = useState(false)
   const [cleanupMode, setCleanupMode] = useState<CleanupMode>('light')
+  // ROUGH-FIRST UX (v1.4 PR2): default OFF (raw transcript pastes instantly);
+  // see CleanupPanel's cleanupAuto prop doc.
+  const [cleanupAuto, setCleanupAuto] = useState(false)
+  // Seeded from settings.load()'s settings.cleanupTemplates below — NOT from
+  // settingsManager's DEFAULT_CLEANUP_TEMPLATES, which main already seeds on
+  // disk for a fresh install; this just mirrors whatever's actually saved.
+  const [cleanupTemplates, setCleanupTemplates] = useState<CleanupTemplate[]>([])
   const [aiProvider, setAiProvider] = useState<AiProvider>('openai')
   const [aiBaseUrl, setAiBaseUrl] = useState('')
   const [aiModel, setAiModel] = useState('')
@@ -456,8 +542,11 @@ export function SettingsForm(): ReactElement {
   const [outputRecordingHotkey, setOutputRecordingHotkey] = useState('')
 
   // --- Load settings ---
-  useEffect(() => {
-    window.api.settings.load().then((loaded) => {
+  // Pulled out to a stable callback (rather than inline in the effect) so the
+  // retry button in the loadError screen below can re-run the exact same load.
+  const loadSettings = useCallback((): Promise<void> => {
+    setLoadError(false)
+    return window.api.settings.load().then((loaded) => {
       const settings = loaded as SettingsWithCleanup
       setSttProvider(settings.sttProvider ?? 'openai')
       setProviderChain(settings.providerChain ?? [settings.sttProvider ?? 'openai'])
@@ -480,15 +569,29 @@ export function SettingsForm(): ReactElement {
       setOutputDeviceId(settings.outputDeviceId ?? '')
       setSaveRecordings(settings.saveRecordings ?? true)
       setOutputRecordingHotkey(settings.outputRecordingHotkey ?? '')
-      setFallbackEnabled(settings.fallbackEnabled ?? false)
       setCleanupEnabled(settings.cleanupEnabled ?? false)
       setCleanupMode(settings.cleanupMode ?? 'light')
+      setCleanupAuto(settings.cleanupAuto ?? false)
+      setCleanupTemplates(settings.cleanupTemplates ?? [])
       setAiProvider(settings.aiProvider ?? 'openai')
       setAiBaseUrl(settings.aiBaseUrl ?? '')
       setAiModel(settings.aiModel ?? '')
       setAnthropicApiKey(settings.anthropicApiKey ?? '')
       setLoading(false)
+    }).catch((err) => {
+      // Fail soft: without this, a rejection here left the window stuck on
+      // "Loading..." forever since setLoading(false) previously only lived
+      // inside the .then(). The already-seeded useState defaults above stand
+      // in as the fallback state; the loadError screen offers a retry.
+      console.error('[SettingsForm] failed to load settings:', err)
+      setLoadError(true)
+      setLoading(false)
     })
+  }, [])
+
+  useEffect(() => {
+    loadSettings()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   // --- Enumerate media devices ---
@@ -548,21 +651,22 @@ export function SettingsForm(): ReactElement {
       fallbackEnabled: providerChain.length > 1,
       cleanupEnabled,
       cleanupMode,
+      cleanupAuto,
+      cleanupTemplates,
       aiProvider,
       aiBaseUrl,
       aiModel,
       anthropicApiKey
     }
     await window.api.settings.save(
-      // `aiProvider` (and `replicateApiKey` above) widen ahead of preload's
-      // AppSettings type: `aiProvider` there is still 'openai'|'anthropic'|
-      // 'local' (the parallel LLM+ package's preload update adding
-      // 'replicate' hasn't landed yet) while CleanupPanel's UI-facing
-      // AiProvider already includes it (v1.5 PACZKA UI). This is the same
-      // cross-package handoff as SettingsWithCleanup above, just on the
-      // write side — safe because settingsManager.save() persists whatever
-      // string it's given (no runtime validation against the TS union), and
-      // the cast can be dropped once preload's AiProvider catches up.
+      // `aiProvider` widens ahead of preload's AppSettings type: preload's
+      // `aiProvider` is still 'openai'|'anthropic'|'local' while both
+      // settingsManager.ts's AiProvider and CleanupPanel's UI-facing
+      // AiProvider now include 'replicate' (v1.5 PACZKA UI + LLM+ cleanup).
+      // Safe because settingsManager.save() persists whatever string it's
+      // given (no runtime validation against the TS union) — the cast can
+      // be dropped once preload's AppSettings.aiProvider catches up (out of
+      // scope for this package: preload/index.d.ts isn't in its file list).
       payload as unknown as Parameters<Window['api']['settings']['save']>[0]
     )
     setSaved(true)
@@ -572,7 +676,8 @@ export function SettingsForm(): ReactElement {
     sttApiKey, transcriptionLanguage, prompt,
     vocabulary, removedDefaultVocabulary, aiPostProcessing, launchAtStartup, dictationHotkey,
     dictateAndSendHotkey, inputDeviceId, outputDeviceId, saveRecordings,
-    outputRecordingHotkey, cleanupEnabled, cleanupMode, aiProvider, aiBaseUrl, aiModel, anthropicApiKey
+    outputRecordingHotkey, cleanupEnabled, cleanupMode, cleanupAuto, cleanupTemplates,
+    aiProvider, aiBaseUrl, aiModel, anthropicApiKey
   ])
 
   // Auto-save: persist whenever any setting changes (debounced). Skips the initial
@@ -596,6 +701,21 @@ export function SettingsForm(): ReactElement {
         <TitleBar title="Whisperio Settings" />
         <div style={{ ...s.container, justifyContent: 'center', alignItems: 'center' }}>
           <p style={{ color: theme.textMuted }}>Loading...</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (loadError) {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', background: theme.bg }}>
+        <TitleBar title="Whisperio Settings" />
+        <div style={{ ...s.container, justifyContent: 'center', alignItems: 'center', gap: '12px' }}>
+          <p style={{ color: theme.textMuted }}>Failed to load settings.</p>
+          <button
+            onClick={() => { setLoading(true); loadSettings() }}
+            style={s.button as React.CSSProperties}
+          >Retry</button>
         </div>
       </div>
     )
@@ -738,6 +858,10 @@ export function SettingsForm(): ReactElement {
                       setCleanupEnabled={setCleanupEnabled}
                       cleanupMode={cleanupMode}
                       setCleanupMode={setCleanupMode}
+                      cleanupAuto={cleanupAuto}
+                      setCleanupAuto={setCleanupAuto}
+                      cleanupTemplates={cleanupTemplates}
+                      setCleanupTemplates={setCleanupTemplates}
                       aiProvider={aiProvider}
                       setAiProvider={setAiProvider}
                       aiBaseUrl={aiBaseUrl}
@@ -784,7 +908,10 @@ export function SettingsForm(): ReactElement {
                   )}
 
                   {activeTab === 'usage' && (
-                    <UsagePanel s={s} theme={theme} />
+                    <>
+                      <UsagePanel s={s} theme={theme} />
+                      <RecentErrorsPanel s={s} theme={theme} />
+                    </>
                   )}
 
                   {activeTab === 'updates' && (
@@ -971,12 +1098,7 @@ import { useTheme as useThemeHook } from '../../ThemeContext'
 
 /* ─── Selfhosted Provider Settings ─── */
 
-function SelfhostedSettings({
-  openaiBaseUrl, setOpenaiBaseUrl,
-  whisperModel, setWhisperModel,
-  sttApiKey, setSttApiKey,
-  s, theme
-}: {
+export interface SelfhostedSettingsProps {
   openaiBaseUrl: string
   setOpenaiBaseUrl: (v: string) => void
   whisperModel: string
@@ -986,13 +1108,26 @@ function SelfhostedSettings({
   setSttApiKey: (v: string) => void
   s: ReturnType<typeof makeStyles>
   theme: Theme
-}): ReactElement {
+}
+
+export function SelfhostedSettings({
+  openaiBaseUrl, setOpenaiBaseUrl,
+  whisperModel, setWhisperModel,
+  sttApiKey, setSttApiKey,
+  s, theme
+}: SelfhostedSettingsProps): ReactElement {
   const [mode, setMode] = useState<'managed' | 'manual'>(openaiBaseUrl && !openaiBaseUrl.includes('127.0.0.1:8178') ? 'manual' : 'managed')
   const [models, setModels] = useState<{ id: string; name: string; size: string; description: string; filename: string }[]>([])
   const [localModels, setLocalModels] = useState<{ id: string; name: string; filename: string; size: number; downloaded: boolean }[]>([])
   const [downloading, setDownloading] = useState<Record<string, number>>({})
   const [serverStatus, setServerStatus] = useState<{ status: string; model: string | null; port: number; platform: string }>({ status: 'stopped', model: null, port: 8178, platform: 'win32' })
   const [serverStarting, setServerStarting] = useState(false)
+  // Custom Model URL (ported from the formerly-unreachable ModelsTab — see
+  // that component's history: it covered the same models.downloadCustom IPC
+  // but was never mounted by any nav entry). Reuses this panel's existing
+  // `downloading`/onDownloadProgress plumbing above, keyed by `custom:<filename>`.
+  const [customUrl, setCustomUrl] = useState('')
+  const [customFilename, setCustomFilename] = useState('')
 
   const refresh = useCallback(async () => {
     const [avail, local, srv] = await Promise.all([
@@ -1021,6 +1156,25 @@ function SelfhostedSettings({
     })
     return () => { u1(); u2() }
   }, [refresh])
+
+  const handleCustomDownload = useCallback(async () => {
+    if (!customUrl.trim()) return
+    const filename = customFilename.trim() || customUrl.split('/').pop() || 'custom-model.bin'
+    const finalFilename = filename.endsWith('.bin') ? filename : filename + '.bin'
+    const customId = `custom:${finalFilename}`
+    setDownloading((prev) => ({ ...prev, [customId]: 0 }))
+    try {
+      await window.api.models.downloadCustom(customUrl.trim(), finalFilename)
+      setCustomUrl('')
+      setCustomFilename('')
+    } catch {
+      setDownloading((prev) => {
+        const next = { ...prev }
+        delete next[customId]
+        return next
+      })
+    }
+  }, [customUrl, customFilename])
 
   const downloaded = localModels.filter((m) => m.downloaded)
 
@@ -1142,7 +1296,19 @@ function SelfhostedSettings({
                     <button onClick={async () => { await window.api.models.delete(model.id); refresh() }}
                       style={{ background: 'transparent', border: 'none', fontSize: '10px', color: theme.textMuted, cursor: 'pointer', fontFamily: 'IBM Plex Sans, sans-serif', padding: '2px 6px' }}>Remove</button>
                   ) : isActive ? (
-                    <span style={{ fontSize: '10px', color: theme.accent }}>{progress}%</span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <span style={{ fontSize: '10px', color: theme.accent }}>{progress}%</span>
+                      <button
+                        onClick={async () => {
+                          const ok = await window.api.models.cancelDownload(model.id)
+                          if (!ok) {
+                            console.warn(`[SettingsForm] cancelDownload(${model.id}) reported no active download`)
+                          }
+                          setDownloading((p) => { const n = { ...p }; delete n[model.id]; return n })
+                        }}
+                        style={{ background: 'transparent', border: `1px solid ${theme.border}`, borderRadius: '4px', padding: '2px 6px', fontSize: '10px', color: theme.textMuted, cursor: 'pointer', fontFamily: 'IBM Plex Sans, sans-serif' }}
+                      >Cancel</button>
+                    </div>
                   ) : (
                     <button onClick={() => { setDownloading((p) => ({ ...p, [model.id]: 0 })); window.api.models.download(model.id) }}
                       style={{ background: theme.accent, border: 'none', borderRadius: '4px', padding: '3px 8px', fontSize: '10px', color: '#fff', cursor: 'pointer', fontWeight: 500, fontFamily: 'IBM Plex Sans, sans-serif' }}>Get</button>
@@ -1151,6 +1317,40 @@ function SelfhostedSettings({
               )
             })}
           </div>
+
+          {/* Custom Model URL — reuses the same models.downloadCustom IPC as the catalog above */}
+          <label style={{ ...s.label, marginTop: '10px' }}>Custom model URL</label>
+          <span style={s.hint}>
+            Paste a direct URL to any GGML .bin model file (HuggingFace or other source).
+          </span>
+          <input
+            type="text"
+            value={customUrl}
+            onChange={(e) => setCustomUrl(e.target.value)}
+            placeholder="https://huggingface.co/user/repo/resolve/main/model.bin"
+            style={{ ...s.input, marginTop: '4px' }}
+          />
+          <input
+            type="text"
+            value={customFilename}
+            onChange={(e) => setCustomFilename(e.target.value)}
+            placeholder="Filename (optional, auto-detected from URL)"
+            style={{ ...s.input, marginTop: '4px' }}
+          />
+          <button
+            onClick={handleCustomDownload}
+            disabled={!customUrl.trim()}
+            style={{
+              ...s.button as React.CSSProperties,
+              marginTop: '8px',
+              opacity: customUrl.trim() ? 1 : 0.5,
+              alignSelf: 'flex-start',
+              padding: '6px 14px',
+              fontSize: '11px'
+            }}
+          >
+            Download from URL
+          </button>
         </>
       )}
     </>
@@ -1199,6 +1399,8 @@ function ProvidersTab({
   removedDefaultVocabulary, setRemovedDefaultVocabulary,
   cleanupEnabled, setCleanupEnabled,
   cleanupMode, setCleanupMode,
+  cleanupAuto, setCleanupAuto,
+  cleanupTemplates, setCleanupTemplates,
   aiProvider, setAiProvider,
   aiBaseUrl, setAiBaseUrl,
   aiModel, setAiModel,
@@ -1235,6 +1437,10 @@ function ProvidersTab({
   setCleanupEnabled: (v: boolean) => void
   cleanupMode: CleanupMode
   setCleanupMode: (v: CleanupMode) => void
+  cleanupAuto: boolean
+  setCleanupAuto: (v: boolean) => void
+  cleanupTemplates: CleanupTemplate[]
+  setCleanupTemplates: (v: CleanupTemplate[]) => void
   aiProvider: AiProvider
   setAiProvider: (v: AiProvider) => void
   aiBaseUrl: string
@@ -1418,6 +1624,10 @@ function ProvidersTab({
         setCleanupEnabled={setCleanupEnabled}
         cleanupMode={cleanupMode}
         setCleanupMode={setCleanupMode}
+        cleanupAuto={cleanupAuto}
+        setCleanupAuto={setCleanupAuto}
+        cleanupTemplates={cleanupTemplates}
+        setCleanupTemplates={setCleanupTemplates}
         aiProvider={aiProvider}
         setAiProvider={setAiProvider}
         aiBaseUrl={aiBaseUrl}
@@ -1654,434 +1864,6 @@ function AudioTab({
           </button>
         )}
       </div>
-    </>
-  )
-}
-
-/* ─── Tab: Models ─── */
-
-interface ModelInfoUI {
-  id: string
-  name: string
-  size: string
-  description: string
-  filename: string
-}
-
-interface LocalModelUI {
-  id: string
-  name: string
-  filename: string
-  size: number
-  downloaded: boolean
-}
-
-function ModelsTab({
-  s,
-  theme
-}: {
-  s: ReturnType<typeof makeStyles>
-  theme: Theme
-}): ReactElement {
-  const [models, setModels] = useState<ModelInfoUI[]>([])
-  const [localModels, setLocalModels] = useState<LocalModelUI[]>([])
-  const [downloading, setDownloading] = useState<Record<string, number>>({})
-  const [customUrl, setCustomUrl] = useState('')
-  const [customFilename, setCustomFilename] = useState('')
-  const [serverStatus, setServerStatus] = useState<{ status: string; model: string | null; port: number; error?: string; platform: string }>({ status: 'stopped', model: null, port: 8178, platform: 'win32' })
-  const [serverStarting, setServerStarting] = useState(false)
-
-  const refreshModels = useCallback(async () => {
-    const [available, local, srvStatus] = await Promise.all([
-      window.api.models.available(),
-      window.api.models.local(),
-      window.api.server.status()
-    ])
-    setModels(available)
-    setLocalModels(local)
-    setServerStatus(srvStatus)
-  }, [])
-
-  useEffect(() => {
-    refreshModels()
-  }, [refreshModels])
-
-  useEffect(() => {
-    const unsub = window.api.server.onStatusChanged((status) => {
-      setServerStatus(status)
-      setServerStarting(false)
-    })
-    return unsub
-  }, [])
-
-  useEffect(() => {
-    const unsub = window.api.models.onDownloadProgress((progress) => {
-      setDownloading((prev) => ({
-        ...prev,
-        [progress.modelId]: progress.percent
-      }))
-      if (progress.percent >= 100) {
-        setTimeout(() => {
-          setDownloading((prev) => {
-            const next = { ...prev }
-            delete next[progress.modelId]
-            return next
-          })
-          refreshModels()
-        }, 500)
-      }
-    })
-    return unsub
-  }, [refreshModels])
-
-  const handleDownload = useCallback(async (modelId: string) => {
-    setDownloading((prev) => ({ ...prev, [modelId]: 0 }))
-    try {
-      await window.api.models.download(modelId)
-    } catch (err) {
-      setDownloading((prev) => {
-        const next = { ...prev }
-        delete next[modelId]
-        return next
-      })
-    }
-  }, [])
-
-  const handleDelete = useCallback(async (modelId: string) => {
-    await window.api.models.delete(modelId)
-    refreshModels()
-  }, [refreshModels])
-
-  const handleCustomDownload = useCallback(async () => {
-    if (!customUrl.trim()) return
-    const filename = customFilename.trim() || customUrl.split('/').pop() || 'custom-model.bin'
-    const finalFilename = filename.endsWith('.bin') ? filename : filename + '.bin'
-    const customId = `custom:${finalFilename}`
-    setDownloading((prev) => ({ ...prev, [customId]: 0 }))
-    try {
-      await window.api.models.downloadCustom(customUrl.trim(), finalFilename)
-      setCustomUrl('')
-      setCustomFilename('')
-    } catch {
-      setDownloading((prev) => {
-        const next = { ...prev }
-        delete next[customId]
-        return next
-      })
-    }
-  }, [customUrl, customFilename])
-
-  const isDownloaded = (modelId: string): boolean =>
-    localModels.some((m) => m.id === modelId && m.downloaded)
-
-  const downloadedModels = localModels.filter((m) => m.downloaded)
-  const customModels = localModels.filter((m) => m.id.startsWith('custom:'))
-
-  const formatSize = (bytes: number): string => {
-    if (bytes > 1_000_000_000) return `${(bytes / 1_000_000_000).toFixed(1)} GB`
-    if (bytes > 1_000_000) return `${(bytes / 1_000_000).toFixed(0)} MB`
-    return `${(bytes / 1_000).toFixed(0)} KB`
-  }
-
-  return (
-    <>
-      <div style={s.card}>
-        <h3 style={s.cardTitle}>Whisper Models (GGML)</h3>
-        <span style={s.hint}>
-          Download models for local/offline transcription. Use with whisper.cpp, faster-whisper, or any compatible server.
-        </span>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '8px' }}>
-          {models.map((model) => {
-            const downloaded = isDownloaded(model.id)
-            const progress = downloading[model.id]
-            const isActive = progress !== undefined
-
-            return (
-              <div
-                key={model.id}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  padding: '12px 14px',
-                  borderRadius: '8px',
-                  background: theme.inputBg,
-                  border: `1px solid ${downloaded ? theme.accent + '40' : theme.inputBorder}`,
-                  gap: '12px'
-                }}
-              >
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: '13px', fontWeight: 600, color: theme.text }}>
-                    {model.name}
-                    <span style={{ fontWeight: 400, color: theme.textMuted, marginLeft: '8px' }}>
-                      {model.size}
-                    </span>
-                  </div>
-                  <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '2px' }}>
-                    {model.description}
-                  </div>
-                  {isActive && (
-                    <div style={{
-                      marginTop: '6px',
-                      height: '4px',
-                      borderRadius: '2px',
-                      background: theme.bgTertiary,
-                      overflow: 'hidden'
-                    }}>
-                      <div style={{
-                        height: '100%',
-                        width: `${progress}%`,
-                        background: theme.accent,
-                        borderRadius: '2px',
-                        transition: 'width 0.3s'
-                      }} />
-                    </div>
-                  )}
-                </div>
-                <div style={{ flexShrink: 0 }}>
-                  {downloaded ? (
-                    <button
-                      onClick={() => handleDelete(model.id)}
-                      style={{
-                        background: 'transparent',
-                        border: `1px solid ${theme.border}`,
-                        borderRadius: '6px',
-                        padding: '6px 12px',
-                        fontSize: '12px',
-                        color: theme.textMuted,
-                        cursor: 'pointer',
-                        fontFamily: 'IBM Plex Sans, sans-serif'
-                      }}
-                    >
-                      Delete
-                    </button>
-                  ) : isActive ? (
-                    <span style={{ fontSize: '12px', color: theme.accent, fontWeight: 500 }}>
-                      {progress}%
-                    </span>
-                  ) : (
-                    <button
-                      onClick={() => handleDownload(model.id)}
-                      style={{
-                        background: theme.accent,
-                        border: 'none',
-                        borderRadius: '6px',
-                        padding: '6px 14px',
-                        fontSize: '12px',
-                        color: '#fff',
-                        cursor: 'pointer',
-                        fontWeight: 600,
-                        fontFamily: 'IBM Plex Sans, sans-serif'
-                      }}
-                    >
-                      Download
-                    </button>
-                  )}
-                </div>
-              </div>
-            )
-          })}
-        </div>
-      </div>
-
-      <div style={s.card}>
-        <h3 style={s.cardTitle}>Local Server</h3>
-        {serverStatus.platform !== 'win32' ? (
-          <>
-            <span style={s.hint}>
-              Auto-start is available on Windows. On macOS/Linux, install and run the server manually:
-            </span>
-            <div style={{
-              marginTop: '8px',
-              padding: '10px 14px',
-              borderRadius: '8px',
-              background: theme.inputBg,
-              border: `1px solid ${theme.inputBorder}`,
-              fontSize: '12px',
-              fontFamily: 'monospace',
-              color: theme.textMuted,
-              lineHeight: '1.6'
-            }}>
-              {serverStatus.platform === 'darwin' ? (
-                <>brew install whisper-cpp<br/>whisper-server -m ~/.whisperio/models/MODEL.bin --port 8178</>
-              ) : (
-                <>sudo apt install whisper.cpp<br/>whisper-server -m ~/.whisperio/models/MODEL.bin --port 8178</>
-              )}
-            </div>
-          </>
-        ) : (
-          <>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginTop: '4px' }}>
-              <div style={{
-                width: '10px',
-                height: '10px',
-                borderRadius: '50%',
-                background: serverStatus.status === 'running' ? '#22c55e' : serverStatus.status === 'starting' ? theme.accent : serverStatus.status === 'error' ? '#ef4444' : theme.textMuted,
-                boxShadow: serverStatus.status === 'running' ? '0 0 8px rgba(34,197,94,0.5)' : 'none',
-                flexShrink: 0
-              }} />
-              <div style={{ flex: 1 }}>
-                <div style={{ fontSize: '13px', fontWeight: 500, color: theme.text }}>
-                  {serverStatus.status === 'running' ? `Running on port ${serverStatus.port}` :
-                   serverStatus.status === 'starting' ? 'Starting...' :
-                   serverStatus.status === 'error' ? 'Error' : 'Stopped'}
-                </div>
-                {serverStatus.model && (
-                  <div style={{ fontSize: '11px', color: theme.textMuted }}>Model: {serverStatus.model}</div>
-                )}
-                {serverStatus.error && (
-                  <div style={{ fontSize: '11px', color: '#ef4444' }}>{serverStatus.error}</div>
-                )}
-              </div>
-
-              {serverStatus.status === 'running' ? (
-                <button
-                  onClick={async () => {
-                    await window.api.server.stop()
-                    refreshModels()
-                  }}
-                  style={{
-                    background: 'transparent',
-                    border: `1px solid ${theme.border}`,
-                    borderRadius: '6px',
-                    padding: '6px 14px',
-                    fontSize: '12px',
-                    color: '#ef4444',
-                    cursor: 'pointer',
-                    fontWeight: 500,
-                    fontFamily: 'IBM Plex Sans, sans-serif'
-                  }}
-                >Stop</button>
-              ) : (
-                <select
-                  disabled={serverStarting || downloadedModels.length === 0}
-                  onChange={async (e) => {
-                    if (!e.target.value) return
-                    setServerStarting(true)
-                    try {
-                      await window.api.server.start(e.target.value)
-                      // Auto-configure: set URL, model, and enable selfhosted in provider chain
-                      const modelName = e.target.value.replace('.bin', '')
-                      const currentSettings = await window.api.settings.load()
-                      const chain = currentSettings.providerChain || ['openai']
-                      if (!chain.includes('selfhosted')) chain.push('selfhosted')
-                      await window.api.settings.save({
-                        openaiBaseUrl: `http://127.0.0.1:${serverStatus.port}`,
-                        whisperModel: modelName,
-                        providerChain: chain
-                      })
-                    } catch {
-                      setServerStarting(false)
-                    }
-                    refreshModels()
-                    e.target.value = ''
-                  }}
-                  style={{
-                    ...s.select,
-                    width: 'auto',
-                    padding: '6px 12px',
-                    fontSize: '12px',
-                    opacity: downloadedModels.length === 0 ? 0.5 : 1
-                  }}
-                >
-                  <option value="">{serverStarting ? 'Starting...' : 'Start with model...'}</option>
-                  {downloadedModels.map((m) => (
-                    <option key={m.filename} value={m.filename}>{m.name}</option>
-                  ))}
-                </select>
-              )}
-            </div>
-            {downloadedModels.length === 0 && (
-              <span style={{ ...s.hint, marginTop: '8px', display: 'block' }}>
-                Download a model above first, then start the local server.
-              </span>
-            )}
-          </>
-        )}
-      </div>
-
-      <div style={s.card}>
-        <h3 style={s.cardTitle}>Custom Model from HuggingFace</h3>
-        <span style={s.hint}>
-          Paste a direct URL to any GGML .bin model file from HuggingFace or other source.
-        </span>
-        <label style={{ ...s.label, marginTop: '8px' }}>Model URL</label>
-        <input
-          type="text"
-          value={customUrl}
-          onChange={(e) => setCustomUrl(e.target.value)}
-          placeholder="https://huggingface.co/user/repo/resolve/main/model.bin"
-          style={s.input}
-        />
-        <label style={{ ...s.label, marginTop: '8px' }}>Filename (optional)</label>
-        <input
-          type="text"
-          value={customFilename}
-          onChange={(e) => setCustomFilename(e.target.value)}
-          placeholder="Auto-detected from URL"
-          style={s.input}
-        />
-        <button
-          onClick={handleCustomDownload}
-          disabled={!customUrl.trim()}
-          style={{
-            ...s.button as React.CSSProperties,
-            marginTop: '12px',
-            opacity: customUrl.trim() ? 1 : 0.5,
-            alignSelf: 'flex-start',
-            padding: '8px 20px',
-            fontSize: '13px'
-          }}
-        >
-          Download Model
-        </button>
-      </div>
-
-      {customModels.length > 0 && (
-        <div style={s.card}>
-          <h3 style={s.cardTitle}>Custom Models</h3>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            {customModels.map((model) => (
-              <div
-                key={model.id}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  padding: '10px 14px',
-                  borderRadius: '8px',
-                  background: theme.inputBg,
-                  border: `1px solid ${theme.inputBorder}`
-                }}
-              >
-                <div>
-                  <div style={{ fontSize: '13px', fontWeight: 500, color: theme.text }}>
-                    {model.filename}
-                  </div>
-                  <div style={{ fontSize: '11px', color: theme.textMuted }}>
-                    {formatSize(model.size)}
-                  </div>
-                </div>
-                <button
-                  onClick={() => handleDelete(model.filename)}
-                  style={{
-                    background: 'transparent',
-                    border: `1px solid ${theme.border}`,
-                    borderRadius: '6px',
-                    padding: '6px 12px',
-                    fontSize: '12px',
-                    color: theme.textMuted,
-                    cursor: 'pointer',
-                    fontFamily: 'IBM Plex Sans, sans-serif'
-                  }}
-                >
-                  Delete
-                </button>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
     </>
   )
 }

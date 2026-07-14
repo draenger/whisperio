@@ -2,7 +2,7 @@ import { app, BrowserWindow, desktopCapturer, ipcMain, session } from 'electron'
 import { initDictation, cleanupDictation, reRegisterHotkeys, pauseHotkeys, resumeHotkeys } from './dictation'
 import { createTray, destroyTray } from './tray'
 import { loadSettings, saveSettings } from './settingsManager'
-import { transcribeAudio } from './transcribe'
+import { transcribeAudio, handleRecordingsCleanup, type OnDemandCleanupRequest } from './transcribe'
 import { openSettingsWindow } from './settingsWindow'
 import { getRecentErrors } from './errorHandler'
 import { openRecordingsWindow } from './recordingsWindow'
@@ -229,6 +229,9 @@ app.whenReady().then(() => {
   ipcMain.handle('recordings:deleteByDate', (_e, date: string) => deleteRecordingsByDate(date))
   ipcMain.handle('recordings:getAudio', (_e, id: string) => getRecordingAudio(id))
   ipcMain.handle('recordings:reprocess', (_e, id: string) => reprocessRecording(id))
+  ipcMain.handle('recordings:cleanup', (_e, id: string, options: OnDemandCleanupRequest) =>
+    handleRecordingsCleanup(id, options)
+  )
 
   // Model manager IPC handlers
   ipcMain.handle('models:available', () => getAvailableModels())

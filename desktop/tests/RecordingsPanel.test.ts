@@ -33,14 +33,17 @@ const TEMPLATES = [{ id: 't1', name: 'Notes', prompt: 'Reformat as bullet notes.
 
 function mockApi(overrides: Partial<Record<string, unknown>> = {}): {
   cleanup: ReturnType<typeof vi.fn>
+  deleteByDate: ReturnType<typeof vi.fn>
 } {
   const cleanup = vi.fn()
+  const deleteByDate = vi.fn().mockResolvedValue(undefined)
   const api = {
     recordings: {
       list: vi.fn().mockResolvedValue([{ ...RECORDING }]),
       getAudio: vi.fn().mockResolvedValue(null),
       delete: vi.fn().mockResolvedValue(true),
       deleteAll: vi.fn().mockResolvedValue(undefined),
+      deleteByDate,
       reprocess: vi.fn().mockResolvedValue(null),
       cleanup,
       ...((overrides.recordings as Record<string, unknown>) ?? {})
@@ -52,7 +55,7 @@ function mockApi(overrides: Partial<Record<string, unknown>> = {}): {
   }
   // @ts-expect-error minimal test double — only the methods this panel calls are exercised
   window.api = api
-  return { cleanup }
+  return { cleanup, deleteByDate }
 }
 
 async function openDetail(): Promise<void> {
@@ -165,6 +168,57 @@ describe('RecordingsPanel — on-demand Clean up action', () => {
 
     await waitFor(() => expect(screen.getByTestId('cleanup-hint')).toBeTruthy())
     expect(screen.getByTestId('cleanup-hint').textContent).toMatch(/AI unreachable — raw kept/)
+  })
+
+  it('groups recordings by local day with a header per day, then deletes a day after a second confirm click', async () => {
+    // Local-time Date constructor (not a UTC ISO string) so the group key
+    // this test asserts on matches dayKeyOf's local getFullYear/Month/Date
+    // regardless of the machine's timezone.
+    const recA = {
+      ...RECORDING,
+      id: 'rec-a',
+      timestamp: new Date(2024, 2, 10, 9, 0, 0).getTime(),
+      transcription: 'first day recording transcript'
+    }
+    const recB = {
+      ...RECORDING,
+      id: 'rec-b',
+      timestamp: new Date(2024, 2, 11, 9, 0, 0).getTime(),
+      transcription: 'second day recording transcript'
+    }
+    const listMock = vi.fn()
+      .mockResolvedValueOnce([recA, recB])
+      .mockResolvedValueOnce([recB])
+    const { deleteByDate } = mockApi({
+      recordings: {
+        list: listMock
+      }
+    })
+
+    render(createElement(RecordingsView))
+
+    await waitFor(() => expect(screen.getByText(/first day recording transcript/)).toBeTruthy())
+    expect(screen.getByText(/second day recording transcript/)).toBeTruthy()
+
+    const dayHeaderA = screen.getByTestId('day-header-2024-03-10')
+    const dayHeaderB = screen.getByTestId('day-header-2024-03-11')
+    expect(within(dayHeaderA).getByText('2024-03-10')).toBeTruthy()
+    expect(within(dayHeaderA).getByText('1 recording')).toBeTruthy()
+    expect(within(dayHeaderB).getByText('2024-03-11')).toBeTruthy()
+    expect(within(dayHeaderB).getByText('1 recording')).toBeTruthy()
+
+    const deleteDayButton = within(dayHeaderA).getByText('Delete this day')
+    fireEvent.click(deleteDayButton)
+    expect(within(dayHeaderA).getByText('Confirm?')).toBeTruthy()
+    expect(deleteByDate).not.toHaveBeenCalled()
+
+    fireEvent.click(within(dayHeaderA).getByText('Confirm?'))
+    expect(deleteByDate).toHaveBeenCalledWith('2024-03-10')
+
+    await waitFor(() => expect(listMock).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(screen.queryByText(/first day recording transcript/)).toBeNull())
+    expect(screen.getByText(/second day recording transcript/)).toBeTruthy()
+    expect(screen.queryByTestId('day-header-2024-03-10')).toBeNull()
   })
 
   it('hydrates a persisted cleanedText/cleanedWith from the recording entry without an extra IPC call', async () => {

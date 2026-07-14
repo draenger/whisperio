@@ -772,6 +772,49 @@ describe('AI cleanup wiring (transcribeAudio)', () => {
     expect(result).toBe('raw text')
   })
 
+  it('cleans up through the Replicate LLM provider when aiProvider is "replicate" (buildCleanupCandidates includes it, selectProvider picks it)', async () => {
+    mockLoadSettings.mockReturnValue({
+      sttProvider: 'openai',
+      openaiApiKey: 'sk-test',
+      transcriptionPrompt: '',
+      customVocabulary: '',
+      cleanupAuto: true,
+      cleanupMode: 'full',
+      aiProvider: 'replicate',
+      replicateApiKey: 'r8_test_key'
+    })
+    // Kept close in length to the cleaned output below — cleanupTranscription's
+    // hallucination guard (postprocess.ts) falls back to raw when the cleaned
+    // text is much longer than the raw input.
+    const transcribeReq = createMockNetRequest(200, JSON.stringify({ text: 'i use get hub' }))
+    mockNetRequest.mockReturnValueOnce(transcribeReq)
+
+    // Same shape whether this is the availability GET (only `.ok` is read) or
+    // the completion POST (only `.json()` is read) — see the equivalent
+    // single-shared-mock pattern in the cleanupOnDemand tests below.
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ output: 'I use GitHub' })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const result = await transcribeAudio(Buffer.from('audio'), 'rec.webm')
+
+    expect(result).toBe('I use GitHub')
+    // STT still goes through net.request; cleanup goes through fetch, and
+    // specifically to Replicate's predictions endpoint (not OpenAI/Anthropic's),
+    // confirming selectProvider() resolved the 'replicate' candidate that
+    // buildCleanupCandidates() only adds when replicateApiKey is set.
+    expect(mockNetRequest).toHaveBeenCalledTimes(1)
+    const predictionCall = fetchMock.mock.calls.find(([url]) => String(url).includes('/predictions'))
+    expect(predictionCall).toBeDefined()
+    const [url, init] = predictionCall as [string, RequestInit]
+    expect(url).toBe('https://api.replicate.com/v1/models/meta/meta-llama-3-8b-instruct/predictions')
+    const headers = init.headers as Record<string, string>
+    expect(headers.Authorization).toBe('Bearer r8_test_key')
+  })
+
   it('aborts a still-pending cleanup call when a new dictation cycle starts', async () => {
     mockLoadSettings.mockReturnValue({
       sttProvider: 'openai',
@@ -849,6 +892,7 @@ describe('cleanupOnDemand', () => {
 
   it('applies a template by id and reports cleanedWith as the template name', async () => {
     mockLoadSettings.mockReturnValue({
+      cleanupEnabled: true,
       openaiApiKey: 'sk-test',
       aiProvider: 'openai',
       cleanupTemplates: templates
@@ -870,6 +914,7 @@ describe('cleanupOnDemand', () => {
 
   it('a custom instruction takes priority over templateId/mode', async () => {
     mockLoadSettings.mockReturnValue({
+      cleanupEnabled: true,
       openaiApiKey: 'sk-test',
       aiProvider: 'openai',
       cleanupTemplates: templates
@@ -893,7 +938,7 @@ describe('cleanupOnDemand', () => {
   })
 
   it('falls back to raw with cleanedWith "unknown template" for a stale/unknown templateId', async () => {
-    mockLoadSettings.mockReturnValue({ openaiApiKey: 'sk-test', aiProvider: 'openai', cleanupTemplates: templates })
+    mockLoadSettings.mockReturnValue({ cleanupEnabled: true, openaiApiKey: 'sk-test', aiProvider: 'openai', cleanupTemplates: templates })
     const fetchMock = vi.fn()
     vi.stubGlobal('fetch', fetchMock)
 
@@ -904,7 +949,7 @@ describe('cleanupOnDemand', () => {
   })
 
   it('defaults to mode "full" when no mode/template/instruction is given', async () => {
-    mockLoadSettings.mockReturnValue({ openaiApiKey: 'sk-test', aiProvider: 'openai', cleanupTemplates: [] })
+    mockLoadSettings.mockReturnValue({ cleanupEnabled: true, openaiApiKey: 'sk-test', aiProvider: 'openai', cleanupTemplates: [] })
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       status: 200,
@@ -918,7 +963,7 @@ describe('cleanupOnDemand', () => {
   })
 
   it('treats mode "off" as "full" for an explicit on-demand request (never a no-op)', async () => {
-    mockLoadSettings.mockReturnValue({ openaiApiKey: 'sk-test', aiProvider: 'openai', cleanupTemplates: [] })
+    mockLoadSettings.mockReturnValue({ cleanupEnabled: true, openaiApiKey: 'sk-test', aiProvider: 'openai', cleanupTemplates: [] })
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       status: 200,
@@ -932,12 +977,73 @@ describe('cleanupOnDemand', () => {
   })
 
   it('fails soft (ok: false, raw kept) when no provider is reachable', async () => {
-    mockLoadSettings.mockReturnValue({ openaiApiKey: 'sk-test', aiProvider: 'openai', cleanupTemplates: [] })
+    mockLoadSettings.mockReturnValue({ cleanupEnabled: true, openaiApiKey: 'sk-test', aiProvider: 'openai', cleanupTemplates: [] })
     const fetchMock = vi.fn().mockRejectedValue(new Error('network down'))
     vi.stubGlobal('fetch', fetchMock)
 
     const result = await cleanupOnDemand('raw transcript', { mode: 'full' })
 
     expect(result).toEqual({ text: 'raw transcript', ok: false, cleanedWith: 'full' })
+  })
+
+  it('on-demand cleanup calls Replicate (not silently falling back to local) when aiProvider is "replicate"', async () => {
+    mockLoadSettings.mockReturnValue({
+      cleanupEnabled: true,
+      aiProvider: 'replicate',
+      replicateApiKey: 'r8_test_key',
+      cleanupTemplates: []
+    })
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ output: 'Cleaned via Replicate.' })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const result = await cleanupOnDemand('this is the raw transcript text', { mode: 'full' })
+
+    expect(result).toEqual({ text: 'Cleaned via Replicate.', ok: true, cleanedWith: 'full' })
+    const predictionCall = fetchMock.mock.calls.find(([url]) => String(url).includes('/predictions'))
+    expect(predictionCall).toBeDefined()
+    expect((predictionCall as [string])[0]).toBe(
+      'https://api.replicate.com/v1/models/meta/meta-llama-3-8b-instruct/predictions'
+    )
+  })
+
+  // Desktop parity fix: "Enable AI cleanup" (settings.cleanupEnabled) must
+  // actually gate the on-demand "Clean up" action end-to-end, not just the
+  // renderer's button visibility — a defensive guard here means a stale
+  // renderer, a future caller, or a race between toggling the setting off
+  // and an in-flight IPC call can never still reach an LLM provider.
+  it('returns the disabled-guard result (never touching a provider) when settings.cleanupEnabled is false', async () => {
+    mockLoadSettings.mockReturnValue({
+      cleanupEnabled: false,
+      openaiApiKey: 'sk-test',
+      aiProvider: 'openai',
+      cleanupTemplates: templates
+    })
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+
+    const result = await cleanupOnDemand('raw transcript', { mode: 'full' })
+
+    expect(result).toEqual({ text: 'raw transcript', ok: false, cleanedWith: 'cleanup disabled' })
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('the disabled guard takes priority over a template/custom instruction too — nothing bypasses it', async () => {
+    mockLoadSettings.mockReturnValue({
+      cleanupEnabled: false,
+      openaiApiKey: 'sk-test',
+      aiProvider: 'openai',
+      cleanupTemplates: templates
+    })
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+
+    const result = await cleanupOnDemand('raw transcript', { templateId: 'email' })
+
+    expect(result).toEqual({ text: 'raw transcript', ok: false, cleanedWith: 'cleanup disabled' })
+    expect(fetchMock).not.toHaveBeenCalled()
   })
 })

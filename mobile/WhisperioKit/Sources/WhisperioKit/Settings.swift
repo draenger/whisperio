@@ -35,7 +35,6 @@ public struct WhisperioSettings: Codable, Sendable, Equatable {
     // Transcription tuning.
     public var language: String          // "auto" or an ISO code
     public var customVocabulary: String  // comma-separated terms
-    public var transcriptionPrompt: String
 
     // Behavior.
     public var cleanupEnabled: Bool      // tidy punctuation/casing/spacing after transcription
@@ -90,7 +89,6 @@ public struct WhisperioSettings: Codable, Sendable, Equatable {
         chatModel: String = "gpt-4o-mini",
         language: String = "auto",
         customVocabulary: String = "",
-        transcriptionPrompt: String = "",
         cleanupEnabled: Bool = false,
         fallbackEnabled: Bool = false,
         saveRecordings: Bool = true,
@@ -116,7 +114,6 @@ public struct WhisperioSettings: Codable, Sendable, Equatable {
         self.chatModel = chatModel
         self.language = language
         self.customVocabulary = customVocabulary
-        self.transcriptionPrompt = transcriptionPrompt
         self.cleanupEnabled = cleanupEnabled
         self.fallbackEnabled = fallbackEnabled
         self.saveRecordings = saveRecordings
@@ -148,7 +145,6 @@ public struct WhisperioSettings: Codable, Sendable, Equatable {
         chatModel = try c.decodeIfPresent(String.self, forKey: .chatModel) ?? d.chatModel
         language = try c.decodeIfPresent(String.self, forKey: .language) ?? d.language
         customVocabulary = try c.decodeIfPresent(String.self, forKey: .customVocabulary) ?? d.customVocabulary
-        transcriptionPrompt = try c.decodeIfPresent(String.self, forKey: .transcriptionPrompt) ?? d.transcriptionPrompt
         cleanupEnabled = try c.decodeIfPresent(Bool.self, forKey: .cleanupEnabled) ?? d.cleanupEnabled
         fallbackEnabled = try c.decodeIfPresent(Bool.self, forKey: .fallbackEnabled) ?? d.fallbackEnabled
         saveRecordings = try c.decodeIfPresent(Bool.self, forKey: .saveRecordings) ?? d.saveRecordings

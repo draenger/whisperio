@@ -13,7 +13,6 @@ export interface DictationAPI {
   onOverlayInfo: (callback: (info: OverlayInfo) => void) => () => void
   sendResult: (text: string, sessionId?: number) => Promise<void>
   transcribe: (audioData: ArrayBuffer, filename: string) => Promise<string>
-  notifyRecordingStarted: () => void
 }
 
 export interface ModelInfo {
@@ -71,7 +70,7 @@ export interface AppSettings {
   cleanupMode: 'off' | 'light' | 'full'
   cleanupAuto: boolean
   cleanupTemplates: CleanupTemplate[]
-  aiProvider: 'openai' | 'anthropic' | 'local'
+  aiProvider: 'openai' | 'anthropic' | 'replicate' | 'local'
   aiBaseUrl: string
   aiModel: string
   anthropicApiKey: string

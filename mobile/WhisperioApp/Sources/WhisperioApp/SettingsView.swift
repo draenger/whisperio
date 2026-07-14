@@ -385,8 +385,12 @@ struct SettingsView: View {
                     WToggle(on: boolBinding(\.cleanupEnabled))
                 }
                 SettRow(icon: "cloud", label: "Fallback engines",
-                        sub: "If the chosen engine fails, try the others", last: true) {
+                        sub: "If the chosen engine fails, try the others") {
                     WToggle(on: boolBinding(\.fallbackEnabled))
+                }
+                SettRow(icon: "folder", label: "Save recordings",
+                        sub: "Keep a local history of past dictations", last: true) {
+                    WToggle(on: boolBinding(\.saveRecordings))
                 }
             }
         }

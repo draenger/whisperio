@@ -10,7 +10,7 @@ export type AccentColor = 'graphite' | 'blue' | 'teal' | 'emerald' | 'amber'
 // entirely; 'light'/'full' select the prompt-rule set in llm/prompts.ts.
 export type CleanupMode = 'off' | 'light' | 'full'
 
-export type AiProvider = 'openai' | 'anthropic' | 'local'
+export type AiProvider = 'openai' | 'anthropic' | 'replicate' | 'local'
 
 // A user-editable "format to X" preset for on-demand cleanup (ROUGH-FIRST
 // UX: full cleanup only runs automatically when cleanupAuto is on; by

@@ -1,8 +1,10 @@
 import Foundation
 
-// UI sample data, mirroring wz-core.jsx (WZ_RECS / WZ_MODELS). These are display models
-// for the prototype screens; real data will come from WhisperioKit (Recording, Settings)
-// once the record loop is wired on the Mac.
+// UI sample data, mirroring wz-core.jsx (WZ_RECS). Display model for the recordings
+// prototype screens; real data comes from WhisperioKit (Recording, Settings). The
+// WZ_MODELS mock (DemoModel / WZSample.models) was removed once ModelsView switched to
+// real engine data (SettingsStore.settings.providerChain) instead of fictitious on-device
+// Whisper downloads.
 
 struct DemoRecording: Identifiable {
     let id: Int
@@ -39,25 +41,5 @@ enum WZSample {
         .init(id: 6, title: "Text Sam: running ten late, grab us a table by the window if you can.",
               src: "keyboard", app: "Messages", dur: "0:05", when: "Yesterday", words: 14, engine: "on-device",
               category: WZCategories.messages.id)
-    ]
-}
-
-struct DemoModel: Identifiable {
-    let id: String
-    let name: String
-    let sub: String
-    let size: String
-    let state: String     // active | ready | downloading | get
-    var tag: String? = nil
-    var pct: Int? = nil
-}
-
-extension WZSample {
-    static let models: [DemoModel] = [
-        .init(id: "apple", name: "Apple Speech", sub: "Built-in · on-device", size: "System", state: "active", tag: "Default"),
-        .init(id: "apple-int", name: "Apple Intelligence", sub: "Cleanup & summaries · on-device", size: "System", state: "ready", tag: "A17+ / M-series"),
-        .init(id: "whisper-s", name: "Whisper small", sub: "Higher accuracy · 99 languages", size: "466 MB", state: "ready"),
-        .init(id: "whisper-b", name: "Whisper base", sub: "Balanced · multilingual", size: "142 MB", state: "downloading", pct: 64),
-        .init(id: "whisper-t", name: "Whisper tiny", sub: "Fastest · English", size: "75 MB", state: "get")
     ]
 }

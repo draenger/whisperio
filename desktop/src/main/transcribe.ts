@@ -1,10 +1,11 @@
 import { net, app } from 'electron'
 import { loadSettings, AppSettings, getActiveVocabulary, type ProviderId, type CleanupMode } from './settingsManager'
 import { handleTranscriptionError, notifyInfo } from './errorHandler'
-import { OpenAICompatibleProvider, AnthropicProvider, selectProvider, isLocalHost, type LLMProvider } from './llm/provider'
+import { OpenAICompatibleProvider, AnthropicProvider, ReplicateProvider, selectProvider, isLocalHost, type LLMProvider } from './llm/provider'
 import { cleanupTranscription, cleanupTranscriptionDetailed, formatTranscription, type CleanupResult } from './postprocess'
 import { getServerStatus } from './localServer'
 import { recordSTT, estimateAudioSeconds } from './usageTracker'
+import { getRecording, updateRecording } from './recordingStore'
 
 // True only in unpackaged (development) builds. Used to gate logging of
 // privacy-sensitive transcript content so it never reaches production stdout.
@@ -50,6 +51,10 @@ interface TranscribeResult {
 const DEFAULT_CLEANUP_MODEL = 'gpt-4o-mini'
 const DEFAULT_ANTHROPIC_CLEANUP_MODEL = 'claude-3-5-haiku-20241022'
 const DEFAULT_LOCAL_CLEANUP_MODEL = 'local-model'
+// LLM cleanup candidate on Replicate — distinct from DEFAULT_REPLICATE_MODEL
+// above (STT-specific, `openai/whisper`). This is llm/models.ts's `default:
+// true` entry in REPLICATE_MODELS (fast, cost-effective instruct model).
+const DEFAULT_REPLICATE_CLEANUP_MODEL = 'meta/meta-llama-3-8b-instruct'
 
 /**
  * Build the LLM candidates for transcript cleanup from settings, per the
@@ -80,6 +85,19 @@ function buildCleanupCandidates(settings: AppSettings): LLMProvider[] {
         id: 'anthropic',
         apiKey: settings.anthropicApiKey,
         model: model || DEFAULT_ANTHROPIC_CLEANUP_MODEL
+      })
+    )
+  }
+
+  // Replicate candidate: `replicateApiKey` is shared with the STT side (see
+  // settingsManager.ts's doc comment on that key) — one key unlocks both a
+  // Replicate STT provider and this Replicate LLM cleanup candidate.
+  if (settings.replicateApiKey) {
+    candidates.push(
+      new ReplicateProvider({
+        id: 'replicate',
+        apiKey: settings.replicateApiKey,
+        model: model || DEFAULT_REPLICATE_CLEANUP_MODEL
       })
     )
   }
@@ -174,6 +192,17 @@ export interface OnDemandCleanupResult extends CleanupResult {
 export async function cleanupOnDemand(raw: string, req: OnDemandCleanupRequest): Promise<OnDemandCleanupResult> {
   const settings = loadSettings()
 
+  // Defensive guard: cleanupEnabled gates whether the on-demand "Clean up"
+  // action exists at all (see CleanupPanel.tsx's "Enable AI cleanup" toggle
+  // and RecordingsPanel.tsx, which hides the trigger button when this is
+  // off). The renderer should never get here with the toggle off, but a
+  // stale renderer or a future caller bypassing that UI check must not be
+  // able to reach selectProvider()/an LLM call — belt-and-braces, same
+  // fail-soft shape as the "unknown template" branch below.
+  if (!settings.cleanupEnabled) {
+    return { text: raw, ok: false, cleanedWith: 'cleanup disabled' }
+  }
+
   // Resolve WHAT to do (and validate it) before touching selectProvider —
   // selectProvider's availability checks hit the network, so a stale/unknown
   // templateId should fail soft immediately rather than paying for a
@@ -209,6 +238,27 @@ export async function cleanupOnDemand(raw: string, req: OnDemandCleanupRequest):
   const vocab = getActiveVocabulary(settings)
   const result = await cleanupTranscriptionDetailed(raw, { cleanupMode: mode as CleanupMode, vocab, provider })
   return { ...result, cleanedWith }
+}
+
+/**
+ * Body of the `recordings:cleanup` IPC handler, extracted out of index.ts so
+ * it can be exercised directly by a test (no Electron import here — this
+ * module is otherwise plain enough for `net`/`app`-free unit testing, matching
+ * the rest of transcribe.ts's exports). index.ts's ipcMain.handle just calls
+ * this and returns its result.
+ */
+export async function handleRecordingsCleanup(
+  id: string,
+  options: OnDemandCleanupRequest
+): Promise<OnDemandCleanupResult> {
+  const rec = getRecording(id)
+  if (!rec?.transcription) return { text: '', ok: false, cleanedWith: 'no transcript' }
+  const result = await cleanupOnDemand(rec.transcription, options)
+  await updateRecording(id, {
+    cleanedText: result.ok ? result.text : undefined,
+    cleanedWith: result.cleanedWith
+  })
+  return result
 }
 
 export async function transcribeAudio(audioBuffer: Buffer, filename: string): Promise<string> {

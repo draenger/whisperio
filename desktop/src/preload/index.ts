@@ -15,7 +15,6 @@ export interface DictationAPI {
   onOverlayInfo: (callback: (info: OverlayInfo) => void) => () => void
   sendResult: (text: string, sessionId?: number) => Promise<void>
   transcribe: (audioData: ArrayBuffer, filename: string) => Promise<string>
-  notifyRecordingStarted: () => void
 }
 
 export interface ModelInfo {
@@ -73,7 +72,7 @@ export interface AppSettings {
   cleanupMode: 'off' | 'light' | 'full'
   cleanupAuto: boolean
   cleanupTemplates: CleanupTemplate[]
-  aiProvider: 'openai' | 'anthropic' | 'local'
+  aiProvider: 'openai' | 'anthropic' | 'replicate' | 'local'
   aiBaseUrl: string
   aiModel: string
   anthropicApiKey: string
@@ -81,11 +80,15 @@ export interface AppSettings {
   dictationHotkey: string
   dictateAndSendHotkey: string
   theme: 'dark' | 'light'
+  accentColor: 'graphite' | 'blue' | 'teal' | 'emerald' | 'amber'
   inputDeviceId: string
   outputDeviceId: string
   saveRecordings: boolean
   outputRecordingHotkey: string
   fallbackEnabled: boolean
+  githubUser: string
+  githubRepo: string
+  githubBranch: string
 }
 
 export interface CleanupTemplate {
@@ -348,8 +351,7 @@ const dictationApi: DictationAPI = {
   sendResult: (text: string, sessionId?: number) =>
     ipcRenderer.invoke('dictation:result', text, sessionId),
   transcribe: (audioData: ArrayBuffer, filename: string) =>
-    ipcRenderer.invoke('dictation:transcribe', Buffer.from(audioData), filename),
-  notifyRecordingStarted: () => ipcRenderer.send('dictation:recording-started')
+    ipcRenderer.invoke('dictation:transcribe', Buffer.from(audioData), filename)
 }
 
 const settingsApi: SettingsAPI = {
