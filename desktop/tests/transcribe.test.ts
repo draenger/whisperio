@@ -871,6 +871,98 @@ describe('AI cleanup wiring (transcribeAudio)', () => {
     expect(firstResult).toBe('first raw')
     expect(secondResult).toBe('second cleaned')
   })
+
+  // Context-aware tone (v1.5 Work Item B): transcribeAudio() never captures
+  // context itself — it only resolves settings.contextAwareTone + whatever
+  // DictationContext the CALLER (main/index.ts) hands it into the cleanup
+  // prompt's tone slot. These tests exercise that resolution directly via the
+  // 3rd argument, without needing to mock active-win/context.ts at all.
+  describe('context-aware tone (applyCleanup wiring)', () => {
+    it('resolves the matching tone profile from a passed-in context and injects it', async () => {
+      mockLoadSettings.mockReturnValue({
+        sttProvider: 'openai',
+        openaiApiKey: 'sk-test',
+        transcriptionPrompt: '',
+        customVocabulary: '',
+        cleanupAuto: true,
+        cleanupMode: 'full',
+        aiProvider: 'openai',
+        contextAwareTone: true,
+        toneMap: { slack: 'casual' }
+      })
+      const transcribeReq = createMockNetRequest(200, JSON.stringify({ text: 'raw text' }))
+      mockNetRequest.mockReturnValueOnce(transcribeReq)
+      const fetchMock = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({ choices: [{ message: { content: 'yo, cleaned' } }] })
+      })
+      vi.stubGlobal('fetch', fetchMock)
+
+      await transcribeAudio(Buffer.from('audio'), 'rec.webm', { processName: 'Slack', windowTitle: '#general' })
+
+      const completionCall = fetchMock.mock.calls.find(([url]) => String(url).includes('/chat/completions'))
+      const body = JSON.parse((completionCall as [string, RequestInit])[1].body as string)
+      expect(JSON.stringify(body)).toContain('relaxed register')
+    })
+
+    it('never injects a tone when contextAwareTone is off, even with a matching context', async () => {
+      mockLoadSettings.mockReturnValue({
+        sttProvider: 'openai',
+        openaiApiKey: 'sk-test',
+        transcriptionPrompt: '',
+        customVocabulary: '',
+        cleanupAuto: true,
+        cleanupMode: 'full',
+        aiProvider: 'openai',
+        contextAwareTone: false,
+        toneMap: { slack: 'casual' }
+      })
+      const transcribeReq = createMockNetRequest(200, JSON.stringify({ text: 'raw text' }))
+      mockNetRequest.mockReturnValueOnce(transcribeReq)
+      const fetchMock = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({ choices: [{ message: { content: 'Cleaned.' } }] })
+      })
+      vi.stubGlobal('fetch', fetchMock)
+
+      await transcribeAudio(Buffer.from('audio'), 'rec.webm', { processName: 'Slack', windowTitle: '#general' })
+
+      const completionCall = fetchMock.mock.calls.find(([url]) => String(url).includes('/chat/completions'))
+      const body = JSON.parse((completionCall as [string, RequestInit])[1].body as string)
+      expect(JSON.stringify(body)).toContain('Tone profile: (none)')
+    })
+
+    it('defaults context to null (no tone) when the 3rd argument is omitted — existing callers keep working unchanged', async () => {
+      mockLoadSettings.mockReturnValue({
+        sttProvider: 'openai',
+        openaiApiKey: 'sk-test',
+        transcriptionPrompt: '',
+        customVocabulary: '',
+        cleanupAuto: true,
+        cleanupMode: 'full',
+        aiProvider: 'openai',
+        contextAwareTone: true,
+        toneMap: { slack: 'casual' }
+      })
+      const transcribeReq = createMockNetRequest(200, JSON.stringify({ text: 'raw text' }))
+      mockNetRequest.mockReturnValueOnce(transcribeReq)
+      const fetchMock = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({ choices: [{ message: { content: 'Cleaned.' } }] })
+      })
+      vi.stubGlobal('fetch', fetchMock)
+
+      await transcribeAudio(Buffer.from('audio'), 'rec.webm')
+
+      const completionCall = fetchMock.mock.calls.find(([url]) => String(url).includes('/chat/completions'))
+      const body = JSON.parse((completionCall as [string, RequestInit])[1].body as string)
+      // No context passed -> resolveToneProfile(null, ...) -> 'neutral', not "(none)".
+      expect(JSON.stringify(body)).toContain('balanced, plain register')
+    })
+  })
 })
 
 // ROUGH-FIRST UX (v1.4 PR2): on-demand cleanup for an already-saved recording

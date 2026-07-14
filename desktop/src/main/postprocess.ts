@@ -22,7 +22,10 @@ export interface CleanupOptions {
   cleanupMode: CleanupMode
   /** Comma/newline-separated preferred spellings, or '' when none configured. */
   vocab: string
-  /** Free-text tone/register instruction. Not wired to settings yet (Work Item B). */
+  /** Free-text tone/register instruction — resolved from settings.contextAwareTone
+   * + a captured DictationContext by transcribe.ts's resolveToneDescription()
+   * (Work Item B, v1.5). '' / undefined means no tone hint at all, which
+   * buildCleanupMessages (llm/prompts.ts) renders as "Tone profile: (none)". */
   tone?: string
   /** Already-resolved provider (DI) — `null` when none is configured/available. */
   provider: LLMProvider | null

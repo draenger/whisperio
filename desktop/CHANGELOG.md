@@ -1,5 +1,24 @@
 # Changelog
 
+## Unreleased
+
+### Context-aware tone (branch `feat/p1.1-context-tone`, merge-hold until v1.5 ships)
+- AI cleanup can now nudge its **register** (never meaning) to match the app
+  you're dictating into — Slack/Discord/WhatsApp/Telegram get casual,
+  Gmail/Outlook/Mail get formal, VS Code/Cursor/Windsurf/JetBrains stay
+  technical. Off by default; fully editable app → tone table in Settings.
+- **No-screenshot moat, hard invariant**: only the foreground app's
+  **process name** is read by default — never a screenshot, never screen
+  pixels. Window-title matching is a separate, off-by-default opt-in with an
+  explicit "Enable window-title matching" button that's the only thing that
+  ever triggers the macOS Screen Recording permission prompt.
+- Tone is captured **at recording time** and stored on the recording, so a
+  later on-demand "Clean up" click resolves the same tone the original
+  dictation would have — not whatever app happens to be in the foreground
+  when you click, possibly hours later.
+- Raw transcription is never touched — tone only ever applies to the
+  rule-based cleanup rewrite, same as every other AI cleanup guarantee.
+
 ## v1.5.0 — 2026-07-14
 
 The provider & cleanup release: dictation output you can shape after the fact,

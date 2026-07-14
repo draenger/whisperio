@@ -5,6 +5,7 @@ import type { Theme, ThemeMode } from '../../theme'
 import { ACCENTS, ACCENT_ORDER, ACCENT_LABELS } from '../../theme'
 import { RecordingsView } from '../recordings/RecordingsPanel'
 import { CleanupPanel, type CleanupMode, type AiProvider, type CleanupTemplate } from './CleanupPanel'
+import { ContextTonePanel, type ToneProfileId } from './ContextTonePanel'
 import { UsagePanel } from './UsagePanel'
 import { KeyStorageHint } from './KeyStorageHint'
 
@@ -530,6 +531,11 @@ export function SettingsForm(): ReactElement {
   const [aiModel, setAiModel] = useState('')
   const [anthropicApiKey, setAnthropicApiKey] = useState('')
 
+  // Context-aware tone (v1.5 Work Item B)
+  const [contextAwareTone, setContextAwareTone] = useState(false)
+  const [toneMap, setToneMap] = useState<Record<string, ToneProfileId>>({})
+  const [windowTitlePermissionEnabled, setWindowTitlePermissionEnabled] = useState(false)
+
   // Audio
   const [inputDeviceId, setInputDeviceId] = useState('')
   const [outputDeviceId, setOutputDeviceId] = useState('')
@@ -578,6 +584,9 @@ export function SettingsForm(): ReactElement {
       setAiBaseUrl(settings.aiBaseUrl ?? '')
       setAiModel(settings.aiModel ?? '')
       setAnthropicApiKey(settings.anthropicApiKey ?? '')
+      setContextAwareTone(settings.contextAwareTone ?? false)
+      setToneMap(settings.toneMap ?? {})
+      setWindowTitlePermissionEnabled(settings.windowTitlePermissionEnabled ?? false)
       setLoading(false)
     }).catch((err) => {
       // Fail soft: without this, a rejection here left the window stuck on
@@ -657,7 +666,10 @@ export function SettingsForm(): ReactElement {
       aiProvider,
       aiBaseUrl,
       aiModel,
-      anthropicApiKey
+      anthropicApiKey,
+      contextAwareTone,
+      toneMap,
+      windowTitlePermissionEnabled
     }
     await window.api.settings.save(
       // `aiProvider` widens ahead of preload's AppSettings type: preload's
@@ -681,7 +693,8 @@ export function SettingsForm(): ReactElement {
     vocabulary, removedDefaultVocabulary, aiPostProcessing, launchAtStartup, dictationHotkey,
     dictateAndSendHotkey, inputDeviceId, outputDeviceId, saveRecordings,
     outputRecordingHotkey, cleanupEnabled, cleanupMode, cleanupAuto, cleanupTemplates,
-    aiProvider, aiBaseUrl, aiModel, anthropicApiKey
+    aiProvider, aiBaseUrl, aiModel, anthropicApiKey,
+    contextAwareTone, toneMap, windowTitlePermissionEnabled
   ])
 
   // Auto-save: persist whenever any setting changes (debounced). Skips the initial
@@ -880,6 +893,12 @@ export function SettingsForm(): ReactElement {
                       setAiModel={setAiModel}
                       anthropicApiKey={anthropicApiKey}
                       setAnthropicApiKey={setAnthropicApiKey}
+                      contextAwareTone={contextAwareTone}
+                      setContextAwareTone={setContextAwareTone}
+                      toneMap={toneMap}
+                      setToneMap={setToneMap}
+                      windowTitlePermissionEnabled={windowTitlePermissionEnabled}
+                      setWindowTitlePermissionEnabled={setWindowTitlePermissionEnabled}
                       s={s}
                       theme={theme}
                     />
@@ -1416,6 +1435,9 @@ function ProvidersTab({
   aiBaseUrl, setAiBaseUrl,
   aiModel, setAiModel,
   anthropicApiKey, setAnthropicApiKey,
+  contextAwareTone, setContextAwareTone,
+  toneMap, setToneMap,
+  windowTitlePermissionEnabled, setWindowTitlePermissionEnabled,
   s, theme
 }: {
   providerChain: string[]
@@ -1460,6 +1482,12 @@ function ProvidersTab({
   setAiModel: (v: string) => void
   anthropicApiKey: string
   setAnthropicApiKey: (v: string) => void
+  contextAwareTone: boolean
+  setContextAwareTone: (v: boolean) => void
+  toneMap: Record<string, ToneProfileId>
+  setToneMap: (v: Record<string, ToneProfileId>) => void
+  windowTitlePermissionEnabled: boolean
+  setWindowTitlePermissionEnabled: (v: boolean) => void
   s: ReturnType<typeof makeStyles>
   theme: Theme
 }): ReactElement {
@@ -1664,6 +1692,17 @@ function ProvidersTab({
         setAnthropicApiKey={setAnthropicApiKey}
         replicateApiKey={replicateApiKey}
         setReplicateApiKey={setReplicateApiKey}
+        s={s}
+        theme={theme}
+      />
+
+      <ContextTonePanel
+        contextAwareTone={contextAwareTone}
+        setContextAwareTone={setContextAwareTone}
+        toneMap={toneMap}
+        setToneMap={setToneMap}
+        windowTitlePermissionEnabled={windowTitlePermissionEnabled}
+        setWindowTitlePermissionEnabled={setWindowTitlePermissionEnabled}
         s={s}
         theme={theme}
       />

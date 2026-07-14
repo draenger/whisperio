@@ -1,6 +1,10 @@
 import { app } from 'electron'
 import { readFileSync, writeFileSync, existsSync, renameSync } from 'fs'
 import { join } from 'path'
+// Type-only — no runtime dependency on the LLM prompt-building module (same
+// pattern postprocess.ts already uses for CleanupMode). prompts.ts owns
+// ToneProfileId + its human-readable descriptions (Work Item B).
+import type { ToneProfileId } from './llm/prompts'
 
 export type ProviderId = 'openai' | 'elevenlabs' | 'selfhosted' | 'replicate'
 
@@ -73,6 +77,29 @@ export interface AppSettings {
   // always present (seeded from DEFAULT_CLEANUP_TEMPLATES), never migrated
   // away from a legacy shape since this key didn't exist before PR2.
   cleanupTemplates: CleanupTemplate[]
+  // Context-aware tone (v1.5 Work Item B). Default OFF — when on, the
+  // cleanup pipeline (transcribe.ts) reads the foreground app's process name
+  // (see context.ts — the ONLY module that touches `active-win`) and maps it
+  // to a tone profile via `toneMap` below, then feeds that profile's register
+  // description (llm/prompts.ts's TONE_PROFILE_DESCRIPTIONS) into the same
+  // "Tone profile:" slot buildCleanupMessages already had. Never affects RAW
+  // text — only the rewrite cleanup produces, and only meaning-preserving
+  // register, per CLEANUP_RULES rule 7.
+  contextAwareTone: boolean
+  // Lowercased-substring-of-processName -> tone profile, user-editable in
+  // Settings. Seeded once from DEFAULT_TONE_MAP below on first load (same
+  // "seed once, then fully user-editable, never re-merged" contract as
+  // cleanupTemplates) — an empty `{}` a user saved on purpose is respected,
+  // not re-seeded.
+  toneMap: Record<string, ToneProfileId>
+  // macOS only. Off by default: context.ts's getActiveContext() always omits
+  // the Screen Recording permission request, so `windowTitle` comes back ''
+  // and no permission prompt ever fires — processName alone is enough to
+  // drive toneMap matching. Flipping this on (via the explicit "Enable
+  // window-title matching" button in Settings, never silently) lets
+  // getActiveContext() also request the window title, which is what actually
+  // triggers the OS permission prompt the first time.
+  windowTitlePermissionEnabled: boolean
   aiProvider: AiProvider
   // Empty string = provider-appropriate default (e.g. api.openai.com for 'openai').
   aiBaseUrl: string
@@ -150,6 +177,27 @@ export const DEFAULT_CLEANUP_TEMPLATES: CleanupTemplate[] = [
   }
 ]
 
+// Seed for the app -> tone profile map (Context-aware tone, v1.5 Work Item
+// B). Keys are lowercased substrings matched against the foreground
+// process name (see context.ts's resolveToneProfile) — e.g. "code" matches
+// both "Visual Studio Code" and "Code — Insiders". Purely a starting point:
+// fully user-editable in Settings, and never re-applied over user edits once
+// `toneMap` exists on disk (see migrateToneMap below).
+export const DEFAULT_TONE_MAP: Record<string, ToneProfileId> = {
+  slack: 'casual',
+  discord: 'casual',
+  whatsapp: 'casual',
+  telegram: 'casual',
+  gmail: 'formal',
+  outlook: 'formal',
+  mail: 'formal',
+  vscode: 'technical',
+  cursor: 'technical',
+  windsurf: 'technical',
+  jetbrains: 'technical',
+  code: 'technical'
+}
+
 function splitTerms(value: string): string[] {
   return value
     .split(',')
@@ -200,6 +248,9 @@ const DEFAULT_SETTINGS: AppSettings = {
   cleanupMode: 'full',
   cleanupAuto: false,
   cleanupTemplates: DEFAULT_CLEANUP_TEMPLATES,
+  contextAwareTone: false,
+  toneMap: DEFAULT_TONE_MAP,
+  windowTitlePermissionEnabled: false,
   aiProvider: 'openai',
   aiBaseUrl: '',
   aiModel: '',
@@ -296,6 +347,20 @@ function migrateLegacyTheme(parsed: Partial<AppSettings>): Partial<AppSettings> 
   return migrated
 }
 
+/**
+ * Seed `toneMap` the first time a settings file loads without one (fresh
+ * installs and every pre-v1.5.x file alike) — same "seed once, then fully
+ * user-editable, never re-merged" contract as cleanupTemplates. Idempotent:
+ * guarded on `toneMap === undefined`, so a second load of an already-seeded
+ * file (even one a user edited down to `{}`) is a no-op. Always hands back a
+ * fresh copy of DEFAULT_TONE_MAP rather than the shared module constant, so
+ * nothing downstream can mutate it in place.
+ */
+function migrateToneMap(parsed: Partial<AppSettings>): Partial<AppSettings> {
+  if (parsed.toneMap !== undefined) return parsed
+  return { ...parsed, toneMap: { ...DEFAULT_TONE_MAP } }
+}
+
 export function loadSettings(): AppSettings {
   const filePath = getSettingsPath()
   if (!existsSync(filePath)) {
@@ -304,7 +369,7 @@ export function loadSettings(): AppSettings {
   try {
     const raw = readFileSync(filePath, 'utf-8')
     const parsed = JSON.parse(raw) as Partial<AppSettings>
-    const migrated = migrateLegacyTheme(migrateCleanupSettings(migrateVocabulary(parsed)))
+    const migrated = migrateToneMap(migrateLegacyTheme(migrateCleanupSettings(migrateVocabulary(parsed))))
     return { ...DEFAULT_SETTINGS, ...migrated }
   } catch (err) {
     // A corrupt settings.json (e.g. truncated by a crash/power-loss mid-write)

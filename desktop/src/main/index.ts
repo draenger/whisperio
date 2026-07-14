@@ -52,6 +52,12 @@ import {
   pullSecrets as githubPullSecrets
 } from './githubSync'
 import { getUsage, resetUsage } from './usageTracker'
+// Context-aware tone (v1.5 Work Item B). index.ts is the ONE place in main
+// that decides WHEN to capture a live context snapshot (recording save time
+// and live-dictation transcribe time) — context.ts itself never decides that,
+// it only knows how. See context.ts's file header for the full privacy
+// contract this depends on.
+import { getActiveContext, type DictationContext } from './context'
 
 // Set app name and model ID so Windows notifications show "Whisperio"
 app.setName('Whisperio')
@@ -89,7 +95,14 @@ async function reprocessRecording(id: string) {
   if (!audioBuffer) return null
 
   try {
-    const text = await transcribeAudio(audioBuffer, entry.filename)
+    // Context-aware tone (v1.5 Work Item B): reuse the ORIGINAL recording's
+    // captured context, never a live snapshot of whatever's in the
+    // foreground right now (which could be the Settings window itself, since
+    // reprocess is triggered from RecordingsPanel).
+    const context: DictationContext | null = entry.recordedProcessName
+      ? { processName: entry.recordedProcessName, windowTitle: entry.recordedWindowTitle ?? '' }
+      : null
+    const text = await transcribeAudio(audioBuffer, entry.filename, context)
     return updateRecording(id, { status: 'completed', transcription: text, error: undefined })
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
@@ -220,6 +233,19 @@ app.whenReady().then(() => {
   ipcMain.on('hotkeys:pause', () => pauseHotkeys())
   ipcMain.on('hotkeys:resume', () => resumeHotkeys())
 
+  // Context-aware tone (v1.5 Work Item B): explicit opt-in for window-title
+  // matching. Only ever invoked by the "Enable window-title matching" button
+  // in Settings (a direct user gesture) — this is deliberately the ONE place
+  // that ever calls getActiveContext({ includeWindowTitle: true }), which is
+  // what actually triggers the macOS Screen Recording permission prompt.
+  // Fail-soft: even if the OS denies/can't show the prompt, the setting still
+  // flips on — future getActiveContext() calls just keep getting title: ''
+  // (see context.ts), never worse than the processName-only default.
+  ipcMain.handle('context:enableWindowTitleMatching', async () => {
+    await getActiveContext({ includeWindowTitle: true }).catch(() => null)
+    return saveSettings({ windowTitlePermissionEnabled: true })
+  })
+
   // GitHub secret-store IPC handlers. All GitHub network I/O + the token + the
   // encryption key stay in the main process; the renderer only ever sees status,
   // the device user-code, repo names, and success/failure — never the token or
@@ -244,7 +270,16 @@ app.whenReady().then(() => {
     // Reset the local whisper-server idle clock so an actively-used server is
     // not reclaimed by the idle sweep mid-session (no-op when it's not running).
     markServerUsed()
-    return transcribeAudio(audioBuffer, filename)
+    // Context-aware tone (v1.5 Work Item B): captured HERE, right as the live
+    // dictation pipeline picks up the just-recorded audio — this is "the
+    // moment of dictating", not a later on-demand click. Gated on
+    // contextAwareTone so the active-win call (and any permission surface it
+    // implies) only ever happens when the feature is actually on.
+    const settings = loadSettings()
+    const context = settings.contextAwareTone
+      ? await getActiveContext({ includeWindowTitle: settings.windowTitlePermissionEnabled })
+      : null
+    return transcribeAudio(audioBuffer, filename, context)
   })
 
   // Register error IPC handler
@@ -254,9 +289,24 @@ app.whenReady().then(() => {
   ipcMain.on('recordings:openWindow', () => openRecordingsWindow())
   ipcMain.handle('recordings:list', () => getRecordings())
   ipcMain.handle('recordings:get', (_e, id: string) => getRecording(id))
-  ipcMain.handle('recordings:save', (_e, audioBuffer: Buffer, metadata: { duration: number; provider: string }) =>
-    saveRecording(audioBuffer, metadata)
-  )
+  ipcMain.handle('recordings:save', async (_e, audioBuffer: Buffer, metadata: { duration: number; provider: string }) => {
+    // Context-aware tone (v1.5 Work Item B): captured HERE, at recording
+    // time, and persisted onto the entry (recordingStore.ts's
+    // RecordingEntry.recordedProcessName/recordedWindowTitle) — so a later
+    // on-demand "Clean up" click (handleRecordingsCleanup, transcribe.ts) can
+    // resolve the SAME tone profile without re-reading the (by then possibly
+    // very different) foreground app. Gated on contextAwareTone: the
+    // active-win call only happens when the feature is on.
+    const settings = loadSettings()
+    const context = settings.contextAwareTone
+      ? await getActiveContext({ includeWindowTitle: settings.windowTitlePermissionEnabled })
+      : null
+    return saveRecording(audioBuffer, {
+      ...metadata,
+      recordedProcessName: context?.processName,
+      recordedWindowTitle: context?.windowTitle
+    })
+  })
   ipcMain.handle('recordings:update', (_e, id: string, updates: Partial<RecordingEntry>) =>
     updateRecording(id, updates)
   )

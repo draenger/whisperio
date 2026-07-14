@@ -29,6 +29,7 @@
     "test:reachability": "vitest run tests/reachability.spec.ts"
   },
   "dependencies": {
+    "active-win": "^8.2.1",
     "electron-updater": "^6.8.3",
     "koffi": "^2.15.1",
     "react": "^19.0.0",

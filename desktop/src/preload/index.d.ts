@@ -51,6 +51,12 @@ export interface ModelsAPI {
   onDownloadProgress: (callback: (progress: DownloadProgress) => void) => () => void
 }
 
+// Context-aware tone (v1.5 Work Item B). Kept as its own local type — same
+// "preload owns its own copy" convention as everything else in this file —
+// rather than importing src/main/llm/prompts.ts's ToneProfileId (different
+// electron-vite build target).
+export type ToneProfileId = 'neutral' | 'casual' | 'formal' | 'technical'
+
 export interface AppSettings {
   sttProvider: string
   providerChain: string[]
@@ -70,6 +76,11 @@ export interface AppSettings {
   cleanupMode: 'off' | 'light' | 'full'
   cleanupAuto: boolean
   cleanupTemplates: CleanupTemplate[]
+  // Context-aware tone (v1.5 Work Item B) — see settingsManager.ts's
+  // AppSettings for the full doc comment on these three fields.
+  contextAwareTone: boolean
+  toneMap: Record<string, ToneProfileId>
+  windowTitlePermissionEnabled: boolean
   aiProvider: 'openai' | 'anthropic' | 'replicate' | 'local'
   aiBaseUrl: string
   aiModel: string
@@ -122,6 +133,10 @@ export interface RecordingEntry {
   // recordings that were never run through "Clean up". See recordingStore.ts.
   cleanedText?: string
   cleanedWith?: string
+  // Context-aware tone (v1.5 Work Item B) — see recordingStore.ts's
+  // RecordingEntry.recordedProcessName doc comment. Both optional/additive.
+  recordedProcessName?: string
+  recordedWindowTitle?: string
 }
 
 export interface CleanupRequestOptions {
@@ -288,6 +303,18 @@ export interface UsageAPI {
   reset: () => Promise<UsageStore>
 }
 
+// Context-aware tone (v1.5 Work Item B). No `getContext`/live-read call is
+// exposed to the renderer at all — the renderer never touches active-win
+// even indirectly; it only ever triggers the ONE explicit permission-request
+// action from Settings. See context.ts's file header for the privacy
+// contract this is scoped by.
+export interface ContextAPI {
+  /** "Enable window-title matching" button (Settings). Triggers the macOS
+   * Screen Recording permission prompt (fail-soft if denied/unsupported) and
+   * persists windowTitlePermissionEnabled: true. Returns the updated settings. */
+  enableWindowTitleMatching: () => Promise<AppSettings>
+}
+
 export interface WhisperioAPI {
   dictation: DictationAPI
   settings: SettingsAPI
@@ -299,6 +326,7 @@ export interface WhisperioAPI {
   updater: UpdaterAPI
   github: GithubAPI
   usage: UsageAPI
+  context: ContextAPI
 }
 
 declare global {

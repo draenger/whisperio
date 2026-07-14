@@ -6,6 +6,30 @@ import type { LLMMessage } from './provider'
 
 export type CleanupMode = 'full' | 'light'
 
+// Context-aware tone (v1.5 Work Item B). Extensible — new profiles can be
+// added here as long as a matching entry is added to
+// TONE_PROFILE_DESCRIPTIONS below. Owned here (not settingsManager.ts or
+// context.ts) so the "what profiles exist and how are they described to the
+// model" concern lives in exactly one place; other modules that need the type
+// (settingsManager.ts's toneMap, context.ts's resolveToneProfile) import it
+// `import type` — no runtime dependency on this file.
+export type ToneProfileId = 'neutral' | 'casual' | 'formal' | 'technical'
+
+// Short, language-agnostic register descriptions rendered into the cleanup
+// system prompt's "Tone profile:" line (buildCleanupSystemPrompt below) once
+// context-aware tone resolves a profile for the app the user was dictating
+// into (see transcribe.ts's resolveToneDescription()). Deliberately terse —
+// these describe REGISTER only, never content: CLEANUP_RULES rule 7 below
+// already constrains the model to "adjust only register — never meaning"
+// regardless of which profile is active, so these strings don't need to
+// repeat that guardrail themselves.
+export const TONE_PROFILE_DESCRIPTIONS: Record<ToneProfileId, string> = {
+  neutral: 'balanced, plain register — no strong formality either way',
+  casual: 'relaxed register: contractions welcome, casual phrasing, light emoji tolerated only if the speaker used them',
+  formal: 'polished, professional register: no slang, no contractions, no emoji',
+  technical: 'precise, matter-of-fact register: keep technical terms and jargon exactly as spoken, no embellishment'
+}
+
 export interface CleanupPromptInput {
   raw: string
   /** Comma/newline-separated preferred spellings, or '' when none configured. */

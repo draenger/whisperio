@@ -22,6 +22,20 @@ export interface RecordingEntry {
   // 'light', a template name, or 'Custom instruction') for display.
   cleanedText?: string
   cleanedWith?: string
+  // Context-aware tone (v1.5 Work Item B): a privacy-safe snapshot of the
+  // foreground app at the moment this recording was made — process name
+  // only by default; `recordedWindowTitle` is populated only when the user
+  // has opted into window-title matching (see settingsManager.ts's
+  // windowTitlePermissionEnabled and context.ts's getActiveContext()).
+  // Captured once, at recording time, in main/index.ts's `recordings:save`
+  // handler — never at "Clean up" click time, which could be hours later
+  // against a completely different foreground app. handleRecordingsCleanup()
+  // (transcribe.ts) reads these back to resolve the SAME tone profile the
+  // original dictation would have used. Both optional/additive: recordings
+  // saved before this feature landed, or saved while contextAwareTone was
+  // off, simply don't have them.
+  recordedProcessName?: string
+  recordedWindowTitle?: string
   // Last-write-wins sync metadata (PT-offline-first-lww-sync). `updatedAt` is the
   // LWW key bumped on every mutation; `deletedAt`, when set, marks a tombstone —
   // a soft delete that survives in the index so the removal can converge across
@@ -142,7 +156,14 @@ function formatTimestamp(ts: number): string {
 
 export function saveRecording(
   audioBuffer: Buffer,
-  metadata: { duration: number; provider: string }
+  metadata: {
+    duration: number
+    provider: string
+    /** See RecordingEntry.recordedProcessName above — captured by the caller
+     * (main/index.ts's `recordings:save` handler) at recording time. */
+    recordedProcessName?: string
+    recordedWindowTitle?: string
+  }
 ): Promise<RecordingEntry> {
   const dir = getRecordingsDir()
   const id = generateId()
@@ -162,7 +183,9 @@ export function saveRecording(
     status: 'pending',
     provider: metadata.provider,
     size: audioBuffer.length,
-    updatedAt: timestamp
+    updatedAt: timestamp,
+    recordedProcessName: metadata.recordedProcessName,
+    recordedWindowTitle: metadata.recordedWindowTitle
   }
 
   return enqueue(() => {

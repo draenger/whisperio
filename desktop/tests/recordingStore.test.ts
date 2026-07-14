@@ -70,6 +70,34 @@ describe('recordingStore', () => {
       expect(index.recordings).toHaveLength(1)
       expect(index.recordings[0].id).toBe(entry.id)
     })
+
+    // Context-aware tone (v1.5 Work Item B): the context snapshot captured at
+    // recording time (main/index.ts's `recordings:save` handler) is persisted
+    // onto the entry, additively — see recordingStore.ts's RecordingEntry doc
+    // comment for why this must survive to a later on-demand "Clean up" click.
+    it('persists a context snapshot (recordedProcessName/recordedWindowTitle) when provided', async () => {
+      const entry = await saveRecording(Buffer.from('audio'), {
+        duration: 5,
+        provider: 'openai',
+        recordedProcessName: 'Slack',
+        recordedWindowTitle: '#general'
+      })
+
+      expect(entry.recordedProcessName).toBe('Slack')
+      expect(entry.recordedWindowTitle).toBe('#general')
+
+      const index = loadIndex()
+      expect(index.recordings[0].recordedProcessName).toBe('Slack')
+      expect(index.recordings[0].recordedWindowTitle).toBe('#general')
+    })
+
+    it('omits the context snapshot fields entirely when not provided (additive, no context-aware-tone-off noise)', async () => {
+      await saveRecording(Buffer.from('audio'), { duration: 5, provider: 'openai' })
+
+      const raw = JSON.parse(readFileSync(join(getRecordingsDir(), 'index.json'), 'utf-8'))
+      expect('recordedProcessName' in raw.recordings[0]).toBe(false)
+      expect('recordedWindowTitle' in raw.recordings[0]).toBe(false)
+    })
   })
 
   describe('getRecordings', () => {

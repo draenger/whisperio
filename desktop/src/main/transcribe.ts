@@ -11,6 +11,16 @@ import { cleanupTranscription, cleanupTranscriptionDetailed, formatTranscription
 import { getServerStatus } from './localServer'
 import { recordSTT, estimateAudioSeconds } from './usageTracker'
 import { getRecording, updateRecording } from './recordingStore'
+// Context-aware tone (v1.5 Work Item B). resolveToneProfile is the only
+// piece of context.ts's logic this file needs — the actual `active-win` call
+// (getActiveContext()) is made by the CALLER (main/index.ts), at the moment
+// a recording is made or a live dictation is transcribed, and handed in here
+// as a plain DictationContext. This module never calls getActiveContext()
+// itself, which keeps reprocessRecording() (index.ts) correct: reprocessing
+// an OLD recording reuses that recording's ORIGINALLY-captured context,
+// never a live snapshot of whatever's in the foreground right now.
+import { resolveToneProfile, type DictationContext } from './context'
+import { TONE_PROFILE_DESCRIPTIONS } from './llm/prompts'
 
 // True only in unpackaged (development) builds. Used to gate logging of
 // privacy-sensitive transcript content so it never reaches production stdout.
@@ -134,6 +144,17 @@ function buildCleanupCandidates(settings: AppSettings): LLMProvider[] {
 // drops the stale result from being pasted.
 let activeCleanupAbort: AbortController | null = null
 
+// Context-aware tone (v1.5 Work Item B): resolve settings.contextAwareTone +
+// a captured context into the free-text register description
+// buildCleanupMessages' `tone` slot expects. Off (or no context) -> '',
+// which buildCleanupSystemPrompt renders as "Tone profile: (none)" — the
+// exact same no-op it always was before this feature existed.
+function resolveToneDescription(settings: AppSettings, context: DictationContext | null): string {
+  if (!settings.contextAwareTone) return ''
+  const profile = resolveToneProfile(context, settings.toneMap)
+  return TONE_PROFILE_DESCRIPTIONS[profile] ?? ''
+}
+
 // ROUGH-FIRST UX (v1.4 PR2): auto-cleanup-after-STT is now gated on
 // `cleanupAuto` alone (default OFF — see settingsManager.ts), NOT on
 // `cleanupEnabled`. cleanupEnabled now only gates whether the on-demand
@@ -143,7 +164,7 @@ let activeCleanupAbort: AbortController | null = null
 // could in principle have cleanupAuto on with mode 'off', though the
 // settings UI doesn't offer that combination) so a stray 'off' mode can never
 // reach the provider.
-async function applyCleanup(settings: AppSettings, raw: string): Promise<string> {
+async function applyCleanup(settings: AppSettings, raw: string, context: DictationContext | null): Promise<string> {
   if (!settings.cleanupAuto || settings.cleanupMode === 'off') {
     return raw
   }
@@ -158,8 +179,7 @@ async function applyCleanup(settings: AppSettings, raw: string): Promise<string>
     return await cleanupTranscription(raw, {
       cleanupMode: settings.cleanupMode,
       vocab,
-      // Tone profile isn't wired to settings yet (Work Item B).
-      tone: undefined,
+      tone: resolveToneDescription(settings, context),
       provider,
       signal: controller.signal
     })
@@ -194,7 +214,19 @@ export interface OnDemandCleanupResult extends CleanupResult {
   cleanedWith: string
 }
 
-export async function cleanupOnDemand(raw: string, req: OnDemandCleanupRequest): Promise<OnDemandCleanupResult> {
+export async function cleanupOnDemand(
+  raw: string,
+  req: OnDemandCleanupRequest,
+  // Context-aware tone (v1.5 Work Item B): the ORIGINAL dictation's captured
+  // context (RecordingEntry.recordedProcessName/recordedWindowTitle), passed
+  // in by handleRecordingsCleanup() below — never re-captured live here,
+  // since an on-demand "Clean up" click can happen hours later against a
+  // totally different foreground app. Only used for the mode-based (full/
+  // light) branch below — template/custom-instruction cleanup
+  // (buildFormatMessages) has no tone slot to feed (RAW stays RAW; tone only
+  // ever applies to the rule-based rewrite).
+  context: DictationContext | null = null
+): Promise<OnDemandCleanupResult> {
   const settings = getEffectiveSettings()
 
   // Defensive guard: cleanupEnabled gates whether the on-demand "Clean up"
@@ -241,7 +273,12 @@ export async function cleanupOnDemand(raw: string, req: OnDemandCleanupRequest):
   }
 
   const vocab = getActiveVocabulary(settings)
-  const result = await cleanupTranscriptionDetailed(raw, { cleanupMode: mode as CleanupMode, vocab, provider })
+  const result = await cleanupTranscriptionDetailed(raw, {
+    cleanupMode: mode as CleanupMode,
+    vocab,
+    tone: resolveToneDescription(settings, context),
+    provider
+  })
   return { ...result, cleanedWith }
 }
 
@@ -258,7 +295,15 @@ export async function handleRecordingsCleanup(
 ): Promise<OnDemandCleanupResult> {
   const rec = getRecording(id)
   if (!rec?.transcription) return { text: '', ok: false, cleanedWith: 'no transcript' }
-  const result = await cleanupOnDemand(rec.transcription, options)
+  // Context-aware tone (v1.5 Work Item B): reuse the snapshot captured at
+  // recording time (see recordingStore.ts's RecordingEntry doc comment) —
+  // absent on recordings saved before this feature landed or while
+  // contextAwareTone was off, in which case this on-demand cleanup just runs
+  // with no tone, same as always.
+  const context: DictationContext | null = rec.recordedProcessName
+    ? { processName: rec.recordedProcessName, windowTitle: rec.recordedWindowTitle ?? '' }
+    : null
+  const result = await cleanupOnDemand(rec.transcription, options, context)
   await updateRecording(id, {
     cleanedText: result.ok ? result.text : undefined,
     cleanedWith: result.cleanedWith
@@ -266,7 +311,17 @@ export async function handleRecordingsCleanup(
   return result
 }
 
-export async function transcribeAudio(audioBuffer: Buffer, filename: string): Promise<string> {
+export async function transcribeAudio(
+  audioBuffer: Buffer,
+  filename: string,
+  // Context-aware tone (v1.5 Work Item B): the caller (main/index.ts)
+  // captures this — live, via context.ts's getActiveContext() — for the
+  // normal dictation flow's `dictation:transcribe` handler, or reuses a
+  // recording's ORIGINALLY-captured context for reprocessRecording(). This
+  // module never calls getActiveContext() itself; see the import comment
+  // above for why that split matters for reprocessing correctness.
+  context: DictationContext | null = null
+): Promise<string> {
   const settings = getEffectiveSettings()
 
   // Build effective chain: use providerChain if set, otherwise legacy sttProvider + fallback
@@ -304,7 +359,7 @@ export async function transcribeAudio(audioBuffer: Buffer, filename: string): Pr
         audioSeconds: estimateAudioSeconds(audioBuffer, filename),
         isLocal: provider === 'selfhosted'
       })
-      return await applyCleanup(settings, text)
+      return await applyCleanup(settings, text, context)
     } catch (err) {
       if (!firstError) firstError = err instanceof Error ? err : new Error(String(err))
       if (i < configuredChain.length - 1) {

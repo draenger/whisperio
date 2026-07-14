@@ -26,6 +26,7 @@ import {
   getActiveVocabulary,
   DEFAULT_VOCABULARY_TERMS,
   DEFAULT_CLEANUP_TEMPLATES,
+  DEFAULT_TONE_MAP,
   type AppSettings
 } from '../src/main/settingsManager'
 
@@ -50,6 +51,9 @@ const DEFAULT_SETTINGS = {
   cleanupMode: 'full',
   cleanupAuto: false,
   cleanupTemplates: DEFAULT_CLEANUP_TEMPLATES,
+  contextAwareTone: false,
+  toneMap: DEFAULT_TONE_MAP,
+  windowTitlePermissionEnabled: false,
   aiProvider: 'openai',
   aiBaseUrl: '',
   aiModel: '',
@@ -395,6 +399,80 @@ describe('settingsManager', () => {
 
       expect(result.theme).toBe('light')
       expect(result.accentColor).toBe('amber')
+    })
+  })
+
+  describe('context-aware tone additive settings + toneMap seeding (v1.5 Work Item B)', () => {
+    it('seeds toneMap from DEFAULT_TONE_MAP on a file predating it', () => {
+      mockExistsSync.mockReturnValue(true)
+      mockReadFileSync.mockReturnValue(JSON.stringify({ openaiApiKey: 'sk-test' }))
+
+      const result = loadSettings()
+
+      expect(result.toneMap).toEqual(DEFAULT_TONE_MAP)
+      expect(result.contextAwareTone).toBe(false)
+      expect(result.windowTitlePermissionEnabled).toBe(false)
+    })
+
+    it('hands back a fresh copy of DEFAULT_TONE_MAP, never the shared module reference', () => {
+      mockExistsSync.mockReturnValue(true)
+      mockReadFileSync.mockReturnValue(JSON.stringify({ openaiApiKey: 'sk-test' }))
+
+      const result = loadSettings()
+      result.toneMap['mutated'] = 'casual'
+
+      expect(DEFAULT_TONE_MAP['mutated']).toBeUndefined()
+    })
+
+    it('preserves an explicit, user-edited toneMap instead of re-seeding it', () => {
+      mockExistsSync.mockReturnValue(true)
+      mockReadFileSync.mockReturnValue(
+        JSON.stringify({ toneMap: { figma: 'technical' }, contextAwareTone: true })
+      )
+
+      const result = loadSettings()
+
+      expect(result.toneMap).toEqual({ figma: 'technical' })
+      expect(result.contextAwareTone).toBe(true)
+    })
+
+    it('respects a user-saved empty toneMap ({}) rather than re-seeding defaults', () => {
+      mockExistsSync.mockReturnValue(true)
+      mockReadFileSync.mockReturnValue(JSON.stringify({ toneMap: {} }))
+
+      const result = loadSettings()
+
+      expect(result.toneMap).toEqual({})
+    })
+
+    it('preserves an explicit windowTitlePermissionEnabled: true', () => {
+      mockExistsSync.mockReturnValue(true)
+      mockReadFileSync.mockReturnValue(JSON.stringify({ windowTitlePermissionEnabled: true }))
+
+      const result = loadSettings()
+
+      expect(result.windowTitlePermissionEnabled).toBe(true)
+    })
+
+    it('is idempotent: loading a pre-Work-Item-B file twice yields the same result', () => {
+      mockExistsSync.mockReturnValue(true)
+      mockReadFileSync.mockReturnValue(JSON.stringify({ openaiApiKey: 'sk-test' }))
+
+      const first = loadSettings()
+      const second = loadSettings()
+
+      expect(second).toEqual(first)
+    })
+
+    it('is idempotent: feeding an already-seeded file back in leaves toneMap untouched', () => {
+      mockExistsSync.mockReturnValue(true)
+      mockReadFileSync.mockReturnValue(JSON.stringify({ openaiApiKey: 'sk-test' }))
+      const seededOnce = loadSettings()
+
+      mockReadFileSync.mockReturnValue(JSON.stringify(seededOnce))
+      const seededTwice = loadSettings()
+
+      expect(seededTwice.toneMap).toEqual(seededOnce.toneMap)
     })
   })
 })
