@@ -1,0 +1,14 @@
+# Reachability allowlist for check-reachability.sh — Gate 3 exceptions.
+#
+# Format: one entry per line, "StructName<TAB or spaces>reason". Comments (#)
+# and blank lines are ignored. This is a liability, not a convenience escape
+# hatch: every entry needs a real justification and gets checked for
+# staleness (removed-but-still-listed names fail the sweep; names that
+# become genuinely reachable are flagged as safe-to-remove, not required).
+
+# Concept/design-system gallery screen (see file header comment in
+# Gallery.swift: "Concept gallery") — used only from Xcode Previews
+# (#Preview("Concept gallery") { GalleryView() } in AppShell.swift) to eyeball
+# the whole component set at once. Never mounted by any shipped app screen;
+# intentionally preview-only, not a wiring gap.
+GalleryView	preview-only design-system gallery, never mounted by a shipped screen (see Gallery.swift header)

@@ -23,6 +23,26 @@ swift test
 Watch app unit/UI test targets (`mobile/WhisperioApp/WhisperioWatch Watch AppTests/`,
 `mobile/WhisperioApp/WhisperioWatch Watch AppUITests/`) run from Xcode.
 
+Reachability sweeps (defined-vs-reachable UI components — Gate 3, "Any orphan is a FAILURE",
+see `docs/PARITY.md`'s "Orphan list"):
+
+```bash
+cd desktop && npm run test:reachability      # desktop renderer — also runs as part of `npm test`
+./mobile/WhisperioApp/Scripts/check-reachability.sh   # mobile SwiftUI screens — run manually, not wired into any npm/swift command
+```
+
+The desktop sweep (`desktop/tests/reachability.spec.ts` + `desktop/tests/reachability/analyze.ts`)
+statically walks the JSX call-site graph from the three renderer entrypoints
+(`settings/settings.tsx`, `recordings/recordings.tsx`, `dictation/overlay.tsx`) and fails on any
+exported component with no inbound call-site. The mobile sweep
+(`mobile/WhisperioApp/Scripts/check-reachability.sh` /
+`mobile/WhisperioApp/Scripts/reachability_check.py`) scans
+`mobile/WhisperioApp/Sources/WhisperioApp/**/*.swift` for `struct X: View` declarations and
+requires a real instantiation call-site outside the declaration; preview-only views must be
+listed with a reason in `mobile/WhisperioApp/Scripts/reachability-allowlist.txt`. Both are
+independent, dependency-free (no ts-morph/SwiftSyntax) — see their file headers for the exact
+mechanism and false-positive guards (TS generics vs. JSX, `import type`, trailing-closure inits).
+
 ## Test workflows (e2e / integration)
 
 - **CI gate** — every release push runs typecheck + `test:coverage` on Ubuntu first; platform

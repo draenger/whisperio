@@ -23,7 +23,8 @@
     "build:linux": "npm run build && electron-builder --linux --config ../.devops/electron-builder.yml",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "test:reachability": "vitest run tests/reachability.spec.ts"
   },
   "dependencies": {
     "electron-updater": "^6.8.3",
