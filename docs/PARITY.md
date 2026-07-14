@@ -4,7 +4,7 @@ _Living document. Updated every PR by the autonomous build loop.
 Statuses are honest: "shipped" means merged to main AND live-click-tested on the platform
 noted; "pending human smoke" means gates green but no human ran the packaged build._
 
-Last update: 2026-07-14 · **Phase 0 COMPLETE** · v1.5.0 release-ready, human-gated
+Last update: 2026-07-14 · **Phase 0 COMPLETE + tone/sync-controls/polish merged** · v1.5.0 FINAL, human-gated
 
 | Wispr Flow capability | Whisperio status | Reachable? | Tested (live)? | Notes |
 |---|---|---|---|---|
@@ -23,7 +23,7 @@ Last update: 2026-07-14 · **Phase 0 COMPLETE** · v1.5.0 release-ready, human-g
 | **Moat: usage meter** | ✅ per-provider/month, local-only; ElevenLabs credits; local=$0 | ✅ | clicks ✅ (reset) | |
 | **Moat: keys in OS secure storage** | ✅ NEW (P0.2): safeStorage keyStore, round-trip-verified migration, honest fallback copy | ✅ | unit ✅ + real Keychain migration observed in dev boot | "where available", never "always" |
 | **Moat: no-screenshot** | ✅ nothing reads the screen; privacy guardian test lands with tone | n/a | — | |
-| Phase 2 sync-controls | ✅ IMPLEMENTED — branch `feat/mobile-sync-controls` (worktree); `SyncMode` (automatic/onOpen/interval/manual) gates live CloudKit-import publishing + foreground/timer nudges; Home gets a bigger Sync button + timestamp in `.manual`; Settings picker + honest "iOS may still receive changes in the background" copy | ✅ mobile (Kit) | Kit unit ✅ (130/130, 12 new); iOS sim build ✅; reachability ✅ (72/72, 0 orphans) | merge-hold — pending user's decision on the mobile release |
+| Phase 2 sync-controls | ✅ IMPLEMENTED — branch `feat/mobile-sync-controls` (worktree); `SyncMode` (automatic/onOpen/interval/manual) gates live CloudKit-import publishing + foreground/timer nudges; Home gets a bigger Sync button + timestamp in `.manual`; Settings picker + honest "iOS may still receive changes in the background" copy | ✅ mobile (Kit) | Kit unit ✅ (130/130, 12 new); iOS sim build ✅; reachability ✅ (72/72, 0 orphans) | ON MAIN — ships with mobile build 41 |
 
 ## Orphan list (defined-but-unreachable views) — must stay EMPTY
 
@@ -43,13 +43,13 @@ Durable guardians active (orphan = failing test):
 | P0.5 Durable settings full-loop guardian | ✅ 8 tests; **caught a real bug**: `inputDeviceId` saved but never fed to `getUserMedia` (mic picker was a silent no-op) — fixed |
 | P0.6 Release prep → HUMAN-GATED STOP | ✅ this commit — see below |
 
-## Phase-boundary sweep (2026-07-14, post-merge of P0.1–P0.5)
+## Final v1.5.0 sweep (2026-07-14, after tone + sync-controls + polish)
 
-typecheck 0 · **572/572** unit (desktop) · **3/3 e2e clicks** · Kit **118/118** · iOS sim build ✅ · reachability ✅ · coverage over thresholds
+typecheck 0 · **610/610** unit (desktop) · **5/5 e2e clicks** · Kit **130/130** · iOS sim build ✅ · reachability ✅ (0 orphans both platforms) · coverage 96.74/90.75/98.94/96.74 · new guardian: privacy-grep-gate (no-screenshot moat)
 
 ## HUMAN GATE — what ships v1.5.0 (Claude never does these)
 
 1. Desktop: manual smoke on a packaged build → `git push origin main:release`
    (pipeline tags v1.5.0 + builds NSIS / signed+notarized dmg / AppImage+deb + publishes).
-2. Mobile: Xcode → archive → TestFlight (build 39 was bumped BEFORE the wiring/keystore
-   fixes landed — if 39 already went out, bump to 40 first).
+2. Mobile: Xcode → archive → TestFlight — **build 41** on main (includes sync fix, digest
+   sync, wiring, sync-controls).
