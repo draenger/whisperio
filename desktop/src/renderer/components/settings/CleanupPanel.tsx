@@ -2,6 +2,7 @@ import { useMemo, type CSSProperties, type ReactElement } from 'react'
 import type { Theme } from '../../theme'
 import { ToggleRow, Segmented } from './SettingsForm'
 import { ModelPicker } from './ModelPicker'
+import { KeyStorageHint } from './KeyStorageHint'
 
 /*
  * AI Cleanup panel (desktop v1.4 cleanup line).
@@ -312,6 +313,7 @@ export function CleanupPanel({
                   placeholder="sk-ant-..."
                   style={s.input}
                 />
+                <KeyStorageHint s={s} />
               </>
             )}
 
@@ -328,6 +330,7 @@ export function CleanupPanel({
                 <span style={s.hint}>
                   Shared with the Replicate speech-to-text provider (Providers tab) — one key, both uses.
                 </span>
+                <KeyStorageHint s={s} />
               </>
             )}
           </div>

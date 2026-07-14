@@ -37,7 +37,7 @@ until then this list is maintained by audit._
 | Item | Status |
 |---|---|
 | P0.1 Click-test harness (Playwright for Electron) + first click tests | OPEN |
-| P0.2 safeStorage keyStore (build + migrate provider keys + honest fallback) — **spec said code exists; it does NOT — building from scratch** | OPEN |
+| P0.2 safeStorage keyStore (build + migrate provider keys + honest fallback) — **spec claimed code existed; it did not — built from scratch** | DONE |
 | P0.3 Durable reachability sweep (defined-vs-reachable diff, desktop + mobile) | OPEN |
 | P0.4 Durable IPC-integrity test (renderer↔preload↔ipcMain + registration order) | OPEN |
 | P0.5 Durable settings full-loop test (default→UI→save→consumer per key) | OPEN |

@@ -2,6 +2,12 @@ import { app, BrowserWindow, desktopCapturer, ipcMain, session } from 'electron'
 import { initDictation, cleanupDictation, reRegisterHotkeys, pauseHotkeys, resumeHotkeys } from './dictation'
 import { createTray, destroyTray } from './tray'
 import { loadSettings, saveSettings } from './settingsManager'
+import {
+  getEffectiveSettings,
+  saveSettingsWithKeys,
+  migrateProviderKeysToKeyStore
+} from './secure/keyAccessor'
+import { isEncryptionAvailable as isKeyStoreAvailable } from './secure/keyStore'
 import { transcribeAudio, handleRecordingsCleanup, type OnDemandCleanupRequest } from './transcribe'
 import { openSettingsWindow } from './settingsWindow'
 import { getRecentErrors } from './errorHandler'
@@ -152,6 +158,13 @@ app.whenReady().then(() => {
       })
   })
 
+  // One-time, idempotent migration: move any plaintext provider API keys
+  // sitting in settings.json into the OS-secure-storage-backed key store
+  // (see secure/keyAccessor.ts). Must run before anything below reads
+  // settings, and before the settings:load/settings:save IPC handlers are
+  // registered, so the renderer never observes the pre-migration state.
+  migrateProviderKeysToKeyStore()
+
   // Apply auto-launch setting (uses Windows Registry HKCU\...\Run)
   // Skip in dev mode — process.execPath points to bare electron.exe which
   // creates a bogus "Electron" autostart entry instead of "Whisperio".
@@ -164,10 +177,15 @@ app.whenReady().then(() => {
     })
   }
 
-  // Register settings IPC handlers
-  ipcMain.handle('settings:load', () => loadSettings())
+  // Register settings IPC handlers. load/save go through the key-accessor
+  // (secure/keyAccessor.ts) rather than settingsManager directly, so
+  // provider API keys are composed with the encrypted key store — see that
+  // module's doc comment. AppSettings' shape is unchanged; the renderer
+  // can't tell the difference except that the values it saves may now rest
+  // in the key store instead of settings.json.
+  ipcMain.handle('settings:load', () => getEffectiveSettings())
   ipcMain.handle('settings:save', (_event, newSettings) => {
-    const saved = saveSettings(newSettings)
+    const saved = saveSettingsWithKeys(newSettings)
     if ('launchAtStartup' in newSettings && isPackaged) {
       app.setLoginItemSettings({
         openAtLogin: saved.launchAtStartup,
@@ -179,6 +197,11 @@ app.whenReady().then(() => {
     }
     return saved
   })
+  // Tells the renderer whether OS secure storage is usable, so it can show
+  // an honest hint next to API key fields ("keys are encrypted..." vs.
+  // "...unavailable, stored in the local settings file"). Never gates any
+  // functionality — the settings.json fallback always works either way.
+  ipcMain.handle('settings:keyStorageAvailable', () => isKeyStoreAvailable())
 
   // Pause/resume hotkeys during shortcut recording in settings
   ipcMain.on('hotkeys:pause', () => pauseHotkeys())

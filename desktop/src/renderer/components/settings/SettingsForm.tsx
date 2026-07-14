@@ -6,6 +6,7 @@ import { ACCENTS, ACCENT_ORDER, ACCENT_LABELS } from '../../theme'
 import { RecordingsView } from '../recordings/RecordingsPanel'
 import { CleanupPanel, type CleanupMode, type AiProvider, type CleanupTemplate } from './CleanupPanel'
 import { UsagePanel } from './UsagePanel'
+import { KeyStorageHint } from './KeyStorageHint'
 
 // Derived from the global window.api typings (preload) without a cross-project import
 type UpdaterState = Awaited<ReturnType<Window['api']['updater']['getStatus']>>
@@ -1216,6 +1217,7 @@ export function SelfhostedSettings({
             style={s.input}
           />
           <span style={s.hint}>Bearer token for your private STT server. Leave blank if it doesn&apos;t require auth.</span>
+          <KeyStorageHint s={s} />
         </>
       ) : (
         <>
@@ -1567,6 +1569,7 @@ function ProvidersTab({
                       <>
                         <label style={s.label}>API Key</label>
                         <input type="password" value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder="sk-..." style={s.input} />
+                        <KeyStorageHint s={s} />
                         <label style={{ ...s.label, marginTop: '8px' }}>Transcription Prompt</label>
                         <textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} rows={2} style={s.textarea} />
                       </>
@@ -1575,6 +1578,7 @@ function ProvidersTab({
                       <>
                         <label style={s.label}>API Key</label>
                         <input type="password" value={elevenlabsApiKey} onChange={(e) => setElevenlabsApiKey(e.target.value)} placeholder="xi-..." style={s.input} />
+                        <KeyStorageHint s={s} />
                       </>
                     )}
                     {provider.id === 'selfhosted' && (
@@ -1600,6 +1604,7 @@ function ProvidersTab({
                           style={s.input}
                         />
                         <span style={s.hint}>Shared with the AI Cleanup Replicate provider below — one key, both uses.</span>
+                        <KeyStorageHint s={s} />
                         <label style={{ ...s.label, marginTop: '8px' }}>Model</label>
                         <input
                           type="text"
