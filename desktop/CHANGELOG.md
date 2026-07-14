@@ -56,6 +56,16 @@ any AI backend you want (including none), and a bill you can see.
   to each key field — never a blanket "always encrypted" claim. The GitHub
   sync token continues to use its own Keychain-wrapped vault, unchanged.
 
+### Reliability (Phase 0 hardening)
+- Real click-through E2E harness (Playwright for Electron) in CI — settings
+  toggles, usage reset and offline fail-soft are verified by actual clicks on
+  the built app, not just unit tests.
+- Durable guardians now fail the build on: unreachable (orphaned) UI surfaces,
+  unregistered IPC channels, and settings keys without a real consumer.
+- Fixed: the microphone picker (Settings → Audio → Input Device) was saved but
+  never applied to recording — selecting a mic now actually switches the input.
+
+
 ## v1.3.0 and earlier
 Pre-changelog releases: GitHub encrypted secret store (device-flow OAuth,
 AES-256-GCM vault), soft-delete/restore for built-in vocabulary, digest copy

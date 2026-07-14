@@ -1,80 +1,54 @@
 # Whisperio ↔ Wispr Flow — parity ledger
 
-_Living document. Updated every PR by the autonomous build loop (see AUTOBUILD-SPEC.md).
+_Living document. Updated every PR by the autonomous build loop.
 Statuses are honest: "shipped" means merged to main AND live-click-tested on the platform
 noted; "pending human smoke" means gates green but no human ran the packaged build._
 
-Last update: 2026-07-14 · Phase 0 in progress
+Last update: 2026-07-14 · **Phase 0 COMPLETE** · v1.5.0 release-ready, human-gated
 
 | Wispr Flow capability | Whisperio status | Reachable? | Tested (live)? | Notes |
 |---|---|---|---|---|
-| Dictation + AI cleanup | on main (v1.5.0 prep) — rough-first: raw pastes instantly, on-demand Clean up (full/templates/custom), auto opt-in | ✅ desktop | unit+boot ✅ / clicks ✅ (P0.1: AI Cleanup toggle, on-demand Clean up fail-soft) — dictation hotkey flow itself not yet click-tested | pending human smoke |
-| Context-aware tone | ❌ MISSING | — | — | Phase 1 #1 — no-screenshot variant (process name + window title only) |
-| Snippets | ❌ MISSING | — | — | Phase 1 #2 — exact-match first, semantic (local MiniLM) as better-than |
+| Dictation + AI cleanup | main, v1.5.0 — rough-first (raw pastes instantly), on-demand Clean up (full/templates/custom), auto opt-in | ✅ desktop | clicks ✅ (toggle persist, usage reset, fail-soft); dictation hotkey flow not yet click-driven | pending human smoke |
+| Context-aware tone | 🔨 IN FLIGHT — branch `feat/p1.1-context-tone` (worktree), merge-hold until v1.5 ships | — | — | process name + window title ONLY; macOS window-title behind explicit opt-in permission |
+| Snippets | ❌ MISSING | — | — | Phase 1 #2 — exact-match first, semantic (local MiniLM) later |
 | Personal dictionary | manual vocab ✅ (custom + soft-deletable defaults) | ✅ | unit ✅ | auto-learn from edits = Phase 1 #3 |
-| Command / rewrite | partial — on-demand transform on recordings (templates/custom instruction) | ✅ desktop | unit ✅ | select-text-anywhere command mode = Phase 1 #4 |
-| Wake word | ❌ MISSING | — | — | Phase 1 #5 — local only, ONNX via JS runtime, no Python |
+| Command / rewrite | partial — on-demand transform on recordings (templates/custom instruction) | ✅ desktop | clicks ✅ (fail-soft path) | select-text-anywhere = Phase 1 #4 |
+| Wake word | ❌ MISSING | — | — | Phase 1 #5 — local ONNX via JS runtime, no Python |
 | Scratchpad | ❌ MISSING | — | — | Phase 1 #6 |
-| History | ✅ desktop RecordingsPanel + mobile history/journal | ✅ | unit ✅ | |
-| Multi-platform | desktop Win/mac/Linux + iOS + watchOS + iCloud sync | ✅ | mobile sim ✅ / installers CI | Wispr: mac+win only |
-| **Moat: offline** | ✅ fail-soft everywhere; Wi-Fi off → raw pastes, local provider → full cleanup | ✅ | unit ✅ | zero-config bundled server mac/Linux = Phase 2 |
-| **Moat: provider freedom** | ✅ OpenAI / Anthropic / Replicate / ElevenLabs / local / custom endpoint; model picker; HTTPS gate | ✅ | unit ✅ | |
+| History | ✅ desktop RecordingsPanel + mobile history/journal | ✅ | clicks ✅ (desktop) | |
+| Multi-platform | desktop Win/mac/Linux + iOS + watchOS + iCloud sync | ✅ | macOS live ✅, iOS sim build ✅; Win/Linux = CI installers only | never claim a platform verified that wasn't exercised |
+| **Moat: offline** | ✅ fail-soft everywhere; click-tested (Clean up with no provider → inline hint, raw intact) | ✅ | clicks ✅ | zero-config bundled server mac/Linux = Phase 2 |
+| **Moat: provider freedom** | ✅ OpenAI / Anthropic / Replicate / ElevenLabs / local / custom; model picker; HTTPS gate | ✅ | unit ✅ | |
 | **Moat: no-account / open** | ✅ no account, PolyForm NC source | ✅ | — | |
-| **Moat: usage meter** | ✅ per-provider/month, local-only; ElevenLabs credits; local=$0 | ✅ | unit ✅ | |
-| **Moat: no-screenshot** | ✅ (no context feature yet — nothing reads the screen at all) | n/a | — | becomes marketable with Phase 1 #1 |
+| **Moat: usage meter** | ✅ per-provider/month, local-only; ElevenLabs credits; local=$0 | ✅ | clicks ✅ (reset) | |
+| **Moat: keys in OS secure storage** | ✅ NEW (P0.2): safeStorage keyStore, round-trip-verified migration, honest fallback copy | ✅ | unit ✅ + real Keychain migration observed in dev boot | "where available", never "always" |
+| **Moat: no-screenshot** | ✅ nothing reads the screen; privacy guardian test lands with tone | n/a | — | |
 
 ## Orphan list (defined-but-unreachable views) — must stay EMPTY
 
-_2026-07-14 wiring pass (46 findings) closed: desktop `recordings:cleanup` IPC handler,
-CleanupPanel/ModelPicker/UsagePanel mounting, mobile OnboardingView / DigestPromptEditorView /
-TriggerGuides entries. P0.3 (below) replaced that one-time manual audit with two durable,
-CI-runnable sweeps — desktop `npm run test:reachability` (vitest) and mobile
-`Scripts/check-reachability.sh` — so this list can no longer silently rot._
+Durable guardians active (orphan = failing test):
+- Desktop: `tests/reachability.spec.ts` — 13 defined / 13 reachable / 0 allowlisted / **0 orphans**
+- Mobile: `mobile/WhisperioApp/Scripts/check-reachability.sh` — 71 defined / 70 reachable / 1 allowlisted (`GalleryView`, preview-only) / **0 orphans**
+- Both mutation-sanity-checked (a planted orphan fails the mechanism).
 
-(currently empty — desktop 13/13 reachable, mobile 70/71 reachable + 1 allowlisted, 0 orphans on both platforms)
-
-### Sweep mechanisms (P0.3)
-
-**Desktop** — `desktop/tests/reachability.spec.ts` (+ `desktop/tests/reachability/analyze.ts`).
-Regex-based (no ts-morph/new deps): enumerates every exported, JSX-returning component in
-`src/renderer/components/**` + `src/renderer/*.tsx` (outside the three window entrypoints —
-`settings/settings.tsx`, `recordings/recordings.tsx`, `dictation/overlay.tsx`), then BFS's the
-real JSX call-site graph from those entrypoints (imports alone don't count — a component has to
-actually be rendered as `<Name .../>` to count as reachable). Any orphan throws with a
-defined-vs-reachable diff. Runs as part of `npm test` / `npm run test:coverage`.
-
-| Desktop | defined | reachable | allowlisted | orphans |
-|---|---|---|---|---|
-| Sweep result | 13 | 13 | 0 | **0** |
-
-**Mobile** — `mobile/WhisperioApp/Scripts/check-reachability.sh` (+ `reachability_check.py`,
-`reachability-allowlist.txt`). Scans `mobile/WhisperioApp/Sources/WhisperioApp/**/*.swift` for
-every `struct X: View` (including generic-constrained ones, e.g. `SettGroup<Content: View>`) and
-requires a real instantiation call-site (`X(` or the SwiftUI trailing-closure form `X {`) outside
-its own declaration line, anywhere in that same tree. Views used only from a `#Preview` block
-count as "preview-only", not reachable — they must be explicitly allowlisted with a reason, not
-silently passed. Exit 0/1; run manually (`./check-reachability.sh`) since there's no CI runner in
-this worktree — see verify notes below for the run that produced this result.
-
-| Mobile | defined | reachable | allowlisted (preview-only) | orphans |
-|---|---|---|---|---|
-| Sweep result | 71 | 70 | 1 (`GalleryView`) | **0** |
-
-`GalleryView` (Gallery.swift) is a concept/design-system gallery screen exercised only via
-`#Preview("Concept gallery") { GalleryView() }` in AppShell.swift — never mounted by a shipped
-screen. Allowlisted with reason, not wired up (wiring it into the shipped nav would be a new
-feature, out of scope for a reachability sweep).
-
-Both sweeps were run against a real orphan (a throwaway probe component/struct with no call-site)
-to confirm they actually fail red before being trusted to report green — see verify notes.
-
-## Phase 0 debt board
+## Phase 0 debt board — ✅ COMPLETE (2026-07-14)
 
 | Item | Status |
 |---|---|
-| P0.1 Click-test harness (Playwright for Electron) + first click tests | ✅ DONE (2026-07-14) — `desktop/e2e/*.spec.ts` (Playwright `_electron`) drives the real built app: AI Cleanup toggle save+persist-on-reopen, UsagePanel Reset, RecordingsPanel "Clean up" fail-soft with no provider reachable; wired into CI (`test` job, xvfb) |
-| P0.2 safeStorage keyStore (build + migrate provider keys + honest fallback) — **spec said code exists; it does NOT — building from scratch** | OPEN |
-| P0.3 Durable reachability sweep (defined-vs-reachable diff, desktop + mobile) | DONE |
-| P0.4 Durable IPC-integrity test (renderer↔preload↔ipcMain + registration order) | OPEN |
-| P0.5 Durable settings full-loop test (default→UI→save→consumer per key) | OPEN |
-| P0.6 v1.5 release prep refresh → HUMAN-GATED STOP | OPEN |
+| P0.1 Click-test harness | ✅ Playwright `_electron` drives the real built app; 3 click specs; CI (xvfb) |
+| P0.2 safeStorage keyStore | ✅ built FROM SCRATCH (spec claimed it existed — it did not); migration w/ round-trip verify before plaintext clear; honest fallback |
+| P0.3 Durable reachability sweep | ✅ desktop test + mobile script, allowlists justified, mutation-checked |
+| P0.4 Durable IPC-integrity guardian | ✅ 10 tests: renderer↔preload↔ipcMain three-way match + registration order |
+| P0.5 Durable settings full-loop guardian | ✅ 8 tests; **caught a real bug**: `inputDeviceId` saved but never fed to `getUserMedia` (mic picker was a silent no-op) — fixed |
+| P0.6 Release prep → HUMAN-GATED STOP | ✅ this commit — see below |
+
+## Phase-boundary sweep (2026-07-14, post-merge of P0.1–P0.5)
+
+typecheck 0 · **572/572** unit (desktop) · **3/3 e2e clicks** · Kit **118/118** · iOS sim build ✅ · reachability ✅ · coverage over thresholds
+
+## HUMAN GATE — what ships v1.5.0 (Claude never does these)
+
+1. Desktop: manual smoke on a packaged build → `git push origin main:release`
+   (pipeline tags v1.5.0 + builds NSIS / signed+notarized dmg / AppImage+deb + publishes).
+2. Mobile: Xcode → archive → TestFlight (build 39 was bumped BEFORE the wiring/keystore
+   fixes landed — if 39 already went out, bump to 40 first).
