@@ -75,6 +75,28 @@ any AI backend you want (including none), and a bill you can see.
   to each key field — never a blanket "always encrypted" claim. The GitHub
   sync token continues to use its own Keychain-wrapped vault, unchanged.
 
+### Context-aware tone (privacy-first)
+- Dictation now knows WHERE you were speaking — and adjusts register on
+  cleanup: casual in Slack, formal in Gmail, technical in your editor.
+  Editable app→tone table, seeded sensibly.
+- Whisperio reads ONLY the app name and window title — never your screen.
+  A guardian test fails the build if any screenshot API enters that path.
+  On macOS, window-title matching is behind an explicit opt-in; the app
+  never silently requests Screen Recording permission.
+
+### Sync controls (mobile)
+- Choose your iCloud refresh cadence: automatic (live), on app open, on a
+  timer while active, or manual-only with a big Sync button on Home.
+  Honest copy: iOS may still receive changes in the background — this
+  controls when Whisperio actively refreshes and shows them.
+
+### Design polish
+- Settings window rebuilt to the Rezme design reference: status header with
+  hotkey keycaps and engine chain, sidebar with accent tick, unified bordered
+  section cards, provider chain as expandable rows with a PRIMARY badge,
+  hotkeys as keycaps, auto-save footer (the Save button is gone — changes
+  save automatically), refined dictation overlay.
+
 ### Reliability (Phase 0 hardening)
 - Real click-through E2E harness (Playwright for Electron) in CI — settings
   toggles, usage reset and offline fail-soft are verified by actual clicks on
