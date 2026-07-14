@@ -61,12 +61,24 @@ export function useDictation(): UseDictationReturn {
         return
       }
 
+      // Honor the user's selected input device (Settings > Audio > Input
+      // Device). Previously this setting was saved/loaded by SettingsForm but
+      // never actually consumed anywhere — picking a non-default mic silently
+      // had no effect (caught by tests/settings-loop.spec.ts's P0.5 guard).
+      // Empty string means "System Default": omit the constraint so
+      // getUserMedia falls back to the OS default, matching prior behavior.
+      const settings = await window.api.settings.load()
+      const audioConstraints: MediaTrackConstraints = {
+        sampleRate: 16000,
+        echoCancellation: true,
+        noiseSuppression: true
+      }
+      if (settings.inputDeviceId) {
+        audioConstraints.deviceId = { exact: settings.inputDeviceId }
+      }
+
       const stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          sampleRate: 16000,
-          echoCancellation: true,
-          noiseSuppression: true
-        }
+        audio: audioConstraints
       })
       console.log('[Whisperio] Got audio stream:', stream.getAudioTracks().length, 'tracks')
       streamRef.current = stream

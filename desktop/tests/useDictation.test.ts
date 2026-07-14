@@ -50,7 +50,7 @@ function fakeAudioStream(): MediaStream {
   } as unknown as MediaStream
 }
 
-function mockApi(overrides: { saveRecordings: boolean }): {
+function mockApi(overrides: { saveRecordings: boolean; inputDeviceId?: string }): {
   save: ReturnType<typeof vi.fn>
   update: ReturnType<typeof vi.fn>
   transcribe: ReturnType<typeof vi.fn>
@@ -70,7 +70,8 @@ function mockApi(overrides: { saveRecordings: boolean }): {
       load: vi.fn().mockResolvedValue({
         saveRecordings: overrides.saveRecordings,
         sttProvider: 'openai',
-        providerChain: []
+        providerChain: [],
+        inputDeviceId: overrides.inputDeviceId ?? ''
       })
     },
     recordings: {
@@ -133,5 +134,40 @@ describe('useDictation — saveRecordings gate', () => {
     expect(metadata).toEqual({ duration: expect.any(Number), provider: 'openai' })
     expect(update).toHaveBeenCalledWith('rec-1', { status: 'completed', transcription: 'hello world' })
     expect(sendResult).toHaveBeenCalledWith('hello world', 9)
+  })
+})
+
+/**
+ * P0.5 (settings-loop guard) — settings.inputDeviceId used to be saved/loaded
+ * by SettingsForm but never actually passed to getUserMedia, so picking a
+ * non-default microphone silently had no effect. startRecording() now reads
+ * it and forwards it as a `deviceId: { exact }` constraint when set.
+ */
+describe('useDictation — inputDeviceId constraint', () => {
+  it('passes deviceId: { exact } to getUserMedia when settings.inputDeviceId is set', async () => {
+    mockApi({ saveRecordings: false, inputDeviceId: 'mic-42' })
+    const getUserMedia = navigator.mediaDevices.getUserMedia as ReturnType<typeof vi.fn>
+    const { result } = renderHook(() => useDictation())
+
+    await act(async () => {
+      await result.current.startRecording()
+    })
+
+    expect(getUserMedia).toHaveBeenCalledWith({
+      audio: expect.objectContaining({ deviceId: { exact: 'mic-42' } })
+    })
+  })
+
+  it('omits the deviceId constraint (System Default) when settings.inputDeviceId is empty', async () => {
+    mockApi({ saveRecordings: false, inputDeviceId: '' })
+    const getUserMedia = navigator.mediaDevices.getUserMedia as ReturnType<typeof vi.fn>
+    const { result } = renderHook(() => useDictation())
+
+    await act(async () => {
+      await result.current.startRecording()
+    })
+
+    const [{ audio }] = getUserMedia.mock.calls[0]
+    expect(audio).not.toHaveProperty('deviceId')
   })
 })
