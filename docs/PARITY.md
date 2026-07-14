@@ -27,10 +27,46 @@ Last update: 2026-07-14 · Phase 0 in progress
 
 _2026-07-14 wiring pass (46 findings) closed: desktop `recordings:cleanup` IPC handler,
 CleanupPanel/ModelPicker/UsagePanel mounting, mobile OnboardingView / DigestPromptEditorView /
-TriggerGuides entries. Durable automated reachability + IPC-integrity tests land in P0.3/P0.4 —
-until then this list is maintained by audit._
+TriggerGuides entries. P0.3 (below) replaced that one-time manual audit with two durable,
+CI-runnable sweeps — desktop `npm run test:reachability` (vitest) and mobile
+`Scripts/check-reachability.sh` — so this list can no longer silently rot._
 
-(currently empty)
+(currently empty — desktop 13/13 reachable, mobile 70/71 reachable + 1 allowlisted, 0 orphans on both platforms)
+
+### Sweep mechanisms (P0.3)
+
+**Desktop** — `desktop/tests/reachability.spec.ts` (+ `desktop/tests/reachability/analyze.ts`).
+Regex-based (no ts-morph/new deps): enumerates every exported, JSX-returning component in
+`src/renderer/components/**` + `src/renderer/*.tsx` (outside the three window entrypoints —
+`settings/settings.tsx`, `recordings/recordings.tsx`, `dictation/overlay.tsx`), then BFS's the
+real JSX call-site graph from those entrypoints (imports alone don't count — a component has to
+actually be rendered as `<Name .../>` to count as reachable). Any orphan throws with a
+defined-vs-reachable diff. Runs as part of `npm test` / `npm run test:coverage`.
+
+| Desktop | defined | reachable | allowlisted | orphans |
+|---|---|---|---|---|
+| Sweep result | 13 | 13 | 0 | **0** |
+
+**Mobile** — `mobile/WhisperioApp/Scripts/check-reachability.sh` (+ `reachability_check.py`,
+`reachability-allowlist.txt`). Scans `mobile/WhisperioApp/Sources/WhisperioApp/**/*.swift` for
+every `struct X: View` (including generic-constrained ones, e.g. `SettGroup<Content: View>`) and
+requires a real instantiation call-site (`X(` or the SwiftUI trailing-closure form `X {`) outside
+its own declaration line, anywhere in that same tree. Views used only from a `#Preview` block
+count as "preview-only", not reachable — they must be explicitly allowlisted with a reason, not
+silently passed. Exit 0/1; run manually (`./check-reachability.sh`) since there's no CI runner in
+this worktree — see verify notes below for the run that produced this result.
+
+| Mobile | defined | reachable | allowlisted (preview-only) | orphans |
+|---|---|---|---|---|
+| Sweep result | 71 | 70 | 1 (`GalleryView`) | **0** |
+
+`GalleryView` (Gallery.swift) is a concept/design-system gallery screen exercised only via
+`#Preview("Concept gallery") { GalleryView() }` in AppShell.swift — never mounted by a shipped
+screen. Allowlisted with reason, not wired up (wiring it into the shipped nav would be a new
+feature, out of scope for a reachability sweep).
+
+Both sweeps were run against a real orphan (a throwaway probe component/struct with no call-site)
+to confirm they actually fail red before being trusted to report green — see verify notes.
 
 ## Phase 0 debt board
 
@@ -38,7 +74,7 @@ until then this list is maintained by audit._
 |---|---|
 | P0.1 Click-test harness (Playwright for Electron) + first click tests | ✅ DONE (2026-07-14) — `desktop/e2e/*.spec.ts` (Playwright `_electron`) drives the real built app: AI Cleanup toggle save+persist-on-reopen, UsagePanel Reset, RecordingsPanel "Clean up" fail-soft with no provider reachable; wired into CI (`test` job, xvfb) |
 | P0.2 safeStorage keyStore (build + migrate provider keys + honest fallback) — **spec said code exists; it does NOT — building from scratch** | OPEN |
-| P0.3 Durable reachability sweep (defined-vs-reachable diff, desktop + mobile) | OPEN |
+| P0.3 Durable reachability sweep (defined-vs-reachable diff, desktop + mobile) | DONE |
 | P0.4 Durable IPC-integrity test (renderer↔preload↔ipcMain + registration order) | OPEN |
 | P0.5 Durable settings full-loop test (default→UI→save→consumer per key) | OPEN |
 | P0.6 v1.5 release prep refresh → HUMAN-GATED STOP | OPEN |

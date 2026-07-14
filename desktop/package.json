@@ -25,7 +25,8 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "test:e2e": "npm run build && playwright test",
-    "test:e2e:fast": "playwright test"
+    "test:e2e:fast": "playwright test",
+    "test:reachability": "vitest run tests/reachability.spec.ts"
   },
   "dependencies": {
     "electron-updater": "^6.8.3",
