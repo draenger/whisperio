@@ -1,8 +1,14 @@
-import { defineConfig } from 'vitest/config'
+import { defineConfig, configDefaults } from 'vitest/config'
 
 export default defineConfig({
   test: {
     environment: 'node',
+    // Playwright's click-test harness lives in desktop/e2e/*.spec.ts, run via
+    // its own `playwright.config.ts` (testDir 'e2e') — NOT vitest. Without this
+    // exclude, vitest's default include glob (`**/*.{test,spec}.*`) would also
+    // try to collect and run those specs as plain node tests, where
+    // `_electron.launch()` has no business executing (see e2e/helpers.ts).
+    exclude: [...configDefaults.exclude, 'e2e/**'],
     coverage: {
       provider: 'v8',
       reporter: ['text-summary', 'text', 'html'],

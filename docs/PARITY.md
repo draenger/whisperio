@@ -8,7 +8,7 @@ Last update: 2026-07-14 · Phase 0 in progress
 
 | Wispr Flow capability | Whisperio status | Reachable? | Tested (live)? | Notes |
 |---|---|---|---|---|
-| Dictation + AI cleanup | on main (v1.5.0 prep) — rough-first: raw pastes instantly, on-demand Clean up (full/templates/custom), auto opt-in | ✅ desktop | unit+boot ✅ / clicks pending P0.1 harness | pending human smoke |
+| Dictation + AI cleanup | on main (v1.5.0 prep) — rough-first: raw pastes instantly, on-demand Clean up (full/templates/custom), auto opt-in | ✅ desktop | unit+boot ✅ / clicks ✅ (P0.1: AI Cleanup toggle, on-demand Clean up fail-soft) — dictation hotkey flow itself not yet click-tested | pending human smoke |
 | Context-aware tone | ❌ MISSING | — | — | Phase 1 #1 — no-screenshot variant (process name + window title only) |
 | Snippets | ❌ MISSING | — | — | Phase 1 #2 — exact-match first, semantic (local MiniLM) as better-than |
 | Personal dictionary | manual vocab ✅ (custom + soft-deletable defaults) | ✅ | unit ✅ | auto-learn from edits = Phase 1 #3 |
@@ -36,7 +36,7 @@ until then this list is maintained by audit._
 
 | Item | Status |
 |---|---|
-| P0.1 Click-test harness (Playwright for Electron) + first click tests | OPEN |
+| P0.1 Click-test harness (Playwright for Electron) + first click tests | ✅ DONE (2026-07-14) — `desktop/e2e/*.spec.ts` (Playwright `_electron`) drives the real built app: AI Cleanup toggle save+persist-on-reopen, UsagePanel Reset, RecordingsPanel "Clean up" fail-soft with no provider reachable; wired into CI (`test` job, xvfb) |
 | P0.2 safeStorage keyStore (build + migrate provider keys + honest fallback) — **spec said code exists; it does NOT — building from scratch** | OPEN |
 | P0.3 Durable reachability sweep (defined-vs-reachable diff, desktop + mobile) | OPEN |
 | P0.4 Durable IPC-integrity test (renderer↔preload↔ipcMain + registration order) | OPEN |

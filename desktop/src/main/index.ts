@@ -51,6 +51,19 @@ import { getUsage, resetUsage } from './usageTracker'
 app.setName('Whisperio')
 app.setAppUserModelId('com.whisperio.app')
 
+// DEV/TEST ONLY: point Electron's userData dir at a disposable temp folder
+// instead of the real user's settings.json/recordings/usage.json. Read ONLY
+// when the app is not packaged (a real install can never hit this branch,
+// even if the env var leaked into its environment somehow) — this exists so
+// the Playwright click-test harness (desktop/e2e/*.spec.ts, see
+// e2e/helpers.ts) can drive a fully isolated app instance per test without
+// ever touching a developer's real config. Must run before anything reads
+// app.getPath('userData') (settingsManager, recordingStore, usageTracker all
+// resolve it lazily per-call, but set this as early as possible regardless).
+if (!app.isPackaged && process.env['WHISPERIO_USER_DATA_DIR']) {
+  app.setPath('userData', process.env['WHISPERIO_USER_DATA_DIR'])
+}
+
 // Prevent multiple instances — if another instance is already running, focus it
 const gotSingleInstanceLock = app.requestSingleInstanceLock()
 if (!gotSingleInstanceLock) {

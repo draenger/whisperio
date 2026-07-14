@@ -19,7 +19,7 @@ jobs:
   # reaches the macOS runner (billed at 10x).
   test:
     runs-on: ubuntu-latest
-    timeout-minutes: 12
+    timeout-minutes: 18
     defaults:
       run:
         working-directory: desktop
@@ -40,6 +40,36 @@ jobs:
 
       - name: Test + coverage gate
         run: npm run test:coverage
+
+      # P0.1 click-test harness (Playwright for Electron, desktop/e2e/*.spec.ts).
+      # This is a REAL gate, not advisory (continue-on-error stays false): it
+      # was measured locally at ~1s to build + ~2-3s to run all 3 specs
+      # end-to-end, and every spec is deliberately network-free (aiProvider
+      # pinned to 'local'/no configured key so provider selection never
+      # leaves the machine — see e2e/recordings-cleanup-failsoft.spec.ts) so
+      # there's no CI-only flakiness source to buy down with continue-on-error.
+      # `xvfb-run` gives Electron a virtual X display (no GPU/X11 on the
+      # runner) — same install pattern as the Linux AppImage smoke test below.
+      - name: Install xvfb
+        run: |
+          if ! command -v xvfb-run >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y xvfb
+          fi
+
+      - name: E2E click tests (Electron, headless via xvfb)
+        timeout-minutes: 5
+        env:
+          ELECTRON_DISABLE_SANDBOX: "1"
+        run: xvfb-run -a npm run test:e2e
+
+      - name: Upload Playwright report (on failure)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: desktop/playwright-report/
+          retention-days: 7
 
   build:
     needs: test
