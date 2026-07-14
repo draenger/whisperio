@@ -122,7 +122,7 @@ function RecentErrorsPanel({ s, theme }: { s: ReturnType<typeof makeStyles>; the
 
   return (
     <div style={s.card}>
-      <h3 style={s.cardTitle}>Recent errors</h3>
+      <SectionHeader title="Recent errors" s={s} theme={theme} />
       {errors.length === 0 ? (
         <span style={s.hint}>No errors yet — provider failures (bad key, rate limit, network) will show up here.</span>
       ) : (
@@ -355,7 +355,7 @@ function UpdatesTab({ state, s, theme }: { state: UpdaterState | null; s: Return
   return (
     <>
       <div style={s.card}>
-        <h3 style={s.cardTitle}>Software Updates</h3>
+        <SectionHeader title="Software Updates" s={s} theme={theme} />
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginTop: '4px' }}>
           <div style={{
@@ -405,7 +405,7 @@ function UpdatesTab({ state, s, theme }: { state: UpdaterState | null; s: Return
       </div>
 
       <div style={s.card}>
-        <h3 style={s.cardTitle}>How updates work</h3>
+        <SectionHeader title="How updates work" s={s} theme={theme} />
         <span style={s.hint}>
           Whisperio checks for updates automatically on launch and every 4 hours. New versions download
           quietly in the background — you keep working while it downloads. When it's ready you'll see a
@@ -671,7 +671,10 @@ export function SettingsForm(): ReactElement {
       payload as unknown as Parameters<Window['api']['settings']['save']>[0]
     )
     setSaved(true)
-    setTimeout(() => setSaved(false), 2000)
+    // Saved pulse duration per docs/design/wz-shell-excerpts.jsx's auto-save
+    // affordance contract (1400ms) — the footer flips back to the resting
+    // "Changes save automatically" copy after this.
+    setTimeout(() => setSaved(false), 1400)
   }, [
     providerChain, apiKey, openaiBaseUrl, whisperModel, elevenlabsApiKey, replicateApiKey, sttReplicateModel,
     sttApiKey, transcriptionLanguage, prompt,
@@ -774,7 +777,13 @@ export function SettingsForm(): ReactElement {
                       }
                     }}
                   >
-                    <span style={{ display: 'flex', flexShrink: 0, color: active ? theme.accent : theme.textMuted }}>
+                    {active && (
+                      <span style={{
+                        position: 'absolute', left: 0, top: '7px', bottom: '7px', width: '3px',
+                        borderRadius: '2px', background: theme.accent
+                      }} />
+                    )}
+                    <span style={{ display: 'flex', flexShrink: 0, color: active ? theme.accentLight : theme.textMuted }}>
                       <NavIcon d={TAB_ICONS[tab.id]} />
                     </span>
                     {tab.label}
@@ -1026,7 +1035,7 @@ function GeneralTab({
   return (
     <>
       <div style={s.card}>
-        <h3 style={s.cardTitle}>Startup</h3>
+        <SectionHeader title="Startup" s={s} theme={theme} />
         <ToggleRow
           label="Launch at Windows startup"
           description="Automatically start Whisperio when you log in"
@@ -1037,7 +1046,7 @@ function GeneralTab({
       </div>
 
       <div style={s.card}>
-        <h3 style={s.cardTitle}>Appearance</h3>
+        <SectionHeader title="Appearance" s={s} theme={theme} />
         <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
           <div style={{ flex: 1 }}>
             <div style={{ fontSize: 14, fontWeight: 500, color: theme.text }}>Theme</div>
@@ -1486,13 +1495,14 @@ function ProvidersTab({
   return (
     <>
       <div style={s.card}>
-        <h3 style={s.cardTitle}>Provider Chain</h3>
+        <SectionHeader title="Provider Chain" s={s} theme={theme} />
         <span style={s.hint}>First = primary. If it fails, the next one kicks in. Drag order with arrows.</span>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '10px' }}>
           {orderedProviders.map((provider) => {
             const enabled = providerChain.includes(provider.id)
             const idx = providerChain.indexOf(provider.id)
             const expanded = expandedProvider === provider.id
+            const primary = enabled && idx === 0
 
             return (
               <div key={provider.id}>
@@ -1503,19 +1513,19 @@ function ProvidersTab({
                   gap: '8px',
                   padding: '8px 10px',
                   borderRadius: expanded ? '8px 8px 0 0' : '8px',
-                  background: enabled ? theme.inputBg : 'transparent',
-                  border: `1px solid ${enabled ? (idx === 0 ? theme.accent + '50' : theme.inputBorder) : theme.border + '30'}`,
+                  background: enabled ? (primary ? `rgba(${theme.accentRgb}, 0.06)` : theme.inputBg) : 'transparent',
+                  border: `1px solid ${enabled ? (primary ? theme.accent + '50' : theme.inputBorder) : theme.border + '30'}`,
                   borderBottom: expanded ? `1px solid ${theme.inputBorder}` : undefined,
                   opacity: enabled ? 1 : 0.45,
-                  transition: 'opacity 0.15s'
+                  transition: 'opacity 0.15s, background 0.15s'
                 }}>
                   {/* Rank */}
                   <div style={{
                     width: '20px', height: '20px', borderRadius: '5px',
-                    background: enabled ? (idx === 0 ? theme.accent : theme.bgTertiary) : 'transparent',
+                    background: enabled ? (primary ? theme.accent : theme.bgTertiary) : 'transparent',
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
                     fontSize: '10px', fontWeight: 700,
-                    color: idx === 0 ? '#fff' : theme.textMuted,
+                    color: primary ? theme.accentInk : theme.textMuted,
                     flexShrink: 0
                   }}>
                     {enabled ? idx + 1 : '-'}
@@ -1525,6 +1535,12 @@ function ProvidersTab({
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <span style={{ fontSize: '13px', fontWeight: 600, color: theme.text }}>{provider.label}</span>
                     <span style={{ fontSize: '11px', color: theme.textMuted, marginLeft: '8px' }}>{provider.desc}</span>
+                    {primary && (
+                      <span style={{
+                        fontFamily: "'JetBrains Mono', monospace", fontSize: '9px', fontWeight: 700,
+                        letterSpacing: '0.1em', textTransform: 'uppercase', color: theme.accentLight, marginLeft: '8px'
+                      }}>Primary</span>
+                    )}
                   </div>
 
                   {/* Arrows */}
@@ -1540,7 +1556,12 @@ function ProvidersTab({
                   {/* Cog */}
                   {enabled && (
                     <button onClick={() => setExpandedProvider(expanded ? null : provider.id)}
-                      style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: expanded ? theme.accent : theme.textMuted, padding: '4px', borderRadius: '4px', display: 'flex', transition: 'color 0.15s' }}>
+                      style={{
+                        background: 'transparent', border: 'none', cursor: 'pointer', color: expanded ? theme.accent : theme.textMuted,
+                        padding: '4px', borderRadius: '4px', display: 'flex',
+                        transform: expanded ? 'rotate(45deg)' : 'none',
+                        transition: 'color 0.15s, transform 0.15s'
+                      }}>
                       <CogIcon size={14} />
                     </button>
                   )}
@@ -1648,7 +1669,7 @@ function ProvidersTab({
       />
 
       <div style={s.card}>
-        <h3 style={s.cardTitle}>Language</h3>
+        <SectionHeader title="Language" s={s} theme={theme} />
         <select value={transcriptionLanguage} onChange={(e) => setTranscriptionLanguage(e.target.value)} style={s.select}>
           <option value="auto">Auto-detect</option>
           <option value="en">English</option>
@@ -1677,7 +1698,7 @@ function ProvidersTab({
       </div>
 
       <div style={s.card}>
-        <h3 style={s.cardTitle}>Vocabulary</h3>
+        <SectionHeader title="Vocabulary" s={s} theme={theme} />
         <VocabularyEditor
           vocabulary={vocabulary}
           setVocabulary={setVocabulary}
@@ -1804,7 +1825,7 @@ function AudioTab({
   return (
     <>
       <div style={s.card}>
-        <h3 style={s.cardTitle}>Input Device (Microphone)</h3>
+        <SectionHeader title="Input Device (Microphone)" s={s} theme={theme} />
         <select
           value={inputDeviceId}
           onChange={(e) => setInputDeviceId(e.target.value)}
@@ -1818,7 +1839,7 @@ function AudioTab({
       </div>
 
       <div style={s.card}>
-        <h3 style={s.cardTitle}>Output Device (System Audio)</h3>
+        <SectionHeader title="Output Device (System Audio)" s={s} theme={theme} />
         <select
           value={outputDeviceId}
           onChange={(e) => setOutputDeviceId(e.target.value)}
@@ -1832,7 +1853,7 @@ function AudioTab({
       </div>
 
       <div style={s.card}>
-        <h3 style={s.cardTitle}>Recording</h3>
+        <SectionHeader title="Recording" s={s} theme={theme} />
         <ToggleRow
           label="Save recordings to disk"
           description="Keep audio files for playback and reprocessing"
@@ -1877,6 +1898,28 @@ function AudioTab({
 
 type HotkeyField = 'dictation' | 'send' | 'output'
 
+/** Renders a "Ctrl+Shift+Space" accelerator as individual keycaps, or a muted
+ * "Not set" when empty — ported from docs/design/wz-parts.jsx's Keycaps(). */
+function Keycaps({ combo, theme }: { combo: string; theme: Theme }): ReactElement {
+  if (!combo) {
+    return (
+      <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: '12px', color: theme.textMuted }}>
+        Not set
+      </span>
+    )
+  }
+  return (
+    <div style={{ display: 'flex', gap: '4px', alignItems: 'center', flexWrap: 'wrap' }}>
+      {combo.split('+').map((k, i) => <Keycap key={i} theme={theme}>{k}</Keycap>)}
+    </div>
+  )
+}
+
+/** Hotkey recorder row — Keycaps + Change/Cancel + clear ×, per
+ * docs/design/wz-tabs.jsx's HotkeyRecorderField. Key-capture itself lives in
+ * HotkeysTab's window-level listener (unchanged); this only renders it and
+ * exposes Change (start) / Cancel (abort) / × (clear) as buttons instead of
+ * a fake readonly text input. */
 function HotkeyInput({
   label,
   value,
@@ -1884,9 +1927,10 @@ function HotkeyInput({
   isRecording,
   liveKeys,
   onStartRecording,
+  onCancelRecording,
   onClear,
-  s,
-  theme
+  theme,
+  first
 }: {
   label: string
   value: string
@@ -1894,79 +1938,91 @@ function HotkeyInput({
   isRecording: boolean
   liveKeys: string
   onStartRecording: () => void
+  onCancelRecording: () => void
   onClear: () => void
-  s: ReturnType<typeof makeStyles>
   theme: Theme
+  first?: boolean
 }): ReactElement {
-  const inputRef = useRef<HTMLInputElement>(null)
-
-  const recordingStyle: React.CSSProperties = isRecording
-    ? {
-        border: `2px solid ${theme.accent}`,
-        boxShadow: `0 0 8px ${theme.accentGlow}`,
-        padding: '9px 13px'
-      }
-    : {}
-
-  const displayValue = isRecording
-    ? (liveKeys || 'Press keys...')
-    : value
-
   return (
-    <div>
-      <label style={label === 'Dictation Hotkey' ? s.label : { ...s.label, marginTop: '16px' }}>{label}</label>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '4px' }}>
-        <input
-          ref={inputRef}
-          type="text"
-          readOnly
-          value={displayValue}
-          placeholder={placeholder}
-          onClick={onStartRecording}
-          onFocus={onStartRecording}
-          style={{
-            ...s.input,
-            cursor: 'pointer',
-            caretColor: 'transparent',
-            ...recordingStyle
-          }}
-        />
-        {value && !isRecording && (
-          <button
-            onClick={(e) => {
-              e.stopPropagation()
-              onClear()
-            }}
-            style={{
-              background: theme.bgTertiary,
-              border: `1px solid ${theme.border}`,
-              borderRadius: '6px',
-              width: '32px',
-              height: '36px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              cursor: 'pointer',
-              color: theme.textMuted,
-              fontSize: '16px',
-              fontFamily: 'IBM Plex Sans, sans-serif',
-              flexShrink: 0,
-              transition: 'color 0.15s, border-color 0.15s'
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.color = theme.text
-              e.currentTarget.style.borderColor = theme.accent
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.color = theme.textMuted
-              e.currentTarget.style.borderColor = theme.border
-            }}
-            title="Clear hotkey"
-          >
-            x
-          </button>
+    <div style={{
+      display: 'flex',
+      alignItems: 'center',
+      gap: '12px',
+      padding: '10px 0',
+      borderTop: first ? 'none' : `1px solid ${theme.border}`
+    }}>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: '14px', fontWeight: 500, color: theme.text }}>{label}</div>
+        {!value && !isRecording && (
+          <div style={{ fontSize: '12px', color: theme.textMuted, marginTop: '2px' }}>{placeholder}</div>
         )}
       </div>
+
+      {isRecording ? (
+        <span style={{
+          fontFamily: "'JetBrains Mono', monospace", fontSize: '12px', fontWeight: 600,
+          color: theme.accent, whiteSpace: 'nowrap'
+        }}>
+          {liveKeys || 'Press keys…'}
+        </span>
+      ) : (
+        <Keycaps combo={value} theme={theme} />
+      )}
+
+      <button
+        onClick={isRecording ? onCancelRecording : onStartRecording}
+        style={{
+          background: isRecording ? theme.accent : theme.inputBg,
+          border: `1px solid ${isRecording ? theme.accent : theme.border}`,
+          borderRadius: '8px',
+          padding: '6px 13px',
+          fontSize: '12px',
+          fontWeight: 600,
+          color: isRecording ? theme.accentInk : theme.textSecondary,
+          cursor: 'pointer',
+          fontFamily: 'IBM Plex Sans, sans-serif',
+          flexShrink: 0,
+          transition: 'background 0.15s, color 0.15s, border-color 0.15s'
+        }}
+      >
+        {isRecording ? 'Cancel' : 'Change'}
+      </button>
+
+      {value && !isRecording && (
+        <button
+          onClick={(e) => {
+            e.stopPropagation()
+            onClear()
+          }}
+          style={{
+            background: theme.bgTertiary,
+            border: `1px solid ${theme.border}`,
+            borderRadius: '8px',
+            width: '30px',
+            height: '32px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            cursor: 'pointer',
+            color: theme.textMuted,
+            fontSize: '15px',
+            fontFamily: 'IBM Plex Sans, sans-serif',
+            flexShrink: 0,
+            transition: 'color 0.15s, border-color 0.15s'
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.color = theme.text
+            e.currentTarget.style.borderColor = theme.accent
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.color = theme.textMuted
+            e.currentTarget.style.borderColor = theme.border
+          }}
+          title="Clear hotkey"
+        >
+          ×
+        </button>
+      )}
     </div>
   )
 }
@@ -2089,7 +2145,7 @@ function HotkeysTab({
   return (
     <>
       <div style={s.card}>
-        <h3 style={s.cardTitle}>Keyboard Shortcuts</h3>
+        <SectionHeader title="Keyboard Shortcuts" s={s} theme={theme} />
 
         <HotkeyInput
           label="Dictation Hotkey"
@@ -2098,9 +2154,10 @@ function HotkeysTab({
           isRecording={recordingField === 'dictation'}
           liveKeys={recordingField === 'dictation' ? liveKeys : ''}
           onStartRecording={() => startRecording('dictation')}
+          onCancelRecording={() => stopRecording()}
           onClear={() => setDictationHotkey('')}
-          s={s}
           theme={theme}
+          first
         />
 
         <HotkeyInput
@@ -2110,8 +2167,8 @@ function HotkeysTab({
           isRecording={recordingField === 'send'}
           liveKeys={recordingField === 'send' ? liveKeys : ''}
           onStartRecording={() => startRecording('send')}
+          onCancelRecording={() => stopRecording()}
           onClear={() => setDictateAndSendHotkey('')}
-          s={s}
           theme={theme}
         />
 
@@ -2122,13 +2179,13 @@ function HotkeysTab({
           isRecording={recordingField === 'output'}
           liveKeys={recordingField === 'output' ? liveKeys : ''}
           onStartRecording={() => startRecording('output')}
+          onCancelRecording={() => stopRecording()}
           onClear={() => setOutputRecordingHotkey('')}
-          s={s}
           theme={theme}
         />
 
         <span style={{ ...s.hint, marginTop: '16px', display: 'block' }}>
-          Click to record hotkey. Press and release keys to set. Escape to cancel.
+          Click Change to record a hotkey. Press and release keys to set. Escape or Cancel to abort.
         </span>
       </div>
     </>
@@ -2197,6 +2254,33 @@ export function ToggleRow({
         style={{ display: 'none' }}
       />
     </label>
+  )
+}
+
+/* ─── Shared: Section header (accent tick + title) ─── */
+
+/** Card section header: 3×15 accent tick + title, ported from
+ * docs/design/wz-parts.jsx's Section(). Exported so feature panels
+ * (CleanupPanel, UsagePanel) reuse this instead of a bare
+ * `<h3 style={s.cardTitle}>` — keeps every settings card's header visually
+ * consistent (General/Providers/Audio/Hotkeys/Updates/Sync/AI Cleanup/Usage). */
+export function SectionHeader({
+  title,
+  right,
+  theme,
+  s
+}: {
+  title: string
+  right?: ReactNode
+  theme: Theme
+  s: { cardTitle: React.CSSProperties }
+}): ReactElement {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: '9px' }}>
+      <span style={{ width: '3px', height: '15px', borderRadius: '2px', background: theme.accent, flexShrink: 0 }} />
+      <h3 style={{ ...s.cardTitle, flex: 1 }}>{title}</h3>
+      {right}
+    </div>
   )
 }
 
@@ -2350,7 +2434,7 @@ function SyncTab({ s, theme }: { s: ReturnType<typeof makeStyles>; theme: Theme 
     <>
       {/* Security explainer — always visible */}
       <div style={{ ...s.card, background: `${theme.accent}0d`, border: `1px solid ${theme.accent}33`, borderRadius: '10px', padding: '14px 16px' }}>
-        <h3 style={{ ...s.cardTitle, marginBottom: '6px' }}>Encrypted secret store</h3>
+        <SectionHeader title="Encrypted secret store" s={s} theme={theme} />
         <span style={s.hint}>
           Connect a GitHub repo to back up your API keys. Everything is encrypted on THIS device
           with AES-256-GCM before it leaves the app — the key is held in your macOS Keychain and is
@@ -2383,7 +2467,7 @@ function SyncTab({ s, theme }: { s: ReturnType<typeof makeStyles>; theme: Theme 
 
       {status.vaultAvailable && !status.clientConfigured && (
         <div style={s.card}>
-          <h3 style={s.cardTitle}>Setup required</h3>
+          <SectionHeader title="Setup required" s={s} theme={theme} />
           <span style={s.hint}>
             A GitHub OAuth App (with Device Flow enabled and the <code>repo</code> scope) must be
             configured for this build. Set <code>WHISPERIO_GITHUB_CLIENT_ID</code> to its client id,
@@ -2395,7 +2479,7 @@ function SyncTab({ s, theme }: { s: ReturnType<typeof makeStyles>; theme: Theme 
       {/* Connection card */}
       {status.vaultAvailable && status.clientConfigured && (
         <div style={s.card}>
-          <h3 style={s.cardTitle}>GitHub connection</h3>
+          <SectionHeader title="GitHub connection" s={s} theme={theme} />
 
           {!status.connected && !prompt && (
             <>
@@ -2438,7 +2522,7 @@ function SyncTab({ s, theme }: { s: ReturnType<typeof makeStyles>; theme: Theme 
       {/* Repo picker */}
       {showPicker && (
         <div style={s.card}>
-          <h3 style={s.cardTitle}>Choose store repository</h3>
+          <SectionHeader title="Choose store repository" s={s} theme={theme} />
           {!repos && !loadingRepos && (
             <button onClick={loadRepos} style={btnGhost}>Load my repositories</button>
           )}
@@ -2473,7 +2557,7 @@ function SyncTab({ s, theme }: { s: ReturnType<typeof makeStyles>; theme: Theme 
       {/* Sync actions */}
       {status.connected && status.repo && !picking && (
         <div style={s.card}>
-          <h3 style={s.cardTitle}>Secret store</h3>
+          <SectionHeader title="Secret store" s={s} theme={theme} />
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
             <span style={s.hint}>Store repo:</span>
             <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: '12px', color: theme.text }}>{status.repo}</span>
@@ -2550,12 +2634,12 @@ function makeStyles(theme: Theme) {
       fontWeight: 600,
       background: 'transparent',
       color: theme.textSecondary,
-      transition: 'background 0.15s, color 0.15s, transform 0.15s'
+      position: 'relative' as const,
+      transition: 'background 0.15s, color 0.15s'
     } as React.CSSProperties,
     navItemActive: {
-      background: `${theme.accent}14`,
-      color: theme.text,
-      boxShadow: `inset 3px 0 0 ${theme.accent}`
+      background: `rgba(${theme.accentRgb}, 0.13)`,
+      color: theme.accentLight
     } as React.CSSProperties,
     versionBadge: {
       display: 'flex',
@@ -2572,11 +2656,11 @@ function makeStyles(theme: Theme) {
     card: {
       display: 'flex',
       flexDirection: 'column' as const,
-      gap: '12px',
+      gap: '10px',
       padding: '18px 18px 16px',
       background: theme.bgSecondary,
       border: `1px solid ${theme.border}`,
-      borderRadius: '12px',
+      borderRadius: '14px',
       boxShadow: theme.shadow
     },
     cardTitle: {

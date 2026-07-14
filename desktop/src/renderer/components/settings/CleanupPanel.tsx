@@ -1,6 +1,6 @@
 import { useMemo, type CSSProperties, type ReactElement } from 'react'
 import type { Theme } from '../../theme'
-import { ToggleRow, Segmented } from './SettingsForm'
+import { ToggleRow, Segmented, SectionHeader } from './SettingsForm'
 import { ModelPicker } from './ModelPicker'
 import { KeyStorageHint } from './KeyStorageHint'
 
@@ -219,7 +219,7 @@ export function CleanupPanel({
 
   return (
     <div style={s.card}>
-      <h3 style={s.cardTitle}>AI Cleanup</h3>
+      <SectionHeader title="AI Cleanup" s={s} theme={theme} />
 
       <ToggleRow
         label="Enable AI cleanup"

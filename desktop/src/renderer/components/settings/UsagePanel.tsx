@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, type CSSProperties, type ReactElement } from 'react'
 import type { Theme } from '../../theme'
 import { OnDeviceBadge } from './CleanupPanel'
+import { SectionHeader } from './SettingsForm'
 
 /*
  * Usage panel (v1.5 PACZKA UI), wired to `window.api.usage` from the
@@ -123,31 +124,35 @@ export function UsagePanel({ s, theme }: { s: SettingsStyles; theme: Theme }): R
 
   return (
     <div style={s.card}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-        <h3 style={{ ...s.cardTitle, flex: 1 }}>Usage</h3>
-        <button
-          onClick={handleReset}
-          disabled={resetting}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '7px',
-            background: 'transparent',
-            border: `1px solid ${theme.border}`,
-            borderRadius: '9px',
-            padding: '8px 13px',
-            fontSize: '13px',
-            fontWeight: 500,
-            color: theme.textSecondary,
-            cursor: resetting ? 'default' : 'pointer',
-            fontFamily: 'IBM Plex Sans, sans-serif',
-            opacity: resetting ? 0.6 : 1,
-            transition: 'border-color 0.15s, color 0.15s'
-          }}
-        >
-          {resetting ? 'Resetting…' : 'Reset'}
-        </button>
-      </div>
+      <SectionHeader
+        title="Usage"
+        theme={theme}
+        s={s}
+        right={
+          <button
+            onClick={handleReset}
+            disabled={resetting}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '7px',
+              background: 'transparent',
+              border: `1px solid ${theme.border}`,
+              borderRadius: '9px',
+              padding: '8px 13px',
+              fontSize: '13px',
+              fontWeight: 500,
+              color: theme.textSecondary,
+              cursor: resetting ? 'default' : 'pointer',
+              fontFamily: 'IBM Plex Sans, sans-serif',
+              opacity: resetting ? 0.6 : 1,
+              transition: 'border-color 0.15s, color 0.15s'
+            }}
+          >
+            {resetting ? 'Resetting…' : 'Reset'}
+          </button>
+        }
+      />
 
       {rows === null && <span style={s.hint}>Loading…</span>}
 

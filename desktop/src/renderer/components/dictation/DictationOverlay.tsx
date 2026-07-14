@@ -15,10 +15,17 @@ function truncate(text: string, maxLen: number): string {
   return text.slice(0, maxLen - 3) + '...'
 }
 
+/** "0:07" mono timer text — mirrors docs/design/wz-overlay.jsx's timer, purely
+ * a renderer-local display value (no IPC): counts seconds while `active`. */
+function formatTimer(totalSeconds: number): string {
+  return `0:${String(totalSeconds % 60).padStart(2, '0')}`
+}
+
 export function DictationOverlay(): JSX.Element {
   const [overlayState, setOverlayState] = useState<OverlayState>('idle')
   const [overlayInfo, setOverlayInfo] = useState<OverlayInfo | null>(null)
   const [hovered, setHovered] = useState(false)
+  const [elapsedSec, setElapsedSec] = useState(0)
   const { startRecording, startOutputRecording, stopAndTranscribe, cancelRecording } = useDictation()
 
   // Listen for state changes from main process
@@ -32,6 +39,18 @@ export function DictationOverlay(): JSX.Element {
     })
     return unsub
   }, [])
+
+  // Local mono timer while listening — display-only, ticks from 0 each time
+  // recording starts. No IPC involved: the real recording duration used for
+  // transcription bookkeeping is computed separately in useDictation.ts.
+  useEffect(() => {
+    if (overlayState !== 'recording') {
+      setElapsedSec(0)
+      return
+    }
+    const iv = setInterval(() => setElapsedSec((s) => s + 1), 1000)
+    return () => clearInterval(iv)
+  }, [overlayState])
 
   // Listen for overlay info from main process
   useEffect(() => {
@@ -120,6 +139,7 @@ export function DictationOverlay(): JSX.Element {
             />
             <span style={styles.text}>{sourceName}</span>
             <WaveformBars accentColor={accentColor} />
+            <span style={styles.timer}>{formatTimer(elapsedSec)}</span>
           </>
         )}
         {isTranscribing && (
@@ -132,6 +152,9 @@ export function DictationOverlay(): JSX.Element {
               }}
             />
             <span style={styles.text}>Transcribing...</span>
+            <span style={styles.progressTrack}>
+              <span style={styles.progressSweep} />
+            </span>
           </>
         )}
       </div>
@@ -184,7 +207,7 @@ const styles: Record<string, React.CSSProperties> = {
   tooltipText: {
     color: 'rgba(255, 255, 255, 0.7)',
     fontSize: '11px',
-    fontFamily: "'Inter', sans-serif",
+    fontFamily: "'IBM Plex Sans', sans-serif",
     fontWeight: 400,
     letterSpacing: '0.02em',
     whiteSpace: 'nowrap'
@@ -195,7 +218,8 @@ const styles: Record<string, React.CSSProperties> = {
     gap: '10px',
     padding: '12px 20px',
     borderRadius: '50px',
-    background: 'rgba(10, 10, 15, 0.92)',
+    // --wsp-pill-bg (docs/design/tokens.css) — cool-dark pill, theme-invariant.
+    background: 'rgba(9, 15, 24, 0.94)',
     backdropFilter: 'blur(20px)',
     cursor: 'default'
   },
@@ -203,20 +227,43 @@ const styles: Record<string, React.CSSProperties> = {
     width: '10px',
     height: '10px',
     borderRadius: '50%',
-    animation: 'pulse-dot 1.5s ease-in-out infinite'
+    animation: 'wzpulse 1.5s ease-in-out infinite'
   },
   text: {
     color: 'rgba(255, 255, 255, 0.9)',
     fontSize: '13px',
-    fontFamily: "'Inter', sans-serif",
+    fontFamily: "'IBM Plex Sans', sans-serif",
     fontWeight: 500,
     letterSpacing: '0.02em'
+  },
+  timer: {
+    color: 'rgba(255, 255, 255, 0.6)',
+    fontSize: '11.5px',
+    fontFamily: "'JetBrains Mono', monospace"
   },
   spinner: {
     width: '16px',
     height: '16px',
     borderRadius: '50%',
-    animation: 'spin 0.8s linear infinite'
+    animation: 'wzspin 0.8s linear infinite'
+  },
+  progressTrack: {
+    position: 'relative',
+    width: '64px',
+    height: '4px',
+    borderRadius: '2px',
+    background: 'rgba(255, 255, 255, 0.12)',
+    overflow: 'hidden'
+  },
+  progressSweep: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    width: '26px',
+    borderRadius: '2px',
+    // --wsp-progress-gradient: teal -> sky, distinct from the recording red dot.
+    background: 'linear-gradient(90deg, #1cc8b4, #3da2f7)',
+    animation: 'wzprog 1.1s ease-in-out infinite'
   },
   waveform: {
     display: 'flex',
@@ -236,12 +283,16 @@ const styles: Record<string, React.CSSProperties> = {
 // Inject global keyframe animations
 const styleEl = document.createElement('style')
 styleEl.textContent = `
-  @keyframes pulse-dot {
+  @keyframes wzpulse {
     0%, 100% { opacity: 1; transform: scale(1); }
     50% { opacity: 0.5; transform: scale(0.85); }
   }
-  @keyframes spin {
+  @keyframes wzspin {
     to { transform: rotate(360deg); }
+  }
+  @keyframes wzprog {
+    0% { left: -26px; }
+    100% { left: 64px; }
   }
 `
 document.head.appendChild(styleEl)
