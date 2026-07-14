@@ -145,7 +145,7 @@ public final class RecordingSyncStore: ObservableObject {
     /// UserDefaults key the app's `SettingsStore` persists the `WhisperioSettings` JSON blob under.
     /// Kept in sync with `SettingsStore.key`; decoded here so the store can honor the user's
     /// on-device / iCloud choice without a compile dependency on the app target.
-    public static let settingsDefaultsKey = "whisperio.settings.v1"
+    public nonisolated static let settingsDefaultsKey = "whisperio.settings.v1"
 
     /// The user's persisted storage choice, decoded from the settings blob in UserDefaults.
     /// Defaults to `.iCloud` (the shipped behavior) when the blob is absent or undecodable.
@@ -155,6 +155,19 @@ public final class RecordingSyncStore: ObservableObject {
             return .iCloud
         }
         return s.storageMode
+    }
+
+    /// The user's persisted sync mode, decoded from the same settings blob. Defaults to
+    /// `.automatic` (the shipped push-driven behavior) when the blob is absent or undecodable.
+    /// Read fresh on every CloudKit event rather than cached at init, so a mode change the user
+    /// makes in Settings takes effect on the very next event — no relaunch required (unlike
+    /// `storageMode`, which is pinned to the `ModelConfiguration` at init).
+    nonisolated static func persistedSyncMode() -> SyncMode {
+        guard let data = UserDefaults.standard.data(forKey: settingsDefaultsKey),
+              let s = try? JSONDecoder().decode(WhisperioSettings.self, from: data) else {
+            return .automatic
+        }
+        return s.syncMode
     }
 
     /// Build the store, honoring the user's storage choice (Settings → Storage). Uses CloudKit
@@ -289,8 +302,16 @@ public final class RecordingSyncStore: ObservableObject {
                     )
                     switch Self.syncEffect(type: type, succeeded: succeeded, endDate: endDate, error: error) {
                     case .importSucceeded(let endDate):
+                        // `lastImportAt` always stamps — it's diagnostic truth (an import DID
+                        // land) independent of whether the UI reflects it yet. Only `reload()` —
+                        // which republishes `items` — is gated on the live-publish mode: in every
+                        // non-automatic mode the row already sits in the local SwiftData store
+                        // (iOS put it there; nothing here can stop that), it just isn't surfaced
+                        // to `items` until the mode's own nudge (requestRefresh()) asks for it.
                         self?.lastImportAt = endDate
-                        self?.reload()
+                        if SyncGating.shouldPublishLiveUpdates(RecordingSyncStore.persistedSyncMode()) {
+                            self?.reload()
+                        }
                     case .exportSucceeded(let endDate):
                         self?.lastExportAt = endDate
                     case .recordError(let message):

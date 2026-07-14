@@ -160,6 +160,17 @@ public final class DigestSyncStore: ObservableObject {
         return s.storageMode
     }
 
+    /// The user's persisted sync mode, decoded from the same settings blob. Mirrors
+    /// `RecordingSyncStore.persistedSyncMode()` — defaults to `.automatic`, and is read fresh on
+    /// every CloudKit event (not cached at init) so a mode change takes effect without a relaunch.
+    nonisolated static func persistedSyncMode() -> SyncMode {
+        guard let data = UserDefaults.standard.data(forKey: RecordingSyncStore.settingsDefaultsKey),
+              let s = try? JSONDecoder().decode(WhisperioSettings.self, from: data) else {
+            return .automatic
+        }
+        return s.syncMode
+    }
+
     /// Build the store, honoring the user's storage choice (Settings → Storage). Uses CloudKit
     /// only when the user picked `.iCloud` AND an iCloud account is present; otherwise a plain
     /// on-disk SwiftData store, which never touches CloudKit and so can't fault. The ubiquity
@@ -241,8 +252,13 @@ public final class DigestSyncStore: ObservableObject {
                 self?.isSyncing = syncing
                 switch Self.syncEffect(type: type, succeeded: succeeded, endDate: endDate, error: error) {
                 case .importSucceeded(let endDate):
+                    // See the matching comment in `RecordingSyncStore.observeCloudKitEvents()`:
+                    // `lastImportAt` always stamps (diagnostic truth); only the live `reload()` —
+                    // which republishes `digests` — is gated on the sync mode's live-publish rule.
                     self?.lastImportAt = endDate
-                    self?.reload()
+                    if SyncGating.shouldPublishLiveUpdates(DigestSyncStore.persistedSyncMode()) {
+                        self?.reload()
+                    }
                 case .exportSucceeded(let endDate):
                     self?.lastExportAt = endDate
                 case .recordError(let message):

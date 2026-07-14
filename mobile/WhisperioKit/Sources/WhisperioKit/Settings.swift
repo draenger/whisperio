@@ -15,6 +15,30 @@ public enum AudioInterruptionBehavior: String, Codable, Sendable, CaseIterable {
     case resume = "resume"
 }
 
+/// When Whisperio actively refreshes from iCloud and publishes those changes into the UI.
+///
+/// HONESTY NOTE: iOS/SwiftData+CloudKit gives no API to pause the underlying
+/// `NSPersistentCloudKitContainer`'s background import — a remote change can land in the
+/// on-disk store at any time no matter which mode is selected here. What these modes actually
+/// control is narrower but real: (a) whether an import that already landed is immediately
+/// reflected in the UI, and (b) when the app proactively asks CloudKit to check for more. See
+/// `SyncGating` for the pure decision functions, and the Settings copy in `SettingsView` for the
+/// exact wording shown to the user.
+public enum SyncMode: String, Codable, Sendable, CaseIterable {
+    /// Default — today's shipped behavior. CloudKit import events publish straight into the UI
+    /// as they land, and the app also nudges (re-checks) every time it comes to the foreground.
+    case automatic
+    /// Nudge once when the app comes to the foreground; otherwise stay quiet — no live-publishing
+    /// of background imports and no recurring timer.
+    case onOpen
+    /// Nudge on a repeating timer while the app is in the foreground (`scenePhase == .active`);
+    /// the timer stops the moment the app leaves the foreground. Also nudges once on open, same
+    /// as `.onOpen`, so the first check doesn't wait a full interval.
+    case interval
+    /// Never nudge automatically. The user must tap the Sync button to refresh.
+    case manual
+}
+
 /// Automatic stop timeout after silence. Off by default so Whisperio behaves like a normal
 /// dictation app unless the user opts into auto-release.
 /// User settings, mirroring the desktop `AppSettings` shape (so config can be shared/synced
@@ -80,6 +104,18 @@ public struct WhisperioSettings: Codable, Sendable, Equatable {
     /// existing users. Read by `RecordingSyncStore` at launch to pick the SwiftData backend.
     public var storageMode: StorageMode
 
+    /// When Whisperio actively refreshes from iCloud / publishes background imports to the UI.
+    /// Defaults to `.automatic` — today's shipped push-driven behavior — so existing users see no
+    /// change until they opt into a quieter mode. Unlike `storageMode`, this is read live: no
+    /// relaunch is required for a change to take effect (see `RecordingSyncStore`/`DigestSyncStore`
+    /// `persistedSyncMode()` and `WZPhoneView`'s scenePhase/timer wiring).
+    public var syncMode: SyncMode
+
+    /// Minutes between nudges when `syncMode == .interval`. Only meaningful in that mode.
+    /// Intended values are 5/15/30/60 (the Settings UI offers exactly those), but any positive
+    /// value is honored; a non-positive or missing value falls back to the default.
+    public var syncIntervalMinutes: Int
+
     public init(
         providerChain: [ProviderID] = [.onDevice],
         openAIKey: String = "",
@@ -104,7 +140,9 @@ public struct WhisperioSettings: Codable, Sendable, Equatable {
         githubBranch: String = "main",
         githubPathPrefix: String = "",
         githubToken: String = "",
-        storageMode: StorageMode = .iCloud
+        storageMode: StorageMode = .iCloud,
+        syncMode: SyncMode = .automatic,
+        syncIntervalMinutes: Int = 15
     ) {
         self.providerChain = providerChain
         self.openAIKey = openAIKey
@@ -130,6 +168,8 @@ public struct WhisperioSettings: Codable, Sendable, Equatable {
         self.githubPathPrefix = githubPathPrefix
         self.githubToken = githubToken
         self.storageMode = storageMode
+        self.syncMode = syncMode
+        self.syncIntervalMinutes = syncIntervalMinutes
     }
 
     // Tolerant decoding — missing keys (older persisted settings, or future-added fields)
@@ -161,6 +201,14 @@ public struct WhisperioSettings: Codable, Sendable, Equatable {
         githubPathPrefix = try c.decodeIfPresent(String.self, forKey: .githubPathPrefix) ?? d.githubPathPrefix
         githubToken = try c.decodeIfPresent(String.self, forKey: .githubToken) ?? d.githubToken
         storageMode = try c.decodeIfPresent(StorageMode.self, forKey: .storageMode) ?? d.storageMode
+        // An unknown/garbled raw value (e.g. a future build's mode this build has never heard of)
+        // makes the synthesized `SyncMode` decode THROW, not return nil — `decodeIfPresent` only
+        // covers a missing key. Wrapping in `try?` catches that throw too (Swift flattens the
+        // resulting `SyncMode??` to `SyncMode?`), so both "missing" and "unrecognized" fall back
+        // to the default exactly like every other tolerant field here.
+        syncMode = (try? c.decodeIfPresent(SyncMode.self, forKey: .syncMode)) ?? d.syncMode
+        let decodedMinutes = try c.decodeIfPresent(Int.self, forKey: .syncIntervalMinutes) ?? d.syncIntervalMinutes
+        syncIntervalMinutes = decodedMinutes > 0 ? decodedMinutes : d.syncIntervalMinutes
     }
 
     /// Whether the given engine requires (and currently has) cloud consent to run.

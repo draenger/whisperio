@@ -151,6 +151,18 @@ struct SettingsView: View {
         settings.settings = s
     }
 
+    private func setSyncMode(_ mode: SyncMode) {
+        var s = settings.settings
+        s.syncMode = mode
+        settings.settings = s
+    }
+
+    private func setSyncIntervalMinutes(_ minutes: Int) {
+        var s = settings.settings
+        s.syncIntervalMinutes = minutes
+        settings.settings = s
+    }
+
     // Entry point for both the "Move library to iCloud" row and the mismatch-banner's "Resume
     // iCloud sync" action. Mirrors `RecordingsStore.attemptICloudResumeIfNeeded`'s account guard —
     // without it, a signed-out user tapping this gets a silent no-op from SwiftData's CloudKit
@@ -232,6 +244,21 @@ struct SettingsView: View {
             if on { WIcon("check", size: 18).foregroundStyle(t.accent) }
         }
     }
+
+    // A selectable Sync mode row — mirrors storageRow's shape. Unlike storageMode, picking a new
+    // mode here is read live by RecordingSyncStore/DigestSyncStore and WZPhoneView's scenePhase/
+    // timer wiring on the very next event — no restart needed, so there's no "takes effect after
+    // restart" footnote for this group (see the honesty footer instead).
+    private func syncModeRow(_ mode: SyncMode, _ label: String, _ sub: String,
+                             _ icon: String, last: Bool = false) -> some View {
+        let on = settings.settings.syncMode == mode
+        return SettRow(icon: icon, label: label, sub: sub, last: last,
+                       onTap: { setSyncMode(mode) }) {
+            if on { WIcon("check", size: 18).foregroundStyle(t.accent) }
+        }
+    }
+
+    private let syncIntervalChoices = [5, 15, 30, 60]
 
     var body: some View {
         ScreenScaffold {
@@ -562,7 +589,52 @@ struct SettingsView: View {
                     .padding(.leading, 4)
             }
 
+            VStack(alignment: .leading, spacing: 6) {
+                SettGroup(title: "Sync behavior") {
+                    syncModeRow(.automatic, "Automatic",
+                                "Refresh live the moment iCloud delivers a change — today's default",
+                                "bolt")
+                    syncModeRow(.onOpen, "On open",
+                                "Sync once each time you open Whisperio, then stay quiet",
+                                "download")
+                    syncModeRow(.interval, "Every few minutes",
+                                "Sync on a timer while Whisperio is open",
+                                "clock",
+                                last: settings.settings.syncMode != .interval)
+                    if settings.settings.syncMode == .interval {
+                        intervalMinutesPicker
+                    }
+                    syncModeRow(.manual, "Manual only",
+                                "Never sync automatically — tap the Sync button on Home when you want it",
+                                "sync", last: true)
+                }
+                Text("iOS may still receive iCloud changes in the background; this controls when Whisperio actively refreshes and shows them.")
+                    .font(WZFont.mono(11)).foregroundStyle(t.faint)
+                    .padding(.leading, 4)
+            }
         }
+    }
+
+    // Minute chips shown only while syncMode == .interval — mirrors the language-picker chip
+    // style used elsewhere in Settings (Capsule, stroke, selected = accent fill).
+    private var intervalMinutesPicker: some View {
+        HStack(spacing: 8) {
+            ForEach(syncIntervalChoices, id: \.self) { minutes in
+                let on = settings.settings.syncIntervalMinutes == minutes
+                Button { setSyncIntervalMinutes(minutes) } label: {
+                    Text("\(minutes)m")
+                        .font(WZFont.ui(12.5, .semibold))
+                        .foregroundStyle(on ? Color.white : t.text)
+                        .padding(.horizontal, 13).padding(.vertical, 7)
+                        .background(on ? t.accent : t.surfaceUp, in: Capsule())
+                        .overlay(Capsule().stroke(on ? Color.clear : t.line, lineWidth: 1))
+                }
+                .buttonStyle(.plain)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.vertical, 10)
+        .overlay(alignment: .bottom) { Rectangle().fill(t.lineSoft).frame(height: 1) }
     }
 
     private var developerCategory: some View {
