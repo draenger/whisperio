@@ -23,12 +23,13 @@ Last update: 2026-07-14 · **Phase 0 COMPLETE** · v1.5.0 release-ready, human-g
 | **Moat: usage meter** | ✅ per-provider/month, local-only; ElevenLabs credits; local=$0 | ✅ | clicks ✅ (reset) | |
 | **Moat: keys in OS secure storage** | ✅ NEW (P0.2): safeStorage keyStore, round-trip-verified migration, honest fallback copy | ✅ | unit ✅ + real Keychain migration observed in dev boot | "where available", never "always" |
 | **Moat: no-screenshot** | ✅ nothing reads the screen; privacy guardian test lands with tone | n/a | — | |
+| Phase 2 sync-controls | ✅ IMPLEMENTED — branch `feat/mobile-sync-controls` (worktree); `SyncMode` (automatic/onOpen/interval/manual) gates live CloudKit-import publishing + foreground/timer nudges; Home gets a bigger Sync button + timestamp in `.manual`; Settings picker + honest "iOS may still receive changes in the background" copy | ✅ mobile (Kit) | Kit unit ✅ (130/130, 12 new); iOS sim build ✅; reachability ✅ (72/72, 0 orphans) | merge-hold — pending user's decision on the mobile release |
 
 ## Orphan list (defined-but-unreachable views) — must stay EMPTY
 
 Durable guardians active (orphan = failing test):
 - Desktop: `tests/reachability.spec.ts` — 13 defined / 13 reachable / 0 allowlisted / **0 orphans**
-- Mobile: `mobile/WhisperioApp/Scripts/check-reachability.sh` — 71 defined / 70 reachable / 1 allowlisted (`GalleryView`, preview-only) / **0 orphans**
+- Mobile: `mobile/WhisperioApp/Scripts/check-reachability.sh` — 72 defined / 71 reachable / 1 allowlisted (`GalleryView`, preview-only) / **0 orphans**
 - Both mutation-sanity-checked (a planted orphan fails the mechanism).
 
 ## Phase 0 debt board — ✅ COMPLETE (2026-07-14)

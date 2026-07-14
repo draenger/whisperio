@@ -71,6 +71,11 @@ struct WZPhoneView: View {
     @State private var fromKeyboard = false
     // Transcript awaiting the user's swipe back to the previous app (keyboard bounce flow).
     @State private var returnText = ""
+    // Recurring nudge timer for SyncMode.interval — runs only while scenePhase == .active,
+    // invalidated the moment the app leaves the foreground. Reconfigured (stop+restart) whenever
+    // the phase changes or the user edits syncMode/syncIntervalMinutes in Settings, so a mode
+    // change takes effect immediately without a relaunch — see `SyncGating.nextNudgeInterval`.
+    @State private var syncNudgeTimer: Timer?
     // The preset the editor screen is editing (a fresh draft for "new"), and the screen to
     // return to when the editor closes (Settings, or Detail for the Template Builder flow).
     @State private var editorPreset: RewritePreset = RewritePresetCatalog.seeds[0]
@@ -110,6 +115,7 @@ struct WZPhoneView: View {
             consumePending()
             runAutoJournaling()
             if let url = incomingURL { handle(url); incomingURL = nil }
+            if scenePhase == .active { restartSyncNudgeTimer() }
         }
         .onChange(of: scenePhase) { _, phase in
             // Drop any stale keyboard-handoff transcript on every transition so dictated text
@@ -121,18 +127,60 @@ struct WZPhoneView: View {
                 runAutoJournaling()
                 // A CloudKit import can land silently while backgrounded (or without a push at
                 // all, if remote-notification wasn't delivered) — re-check on every foreground so
-                // a stalled sync always has recourse beyond waiting for a push.
-                recordings.requestCloudRefresh()
-                digests.requestCloudRefresh()
+                // a stalled sync always has recourse beyond waiting for a push. Every mode except
+                // `.manual` wants this one-shot foreground nudge (automatic/onOpen/interval all
+                // baseline on it) — see `SyncGating.shouldNudgeOnForeground`.
+                if SyncGating.shouldNudgeOnForeground(settings.settings.syncMode) {
+                    recordings.requestCloudRefresh()
+                    digests.requestCloudRefresh()
+                }
+                restartSyncNudgeTimer()
+            } else {
+                // Leaving the foreground — a `.interval` timer has no business running while
+                // backgrounded/inactive (there is nothing further to nudge, and iOS would suspend
+                // it anyway); tearing it down here rather than relying on suspension keeps the
+                // invariant explicit and testable-by-inspection.
+                stopSyncNudgeTimer()
+                // Don't leave the app parked on the post-dictation return screen: once the
+                // user leaves (backgrounds the app to go paste / swipe back), drop to home so
+                // re-opening — or a Back Tap — lands on a fresh state instead of a dead end.
+                if phase == .background, screen == .keyboardReturn { screen = .home }
             }
-            // Don't leave the app parked on the post-dictation return screen: once the
-            // user leaves (backgrounds the app to go paste / swipe back), drop to home so
-            // re-opening — or a Back Tap — lands on a fresh state instead of a dead end.
-            else if phase == .background, screen == .keyboardReturn { screen = .home }
         }
         .onChange(of: incomingURL) { _, url in
             if let url { handle(url); incomingURL = nil }
         }
+        // Read live: a syncMode/interval edit in Settings reconfigures the nudge timer
+        // immediately, without requiring the user to relaunch (unlike storageMode).
+        .onChange(of: settings.settings.syncMode) { _, _ in
+            if scenePhase == .active { restartSyncNudgeTimer() }
+        }
+        .onChange(of: settings.settings.syncIntervalMinutes) { _, _ in
+            if scenePhase == .active { restartSyncNudgeTimer() }
+        }
+    }
+
+    // Stop any existing timer, then — only in `.interval` mode, only while active — schedule a
+    // fresh repeating nudge at the user's chosen cadence. A no-op interval (nil, from
+    // `SyncGating.nextNudgeInterval`) for every other mode leaves no timer running: `.automatic`
+    // is push-driven, `.onOpen` and `.manual` don't want a recurring timer at all.
+    private func restartSyncNudgeTimer() {
+        stopSyncNudgeTimer()
+        guard let interval = SyncGating.nextNudgeInterval(
+            mode: settings.settings.syncMode,
+            minutes: settings.settings.syncIntervalMinutes
+        ) else { return }
+        syncNudgeTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { _ in
+            Task { @MainActor in
+                recordings.requestCloudRefresh()
+                digests.requestCloudRefresh()
+            }
+        }
+    }
+
+    private func stopSyncNudgeTimer() {
+        syncNudgeTimer?.invalidate()
+        syncNudgeTimer = nil
     }
 
     // whisperio://dictate?return=keyboard — the keyboard's bounce-to-app entry point.

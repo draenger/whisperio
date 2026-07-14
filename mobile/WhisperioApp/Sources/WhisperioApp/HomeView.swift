@@ -11,6 +11,8 @@ import AppKit
 struct HomeView: View {
     @Environment(\.wz) private var t
     @EnvironmentObject private var recordings: RecordingsStore
+    @EnvironmentObject private var digests: DigestStore
+    @EnvironmentObject private var settings: SettingsStore
     var openRec: (DemoRecording) -> Void
     var openRecording: () -> Void
     var openSettings: () -> Void
@@ -30,6 +32,14 @@ struct HomeView: View {
                             SquareIconButton(icon: "book", action: openJournal)
                             SquareIconButton(icon: "settings", action: openSettings)
                         }
+                    }
+                    // In every other mode the header's small iCloud glyph is the whole affordance
+                    // (unchanged); in `.manual` nothing nudges automatically, so the user asked
+                    // for a button that's actually easy to hit — bigger, on the main screen, with
+                    // its own progress state and a last-synced timestamp underneath.
+                    if settings.settings.syncMode == .manual {
+                        HomeSyncButton(action: syncNow)
+                            .padding(.horizontal, 16).padding(.top, 10)
                     }
                     // search + filters
                     VStack(spacing: 13) {
@@ -160,6 +170,14 @@ struct HomeView: View {
         .padding(.bottom, 120)
     }
 
+    // Manual-mode Sync button's tap handler: nudge both stores' local snapshot. Mirrors what the
+    // automatic scenePhase nudge and the interval timer already do (AppShell.swift) — the only
+    // difference in manual mode is that nothing calls this except the user's tap.
+    private func syncNow() {
+        recordings.requestCloudRefresh()
+        digests.requestCloudRefresh()
+    }
+
     private var micDock: some View {
         ZStack(alignment: .bottom) {
             LinearGradient(colors: [t.bg.opacity(0), t.bg], startPoint: .top, endPoint: .bottom)
@@ -262,5 +280,57 @@ struct RecRow: View {
                 .overlay(RoundedRectangle(cornerRadius: 11, style: .continuous).stroke(t.line, lineWidth: 1))
         }
         .buttonStyle(.plain)
+    }
+}
+
+// The manual-sync-mode call to action on Home: deliberately larger and easier to hit than the
+// header's discreet iCloud glyph — the user asked for this literally ("ten guzik sie powieksza
+// zeby bylo latwiej go kliknac na glownej stronce"), since in `.manual` mode nothing else ever
+// nudges CloudKit. Shows the same in-flight state `isSyncing` already publishes (an animated
+// spinner swaps in for the icon) and a relative "last synced" timestamp underneath so a tap has
+// visible feedback beyond the spinner alone.
+struct HomeSyncButton: View {
+    @Environment(\.wz) private var t
+    @EnvironmentObject private var recordings: RecordingsStore
+    @EnvironmentObject private var digests: DigestStore
+    var action: () -> Void
+
+    private var isSyncing: Bool { recordings.isSyncing || digests.isSyncing }
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 14) {
+                ZStack {
+                    if isSyncing {
+                        ProgressView().tint(.white)
+                    } else {
+                        WIcon("sync", size: 22, weight: .bold).foregroundStyle(.white)
+                    }
+                }
+                .frame(width: 46, height: 46)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(isSyncing ? "Syncing…" : "Sync now")
+                        .font(WZFont.ui(15.5, .semibold)).foregroundStyle(.white)
+                    Text(lastSyncedLabel)
+                        .font(WZFont.ui(12)).foregroundStyle(.white.opacity(0.78))
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 18).padding(.vertical, 15)
+            .background(t.gradient, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .shadow(color: t.accent.opacity(0.4), radius: 18, y: 10)
+        }
+        .buttonStyle(.plain)
+        .animation(.easeInOut(duration: 0.2), value: isSyncing)
+        .accessibilityLabel(isSyncing ? "Syncing" : "Sync now")
+        .accessibilityHint(lastSyncedLabel)
+    }
+
+    private var lastSyncedLabel: String {
+        let latest = [recordings.lastImportAt, digests.lastImportAt].compactMap { $0 }.max()
+        guard let latest else { return "Not synced yet on this device" }
+        let f = RelativeDateTimeFormatter()
+        f.unitsStyle = .abbreviated
+        return "Last synced \(f.localizedString(for: latest, relativeTo: Date()))"
     }
 }
