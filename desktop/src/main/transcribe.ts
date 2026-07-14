@@ -1,5 +1,10 @@
 import { net, app } from 'electron'
-import { loadSettings, AppSettings, getActiveVocabulary, type ProviderId, type CleanupMode } from './settingsManager'
+import { AppSettings, getActiveVocabulary, type ProviderId, type CleanupMode } from './settingsManager'
+// Provider API keys are read through this accessor rather than
+// settingsManager.loadSettings() directly — it composes settings.json with
+// the encrypted key store (secure/keyStore.ts), key store taking precedence
+// when OS secure storage is available. See secure/keyAccessor.ts.
+import { getEffectiveSettings } from './secure/keyAccessor'
 import { handleTranscriptionError, notifyInfo } from './errorHandler'
 import { OpenAICompatibleProvider, AnthropicProvider, ReplicateProvider, selectProvider, isLocalHost, type LLMProvider } from './llm/provider'
 import { cleanupTranscription, cleanupTranscriptionDetailed, formatTranscription, type CleanupResult } from './postprocess'
@@ -190,7 +195,7 @@ export interface OnDemandCleanupResult extends CleanupResult {
 }
 
 export async function cleanupOnDemand(raw: string, req: OnDemandCleanupRequest): Promise<OnDemandCleanupResult> {
-  const settings = loadSettings()
+  const settings = getEffectiveSettings()
 
   // Defensive guard: cleanupEnabled gates whether the on-demand "Clean up"
   // action exists at all (see CleanupPanel.tsx's "Enable AI cleanup" toggle
@@ -262,7 +267,7 @@ export async function handleRecordingsCleanup(
 }
 
 export async function transcribeAudio(audioBuffer: Buffer, filename: string): Promise<string> {
-  const settings = loadSettings()
+  const settings = getEffectiveSettings()
 
   // Build effective chain: use providerChain if set, otherwise legacy sttProvider + fallback
   let chain: ProviderId[]

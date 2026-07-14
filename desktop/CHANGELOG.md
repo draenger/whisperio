@@ -46,10 +46,15 @@ any AI backend you want (including none), and a bill you can see.
   (existing violet settings map to teal automatically — nothing breaks).
 
 ### Notes
-- Provider API keys are stored in the app's local settings file, same as
-  previous releases; the GitHub sync token continues to use OS secure storage
-  (Keychain/DPAPI via Electron `safeStorage`). Moving provider keys into
-  `safeStorage` is planned as a follow-up.
+- Provider API keys (OpenAI, ElevenLabs, Anthropic, Replicate, self-hosted
+  STT) are now stored encrypted with your OS secure storage
+  (Keychain/libsecret/DPAPI via Electron `safeStorage`) when it's available on
+  your machine, with an automatic one-time migration out of the plaintext
+  settings file on first launch. Where OS secure storage isn't available
+  (e.g. a Linux box with no keyring daemon running), keys fall back to the
+  local settings file exactly as before, and Settings says so honestly next
+  to each key field — never a blanket "always encrypted" claim. The GitHub
+  sync token continues to use its own Keychain-wrapped vault, unchanged.
 
 ## v1.3.0 and earlier
 Pre-changelog releases: GitHub encrypted secret store (device-flow OAuth,

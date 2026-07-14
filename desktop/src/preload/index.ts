@@ -103,6 +103,11 @@ export interface SettingsAPI {
   pauseHotkeys: () => void
   resumeHotkeys: () => void
   onSetTab: (callback: (tab: string) => void) => () => void
+  // Whether OS-backed secure storage (Keychain/libsecret/DPAPI) is available
+  // for provider API keys (see src/main/secure/keyStore.ts). Purely
+  // informational — used to render an honest hint next to key fields; never
+  // gates saving/loading, which always falls back to settings.json.
+  keyStorageAvailable: () => Promise<boolean>
 }
 
 export interface RecordingEntry {
@@ -359,6 +364,7 @@ const settingsApi: SettingsAPI = {
   save: (settings) => ipcRenderer.invoke('settings:save', settings),
   pauseHotkeys: () => ipcRenderer.send('hotkeys:pause'),
   resumeHotkeys: () => ipcRenderer.send('hotkeys:resume'),
+  keyStorageAvailable: () => ipcRenderer.invoke('settings:keyStorageAvailable'),
   onSetTab: (callback) => {
     const handler = (_e: unknown, tab: string): void => callback(tab)
     ipcRenderer.on('settings:set-tab', handler)

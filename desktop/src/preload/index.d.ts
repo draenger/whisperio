@@ -101,6 +101,10 @@ export interface SettingsAPI {
   pauseHotkeys: () => void
   resumeHotkeys: () => void
   onSetTab: (callback: (tab: string) => void) => () => void
+  // Whether OS-backed secure storage is available for provider API keys (see
+  // src/main/secure/keyStore.ts). Informational only — used to render an
+  // honest hint next to key fields; never gates saving/loading.
+  keyStorageAvailable: () => Promise<boolean>
 }
 
 export interface RecordingEntry {
