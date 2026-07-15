@@ -312,7 +312,10 @@ struct WZPhoneView: View {
             Text(m).font(WZFont.ui(13.5, .medium)).foregroundStyle(.white)
         }
         .padding(.horizontal, 18).padding(.vertical, 11)
-        .background(t.dark ? Color.hex(0x221d33) : Color.hex(0x1b1830),
+        // Always a dark chip (white text stays legible in both schemes) — dark mode uses the
+        // live theme's elevated surface; light mode borrows the dark theme's elevated tone so
+        // the toast reads the same regardless of the app's current appearance.
+        .background(t.dark ? t.elevated : WZTheme.rezmeTheme.elevated,
                     in: RoundedRectangle(cornerRadius: 13, style: .continuous))
         .shadow(color: .black.opacity(0.4), radius: 15, y: 12)
         .transition(.opacity.combined(with: .move(edge: .bottom)))

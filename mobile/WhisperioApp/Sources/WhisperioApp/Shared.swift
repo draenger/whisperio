@@ -35,7 +35,7 @@ struct WHeader<Right: View>: View {
                 WGhost(size: 26)
             }
             Text(title)
-                .font(WZFont.display(onBack == nil ? 20 : 17))
+                .font(WZFont.display(onBack == nil ? 24 : 17))
                 .foregroundStyle(t.text)
                 .frame(maxWidth: .infinity, alignment: .leading)
             right

@@ -15,7 +15,7 @@ struct TriggerScene: View {
 
     var body: some View {
         ZStack {
-            LinearGradient(colors: [.hex(0x1a1430), .hex(0x0a0911)], startPoint: .top, endPoint: .bottom)
+            LinearGradient(colors: [t.elevated, t.bg2], startPoint: .top, endPoint: .bottom)
                 .ignoresSafeArea()
             // lock screen
             VStack(spacing: 0) {
@@ -41,7 +41,7 @@ struct TriggerScene: View {
                 HStack(spacing: 9) {
                     ForEach(["×2", "×3"], id: \.self) { x in
                         Button { fire("backtap") } label: {
-                            HStack(spacing: 6) { WIcon("command", size: 13).foregroundStyle(Color.hex(0xa78bfa)); Text("Back-Tap \(x)") }
+                            HStack(spacing: 6) { WIcon("command", size: 13).foregroundStyle(t.accentLite); Text("Back-Tap \(x)") }
                                 .font(WZFont.mono(11, .semibold)).foregroundStyle(.white.opacity(0.85))
                                 .padding(.horizontal, 13).padding(.vertical, 8)
                                 .background(.white.opacity(0.08), in: Capsule())
@@ -55,7 +55,7 @@ struct TriggerScene: View {
             // Action Button (hardware hint, left edge)
             VStack {
                 Button { fire("action") } label: {
-                    Capsule().fill(stage == "listening" && via == "action" ? Color.hex(0xa78bfa) : Color.hex(0x3a3550))
+                    Capsule().fill(stage == "listening" && via == "action" ? t.accentLite : t.line)
                         .frame(width: 5, height: 38)
                 }
                 .buttonStyle(.plain)
@@ -75,8 +75,8 @@ struct TriggerScene: View {
             if stage == "listening" {
                 VStack(spacing: 0) {
                     EngineChip(label: "Via \(viaLabel)", icon: viaIcon)
-                    Waveform(color: .hex(0xa78bfa), bars: 30, height: 64).padding(.vertical, 20)
-                    (Text(typed) + Text(" |").foregroundColor(.hex(0xa78bfa)))
+                    Waveform(color: t.accentLite, bars: 30, height: 64).padding(.vertical, 20)
+                    (Text(typed) + Text(" |").foregroundColor(t.accentLite))
                         .font(WZFont.display(21, .medium)).foregroundStyle(.white)
                         .multilineTextAlignment(.center).frame(minHeight: 84)
                     Button(action: reset) {
@@ -115,7 +115,7 @@ struct TriggerScene: View {
     }
 
     private func resultAction(_ icon: String, _ label: String) -> some View {
-        HStack(spacing: 7) { WIcon(icon, size: 16).foregroundStyle(Color.hex(0xa78bfa)); Text(label) }
+        HStack(spacing: 7) { WIcon(icon, size: 16).foregroundStyle(t.accentLite); Text(label) }
             .font(WZFont.ui(13.5, .semibold)).foregroundStyle(.white)
             .frame(maxWidth: .infinity).padding(11)
             .background(.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 13, style: .continuous))

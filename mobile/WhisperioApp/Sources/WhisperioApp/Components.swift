@@ -121,14 +121,14 @@ struct GradButton: View {
             .frame(maxWidth: .infinity)
             .padding(.vertical, 13).padding(.horizontal, 20)
             .background(t.gradient, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-            // A hair-thin inner highlight along the top gives the teal→indigo fill a lit,
-            // glassy edge; the glow leans indigo to sit under the CTA rather than shout.
+            // A hair-thin inner highlight along the top gives the gradient fill a lit,
+            // glassy edge; the CTA's shadow carries the theme accent so it stays in-family.
             .overlay(
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
                     .stroke(.white.opacity(0.22), lineWidth: 1)
                     .blendMode(.overlay)
             )
-            .shadow(color: Color.hex(0x6366f1).opacity(0.50), radius: 12, y: 8)
+            .shadow(color: t.accent.opacity(0.50), radius: 12, y: 8)
         }
         .buttonStyle(.plain)
     }
@@ -266,20 +266,24 @@ struct GhostShape: Shape {
     }
 }
 
-// The brand mascot — the exact concept ghost (smiling, eyes, waving arm), bundled as
-// transparent imagesets rendered from `mobile/wz-core.jsx`'s WGhost SVG. Two variants:
-// the default violet body, and a white body for use on the accent gradient.
+// The brand mascot — the exact concept ghost (smiling, eyes, waving arm), bundled as a
+// transparent white-bodied imageset rendered from `mobile/wz-core.jsx`'s WGhost SVG. The
+// white body is colorMultiply-tinted at render time: by default it takes the current theme's
+// accent (teal, or whatever `wz.accent` resolves to), so the mascot always matches the active
+// brand palette; an explicit `tint` (e.g. `.white` on a gradient tile) overrides that.
 struct WGhost: View {
+    @Environment(\.wz) private var wz
     var size: CGFloat = 26
-    /// When set (e.g. on a gradient chip) the white-bodied ghost is used.
+    /// Overrides the default theme-accent tint (e.g. `.white` on a gradient chip).
     var tint: Color? = nil
 
     var body: some View {
-        Image(tint != nil ? "WZGhostWhite" : "WZGhostViolet")
+        Image("WZGhostWhite")
             .resizable()
             .interpolation(.high)
             .aspectRatio(contentMode: .fit)
             .frame(width: size, height: size)
+            .colorMultiply(tint ?? wz.accent)
             .accessibilityHidden(true)
     }
 }

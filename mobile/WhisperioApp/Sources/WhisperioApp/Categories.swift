@@ -21,12 +21,15 @@ struct WZCategory: Identifiable, Hashable {
 }
 
 enum WZCategories {
-    static let work     = WZCategory(id: "work",     label: "Work",     icon: "folder",   hue: { $0.accent })
+    // Fixed hue-tinted pills per the redesign brief (mob-core WZCategory hues) — these five
+    // stay constant across light/dark and don't flip with the theme, so a category reads the
+    // same everywhere. "Personal" isn't in the brief's palette; it keeps the theme's amber.
+    static let work     = WZCategory(id: "work",     label: "Work",     icon: "folder",   hue: { _ in .hex(0x4a8cf7) })
     static let personal = WZCategory(id: "personal", label: "Personal", icon: "sun",      hue: { $0.amber })
-    static let ideas    = WZCategory(id: "ideas",    label: "Ideas",    icon: "spark",    hue: { $0.accentLite })
-    static let messages = WZCategory(id: "messages", label: "Messages", icon: "send",     hue: { $0.cyan })
-    static let code     = WZCategory(id: "code",     label: "Code",     icon: "command",  hue: { $0.green })
-    static let todo     = WZCategory(id: "todo",     label: "To-do",    icon: "check",    hue: { $0.red })
+    static let ideas    = WZCategory(id: "ideas",    label: "Ideas",    icon: "spark",    hue: { _ in .hex(0xfbbf24) })
+    static let messages = WZCategory(id: "messages", label: "Messages", icon: "send",     hue: { _ in .hex(0xf472b6) })
+    static let code     = WZCategory(id: "code",     label: "Code",     icon: "command",  hue: { _ in .hex(0xa78bfa) })
+    static let todo     = WZCategory(id: "todo",     label: "To-do",    icon: "check",    hue: { _ in .hex(0x34d399) })
 
     // The default set, in display order (used for the filter row and the reassign menu).
     static let all: [WZCategory] = [work, personal, ideas, messages, code, todo]

@@ -11,7 +11,12 @@ struct KeyboardRootView: View {
     @Environment(\.colorScheme) private var scheme
     @State private var plane: KBPlane = .letters
 
-    private let accent = Color(red: 0x8b / 255, green: 0x5c / 255, blue: 0xf6 / 255)
+    // Rezme teal accent — mirrors WZTheme.rezmeTheme / rezmeLightTheme (the Keyboard extension
+    // doesn't link the app module, so the values are mirrored here rather than imported).
+    private var accent: Color {
+        dark ? Color(red: 0x1c / 255, green: 0xc8 / 255, blue: 0xb4 / 255)
+             : Color(red: 0x0f / 255, green: 0x84 / 255, blue: 0x78 / 255)
+    }
 
     private static let lRow1 = Array("qwertyuiop").map(String.init)
     private static let lRow2 = Array("asdfghjkl").map(String.init)

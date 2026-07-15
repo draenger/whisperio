@@ -43,7 +43,7 @@ struct iPadSplitView: View {
             .overlay(alignment: .bottom) { Rectangle().fill(t.lineSoft).frame(height: 1) }
             if tab == "library" {
                 HStack(spacing: 0) {
-                    sidebar.frame(width: 340)
+                    sidebar.frame(width: 320)
                     Rectangle().fill(t.line).frame(width: 1)
                     detail.frame(maxWidth: .infinity)
                 }
@@ -254,7 +254,7 @@ private struct IPadLiveJournal: View {
     var body: some View {
         HStack(spacing: 0) {
             JournalView(onBack: onExit, openDay: { day = $0 })
-                .frame(width: 360)
+                .frame(width: 320)
             Rectangle().fill(t.line).frame(width: 1)
             Group {
                 if let day {
@@ -313,7 +313,7 @@ private struct iPadJournal: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            dayIndex.frame(width: 340)
+            dayIndex.frame(width: 320)
             Rectangle().fill(t.line).frame(width: 1)
             dayDetail.frame(maxWidth: .infinity)
         }

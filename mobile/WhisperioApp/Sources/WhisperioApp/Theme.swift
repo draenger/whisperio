@@ -12,44 +12,10 @@ struct WZTheme {
     let gradient: LinearGradient
     let green, red, amber, cyan: Color
 
-    // The primary CTA gradient carries the desktop identity: teal → indigo, warmed with a
-    // touch of accent violet at the mid-stop so it reads as one family with the violet accent.
-    static let darkTheme = WZTheme(
-        dark: true,
-        bg: .hex(0x0a0911), bg2: .hex(0x07060d), surface: .hex(0x15121f),
-        surfaceUp: .hex(0x1c1830), elevated: .hex(0x221d33),
-        line: .white.opacity(0.08), lineSoft: .white.opacity(0.05),
-        hair: Color(red: 167/255, green: 139/255, blue: 250/255).opacity(0.22),
-        text: .hex(0xECEBF4), muted: .hex(0x9d9bb4), faint: .hex(0x6a6880),
-        accent: .hex(0x8b5cf6), accentLite: .hex(0xa78bfa),
-        gradient: LinearGradient(stops: [
-            .init(color: .hex(0x2dd4bf), location: 0.0),
-            .init(color: .hex(0x7c8cf8), location: 0.52),
-            .init(color: .hex(0x6366f1), location: 1.0),
-        ], startPoint: .topLeading, endPoint: .bottomTrailing),
-        green: .hex(0x34d399), red: .hex(0xf0556b), amber: .hex(0xfbbf24), cyan: .hex(0x2dd4bf)
-    )
-
-    static let lightTheme = WZTheme(
-        dark: false,
-        bg: .hex(0xf4f3fb), bg2: .hex(0xecebf3), surface: .hex(0xffffff),
-        surfaceUp: .hex(0xf6f5fc), elevated: .hex(0xefedf8),
-        line: Color(red: 20/255, green: 18/255, blue: 40/255).opacity(0.10),
-        lineSoft: Color(red: 20/255, green: 18/255, blue: 40/255).opacity(0.06),
-        hair: Color(red: 124/255, green: 58/255, blue: 237/255).opacity(0.20),
-        text: .hex(0x1b1830), muted: .hex(0x5b5870), faint: .hex(0x9b98ad),
-        accent: .hex(0x7c3aed), accentLite: .hex(0x8b5cf6),
-        gradient: LinearGradient(stops: [
-            .init(color: .hex(0x14b8a6), location: 0.0),
-            .init(color: .hex(0x6d78ea), location: 0.52),
-            .init(color: .hex(0x6366f1), location: 1.0),
-        ], startPoint: .topLeading, endPoint: .bottomTrailing),
-        green: .hex(0x16a34a), red: .hex(0xdc2626), amber: .hex(0xd97706), cyan: .hex(0x0d9488)
-    )
-
-    // The "redesign" identity: the Rezme teal palette is now the app-wide default across the
-    // whole Apple family (iPhone / iPad / Watch / Mac). The original violet themes stay in the
-    // file (darkTheme / lightTheme) so switching back is a one-line change.
+    // The "redesign" identity: the Rezme teal palette is the app-wide default across the whole
+    // Apple family (iPhone / iPad / Watch / Mac). The original violet aurora palette (accent
+    // #8b5cf6/#a78bfa, bg #0a0911/#15121f) has been fully retired — no live code path
+    // references it anymore; recover it from git history if it's ever needed again.
     static func of(_ dark: Bool) -> WZTheme { dark ? .rezmeTheme : .rezmeLightTheme }
 
     // Rezme teal — the macOS desktop identity. Dark-first, built around the Rezme
@@ -83,7 +49,7 @@ struct WZTheme {
         text: .hex(0x0c1822), muted: .hex(0x3f4f5e), faint: .hex(0x74859a),
         accent: .hex(0x0f8478), accentLite: .hex(0x1cc8b4),
         gradient: LinearGradient(stops: [
-            .init(color: .hex(0x0f8478), location: 0.0),
+            .init(color: .hex(0x0f9b8b), location: 0.0),
             .init(color: .hex(0x1d7fd6), location: 1.0),
         ], startPoint: .leading, endPoint: .trailing),
         green: .hex(0x16a34a), red: .hex(0xdc2626), amber: .hex(0xd97706), cyan: .hex(0x0f8478)

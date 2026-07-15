@@ -14,7 +14,7 @@ struct DynamicIslandScene: View {
 
     var body: some View {
         ZStack(alignment: .top) {
-            LinearGradient(colors: [.hex(0x2a1d4d), .hex(0x0a0911)], startPoint: .top, endPoint: .bottom)
+            LinearGradient(colors: [t.elevated, t.bg2], startPoint: .top, endPoint: .bottom)
                 .ignoresSafeArea()
             VStack {
                 LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 22), count: 4), spacing: 22) {
@@ -60,7 +60,7 @@ struct DynamicIslandScene: View {
                             Text("Recording").font(WZFont.display(13.5)).foregroundStyle(.white)
                             Text("on-device").font(WZFont.mono(11)).foregroundStyle(.white.opacity(0.6))
                         }
-                        Waveform(color: .hex(0xa78bfa), bars: 20, height: 20)
+                        Waveform(color: t.accentLite, bars: 20, height: 20)
                     }
                     Text(String(format: "0:%02d", secs % 60)).font(WZFont.mono(14)).foregroundStyle(.white).monospacedDigit()
                     Button { withAnimation { rec = false } } label: {

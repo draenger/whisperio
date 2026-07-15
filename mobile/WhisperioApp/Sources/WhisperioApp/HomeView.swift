@@ -88,12 +88,13 @@ struct HomeView: View {
                         } else {
                             ScrollView(showsIndicators: false) {
                                 VStack(spacing: 18) {
+                                    todaysDigestCard
                                     let today = visible.filter { Calendar.current.isDateInToday($0.timestamp) }
                                     let earlier = visible.filter { !Calendar.current.isDateInToday($0.timestamp) }
                                     if !today.isEmpty { brainGroup("Today", today) }
                                     if !earlier.isEmpty { brainGroup("Earlier", earlier) }
                                 }
-                                .padding(.horizontal, 16).padding(.top, 16).padding(.bottom, 140)
+                                .padding(.horizontal, 16).padding(.top, 16).padding(.bottom, 150)
                             }
                             // Re-reads whatever CloudKit has already imported locally — this is
                             // not a network push/pull (SwiftData exposes no such API), so it only
@@ -102,9 +103,49 @@ struct HomeView: View {
                         }
                     }
                 }
-                micDock
+                dictateBar
             }
         }
+    }
+
+    // "Today's digest" card — a gradient icon tile + one-line preview of today's journal entry,
+    // sitting above the grouped list. Tapping it opens the Journal (same destination as the book
+    // icon in the header). Reads the cached DailyDigest for today's day key; before a summary
+    // exists it falls back to a note count so the card is never blank.
+    private var todaysDigestCard: some View {
+        let dayKey = DigestGrouping.dayKey(for: Date(), calendar: .current)
+        let summary = digests.digest(for: dayKey)?.summary
+        let todayCount = recordings.items.filter { Calendar.current.isDateInToday($0.timestamp) }.count
+        let preview: String
+        if let summary, !summary.isEmpty {
+            preview = summary
+        } else if todayCount > 0 {
+            preview = "\(todayCount) note\(todayCount == 1 ? "" : "s") today — tap to summarize"
+        } else {
+            preview = "Dictate a note to start today's digest"
+        }
+        return Button(action: openJournal) {
+            HStack(spacing: 13) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 12, style: .continuous).fill(t.gradient)
+                    WIcon("book", size: 18, weight: .semibold).foregroundStyle(.white)
+                }
+                .frame(width: 40, height: 40)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("TODAY'S DIGEST")
+                        .font(WZFont.mono(11, .semibold)).tracking(1.1).foregroundStyle(t.accentLite)
+                    Text(preview)
+                        .font(WZFont.ui(13.5)).foregroundStyle(t.muted)
+                        .lineLimit(1).truncationMode(.tail)
+                }
+                Spacer(minLength: 0)
+                WIcon("chevR", size: 14, weight: .semibold).foregroundStyle(t.faint)
+            }
+            .padding(14)
+            .background(t.surface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(t.line, lineWidth: 1))
+        }
+        .buttonStyle(.plain)
     }
 
     // The recordings that match the active category filter (All → everything) and the search
@@ -178,21 +219,35 @@ struct HomeView: View {
         digests.requestCloudRefresh()
     }
 
-    private var micDock: some View {
+    // Full-width gradient "Dictate" pill, fading the list out beneath it — replaces the old
+    // round FAB per the redesign brief (HOME: "full-width gradient 'Dictate' pill... REPLACES
+    // the round FAB").
+    private var dictateBar: some View {
         ZStack(alignment: .bottom) {
             LinearGradient(colors: [t.bg.opacity(0), t.bg], startPoint: .top, endPoint: .bottom)
-                .frame(height: 190)
+                .frame(height: 140)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
                 .ignoresSafeArea(edges: .bottom)
+                .allowsHitTesting(false)
             Button(action: openRecording) {
-                WIcon("mic", size: 28, weight: .bold).foregroundStyle(.white)
-                    .frame(width: 72, height: 72)
-                    .background(t.gradient, in: Circle())
-                    .overlay(Circle().stroke(t.accent.opacity(t.dark ? 0.12 : 0.08), lineWidth: 6))
-                    .shadow(color: t.accent.opacity(0.72), radius: 22, y: 24)
+                HStack(spacing: 10) {
+                    WIcon("mic", size: 19, weight: .bold)
+                    Text("Dictate").font(WZFont.ui(16, .semibold))
+                }
+                .foregroundStyle(.white)
+                .frame(maxWidth: .infinity)
+                .frame(height: 56)
+                .background(t.gradient, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .stroke(.white.opacity(0.22), lineWidth: 1)
+                        .blendMode(.overlay)
+                )
+                .shadow(color: t.accent.opacity(0.45), radius: 20, y: 14)
             }
             .buttonStyle(.plain)
-            .padding(.bottom, 22)
+            .padding(.horizontal, 16)
+            .padding(.bottom, 18)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
     }

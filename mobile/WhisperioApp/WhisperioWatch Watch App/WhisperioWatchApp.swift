@@ -26,7 +26,9 @@ struct WatchRootView: View {
                         .font(.system(size: 30, weight: .bold))
                         .frame(width: 78, height: 78)
                         .foregroundStyle(.white)
-                        .background(conn.isRecording ? Color.red : Color(red: 0.584, green: 0.467, blue: 0.996),
+                        // Rezme teal accent (#1cc8b4) — mirrors WZTheme.rezmeTheme.accent; the
+                        // watch app target doesn't link the phone app module.
+                        .background(conn.isRecording ? Color.red : Color(red: 28 / 255, green: 200 / 255, blue: 180 / 255),
                                     in: Circle())
                 }
                 .buttonStyle(.plain)

@@ -3,7 +3,7 @@ import SwiftUI
 // Component & style page (wz-extras.jsx WZStyle): color, type, privacy iconography,
 // buttons/controls, recording mic, transcript card. Always dark, like the source.
 struct StyleKitView: View {
-    private let t = WZTheme.darkTheme
+    private let t = WZTheme.rezmeTheme
 
     var body: some View {
         ScrollView {
@@ -20,8 +20,8 @@ struct StyleKitView: View {
 
                 block("Color") {
                     FlowLayout(spacing: 14) {
-                        swatch(AnyShapeStyle(t.accent), "violet")
-                        swatch(AnyShapeStyle(t.accentLite), "violet-lite")
+                        swatch(AnyShapeStyle(t.accent), "teal")
+                        swatch(AnyShapeStyle(t.accentLite), "teal-lite")
                         swatch(AnyShapeStyle(t.gradient), "gradient")
                         swatch(AnyShapeStyle(t.green), "on-device")
                         swatch(AnyShapeStyle(t.amber), "cloud")
@@ -108,7 +108,7 @@ struct StyleKitView: View {
 
 // A static (non-interactive) segmented control for the style page.
 private struct StaticSegmented: View {
-    private let t = WZTheme.darkTheme
+    private let t = WZTheme.rezmeTheme
     var body: some View {
         HStack(spacing: 3) {
             ForEach(Array(["Private", "Balanced", "Best"].enumerated()), id: \.offset) { idx, label in

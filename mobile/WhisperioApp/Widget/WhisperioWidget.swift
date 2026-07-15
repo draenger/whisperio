@@ -20,7 +20,9 @@ struct DictateProvider: TimelineProvider {
 
 struct DictateWidgetView: View {
     @Environment(\.widgetFamily) private var family
-    private let purple = Color(red: 0.584, green: 0.467, blue: 0.996)
+    // Rezme teal accent (#1cc8b4) — matches WZTheme.rezmeTheme.accent. The widget extension
+    // doesn't link the app module, so the value is mirrored here rather than imported.
+    private let accent = Color(red: 28 / 255, green: 200 / 255, blue: 180 / 255)
 
     var body: some View {
         Button(intent: DictateIntent()) {
@@ -37,7 +39,7 @@ struct DictateWidgetView: View {
                     Image(systemName: "mic.fill").font(.system(size: 30, weight: .bold))
                         .foregroundStyle(.white)
                         .frame(width: 64, height: 64)
-                        .background(purple, in: Circle())
+                        .background(accent, in: Circle())
                     Text("Dictate").font(.system(size: 14, weight: .semibold))
                         .foregroundStyle(.primary)
                 }

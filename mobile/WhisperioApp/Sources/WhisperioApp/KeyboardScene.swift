@@ -114,13 +114,13 @@ struct KeyboardScene: View {
         HStack(spacing: 5) { ForEach(chars, id: \.self) { keyCap($0) } }
     }
     private func keyCap(_ s: String) -> some View {
-        Text(s).font(WZFont.ui(18)).foregroundStyle(t.dark ? Color.hex(0xECEBF4) : Color.hex(0x1b1830))
+        Text(s).font(WZFont.ui(18)).foregroundStyle(t.text)
             .frame(maxWidth: .infinity).frame(height: 42)
             .background(t.dark ? Color.white.opacity(0.13) : .white,
                         in: RoundedRectangle(cornerRadius: 7, style: .continuous))
     }
     private func specialKey<V: View>(@ViewBuilder _ content: () -> V) -> some View {
-        content().foregroundStyle(t.dark ? Color.hex(0xECEBF4) : Color.hex(0x1b1830))
+        content().foregroundStyle(t.text)
             .frame(height: 42).frame(maxWidth: .infinity)
             .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
     }
