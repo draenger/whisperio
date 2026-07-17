@@ -42,14 +42,12 @@ final class LiveDictation: ObservableObject, @unchecked Sendable {
     /// Synchronous stop flag: cleared inside `stateQueue` on teardown so a trailing
     /// recognition callback can never restart a segment after we stopped.
     private var active = false
-    /// Text of segments already finalized in THIS dictation. SFSpeech finalizes (and stops)
-    /// a segment on a pause, and the next segment's transcript starts empty — so we keep the
-    /// committed text here and always display `committed + current partial`. Without this a
-    /// pause wipes everything said before it.
-    private var committed: String = ""
-    /// Latest partial text of the in-flight segment — kept callback-side so `finish()` can
-    /// fold the tail in even if the last `@Published transcript` hop hasn't landed yet.
-    private var currentSegment: String = ""
+    /// Committed segments + in-flight partial for THIS dictation (see TranscriptAccumulator).
+    /// SFSpeech ends a segment on every pause — with a final result OR a plain error — and the
+    /// next segment starts empty, so the accumulator banks text on BOTH exits. Kept
+    /// callback-side so `finish()` can fold the tail in even if the last `@Published
+    /// transcript` hop hasn't landed yet.
+    private var acc = TranscriptAccumulator()
     /// Errors handled back-to-back without any interleaved result. Caps the error→restart
     /// loop so a persistently failing recognizer surfaces `failure` instead of spinning hot.
     private var consecutiveErrorRestarts = 0
@@ -101,8 +99,7 @@ final class LiveDictation: ObservableObject, @unchecked Sendable {
             self.recognizer = recognizer
             self.requireOnDevice = requireOnDevice
             self.vocabulary = vocabulary
-            self.committed = ""
-            self.currentSegment = ""
+            self.acc.reset()
             self.consecutiveErrorRestarts = 0
             self.finishSignal = nil
             self.file = audioFile
@@ -147,7 +144,12 @@ final class LiveDictation: ObservableObject, @unchecked Sendable {
         // (cancellation error) is dropped by the identity guard in handleRecognitionLocked.
         task?.cancel()
         self.request = request
-        currentSegment = ""
+        // Bank whatever partial the previous segment produced BEFORE clearing it. SFSpeech
+        // doesn't always deliver a final result before a segment dies — on-device it often
+        // ends a pause with a plain error — and without banking here, everything said in
+        // that segment vanished from the transcript on restart (the "pause wipes the old
+        // text, only the new words remain" bug).
+        acc.bankSegment()
 
         task = recognizer.recognitionTask(with: request) { [weak self] result, error in
             guard let self else { return }
@@ -168,16 +170,15 @@ final class LiveDictation: ObservableObject, @unchecked Sendable {
 
         if let result {
             consecutiveErrorRestarts = 0
-            currentSegment = result.bestTranscription.formattedString
+            acc.updateCurrent(result.bestTranscription.formattedString)
             // Live view = everything committed so far + this in-progress segment.
-            let live = Self.join(committed, currentSegment)
+            let live = acc.liveText
             DispatchQueue.main.async { self.transcript = live }
 
             if result.isFinal {
                 // Pause detected: bank this segment and open a fresh one so the next
                 // words append instead of replacing what came before.
-                committed = live
-                currentSegment = ""
+                acc.bankSegment()
                 if let signal = finishSignal {
                     // finish() is waiting on the tail — it's banked now, let it proceed.
                     finishSignal = nil
@@ -215,15 +216,6 @@ final class LiveDictation: ObservableObject, @unchecked Sendable {
         }
     }
 
-    /// Join two transcript fragments with a single separating space, trimming stray edges.
-    private static func join(_ a: String, _ b: String) -> String {
-        let head = a.trimmingCharacters(in: .whitespacesAndNewlines)
-        let tail = b.trimmingCharacters(in: .whitespacesAndNewlines)
-        if head.isEmpty { return tail }
-        if tail.isEmpty { return head }
-        return head + " " + tail
-    }
-
     /// Stop and hand back the final transcript + the captured clip (for saving).
     /// Waits briefly for the recognizer to flush the tail of the last segment, so the final
     /// words spoken right before stop aren't dropped.
@@ -259,7 +251,7 @@ final class LiveDictation: ObservableObject, @unchecked Sendable {
         //    transcript) and tear down.
         let text: String = stateQueue.sync {
             finishSignal = nil
-            let final = Self.join(committed, currentSegment)
+            let final = acc.liveText
             teardownStateLocked()
             return final
         }
@@ -294,8 +286,7 @@ final class LiveDictation: ObservableObject, @unchecked Sendable {
         request = nil
         task = nil
         file = nil
-        committed = ""
-        currentSegment = ""
+        acc.reset()
         consecutiveErrorRestarts = 0
         if let signal = finishSignal { finishSignal = nil; signal.signal() }
     }
