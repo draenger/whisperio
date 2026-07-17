@@ -1,8 +1,12 @@
 import SwiftUI
 import WhisperioKit
 
-// A more product-like keyboard surface: branded controls on top, softer key tiles below,
-// same extension behavior under the hood.
+// Keyboard surface styled after the design source ("Whisperio Swift Keyboard.html" →
+// wz2/mob-keyboard.jsx, KeyboardScenePro): a slim top bar (globe · brand · on-device chip ·
+// round gradient mic) over bare key rows — no card wrappers — with the return key in the
+// accent color. The design's inline-dictation "listening" state is NOT implementable in a
+// keyboard extension (iOS gives extensions no microphone access), so the mic button keeps
+// the bounce-to-app flow; everything visual follows the design.
 
 private enum KBPlane { case letters, numbers, symbols }
 
@@ -11,12 +15,25 @@ struct KeyboardRootView: View {
     @Environment(\.colorScheme) private var scheme
     @State private var plane: KBPlane = .letters
 
-    // Rezme teal accent — mirrors WZTheme.rezmeTheme / rezmeLightTheme (the Keyboard extension
+    // Rezme tokens — mirrors WZTheme.rezmeTheme / rezmeLightTheme (the Keyboard extension
     // doesn't link the app module, so the values are mirrored here rather than imported).
-    private var accent: Color {
-        dark ? Color(red: 0x1c / 255, green: 0xc8 / 255, blue: 0xb4 / 255)
-             : Color(red: 0x0f / 255, green: 0x84 / 255, blue: 0x78 / 255)
+    private var dark: Bool { scheme == .dark }
+    private var accent: Color { dark ? Color(hex: 0x1cc8b4) : Color(hex: 0x0f8478) }
+    private var green: Color { dark ? Color(hex: 0x22c55e) : Color(hex: 0x16a34a) }
+    private var gradient: LinearGradient {
+        dark
+            ? LinearGradient(colors: [Color(hex: 0x15bca8), Color(hex: 0x3da2f7)],
+                             startPoint: .leading, endPoint: .trailing)
+            : LinearGradient(colors: [Color(hex: 0x0f9b8b), Color(hex: 0x1d7fd6)],
+                             startPoint: .leading, endPoint: .trailing)
     }
+    // The keyboard tray itself — bare background, keys sit directly on it (no card).
+    private var background: Color { dark ? Color(hex: 0x0b141f) : Color(hex: 0xd4d2e2) }
+    private var keyFill: Color { dark ? Color.white.opacity(0.13) : .white }
+    private var specialFill: Color { dark ? Color.white.opacity(0.06) : Color.black.opacity(0.06) }
+    private var keyText: Color { dark ? .white : Color(hex: 0x0c1822) }
+    private var mutedText: Color { dark ? Color.white.opacity(0.72) : Color(hex: 0x3f4f5e) }
+    private var border: Color { dark ? Color.white.opacity(0.07) : Color.black.opacity(0.05) }
 
     private static let lRow1 = Array("qwertyuiop").map(String.init)
     private static let lRow2 = Array("asdfghjkl").map(String.init)
@@ -27,107 +44,87 @@ struct KeyboardRootView: View {
     private static let sRow1 = ["[", "]", "{", "}", "#", "%", "^", "*", "+", "="]
     private static let sRow2 = ["_", "\\", "|", "~", "<", ">", "€", "£", "¥", "•"]
 
-    private var dark: Bool { scheme == .dark }
-    private var background: Color {
-        dark ? Color(red: 0.08, green: 0.08, blue: 0.10)
-             : Color(red: 0.94, green: 0.93, blue: 0.97)
-    }
-    private var surface: Color {
-        dark ? Color(red: 0.13, green: 0.13, blue: 0.16)
-             : Color.white
-    }
-    private var surfaceUp: Color {
-        dark ? Color(red: 0.18, green: 0.18, blue: 0.22)
-             : Color(red: 0.98, green: 0.98, blue: 1.0)
-    }
-    private var keyFill: Color {
-        dark ? Color.white.opacity(0.11) : Color(red: 0.975, green: 0.974, blue: 0.992)
-    }
-    private var specialFill: Color {
-        dark ? Color.white.opacity(0.08) : Color(red: 0.92, green: 0.91, blue: 0.96)
-    }
-    private var keyText: Color { dark ? .white : Color(red: 0.12, green: 0.10, blue: 0.19) }
-    private var mutedText: Color { dark ? Color.white.opacity(0.72) : Color(red: 0.38, green: 0.36, blue: 0.47) }
-    private var border: Color { dark ? Color.white.opacity(0.08) : Color.black.opacity(0.06) }
-
     var body: some View {
         ZStack {
             background.ignoresSafeArea()
-            VStack(spacing: 10) {
-                header
+            VStack(spacing: 8) {
+                topBar
                 if model.showFullAccessHint && !model.hasFullAccess {
                     fullAccessBanner
                 }
-                keySurface
+                if !model.suggestions.isEmpty {
+                    suggestionsRow
+                }
+                row1
+                row2
+                row3
+                row4
             }
-            .padding(.horizontal, 8)
-            .padding(.top, 8)
+            .padding(.horizontal, 4)
+            .padding(.top, 7)
             .padding(.bottom, 8)
         }
     }
 
-    private var header: some View {
-        VStack(spacing: 8) {
-            HStack(spacing: 8) {
-                brandChip
-                Spacer(minLength: 0)
-                if let _ = model.lastInserted {
-                    rewriteMenu
-                }
-                dictateButton
-            }
-            if model.suggestions.isEmpty {
-                Rectangle().fill(border).frame(height: 1)
-            } else {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 8) {
-                        ForEach(Array(model.suggestions.prefix(3).enumerated()), id: \.offset) { _, word in
-                            suggestionButton(word)
-                        }
-                    }
-                    .padding(.vertical, 1)
-                }
-            }
-        }
-        .padding(10)
-        .background(surface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(border, lineWidth: 1))
-    }
+    // MARK: - Top bar (globe · brand · on-device chip · mic)
 
-    private var brandChip: some View {
+    private var topBar: some View {
         HStack(spacing: 8) {
-            Image("WhisperioLogo")
-                .resizable()
-                .frame(width: 22, height: 22)
-                .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-            VStack(alignment: .leading, spacing: 1) {
-                Text("Whisperio").font(.system(size: 13, weight: .semibold)).foregroundStyle(keyText)
-                Text(model.hasFullAccess ? "Keyboard ready" : "Needs Full Access")
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(mutedText)
-                    .lineLimit(1)
+            if model.needsGlobeKey {
+                Button(action: { model.nextKeyboard() }) {
+                    Image(systemName: "globe")
+                        .font(.system(size: 15, weight: .medium))
+                        .foregroundStyle(mutedText)
+                        .frame(width: 30, height: 30)
+                        .background(specialFill, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                }
+                .buttonStyle(KBPressStyle())
             }
+
+            HStack(spacing: 6) {
+                Image("WhisperioLogo")
+                    .resizable()
+                    .frame(width: 16, height: 16)
+                    .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+                Text("Whisperio")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(keyText)
+            }
+
+            Spacer(minLength: 0)
+
+            if model.lastInserted != nil {
+                rewriteMenu
+            }
+
+            onDeviceChip
+
+            Button(action: { model.mic() }) {
+                Image(systemName: "mic.fill")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .frame(width: 38, height: 38)
+                    .background(gradient, in: Circle())
+                    .shadow(color: accent.opacity(0.55), radius: 8, y: 3)
+            }
+            .buttonStyle(KBPressStyle())
+            .accessibilityLabel("Dictate")
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 8)
-        .background(specialFill, in: Capsule())
-        .overlay(Capsule().stroke(border, lineWidth: 1))
+        .padding(.horizontal, 4)
     }
 
-    private var dictateButton: some View {
-        Button(action: { model.mic() }) {
-            HStack(spacing: 7) {
-                Image(systemName: "mic.fill")
-                    .font(.system(size: 12, weight: .semibold))
-                Text("Dictate")
-                    .font(.system(size: 13, weight: .semibold))
-            }
-            .foregroundStyle(.white)
-            .padding(.horizontal, 14)
-            .padding(.vertical, 9)
-            .background(accent, in: Capsule())
+    private var onDeviceChip: some View {
+        HStack(spacing: 5) {
+            Image(systemName: "lock.fill")
+                .font(.system(size: 9.5, weight: .semibold))
+            Text("on-device")
+                .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
         }
-        .buttonStyle(KBPressStyle())
+        .foregroundStyle(green)
+        .padding(.horizontal, 11)
+        .padding(.vertical, 5)
+        .background(green.opacity(dark ? 0.12 : 0.09), in: Capsule())
+        .overlay(Capsule().stroke(green.opacity(0.28), lineWidth: 1))
     }
 
     private var rewriteMenu: some View {
@@ -136,33 +133,34 @@ struct KeyboardRootView: View {
                 Button(preset.name) { model.rewrite(presetID: preset.id) }
             }
         } label: {
-            HStack(spacing: 6) {
-                Image(systemName: "sparkles")
-                    .font(.system(size: 12, weight: .semibold))
-                Text("Rewrite")
-                    .font(.system(size: 13, weight: .semibold))
-            }
-            .foregroundStyle(keyText)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 9)
-            .background(specialFill, in: Capsule())
-            .overlay(Capsule().stroke(border, lineWidth: 1))
+            Image(systemName: "sparkles")
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(accent)
+                .frame(width: 30, height: 30)
+                .background(specialFill, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
         }
         .menuStyle(.borderlessButton)
+        .accessibilityLabel("Rewrite")
     }
 
-    private func suggestionButton(_ word: String) -> some View {
-        Button(action: { model.pickSuggestion(word) }) {
-            Text(word)
-                .font(.system(size: 15, weight: .medium))
-                .foregroundStyle(keyText)
-                .lineLimit(1)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .background(specialFill, in: Capsule())
-                .overlay(Capsule().stroke(border, lineWidth: 1))
+    private var suggestionsRow: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 6) {
+                ForEach(Array(model.suggestions.prefix(3).enumerated()), id: \.offset) { _, word in
+                    Button(action: { model.pickSuggestion(word) }) {
+                        Text(word)
+                            .font(.system(size: 14.5, weight: .medium))
+                            .foregroundStyle(keyText)
+                            .lineLimit(1)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 6)
+                            .background(specialFill, in: Capsule())
+                    }
+                    .buttonStyle(KBPressStyle())
+                }
+            }
+            .padding(.horizontal, 4)
         }
-        .buttonStyle(KBPressStyle())
     }
 
     private var fullAccessBanner: some View {
@@ -176,22 +174,13 @@ struct KeyboardRootView: View {
         .foregroundStyle(accent)
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 12)
-        .padding(.vertical, 10)
-        .background(accent.opacity(dark ? 0.16 : 0.10), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(accent.opacity(0.20), lineWidth: 1))
+        .padding(.vertical, 9)
+        .background(accent.opacity(dark ? 0.16 : 0.10), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(accent.opacity(0.20), lineWidth: 1))
+        .padding(.horizontal, 4)
     }
 
-    private var keySurface: some View {
-        VStack(spacing: 8) {
-            row1
-            row2
-            row3
-            row4
-        }
-        .padding(8)
-        .background(surface, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).stroke(border, lineWidth: 1))
-    }
+    // MARK: - Key rows
 
     @ViewBuilder private var row1: some View {
         switch plane {
@@ -203,14 +192,14 @@ struct KeyboardRootView: View {
 
     @ViewBuilder private var row2: some View {
         switch plane {
-        case .letters: charRow(Self.lRow2, raw: false, inset: 18)
+        case .letters: charRow(Self.lRow2, raw: false, inset: 16)
         case .numbers: charRow(Self.nRow2, raw: true)
         case .symbols: charRow(Self.sRow2, raw: true)
         }
     }
 
     @ViewBuilder private var row3: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: 5) {
             row3LeftKey
             if plane == .letters {
                 ForEach(Self.lRow3, id: \.self) { letterKey($0) }
@@ -233,32 +222,36 @@ struct KeyboardRootView: View {
     }
 
     private var row4: some View {
-        HStack(spacing: 6) {
-            specialKey(text: plane == .letters ? "123" : "ABC", flex: 1.3) {
+        HStack(spacing: 5) {
+            specialKey(text: plane == .letters ? "123" : "ABC", flex: 1.45, height: 42) {
                 plane = plane == .letters ? .numbers : .letters
-            }
-            if model.needsGlobeKey {
-                specialKey(icon: "globe", flex: 1.0) { model.nextKeyboard() }
             }
             Button(action: { model.space() }) {
                 Text("space")
                     .font(.system(size: 15))
                     .foregroundStyle(keyText.opacity(0.9))
-                    .frame(maxWidth: .infinity, minHeight: 44)
+                    .frame(maxWidth: .infinity, minHeight: 42)
                     .background(keyFill, in: keyShape)
-                    .overlay(keyShape.stroke(border, lineWidth: 1))
             }
             .buttonStyle(KBPressStyle())
-            specialKey(text: "return", flex: 1.7) { model.returnKey() }
+            // Return in the accent — the design's one colored key on the board.
+            Button(action: { model.returnKey() }) {
+                Text("return")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .frame(minWidth: 78, minHeight: 42)
+                    .background(accent, in: keyShape)
+            }
+            .buttonStyle(KBPressStyle())
         }
     }
 
     private var keyShape: RoundedRectangle {
-        RoundedRectangle(cornerRadius: 8, style: .continuous)
+        RoundedRectangle(cornerRadius: 7, style: .continuous)
     }
 
     private func charRow(_ keys: [String], raw: Bool, inset: CGFloat = 0) -> some View {
-        HStack(spacing: 6) {
+        HStack(spacing: 5) {
             if inset > 0 { Spacer().frame(width: inset) }
             ForEach(keys, id: \.self) { k in
                 raw ? AnyView(symKey(k)) : AnyView(letterKey(k))
@@ -270,11 +263,10 @@ struct KeyboardRootView: View {
     private func letterKey(_ k: String) -> some View {
         Button(action: { model.tap(k) }) {
             Text(model.shifted ? k.uppercased() : k)
-                .font(.system(size: 21, weight: .regular))
+                .font(.system(size: 17, weight: .regular))
                 .foregroundStyle(keyText)
-                .frame(maxWidth: .infinity, minHeight: 46)
+                .frame(maxWidth: .infinity, minHeight: 40)
                 .background(keyFill, in: keyShape)
-                .overlay(keyShape.stroke(border, lineWidth: 1))
         }
         .buttonStyle(KBPressStyle())
     }
@@ -282,33 +274,32 @@ struct KeyboardRootView: View {
     private func symKey(_ k: String) -> some View {
         Button(action: { model.type(k) }) {
             Text(k)
-                .font(.system(size: 19, weight: .regular))
+                .font(.system(size: 17, weight: .regular))
                 .foregroundStyle(keyText)
-                .frame(maxWidth: .infinity, minHeight: 46)
+                .frame(maxWidth: .infinity, minHeight: 40)
                 .background(keyFill, in: keyShape)
-                .overlay(keyShape.stroke(border, lineWidth: 1))
         }
         .buttonStyle(KBPressStyle())
     }
 
-    private func specialKey(icon: String? = nil, text: String? = nil, flex: CGFloat, action: @escaping () -> Void) -> some View {
+    private func specialKey(icon: String? = nil, text: String? = nil, flex: CGFloat,
+                            height: CGFloat = 40, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Group {
                 if let icon {
                     Image(systemName: icon)
-                        .font(.system(size: 17, weight: .regular))
+                        .font(.system(size: 16, weight: .regular))
                 } else if let text {
                     Text(text)
-                        .font(.system(size: 14.5, weight: .medium))
+                        .font(.system(size: 13.5, weight: .medium))
                 }
             }
             .foregroundStyle(keyText)
-            .frame(maxWidth: .infinity, minHeight: 46)
+            .frame(maxWidth: .infinity, minHeight: height)
             .background(specialFill, in: keyShape)
-            .overlay(keyShape.stroke(border, lineWidth: 1))
         }
         .buttonStyle(KBPressStyle())
-        .frame(width: 44 * flex)
+        .frame(width: 42 * flex)
     }
 }
 
@@ -317,5 +308,14 @@ private struct KBPressStyle: ButtonStyle {
         configuration.label
             .scaleEffect(configuration.isPressed ? 0.97 : 1.0)
             .opacity(configuration.isPressed ? 0.68 : 1.0)
+    }
+}
+
+// Compact hex initializer for the mirrored Rezme tokens above.
+private extension Color {
+    init(hex: UInt32) {
+        self.init(red: Double((hex >> 16) & 0xff) / 255,
+                  green: Double((hex >> 8) & 0xff) / 255,
+                  blue: Double(hex & 0xff) / 255)
     }
 }
