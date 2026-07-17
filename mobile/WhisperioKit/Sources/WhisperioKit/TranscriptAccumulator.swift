@@ -20,7 +20,33 @@ public struct TranscriptAccumulator: Sendable, Equatable {
 
     /// Replace the in-flight segment's partial text (SFSpeech partials are cumulative
     /// within a segment, so each callback carries the segment's full text so far).
-    public mutating func updateCurrent(_ text: String) { current = text }
+    ///
+    /// Guards against the recognizer's silent reset: after a pause, on-device SFSpeech
+    /// sometimes keeps the task alive (no final result, no error) but restarts its
+    /// hypothesis, so the next partial contains ONLY the words spoken after the pause.
+    /// Blindly replacing `current` would erase everything said before it. When the new
+    /// partial looks like a fresh utterance rather than a revision of the old one, the
+    /// old partial is banked first — the failure mode becomes a rare duplicated word,
+    /// never lost speech.
+    public mutating func updateCurrent(_ text: String) {
+        if Self.isUtteranceReset(from: current, to: text) {
+            bankSegment()
+        }
+        current = text
+    }
+
+    /// Heuristic for "the recognizer started over mid-task": the new partial is much
+    /// shorter than what we had AND doesn't begin with the same word. A genuine revision
+    /// ("I scream" → "Ice cream selling") keeps most of the length or the leading word;
+    /// a reset's first partial is one or two fresh words against a long banked-up text.
+    static func isUtteranceReset(from old: String, to new: String) -> Bool {
+        guard !old.isEmpty, !new.isEmpty else { return false }
+        guard new.count * 2 < old.count else { return false }
+        let firstWord = { (s: String) in
+            s.split(separator: " ").first.map { $0.lowercased() } ?? ""
+        }
+        return firstWord(old) != firstWord(new)
+    }
 
     /// Bank the in-flight segment into `committed` and open a fresh one. Called both when
     /// a segment finalizes cleanly AND before an error-driven segment restart — the partial
