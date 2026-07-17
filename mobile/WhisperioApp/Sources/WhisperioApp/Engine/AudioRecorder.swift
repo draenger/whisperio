@@ -8,12 +8,18 @@ import WhisperioKit
 @MainActor
 final class AudioRecorder: NSObject, ObservableObject {
     @Published var isRecording = false
+    @Published var isPaused = false
     @Published var level: CGFloat = 0          // 0…1, for the live waveform
 
     private var recorder: AVAudioRecorder?
     private var fileURL: URL?
     private var startedAt: Date?
     private var meterTimer: Timer?
+    // Active (non-paused) recording time, accumulated across pause/resume cycles — the
+    // wall clock overstates duration once pause exists, and AVAudioRecorder.currentTime
+    // isn't reliable while paused.
+    private var accumulatedActive: TimeInterval = 0
+    private var lastResumeAt: Date?
 
     // Ask for mic (+ speech, used by the on-device engine) permissions up front.
     func requestPermissions() async -> Bool {
@@ -59,7 +65,10 @@ final class AudioRecorder: NSObject, ObservableObject {
         recorder = rec
         fileURL = url
         startedAt = Date()
+        accumulatedActive = 0
+        lastResumeAt = Date()
         isRecording = true
+        isPaused = false
 
         meterTimer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.updateLevel() }
@@ -74,14 +83,38 @@ final class AudioRecorder: NSObject, ObservableObject {
         level = CGFloat(min(1, norm))
     }
 
+    /// Pause capture without ending the file — `resume()` continues appending to the same
+    /// recording (Conversation mode). No-op unless actively recording.
+    func pause() {
+        guard let rec = recorder, isRecording, !isPaused else { return }
+        if let resumedAt = lastResumeAt {
+            accumulatedActive += Date().timeIntervalSince(resumedAt)
+        }
+        lastResumeAt = nil
+        rec.pause()
+        isPaused = true
+        level = 0
+    }
+
+    /// Resume a paused recording. No-op unless paused.
+    func resume() {
+        guard let rec = recorder, isRecording, isPaused else { return }
+        guard rec.record() else { return }   // keep paused state if the session was lost
+        lastResumeAt = Date()
+        isPaused = false
+    }
+
     // Stops recording and returns the captured clip (nil if nothing was recorded).
     func stop() -> AudioClip? {
         meterTimer?.invalidate(); meterTimer = nil
         guard let rec = recorder, let url = fileURL else { isRecording = false; return nil }
-        let duration = startedAt.map { Date().timeIntervalSince($0) } ?? rec.currentTime
+        var duration = accumulatedActive
+        if let resumedAt = lastResumeAt { duration += Date().timeIntervalSince(resumedAt) }
+        if duration <= 0 { duration = startedAt.map { Date().timeIntervalSince($0) } ?? rec.currentTime }
         rec.stop()
         recorder = nil
         isRecording = false
+        isPaused = false
         level = 0
         #if os(iOS)
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
@@ -100,6 +133,7 @@ final class AudioRecorder: NSObject, ObservableObject {
         if let url = fileURL { try? FileManager.default.removeItem(at: url) }
         recorder = nil
         isRecording = false
+        isPaused = false
         level = 0
         #if os(iOS)
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)

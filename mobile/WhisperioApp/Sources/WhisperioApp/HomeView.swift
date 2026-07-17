@@ -15,6 +15,7 @@ struct HomeView: View {
     @EnvironmentObject private var settings: SettingsStore
     var openRec: (DemoRecording) -> Void
     var openRecording: () -> Void
+    var openConversation: () -> Void = {}
     var openSettings: () -> Void
     var openJournal: () -> Void = {}
 
@@ -229,23 +230,39 @@ struct HomeView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
                 .ignoresSafeArea(edges: .bottom)
                 .allowsHitTesting(false)
-            Button(action: openRecording) {
-                HStack(spacing: 10) {
-                    WIcon("mic", size: 19, weight: .bold)
-                    Text("Dictate").font(WZFont.ui(16, .semibold))
+            HStack(spacing: 10) {
+                Button(action: openRecording) {
+                    HStack(spacing: 10) {
+                        WIcon("mic", size: 19, weight: .bold)
+                        Text("Dictate").font(WZFont.ui(16, .semibold))
+                    }
+                    .foregroundStyle(.white)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 56)
+                    .background(t.gradient, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            .stroke(.white.opacity(0.22), lineWidth: 1)
+                            .blendMode(.overlay)
+                    )
+                    .shadow(color: t.accent.opacity(0.45), radius: 20, y: 14)
                 }
-                .foregroundStyle(.white)
-                .frame(maxWidth: .infinity)
-                .frame(height: 56)
-                .background(t.gradient, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .stroke(.white.opacity(0.22), lineWidth: 1)
-                        .blendMode(.overlay)
-                )
-                .shadow(color: t.accent.opacity(0.45), radius: 20, y: 14)
+                .buttonStyle(.plain)
+
+                // Conversation mode — records everyone near the mic and separates speakers.
+                Button(action: openConversation) {
+                    WIcon("people", size: 19, weight: .bold)
+                        .foregroundStyle(t.accentLite)
+                        .frame(width: 56, height: 56)
+                        .background(t.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                .stroke(t.accent.opacity(0.35), lineWidth: 1)
+                        )
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Record a conversation")
             }
-            .buttonStyle(.plain)
             .padding(.horizontal, 16)
             .padding(.bottom, 18)
         }

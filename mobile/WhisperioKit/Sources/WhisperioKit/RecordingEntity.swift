@@ -27,6 +27,12 @@ public final class RecordingEntity {
     public var category: String?
     public var render: String?
     public var renderPresetID: String?
+    /// Speaker-diarized segments (Conversation mode), JSON-encoded `[SpeakerSegment]` — the
+    /// same Data-blob convention DigestEntity uses for structured fields (CloudKit has no
+    /// nested-collection attributes). nil means "plain dictation".
+    public var segmentsData: Data?
+    /// User-assigned speaker display names, JSON-encoded `[String: String]`.
+    public var speakerNamesData: Data?
     /// Last local mutation time — the comparison clock for the last-writer-wins merge in
     /// `RecordingSyncStore.upsert` (a stale/out-of-order write with an older time is dropped) and
     /// the tie-breaker that resolves CloudKit-produced duplicates to the newest row on read.
@@ -44,6 +50,8 @@ public final class RecordingEntity {
         category: String? = nil,
         render: String? = nil,
         renderPresetID: String? = nil,
+        segmentsData: Data? = nil,
+        speakerNamesData: Data? = nil,
         modifiedAt: Date = Date()
     ) {
         self.id = id
@@ -57,6 +65,8 @@ public final class RecordingEntity {
         self.category = category
         self.render = render
         self.renderPresetID = renderPresetID
+        self.segmentsData = segmentsData
+        self.speakerNamesData = speakerNamesData
         self.modifiedAt = modifiedAt
     }
 }
@@ -82,6 +92,8 @@ public extension RecordingEntity {
             category: r.category,
             render: r.render,
             renderPresetID: r.renderPresetID,
+            segmentsData: Self.encodeSegments(r.segments),
+            speakerNamesData: Self.encodeSpeakerNames(r.speakerNames),
             modifiedAt: modifiedAt ?? r.lastWriteAt
         )
     }
@@ -108,7 +120,9 @@ public extension RecordingEntity {
             category: category,
             render: render,
             renderPresetID: renderPresetID,
-            updatedAt: (modifiedAt == timestamp) ? nil : modifiedAt
+            updatedAt: (modifiedAt == timestamp) ? nil : modifiedAt,
+            segments: Self.decodeSegments(segmentsData),
+            speakerNames: Self.decodeSpeakerNames(speakerNamesData)
         )
     }
 
@@ -125,6 +139,35 @@ public extension RecordingEntity {
         category = r.category
         render = r.render
         renderPresetID = r.renderPresetID
+        segmentsData = Self.encodeSegments(r.segments)
+        speakerNamesData = Self.encodeSpeakerNames(r.speakerNames)
         self.modifiedAt = modifiedAt
+    }
+
+    // JSON codecs for the structured Data blobs. Encoding nil/empty collapses to nil (no
+    // blob at all); decoding tolerates a missing or malformed blob as nil — the same
+    // optional-or-default decode stance as every other field.
+    internal static func encodeSegments(_ segments: [SpeakerSegment]?) -> Data? {
+        guard let segments, !segments.isEmpty else { return nil }
+        return try? JSONEncoder().encode(segments)
+    }
+
+    internal static func decodeSegments(_ data: Data?) -> [SpeakerSegment]? {
+        guard let data,
+              let segments = try? JSONDecoder().decode([SpeakerSegment].self, from: data),
+              !segments.isEmpty else { return nil }
+        return segments
+    }
+
+    internal static func encodeSpeakerNames(_ names: [String: String]?) -> Data? {
+        guard let names, !names.isEmpty else { return nil }
+        return try? JSONEncoder().encode(names)
+    }
+
+    internal static func decodeSpeakerNames(_ data: Data?) -> [String: String]? {
+        guard let data,
+              let names = try? JSONDecoder().decode([String: String].self, from: data),
+              !names.isEmpty else { return nil }
+        return names
     }
 }

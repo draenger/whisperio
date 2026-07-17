@@ -429,6 +429,16 @@ public final class RecordingSyncStore: ObservableObject {
         reload()
     }
 
+    /// Persist user-assigned speaker display names for a conversation recording (raw
+    /// speaker id → name). No-op if no matching row exists.
+    public func setSpeakerNames(_ names: [String: String], for recordingID: UUID) {
+        guard let entity = firstEntity(id: recordingID) else { return }
+        entity.speakerNamesData = RecordingEntity.encodeSpeakerNames(names)
+        entity.modifiedAt = Date()
+        save()
+        reload()
+    }
+
     /// Re-read the local SwiftData snapshot into `items`. This is honest about what it can and
     /// can't do: SwiftData exposes no public API to force an `NSPersistentCloudKitContainer`
     /// fetch, so this call does **not** reach out to CloudKit. The previous implementation posted

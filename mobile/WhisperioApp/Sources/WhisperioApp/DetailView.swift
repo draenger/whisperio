@@ -36,6 +36,28 @@ struct DetailView: View {
     @State private var showRewriteSheet = false
     @State private var showConsent = false
 
+    // Conversation state — rename-speaker alert target/text and the in-flight flag for
+    // LLM name guessing.
+    @State private var renameSpeaker: String?
+    @State private var renameText = ""
+    @State private var guessingNames = false
+
+    // The backing Recording, resolved live from the store so speaker renames (and any
+    // cross-device sync) show up immediately. nil for sample rows.
+    private var source: Recording? {
+        guard let id = r.sourceId else { return nil }
+        return recordings.items.first { $0.id == id }
+    }
+    private var segments: [SpeakerSegment] { source?.segments ?? [] }
+    private var speakerNames: [String: String] { source?.speakerNames ?? [:] }
+    private var isConversation: Bool { !segments.isEmpty }
+    // The text Copy/Share act on: conversations use the speaker-labeled rendering.
+    private var shareableTranscript: String {
+        isConversation
+            ? SpeakerSegmentBuilder.transcriptText(segments: segments, names: speakerNames)
+            : r.title
+    }
+
     var body: some View {
         ScreenScaffold {
             VStack(spacing: 0) {
@@ -53,17 +75,21 @@ struct DetailView: View {
                         Text("\(r.app) · \(r.when) · \(r.dur) · \(r.words) words")
                             .font(WZFont.mono(11)).foregroundStyle(t.faint)
 
-                        VStack(alignment: .leading, spacing: 0) {
-                            SectionLabel(text: "Transcript").padding(.bottom, 12)
-                            Text(r.title)
-                                .font(WZFont.ui(17)).foregroundStyle(t.text).lineSpacing(4)
-                                .fixedSize(horizontal: false, vertical: true)
-                                .textSelection(.enabled)
+                        if isConversation {
+                            conversationCard
+                        } else {
+                            VStack(alignment: .leading, spacing: 0) {
+                                SectionLabel(text: "Transcript").padding(.bottom, 12)
+                                Text(r.title)
+                                    .font(WZFont.ui(17)).foregroundStyle(t.text).lineSpacing(4)
+                                    .fixedSize(horizontal: false, vertical: true)
+                                    .textSelection(.enabled)
+                            }
+                            .padding(18)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(t.surface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                            .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(t.line, lineWidth: 1))
                         }
-                        .padding(18)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(t.surface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-                        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(t.line, lineWidth: 1))
 
                         if rewriting {
                             processingCard
@@ -77,8 +103,8 @@ struct DetailView: View {
 
                 // actions
                 HStack(spacing: 9) {
-                    GhostButton(title: "Copy", icon: "copy") { copy(r.title) }
-                    shareButton(r.title)
+                    GhostButton(title: "Copy", icon: "copy") { copy(shareableTranscript) }
+                    shareButton(shareableTranscript)
                     GhostButton(title: "Rewrite", icon: "spark") { showRewriteSheet = true }
                 }
                 .padding(.horizontal, 18).padding(.top, 12).padding(.bottom, 32)
@@ -106,6 +132,16 @@ struct DetailView: View {
                 #if os(iOS)
                 .presentationDetents([.medium, .large])
                 #endif
+        }
+        .alert("Name this speaker", isPresented: Binding(
+            get: { renameSpeaker != nil },
+            set: { if !$0 { renameSpeaker = nil } }
+        )) {
+            TextField("Name", text: $renameText)
+            Button("Save") { commitRename() }
+            Button("Cancel", role: .cancel) { renameSpeaker = nil }
+        } message: {
+            Text("Shown instead of the generic speaker label, everywhere this conversation appears.")
         }
     }
 
@@ -137,7 +173,7 @@ struct DetailView: View {
         rewriting = true
         Task {
             do {
-                let out = try await rewriter.run(preset: preset, transcript: r.title)
+                let out = try await rewriter.run(preset: preset, transcript: shareableTranscript)
                 render = out
                 renderPresetID = preset.id
                 recordings.setRender(out, presetID: preset.id, for: r)
@@ -176,6 +212,115 @@ struct DetailView: View {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { openSettings() }
         } else {
             toast("Cloud rewrite enabled")
+        }
+    }
+
+    // MARK: - Conversation (diarized transcript)
+
+    // Speaker-labeled transcript: one row per segment, the speaker chip is tappable to
+    // rename. "Name with AI" reads the conversation for introductions/addressing and fills
+    // names in — manual names always win over guesses.
+    private var conversationCard: some View {
+        let order = SpeakerSegmentBuilder.speakerOrder(segments)
+        return VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 8) {
+                SectionLabel(text: "Conversation")
+                Spacer(minLength: 0)
+                if guessingNames {
+                    ProgressView().tint(t.accent).scaleEffect(0.8)
+                } else {
+                    Button(action: guessNames) {
+                        HStack(spacing: 5) {
+                            WIcon("spark", size: 11)
+                            Text("Name with AI")
+                        }
+                        .font(WZFont.mono(10, .semibold))
+                        .foregroundStyle(t.accentLite)
+                        .padding(.horizontal, 9).padding(.vertical, 4)
+                        .background(t.accent.opacity(t.dark ? 0.14 : 0.10), in: Capsule())
+                        .overlay(Capsule().stroke(t.accent.opacity(t.dark ? 0.28 : 0.24), lineWidth: 1))
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.bottom, 14)
+
+            VStack(alignment: .leading, spacing: 14) {
+                ForEach(Array(segments.enumerated()), id: \.offset) { _, seg in
+                    let color = speakerColor(order.firstIndex(of: seg.speaker) ?? 0)
+                    VStack(alignment: .leading, spacing: 5) {
+                        Button {
+                            renameText = speakerNames[seg.speaker] ?? ""
+                            renameSpeaker = seg.speaker
+                        } label: {
+                            HStack(spacing: 5) {
+                                Circle().fill(color).frame(width: 7, height: 7)
+                                Text(SpeakerSegmentBuilder.displayName(
+                                    for: seg.speaker, names: speakerNames, order: order))
+                                WIcon("pencil", size: 8.5)
+                            }
+                            .font(WZFont.mono(11, .semibold))
+                            .foregroundStyle(color)
+                        }
+                        .buttonStyle(.plain)
+                        Text(seg.text)
+                            .font(WZFont.ui(16)).foregroundStyle(t.text).lineSpacing(4)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .textSelection(.enabled)
+                    }
+                }
+            }
+        }
+        .padding(18)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(t.surface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(t.line, lineWidth: 1))
+    }
+
+    // Stable per-speaker accent: the theme accent for the first voice, then distinct hues.
+    private func speakerColor(_ index: Int) -> Color {
+        let palette: [Color] = [t.accent, .orange, .purple, .pink, .mint, .yellow]
+        return palette[index % palette.count]
+    }
+
+    private func commitRename() {
+        guard let speaker = renameSpeaker else { return }
+        var names = speakerNames
+        let name = renameText.trimmingCharacters(in: .whitespacesAndNewlines)
+        if name.isEmpty { names.removeValue(forKey: speaker) } else { names[speaker] = name }
+        recordings.setSpeakerNames(names, for: r)
+        renameSpeaker = nil
+    }
+
+    // Ask the chat LLM to infer names from the conversation itself (introductions, being
+    // addressed by name). Same gating as Rewrite: consent sheet first, then Settings for
+    // the missing key. Guesses never overwrite names the user typed.
+    private func guessNames() {
+        let client = settings.makeChatClient()
+        guard client.isConfigured else {
+            if !settings.settings.cloudConsentGranted { showConsent = true } else { openSettings() }
+            return
+        }
+        guessingNames = true
+        let prompt = SpeakerNameGuess.prompt(segments: segments)
+        let known = SpeakerSegmentBuilder.speakerOrder(segments)
+        Task {
+            defer { guessingNames = false }
+            do {
+                let raw = try await client.complete(
+                    messages: [ChatMessage(role: "user", content: prompt)],
+                    model: settings.settings.chatModel, temperature: 0)
+                let guessed = SpeakerNameGuess.parse(raw, knownSpeakers: known)
+                let merged = guessed.merging(speakerNames) { _, manual in manual }
+                if merged == speakerNames {
+                    toast("No names revealed in the conversation")
+                } else {
+                    recordings.setSpeakerNames(merged, for: r)
+                    toast("Named \(merged.count) speaker\(merged.count == 1 ? "" : "s")")
+                }
+            } catch {
+                toast("Couldn’t name speakers")
+            }
         }
     }
 

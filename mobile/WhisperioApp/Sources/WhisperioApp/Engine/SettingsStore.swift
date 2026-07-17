@@ -77,6 +77,18 @@ final class SettingsStore: ObservableObject {
         return ProviderChain(providers: order.map { provider(for: $0, s) })
     }
 
+    // Build the diarizing transcriber for Conversation mode (ElevenLabs Scribe v2 with
+    // diarize=true — the only configured engine that separates speakers). Gated the same way
+    // makeChain() gates cloud STT: nil until the user granted cloud consent AND pasted an
+    // ElevenLabs key, so callers surface the setup state instead of failing silently.
+    func makeConversationTranscriber() -> ElevenLabsProvider? {
+        let s = settings
+        guard s.cloudConsentGranted,
+              !s.elevenLabsKey.trimmingCharacters(in: .whitespaces).isEmpty else { return nil }
+        return ElevenLabsProvider(apiKey: s.elevenLabsKey,
+                                  languageCode: s.language, keyterms: s.vocabularyTerms)
+    }
+
     // Build the text-LLM client for rewrite (render presets) + journaling. Gated the same
     // way makeChain() gates cloud STT: the client only reports isConfigured when the user has
     // granted cloud consent AND pasted an OpenAI key — otherwise callers see an unconfigured

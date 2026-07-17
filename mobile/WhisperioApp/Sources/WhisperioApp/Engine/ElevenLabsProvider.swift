@@ -21,6 +21,41 @@ struct ElevenLabsProvider: TranscriptionProvider {
     }
 
     func transcribe(_ clip: AudioClip) async throws -> String {
+        struct R: Decodable { let text: String }
+        let data = try await send(clip, diarize: false)
+        return try JSONDecoder().decode(R.self, from: data).text
+    }
+
+    /// A diarized conversation transcript: the flat text plus per-speaker segments.
+    struct DiarizedTranscription {
+        let text: String
+        let segments: [SpeakerSegment]
+    }
+
+    /// Conversation mode: same endpoint with `diarize=true` (Scribe v2 — diarization needs
+    /// v2), folding the returned word stream into per-speaker segments.
+    func transcribeDiarized(_ clip: AudioClip) async throws -> DiarizedTranscription {
+        struct Word: Decodable {
+            let text: String
+            let start: TimeInterval?
+            let end: TimeInterval?
+            let type: String?
+            let speaker_id: String?
+        }
+        struct R: Decodable {
+            let text: String
+            let words: [Word]?
+        }
+        let data = try await send(clip, diarize: true)
+        let r = try JSONDecoder().decode(R.self, from: data)
+        let segments = SpeakerSegmentBuilder.build(words: (r.words ?? []).map {
+            DiarizedWord(text: $0.text, start: $0.start, end: $0.end,
+                         type: $0.type ?? "word", speakerID: $0.speaker_id)
+        })
+        return DiarizedTranscription(text: r.text, segments: segments)
+    }
+
+    private func send(_ clip: AudioClip, diarize: Bool) async throws -> Data {
         guard let url = URL(string: "https://api.elevenlabs.io/v1/speech-to-text") else {
             throw Self.err("Invalid ElevenLabs URL.")
         }
@@ -31,7 +66,8 @@ struct ElevenLabsProvider: TranscriptionProvider {
         var body = MultipartBody()
         req.setValue(body.contentType, forHTTPHeaderField: "Content-Type")
         let terms = cleanKeyterms
-        body.field("model_id", terms.isEmpty ? "scribe_v1" : "scribe_v2")
+        body.field("model_id", (diarize || !terms.isEmpty) ? "scribe_v2" : "scribe_v1")
+        if diarize { body.field("diarize", "true") }
         if !languageCode.isEmpty && languageCode != "auto" { body.field("language_code", languageCode) }
         if !terms.isEmpty, let data = try? JSONEncoder().encode(terms),
            let json = String(data: data, encoding: .utf8) {
@@ -46,8 +82,7 @@ struct ElevenLabsProvider: TranscriptionProvider {
         guard (200..<300).contains(http.statusCode) else {
             throw Self.err("ElevenLabs error \(http.statusCode): \(String(data: data, encoding: .utf8) ?? "")")
         }
-        struct R: Decodable { let text: String }
-        return try JSONDecoder().decode(R.self, from: data).text
+        return data
     }
 
     static func err(_ m: String) -> NSError {

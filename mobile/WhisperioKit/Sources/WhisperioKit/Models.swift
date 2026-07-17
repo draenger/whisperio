@@ -68,6 +68,15 @@ public struct Recording: Identifiable, Codable, Sendable, Equatable {
     /// Optional so recordings persisted before LWW existed keep decoding — nil is treated as the
     /// record's `timestamp` (its creation time) when comparing writers. See `lastWriteAt`.
     public var updatedAt: Date?
+    /// Speaker-diarized segments (Conversation mode). Optional so recordings persisted before
+    /// conversations existed keep decoding — nil/empty means "plain dictation".
+    public var segments: [SpeakerSegment]?
+    /// User-assigned display names per raw speaker id ("speaker_0" → "Anna"). Kept separate
+    /// from `segments` so a rename is a tiny metadata write that never rewrites the transcript.
+    public var speakerNames: [String: String]?
+
+    /// True when this recording is a diarized conversation (has at least one speaker segment).
+    public var isConversation: Bool { !(segments ?? []).isEmpty }
 
     /// The effective time to compare for last-writer-wins: the explicit `updatedAt` when set,
     /// otherwise the creation `timestamp`. Newer wins on merge/write.
@@ -85,7 +94,9 @@ public struct Recording: Identifiable, Codable, Sendable, Equatable {
         category: String? = nil,
         render: String? = nil,
         renderPresetID: String? = nil,
-        updatedAt: Date? = nil
+        updatedAt: Date? = nil,
+        segments: [SpeakerSegment]? = nil,
+        speakerNames: [String: String]? = nil
     ) {
         self.id = id
         self.filename = filename
@@ -99,5 +110,7 @@ public struct Recording: Identifiable, Codable, Sendable, Equatable {
         self.render = render
         self.renderPresetID = renderPresetID
         self.updatedAt = updatedAt
+        self.segments = segments
+        self.speakerNames = speakerNames
     }
 }

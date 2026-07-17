@@ -21,7 +21,8 @@ struct CloudKitSchemaParityTests {
     /// them representable, so the hand-built schema must carry all of them and no more.
     private static let recordingEntityFields: Set<String> = [
         "id", "filename", "timestamp", "duration", "statusRaw", "providerRaw",
-        "transcription", "error", "category", "render", "renderPresetID", "modifiedAt"
+        "transcription", "error", "category", "render", "renderPresetID",
+        "segmentsData", "speakerNamesData", "modifiedAt"
     ]
 
     /// `DigestEntity`'s stored properties.

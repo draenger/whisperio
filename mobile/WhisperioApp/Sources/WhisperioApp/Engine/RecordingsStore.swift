@@ -17,6 +17,7 @@ final class RecordingsStore: ObservableObject {
             case delete = "Delete"
             case category = "Category"
             case render = "Rewrite"
+            case speakers = "Speakers"
             case migrate = "Migrate"
             case refresh = "Pull"
         }
@@ -293,6 +294,25 @@ final class RecordingsStore: ObservableObject {
             guard let idx = items.firstIndex(where: { $0.id == sourceId }) else { return }
             items[idx].render = text
             items[idx].renderPresetID = presetID
+            items[idx].updatedAt = Date()   // bump LWW clock so this edit wins over stale copies
+            saveJSON(to: url)
+        }
+    }
+
+    // MARK: - Speakers (Conversation mode)
+
+    /// Persist speaker display names (raw speaker id → name) onto the backing Recording —
+    /// same shape as setRender: survives relaunches, reflects everywhere. No-op for sample
+    /// rows (no sourceId).
+    func setSpeakerNames(_ names: [String: String], for demo: DemoRecording) {
+        guard let sourceId = demo.sourceId else { return }
+        switch backend {
+        case .sync(let store):
+            queueSync(.speakers, title: demo.title, detail: "\(names.count) named", recordID: sourceId)
+            store.setSpeakerNames(names, for: sourceId)
+        case .json(let url):
+            guard let idx = items.firstIndex(where: { $0.id == sourceId }) else { return }
+            items[idx].speakerNames = names.isEmpty ? nil : names
             items[idx].updatedAt = Date()   // bump LWW clock so this edit wins over stale copies
             saveJSON(to: url)
         }

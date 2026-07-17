@@ -52,7 +52,7 @@ final class WhisperioAppDelegate: NSObject, UIApplicationDelegate {
 }
 #endif
 
-enum WZScreen { case onboarding, home, recording, detail, settings, models, keyboardSetup, keyboardReturn, keyboardRewrite, presetEditor, journal, digestDay, githubSync, digestPromptEditor }
+enum WZScreen { case onboarding, home, recording, conversation, detail, settings, models, keyboardSetup, keyboardReturn, keyboardRewrite, presetEditor, journal, digestDay, githubSync, digestPromptEditor }
 
 struct WZPhoneView: View {
     @Environment(\.scenePhase) private var scenePhase
@@ -222,6 +222,10 @@ struct WZPhoneView: View {
                                   rec = DemoRecording(r); go(.detail)
                               }
                           })
+        case .conversation:
+            ConversationView(onCancel: { go(.home) },
+                             onDone: { r in rec = DemoRecording(r); go(.detail) },
+                             openSettings: { go(.settings) })
         case .detail:
             DetailView(r: rec, onBack: { go(.home) }, toast: showToast,
                        openSettings: { go(.settings) },
@@ -257,6 +261,7 @@ struct WZPhoneView: View {
         case .home:
             HomeView(openRec: { rec = $0; go(.detail) },
                      openRecording: { go(.recording) },
+                     openConversation: { go(.conversation) },
                      openSettings: { go(.settings) },
                      openJournal: { go(.journal) })
         case .journal:
