@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { JSX } from 'react'
 import { useDictation } from '../../hooks/useDictation'
+import { Ghost } from '../common/Ghost'
 
 type OverlayState = 'idle' | 'recording' | 'transcribing' | 'pasting'
 
@@ -90,6 +91,7 @@ export function DictationOverlay(): JSX.Element {
 
   const isListening = overlayState === 'recording'
   const isTranscribing = overlayState === 'transcribing'
+  const isPasting = overlayState === 'pasting'
   const isOutputRecording = overlayInfo?.recordingType === 'output'
 
   // Color scheme based on recording type (Rezme teal for input dictation)
@@ -130,6 +132,7 @@ export function DictationOverlay(): JSX.Element {
       >
         {isListening && (
           <>
+            <Ghost mode="listening" size={28} bodyColor={accentColor} />
             <div
               style={{
                 ...styles.dot,
@@ -144,17 +147,17 @@ export function DictationOverlay(): JSX.Element {
         )}
         {isTranscribing && (
           <>
-            <div
-              style={{
-                ...styles.spinner,
-                border: `2px solid ${borderColor}`,
-                borderTopColor: accentColor
-              }}
-            />
+            <Ghost mode="thinking" size={28} bodyColor={accentColor} />
             <span style={styles.text}>Transcribing...</span>
             <span style={styles.progressTrack}>
               <span style={styles.progressSweep} />
             </span>
+          </>
+        )}
+        {isPasting && (
+          <>
+            <Ghost mode="wave" size={28} bodyColor={accentColor} />
+            <span style={styles.text}>Pasting...</span>
           </>
         )}
       </div>
@@ -241,12 +244,6 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: '11.5px',
     fontFamily: "'JetBrains Mono', monospace"
   },
-  spinner: {
-    width: '16px',
-    height: '16px',
-    borderRadius: '50%',
-    animation: 'wzspin 0.8s linear infinite'
-  },
   progressTrack: {
     position: 'relative',
     width: '64px',
@@ -286,9 +283,6 @@ styleEl.textContent = `
   @keyframes wzpulse {
     0%, 100% { opacity: 1; transform: scale(1); }
     50% { opacity: 0.5; transform: scale(0.85); }
-  }
-  @keyframes wzspin {
-    to { transform: rotate(360deg); }
   }
   @keyframes wzprog {
     0% { left: -26px; }
