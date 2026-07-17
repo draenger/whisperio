@@ -17,7 +17,8 @@ enum WZIcon {
         "sync": "arrow.triangle.2.circlepath", "bolt": "bolt.fill", "command": "command",
         "more": "ellipsis", "send": "paperplane.fill", "shield": "checkmark.shield",
         "clock": "clock", "trim": "scissors", "edit": "square.and.pencil",
-        "list": "list.bullet", "message": "message.fill", "book": "book.closed"
+        "list": "list.bullet", "message": "message.fill", "book": "book.closed",
+        "pause": "pause.fill", "play": "play.fill", "people": "person.2.fill"
     ]
     static func symbol(_ k: String) -> String { map[k] ?? "questionmark" }
 }
@@ -266,24 +267,7 @@ struct GhostShape: Shape {
     }
 }
 
-// The brand mascot — the exact concept ghost (smiling, eyes, waving arm), bundled as a
-// transparent white-bodied imageset rendered from `mobile/wz-core.jsx`'s WGhost SVG. The
-// white body is colorMultiply-tinted at render time: by default it takes the current theme's
-// accent (teal, or whatever `wz.accent` resolves to), so the mascot always matches the active
-// brand palette; an explicit `tint` (e.g. `.white` on a gradient tile) overrides that.
-struct WGhost: View {
-    @Environment(\.wz) private var wz
-    var size: CGFloat = 26
-    /// Overrides the default theme-accent tint (e.g. `.white` on a gradient chip).
-    var tint: Color? = nil
-
-    var body: some View {
-        Image("WZGhostWhite")
-            .resizable()
-            .interpolation(.high)
-            .aspectRatio(contentMode: .fit)
-            .frame(width: size, height: size)
-            .colorMultiply(tint ?? wz.accent)
-            .accessibilityHidden(true)
-    }
-}
+// The brand mascot now lives in GhostView.swift (`WGhost`) — a vector, animated port of
+// the canonical ghost design (idle sway + blink + mouth bob, optional arm wave). The old
+// static "WZGhostWhite" imageset remains in assets for targets that don't compile the
+// vector view (widget).
