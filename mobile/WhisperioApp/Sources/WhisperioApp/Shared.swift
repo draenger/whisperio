@@ -1,6 +1,8 @@
 import SwiftUI
 
-// Screen shell — clears the status bar (paddingTop 54) and fills with the theme bg.
+// Screen shell — fills with the theme bg. On iOS the real safe area already clears the
+// status bar (the mock's fixed 54px strip would double it into a dead band above the
+// header); macOS has no safe area, so it keeps the fixed clearance below the titlebar.
 struct ScreenScaffold<Content: View>: View {
     @Environment(\.wz) private var t
     var bg: Color? = nil
@@ -8,7 +10,9 @@ struct ScreenScaffold<Content: View>: View {
     var body: some View {
         VStack(spacing: 0) { content }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            #if os(macOS)
             .padding(.top, 54)
+            #endif
             .background((bg ?? t.bg).ignoresSafeArea())
     }
 }
