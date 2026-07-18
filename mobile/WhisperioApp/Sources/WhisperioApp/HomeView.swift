@@ -78,7 +78,7 @@ struct HomeView: View {
                             }
                         }
                     }
-                    .padding(.horizontal, 16).padding(.top, 4)
+                    .padding(.horizontal, 16).padding(.top, 4).padding(.bottom, 6)
 
                     if recordings.items.isEmpty {
                         emptyState
@@ -95,7 +95,15 @@ struct HomeView: View {
                                     if !today.isEmpty { brainGroup("Today", today) }
                                     if !earlier.isEmpty { brainGroup("Earlier", earlier) }
                                 }
-                                .padding(.horizontal, 16).padding(.top, 16).padding(.bottom, 150)
+                                .padding(.horizontal, 16).padding(.top, 18).padding(.bottom, 150)
+                            }
+                            // Rows fade out under the filter chips instead of clipping hard
+                            // against them — the top-edge mirror of the dictate bar's fade.
+                            .overlay(alignment: .top) {
+                                LinearGradient(colors: [t.bg, t.bg.opacity(0)],
+                                               startPoint: .top, endPoint: .bottom)
+                                    .frame(height: 30)
+                                    .allowsHitTesting(false)
                             }
                             // Re-reads whatever CloudKit has already imported locally — this is
                             // not a network push/pull (SwiftData exposes no such API), so it only
