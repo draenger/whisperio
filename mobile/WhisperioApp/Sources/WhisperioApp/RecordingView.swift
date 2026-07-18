@@ -52,6 +52,14 @@ struct RecordingView: View {
         }
     }
 
+    private var ghostPhase: ListeningGhost.Phase {
+        switch phase {
+        case .processing: return .note
+        case .error: return .wtf
+        default: return .listening
+        }
+    }
+
     private var statusLabel: String {
         switch phase {
         case .starting: return "Starting…"
@@ -83,6 +91,11 @@ struct RecordingView: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
                 .padding(.horizontal, 24)
+
+                // The design's ListeningGhost: leans in and nods while you talk, scribbles
+                // on its notepad while transcribing, startles ("?!") on an error.
+                ListeningGhost(phase: ghostPhase, size: 96)
+                    .padding(.bottom, 2)
 
                 Group {
                     if phase == .listening {
