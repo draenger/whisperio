@@ -1,0 +1,668 @@
+/* Whisperio Apple — iPhone Settings. Mapped 1:1 from SettingsView.swift @ main:
+   7-category hub (Models · Transcription · Integrations · Content · Sync · Developer · System)
+   → focused category pages. Deep pages (models list, keyboard, triggers, GitHub, categorization)
+   sit one level below their category. Legacy 'storage' page kept (unlisted) for the gallery. */
+
+const SETT_LANGS = [['auto', 'Auto-detect'], ['en', 'English'], ['pl', 'Polski'], ['de', 'Deutsch'], ['es', 'Español'], ['fr', 'Français'], ['it', 'Italiano'], ['pt', 'Português'], ['nl', 'Nederlands'], ['ru', 'Русский'], ['uk', 'Українська']];
+const CAT_DEFAULT_PROMPT = 'Sort each note into Work, Code, Ideas, To-do or Messages. Prefer Code when it mentions repos, APIs or shell commands. If nothing fits, use Ideas.';
+const CAT_HINTS = { work: 'meetings, launches, clients', code: 'repos, APIs, shell commands', ideas: 'concepts, what-ifs, someday', todo: 'errands, groceries, chores', messages: 'texts, replies, quick pings' };
+const REWRITE_PRESETS = [
+  { id: 'cleanup', name: 'Clean up', icon: 'spark' },
+  { id: 'bullets', name: 'Bullet points', icon: 'list' },
+  { id: 'email', name: 'Email reply', icon: 'message' },
+  { id: 'actions', name: 'Action items', icon: 'check' },
+  { id: 'summary', name: 'Summary', icon: 'book' },
+  { id: 'builder', name: 'Template Builder', icon: 'zap', meta: true },
+];
+const TRIGGER_TYPES = [
+  { icon: 'bolt', label: 'Action Button', sub: 'Hold to dictate — iPhone 15 Pro and later' },
+  { icon: 'more', label: 'Back Tap', sub: 'Double or triple tap the back of the phone' },
+  { icon: 'lock', label: 'Lock Screen', sub: 'A dictation button without unlocking' },
+  { icon: 'keyboard', label: 'Keyboard', sub: 'The mic key in any text field' },
+];
+/* SettingsView.SettingsCategory — titles, icons, subtitles verbatim */
+const SETT_CATS = [
+  { id: 'models', icon: 'cpu', title: 'Models', sub: 'Choose the primary engine and API keys' },
+  { id: 'transcription', icon: 'mic', title: 'Transcription', sub: 'Mic behavior, cleanup, fallback, and timing' },
+  { id: 'integrations', icon: 'zap', title: 'Integrations', sub: 'Keyboard, Siri, Back Tap and dictation triggers' },
+  { id: 'content', icon: 'spark', title: 'Content', sub: 'Language, vocabulary, rewrite prompts, journaling' },
+  { id: 'sync', icon: 'cloud', title: 'Data synchronisation', sub: 'iCloud sync behavior and GitHub mirror' },
+  { id: 'storage', icon: 'folder', title: 'Storage & data', sub: 'What’s on this iPhone, per-type policy, cleanup' },
+  { id: 'developer', icon: 'hammer', title: 'Developer', sub: 'Diagnostics and advanced controls' },
+  { id: 'system', icon: 'cog', title: 'System', sub: 'Appearance and app info' },
+];
+const SETT_PARENT = { modelsList: 'models', keyboard: 'integrations', triggers: 'integrations', github: 'sync', categorize: 'content', presetEditor: 'content' };
+const SYNC_INTERVALS = [5, 15, 30, 60];
+const DIAG_ROWS = (storageMode) => [
+  ['Device', 'iPhone 15 Pro · iPhone · iOS 18.5'],
+  ['App version', '1.4 (127)'],
+  ['Cloud container', 'iCloud.com.draenger.whisperio'],
+  ['Account status', 'Available'],
+  ['Account ID', '_7f3a92c41d8e02b6f5a1'],
+  ['Storage mode', storageMode === 'iCloud' ? 'Auto sync' : 'On this device'],
+  ['Library backend', storageMode === 'iCloud' ? 'CloudKit' : 'Local'],
+  ['Sync activity', 'Idle'],
+  ['Last import', '7/16/26, 7:02:14 PM'],
+  ['Last export', '7/16/26, 6:58:41 PM'],
+  ['Last local error', 'None'],
+  ['Journal backend', storageMode === 'iCloud' ? 'CloudKit' : 'Local'],
+  ['Journal sync activity', 'Idle'],
+  ['Journal last import', '7/16/26, 7:02:15 PM'],
+  ['Journal last error', 'None'],
+];
+const CLOUD_EVENTS = [
+  { kind: 'Import', state: 'Succeeded', detail: '3 records merged into the local store.', time: '7:02:14 PM' },
+  { kind: 'Export', state: 'Succeeded', detail: '1 record sent to CloudKit.', time: '6:58:41 PM' },
+];
+
+function SettGroup({ title, children, t }) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      {title && <div style={{ paddingLeft: 4 }}><SectionLabel text={title} t={t} /></div>}
+      <div style={{ padding: '0 16px', background: t.surface, border: `1px solid ${t.line}`, borderRadius: 18 }}>{children}</div>
+    </div>
+  );
+}
+function SettRow({ icon, label, sub, right, onTap, last, t }) {
+  const inner = (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 13, padding: '13px 0', borderBottom: last ? 'none' : `1px solid ${t.lineSoft}` }}>
+      {icon && <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 34, height: 34, borderRadius: 10, background: t.surfaceUp, color: t.accentLite, flexShrink: 0 }}><MIcon k={icon} size={17} /></span>}
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontFamily: FUI, fontSize: 14.5, fontWeight: 500, color: t.text }}>{label}</div>
+        {sub && <div style={{ fontFamily: FUI, fontSize: 12, color: t.muted, marginTop: 1, textWrap: 'pretty' }}>{sub}</div>}
+      </div>
+      {right}
+      {onTap && !right && <MIcon k="chevR" size={17} style={{ color: t.faint, flexShrink: 0 }} />}
+    </div>
+  );
+  return onTap ? <button onClick={onTap} style={{ display: 'block', width: '100%', textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>{inner}</button> : inner;
+}
+
+function ConsentSheet({ provider, t, onAccept, onCancel }) {
+  const name = provider === 'openai' ? 'OpenAI' : 'ElevenLabs';
+  const bullet = (icon, text) => (
+    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+      <MIcon k={icon} size={15} style={{ color: t.accentLite, flexShrink: 0, marginTop: 1 }} />
+      <div style={{ fontFamily: FUI, fontSize: 13, color: t.muted, lineHeight: 1.5 }}>{text}</div>
+    </div>
+  );
+  return (
+    <div style={{ position: 'absolute', inset: 0, zIndex: 40, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', background: 'rgba(6,5,12,.55)' }} onClick={onCancel}>
+      <div onClick={(e) => e.stopPropagation()} style={{ background: t.bg, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, animation: 'msheet .28s cubic-bezier(.16,.84,.44,1)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', marginBottom: 18 }}>
+          <PrivacyBadge mode="cloud" t={t} />
+          <span style={{ flex: 1 }} />
+          <button onClick={onCancel} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 34, height: 34, borderRadius: '50%', background: t.surfaceUp, border: 'none', color: t.muted, cursor: 'pointer' }}><MIcon k="x" size={16} /></button>
+        </div>
+        <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 56, height: 56, borderRadius: 16, background: hexA(t.amber, 0.9), color: '#fff', marginBottom: 16 }}><MIcon k="cloud" size={26} /></span>
+        <div style={{ fontFamily: FD, fontSize: 21, fontWeight: 600, color: t.text, marginBottom: 10 }}>Turn on cloud transcription?</div>
+        <div style={{ fontFamily: FUI, fontSize: 14.5, color: t.muted, lineHeight: 1.55, marginBottom: 16 }}>To use {name}, your audio will leave this device and be sent to {name}’s servers to be transcribed. That’s the only way a cloud engine can work.</div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 11, marginBottom: 22 }}>
+          {bullet('lock', 'Prefer privacy? Apple’s on-device engine is free, works in airplane mode, and never uploads anything.')}
+          {bullet('shield', 'You can switch back to on-device any time. Your saved transcripts stay on this device.')}
+        </div>
+        <GradButton title={`I understand — enable ${name}`} icon="cloud" t={t} onClick={onAccept} style={{ width: '100%', marginBottom: 10 }} />
+        <GhostBtn title="Keep audio on-device" t={t} onClick={onCancel} style={{ width: '100%' }} />
+      </div>
+    </div>
+  );
+}
+
+function EraseSheet({ t, cloudSynced, onErase, onCancel }) {
+  return (
+    <div style={{ position: 'absolute', inset: 0, zIndex: 40, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', background: 'rgba(6,5,12,.55)' }} onClick={onCancel}>
+      <div onClick={(e) => e.stopPropagation()} style={{ background: t.bg, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, animation: 'msheet .28s cubic-bezier(.16,.84,.44,1)' }}>
+        <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 56, height: 56, borderRadius: 16, background: hexA(t.red, 0.14), color: t.red, marginBottom: 16 }}><MIcon k="trash" size={26} /></span>
+        <div style={{ fontFamily: FD, fontSize: 21, fontWeight: 600, color: t.text, marginBottom: 10 }}>Erase everything?</div>
+        <div style={{ fontFamily: FUI, fontSize: 14.5, color: t.muted, lineHeight: 1.55, marginBottom: 22, textWrap: 'pretty' }}>{cloudSynced ? 'Deletes all transcripts, audio and daily summaries — 412 MB. iCloud sync is on, so the deletion also reaches your other devices. GitHub mirrors are not touched. This can’t be undone.' : 'Deletes all transcripts, audio and daily summaries from this iPhone — 412 MB. Synced copies on GitHub are not touched. This can’t be undone.'}</div>
+        <button onClick={onErase} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, width: '100%', fontFamily: FUI, fontSize: 15, fontWeight: 600, color: '#fff', padding: '13px 20px', borderRadius: 14, border: 'none', cursor: 'pointer', background: t.red, marginBottom: 10 }}><MIcon k="trash" size={17} /> Erase all data</button>
+        <GhostBtn title="Cancel" t={t} onClick={onCancel} style={{ width: '100%' }} />
+      </div>
+    </div>
+  );
+}
+
+function PhoneSettings({ t, dark, setDark, onBack, initial }) {
+  const [sub, setSub] = React.useState(initial || null);
+  const [store, setStore] = React.useState({ autoDel: true, after: '7d', keepAudio: true, cleared: false, eraseOpen: false, erased: false });
+  const [del, setDel] = React.useState({});
+  const [optimize, setOptimize] = React.useState(false);
+  const [policy, setPolicy] = React.useState({ audio: 'icloud', trans: 'icloud', summ: 'device' });
+  const POLICY_TYPES = [['audio', 'mic', 'Audio recordings', '289 MB'], ['trans', 'book', 'Transcripts', '117 MB'], ['summ', 'spark', 'Daily summaries', '6 MB']];
+  const POLICY_NOTE = { icloud: 'Synced to iCloud and available on all your devices.', device: 'Stays only on this iPhone — never uploaded.', off: 'Deleted right after transcription — nothing is kept.' };
+  const delRow = (key, label, size, sub, last) => (
+    <SettRow icon="trash" label={del[key] ? `${label} — deleted` : label} sub={del[key] ? 'Freed ' + size : `${sub} · ${size}`} last={last} t={t}
+      right={del[key] ? <MIcon k="check" size={17} style={{ color: t.green, flexShrink: 0 }} /> : undefined}
+      onTap={del[key] ? undefined : () => setDel((d) => ({ ...d, [key]: true }))} />
+  );
+  const [catP, setCatP] = React.useState({ auto: true, prompt: CAT_DEFAULT_PROMPT });
+  const [engine, setEngine] = React.useState('device');
+  const [consent, setConsent] = React.useState(false);
+  const [consentFor, setConsentFor] = React.useState(null);
+  const [keys, setKeys] = React.useState({ openai: '', base: 'https://api.openai.com/v1', model: '', eleven: '', replicate: '', groq: '', deepgram: '', assembly: '', mistral: '', selfUrl: '', selfModel: 'whisper-large-v3' });
+  const [models, setModels] = React.useState({ device: 'apple-speech', openai: 'whisper-1', eleven: 'scribe_v2', replicate: 'incredibly-fast-whisper', groq: 'whisper-large-v3-turbo', deepgram: 'nova-3', assembly: 'universal-2', mistral: 'voxtral-small' });
+  const ENGINE_MODELS = {
+    device: [['apple-speech', 'Apple Speech'], ['whisper-base', 'Whisper base'], ['whisper-small', 'Whisper small']],
+    openai: [['whisper-1', 'whisper-1'], ['gpt-4o-transcribe', 'gpt-4o-transcribe'], ['gpt-4o-mini-transcribe', 'gpt-4o-mini']],
+    eleven: [['scribe_v2', 'Scribe v2'], ['scribe_v1', 'Scribe v1']],
+    replicate: [['incredibly-fast-whisper', 'incredibly-fast-whisper'], ['whisper-large-v3', 'whisper large-v3'], ['whisper-diarization', 'whisper-diarization']],
+    groq: [['whisper-large-v3-turbo', 'whisper-v3 turbo'], ['whisper-large-v3', 'whisper large-v3'], ['distil-whisper', 'distil-whisper']],
+    deepgram: [['nova-3', 'Nova-3'], ['nova-2', 'Nova-2'], ['whisper-cloud', 'Whisper cloud']],
+    assembly: [['universal-2', 'Universal-2'], ['universal-1', 'Universal-1']],
+    mistral: [['voxtral-small', 'Voxtral Small'], ['voxtral-mini', 'Voxtral Mini']],
+  };
+  const modelChips = (eng) => (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 7, marginTop: 2 }}>
+      <div style={{ paddingLeft: 4 }}><SectionLabel text="Model" t={t} /></div>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7 }}>
+        {ENGINE_MODELS[eng].map(([id, name]) => (
+          <button key={id} onClick={() => setModels((m) => ({ ...m, [eng]: id }))} style={{ fontFamily: FM, fontSize: 11.5, fontWeight: 600, cursor: 'pointer', padding: '7px 12px', borderRadius: 999, background: models[eng] === id ? hexA(t.accent, 0.16) : t.surfaceUp, color: models[eng] === id ? t.accentLite : t.muted, border: `1px solid ${models[eng] === id ? t.hair : t.line}` }}>{name}</button>
+        ))}
+      </div>
+    </div>
+  );
+  /* Defaults from WhisperioSettings.init */
+  const [tg, setTg] = React.useState({ live: true, appleOnline: false, cleanup: false, fallback: false, saveRec: true, autoDigest: false });
+  const [digestSrc, setDigestSrc] = React.useState('app'); // all | app | manual
+  const [interrupt, setInterrupt] = React.useState('stop');
+  const [autoStop, setAutoStop] = React.useState(0);
+  const [lang, setLang] = React.useState('auto');
+  const [langOpen, setLangOpen] = React.useState(false);
+  const [vocab, setVocab] = React.useState('git, GitHub, Next.js, kubectl, TypeScript, Docker');
+  const [storageMode, setStorageMode] = React.useState('iCloud');
+  const [syncMode, setSyncMode] = React.useState('automatic');
+  const [syncMin, setSyncMin] = React.useState(15);
+  const [diagNote, setDiagNote] = React.useState('Awaiting sync details…');
+  const [selPreset, setSelPreset] = React.useState(null); // null → new template draft
+  const [presetName, setPresetName] = React.useState('');
+  const [presetPrompt, setPresetPrompt] = React.useState('');
+  const [presetSaved, setPresetSaved] = React.useState(false);
+  const openPreset = (p) => {
+    setSelPreset(p); setPresetSaved(false);
+    setPresetName(p ? p.name : '');
+    setPresetPrompt(p ? (p.id === 'cleanup' ? 'Fix punctuation, casing and spacing. Keep the meaning and tone. Output only the cleaned text.' : p.id === 'bullets' ? 'Turn the transcript into concise bullet points, one point per idea.' : 'Rewrite the transcript following the template.') : '');
+    setSub('presetEditor');
+  };
+  const langName = (SETT_LANGS.find(([c]) => c === lang) || [, lang])[1];
+  const isCloud = (e) => e !== 'device' && e !== 'self';
+  const hasKey = keys.openai.trim().length > 0;
+  const pickEngine = (e) => { if (isCloud(e) && !consent) { setConsentFor(e); } else setEngine(e); };
+  const acceptConsent = () => { setConsent(true); setEngine(consentFor); setConsentFor(null); };
+
+  const engineRow = (id, title, sub2, icon) => {
+    const on = engine === id; const needs = isCloud(id) && !consent;
+    return (
+      <button onClick={() => pickEngine(id)} style={{ display: 'flex', alignItems: 'center', gap: 13, width: '100%', textAlign: 'left', cursor: 'pointer', padding: 13, borderRadius: 15, background: t.surface, border: `${on ? 2 : 1}px solid ${on ? t.accent : t.line}` }}>
+        <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 38, height: 38, borderRadius: 11, background: t.surfaceUp, color: on ? t.accent : t.muted, flexShrink: 0 }}><MIcon k={icon} size={17} /></span>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontFamily: FUI, fontSize: 14.5, fontWeight: 600, color: t.text }}>{title}</div>
+          <div style={{ fontFamily: FM, fontSize: 11, color: t.faint, marginTop: 1 }}>{sub2}</div>
+        </div>
+        {needs && <MIcon k="lock" size={13} style={{ color: t.amber }} />}
+        {on && <MIcon k="check" size={18} style={{ color: t.accent }} />}
+      </button>
+    );
+  };
+  const field = (label, val, onChange, ph, mono) => (
+    <div style={{ marginTop: 2 }}>
+      <div style={{ paddingLeft: 4, marginBottom: 7 }}><SectionLabel text={label} t={t} /></div>
+      <input value={val} onChange={(e) => onChange(e.target.value)} placeholder={ph} style={{ width: '100%', fontFamily: mono ? FM : FUI, fontSize: 13, color: t.text, background: t.surfaceUp, border: `1px solid ${t.line}`, borderRadius: 12, padding: '12px 13px', outline: 'none' }} />
+    </div>
+  );
+  const toggleRow = (icon, label, sub2, key, last) => (
+    <SettRow icon={icon} label={label} sub={sub2} last={last} t={t} right={<MToggle on={tg[key]} onChange={(v) => setTg((s) => ({ ...s, [key]: v }))} t={t} />} />
+  );
+  const infoCard = (text, extra) => (
+    <div style={{ padding: 16, background: t.surface, border: `1px solid ${t.line}`, borderRadius: 18, display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <div style={{ fontFamily: FUI, fontSize: 13.5, color: t.muted, lineHeight: 1.55, textWrap: 'pretty' }}>{text}</div>
+      {extra}
+    </div>
+  );
+  const footnote = (text) => <div style={{ fontFamily: FM, fontSize: 11, color: t.faint, lineHeight: 1.5, paddingLeft: 4, marginTop: -10 }}>{text}</div>;
+  /* Selectable row (storageRow / syncModeRow in Swift) — teal check on the active mode */
+  const pickRow = (on, icon, label, sub2, onPick, last) => (
+    <SettRow icon={icon} label={label} sub={sub2} last={last} onTap={onPick} t={t} right={on ? <MIcon k="check" size={18} style={{ color: t.accent, flexShrink: 0 }} /> : <span />} />
+  );
+  /* Rich block row with a control underneath (When interrupted / Auto-stop) */
+  const blockRow = (icon, label, sub2, control, note, last) => (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 9, padding: '13px 0', borderBottom: last ? 'none' : `1px solid ${t.lineSoft}` }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 13 }}>
+        <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 34, height: 34, borderRadius: 10, background: t.surfaceUp, color: t.accentLite, flexShrink: 0 }}><MIcon k={icon} size={17} /></span>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontFamily: FUI, fontSize: 14.5, fontWeight: 500, color: t.text }}>{label}</div>
+          <div style={{ fontFamily: FUI, fontSize: 12, color: t.muted, marginTop: 2, lineHeight: 1.45, textWrap: 'pretty' }}>{sub2}</div>
+        </div>
+      </div>
+      {control}
+      <div style={{ fontFamily: FM, fontSize: 11, color: t.faint, lineHeight: 1.5 }}>{note}</div>
+    </div>
+  );
+  const stepBtn = (sym, onClick, disabled) => (
+    <button onClick={onClick} disabled={disabled} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 34, height: 30, cursor: disabled ? 'default' : 'pointer', background: t.surfaceUp, border: `1px solid ${t.line}`, color: disabled ? t.faint : t.text, fontFamily: FUI, fontSize: 16, fontWeight: 600, borderRadius: sym === '−' ? '9px 0 0 9px' : '0 9px 9px 0', borderLeft: sym === '+' ? 'none' : undefined }}>{sym}</button>
+  );
+
+  /* ── Category + deep pages, content 1:1 from SettingsView.swift ── */
+  const pages = {
+    models: { title: 'Models', body: (
+      <>
+        <div style={{ display: 'flex', alignItems: 'center', paddingLeft: 4 }}>
+          <SectionLabel text="Transcription engine" t={t} /><span style={{ flex: 1 }} />{engine === 'self'
+            ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, whiteSpace: 'nowrap', fontFamily: FM, fontSize: 10.5, fontWeight: 600, color: t.green, padding: '3px 9px', borderRadius: 999, background: hexA(t.green, 0.1), border: `1px solid ${hexA(t.green, 0.25)}` }}><MIcon k="server" size={11} /> your server</span>
+            : <PrivacyBadge mode={isCloud(engine) ? 'cloud' : 'device'} small t={t} />}
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {engineRow('device', 'Apple — on-device', 'Free · private · offline', 'cpu')}
+          {engineRow('openai', 'OpenAI', 'Cloud · Whisper API', 'globe')}
+          {engineRow('eleven', 'ElevenLabs', 'Cloud · Scribe', 'globe')}
+          {engineRow('replicate', 'Replicate', 'Cloud · open-source models', 'globe')}
+          {engineRow('groq', 'Groq', 'Cloud · fastest Whisper inference', 'bolt')}
+          {engineRow('deepgram', 'Deepgram', 'Cloud · Nova, streaming & diarization', 'globe')}
+          {engineRow('assembly', 'AssemblyAI', 'Cloud · Universal, speaker labels', 'globe')}
+          {engineRow('mistral', 'Mistral', 'Cloud · Voxtral, open weights', 'globe')}
+          {engineRow('self', 'Self-hosted', 'Your server · whisper.cpp / faster-whisper', 'server')}
+        </div>
+        {engine !== 'self' && modelChips(engine)}
+        <SettGroup title="On-device models" t={t}>
+          <SettRow icon="download" label="Manage models" sub="Download, update or remove Apple Speech + Whisper" last onTap={() => setSub('modelsList')} t={t} />
+        </SettGroup>
+        {engine === 'openai' && <>
+          {field('OpenAI API key', keys.openai, (v) => setKeys((k) => ({ ...k, openai: v })), 'paste key…', true)}
+          {field('Base URL (optional, self-hosted)', keys.base, (v) => setKeys((k) => ({ ...k, base: v })), 'https://api.openai.com/v1', true)}
+          {field('Model (optional)', keys.model, (v) => setKeys((k) => ({ ...k, model: v })), 'whisper-1', true)}
+        </>}
+        {engine === 'eleven' && field('ElevenLabs API key', keys.eleven, (v) => setKeys((k) => ({ ...k, eleven: v })), 'paste key…', true)}
+        {engine === 'replicate' && field('Replicate API token', keys.replicate, (v) => setKeys((k) => ({ ...k, replicate: v })), 'r8_…', true)}
+        {engine === 'groq' && field('Groq API key', keys.groq, (v) => setKeys((k) => ({ ...k, groq: v })), 'gsk_…', true)}
+        {engine === 'deepgram' && field('Deepgram API key', keys.deepgram, (v) => setKeys((k) => ({ ...k, deepgram: v })), 'paste key…', true)}
+        {engine === 'assembly' && field('AssemblyAI API key', keys.assembly, (v) => setKeys((k) => ({ ...k, assembly: v })), 'paste key…', true)}
+        {engine === 'mistral' && field('Mistral API key', keys.mistral, (v) => setKeys((k) => ({ ...k, mistral: v })), 'paste key…', true)}
+        {engine === 'self' && <>
+          {field('Server URL', keys.selfUrl, (v) => setKeys((k) => ({ ...k, selfUrl: v })), 'http://192.168.1.20:8080/v1', true)}
+          {field('Model', keys.selfModel, (v) => setKeys((k) => ({ ...k, selfModel: v })), 'whisper-large-v3', true)}
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '12px 14px', borderRadius: 14, background: hexA(t.green, t.mode === 'dark' ? 0.08 : 0.07), border: `1px solid ${hexA(t.green, 0.25)}` }}>
+            <MIcon k="lock" size={15} style={{ color: t.green, flexShrink: 0, marginTop: 1 }} />
+            <div style={{ fontFamily: FUI, fontSize: 12.5, color: t.muted, lineHeight: 1.5, textWrap: 'pretty' }}>Audio goes only to your own server — no third-party cloud. OpenAI-compatible endpoints (whisper.cpp, faster-whisper, Speaches) work out of the box.</div>
+          </div>
+        </>}
+      </>
+    ) },
+    transcription: { title: 'Transcription', body: (
+      <>
+        <SettGroup title="Live" t={t}>
+          {toggleRow('mic', 'Live transcription', 'See text as you speak · on-device, free', 'live', true)}
+        </SettGroup>
+        <SettGroup title="Interruptions & silence" t={t}>
+          {blockRow('clock', 'When interrupted', 'Calls, Siri, alarms, FaceTime, and other audio interruptions always release the mic. Whisperio can either stop or try to resume after the interruption ends.',
+            <MSegmented options={[{ id: 'stop', label: 'Stop' }, { id: 'resume', label: 'Resume' }]} value={interrupt} onChange={setInterrupt} t={t} />,
+            interrupt === 'resume' ? 'Whisperio will end the current session, then try to start a fresh one when the interruption ends.' : 'Whisperio will end the session and stay idle until you start again.')}
+          {blockRow('timer', 'Auto-stop after silence', 'Whisperio will release the mic after this many seconds without speech. Set to 0 to turn it off.',
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <span style={{ fontFamily: FUI, fontSize: 13.5, fontWeight: 600, color: t.text, minWidth: 84 }}>{autoStop === 0 ? 'Off' : `${autoStop} seconds`}</span>
+              <span style={{ display: 'flex' }}>{stepBtn('−', () => setAutoStop((v) => Math.max(0, v - 5)), autoStop === 0)}{stepBtn('+', () => setAutoStop((v) => Math.min(120, v + 5)), autoStop === 120)}</span>
+            </div>,
+            autoStop === 0 ? 'No automatic stop. Only manual stop or interruption will release the mic.' : `When the app is quiet for ${autoStop} seconds, Whisperio stops listening.`, true)}
+        </SettGroup>
+        <SettGroup title="Engine behavior" t={t}>
+          {toggleRow('globe', 'Apple online speech', 'Use Apple’s servers when on-device isn’t available · audio leaves the device', 'appleOnline')}
+          {toggleRow('spark', 'Cleanup', 'Tidy punctuation, casing & spacing', 'cleanup')}
+          {toggleRow('cloud', 'Fallback engines', 'If the chosen engine fails, try the others', 'fallback', true)}
+        </SettGroup>
+        <SettGroup title="History" t={t}>
+          {toggleRow('folder', 'Save recordings', 'Keep a local history of past dictations', 'saveRec', true)}
+        </SettGroup>
+      </>
+    ) },
+    integrations: { title: 'Integrations', body: (
+      <>
+        <SettGroup title="Quick dictation" t={t}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12, padding: '13px 0' }}>
+            <div style={{ fontFamily: FUI, fontSize: 13, color: t.muted, lineHeight: 1.5, textWrap: 'pretty' }}>Say “Dictate with Whisperio” to Siri — or add the shortcut, then assign it to Back Tap (Settings → Accessibility → Touch → Back Tap → Run Shortcut).</div>
+            <div style={{ display: 'flex', gap: 9 }}>
+              <GhostBtn title="Add to Siri" icon="spark" t={t} style={{ flex: 1 }} />
+              <GhostBtn title="Shortcuts" icon="arrowUR" t={t} style={{ flex: 1 }} />
+            </div>
+          </div>
+        </SettGroup>
+        <SettGroup title="Dictate from anywhere" t={t}>
+          <SettRow icon="zap" label="Set up dictation triggers" sub="Action Button, Back Tap, keyboard, widgets & more — step by step" onTap={() => setSub('triggers')} t={t} />
+          <SettRow icon="keyboard" label="Whisperio keyboard" sub="Dictate from any app — install & setup" last onTap={() => setSub('keyboard')} t={t} />
+        </SettGroup>
+      </>
+    ) },
+    content: { title: 'Content', body: (
+      <>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <div style={{ paddingLeft: 4 }}><SectionLabel text="Language & vocabulary" t={t} /></div>
+          <div style={{ padding: '0 16px', background: t.surface, border: `1px solid ${t.line}`, borderRadius: 18 }}>
+            <button onClick={() => setLangOpen((o) => !o)} style={{ display: 'flex', alignItems: 'center', gap: 13, width: '100%', textAlign: 'left', cursor: 'pointer', background: 'none', border: 'none', padding: '13px 0', borderBottom: `1px solid ${t.lineSoft}` }}>
+              <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 34, height: 34, borderRadius: 10, background: t.surfaceUp, color: t.accentLite, flexShrink: 0 }}><MIcon k="globe" size={17} /></span>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontFamily: FUI, fontSize: 14.5, fontWeight: 500, color: t.text }}>Language</div>
+                <div style={{ fontFamily: FUI, fontSize: 12, color: t.muted }}>Spoken language for transcription</div>
+              </div>
+              <span style={{ fontFamily: FUI, fontSize: 13, color: t.accentLite }}>{langName}</span>
+              <MIcon k={langOpen ? 'chevD' : 'chevR'} size={16} style={{ color: t.faint }} />
+            </button>
+            {langOpen && (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7, padding: '12px 0', borderBottom: `1px solid ${t.lineSoft}` }}>
+                {SETT_LANGS.map(([c, n]) => (
+                  <button key={c} onClick={() => { setLang(c); setLangOpen(false); }} style={{ fontFamily: FUI, fontSize: 12.5, fontWeight: 600, cursor: 'pointer', padding: '6px 11px', borderRadius: 999, background: lang === c ? hexA(t.accent, 0.16) : t.surfaceUp, color: lang === c ? t.accentLite : t.muted, border: `1px solid ${lang === c ? t.hair : t.line}` }}>{n}</button>
+                ))}
+              </div>
+            )}
+            <div style={{ padding: '13px 0', display: 'flex', flexDirection: 'column', gap: 7 }}>
+              <div style={{ fontFamily: FUI, fontSize: 13, fontWeight: 600, color: t.muted }}>Custom words</div>
+              <textarea value={vocab} onChange={(e) => setVocab(e.target.value)} rows={2} placeholder="git, GitHub, Next.js, kubectl…" style={{ width: '100%', fontFamily: FUI, fontSize: 13.5, color: t.text, background: t.surfaceUp, border: `1px solid ${t.line}`, borderRadius: 10, padding: '9px 11px', outline: 'none', resize: 'none', lineHeight: 1.5 }} />
+              <div style={{ fontFamily: FM, fontSize: 11, color: t.faint }}>Comma-separated — helps spell names, brands & jargon.</div>
+            </div>
+          </div>
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <div style={{ paddingLeft: 4 }}><SectionLabel text="Rewrite prompts" t={t} /></div>
+          <div style={{ fontFamily: FM, fontSize: 11, color: t.faint, lineHeight: 1.5, paddingLeft: 4 }}>{hasKey ? 'Edit the rewrite templates Whisperio uses on transcripts.' : 'Add an OpenAI API key first to edit rewrite prompts.'}</div>
+          <div style={{ opacity: hasKey ? 1 : 0.5, pointerEvents: hasKey ? 'auto' : 'none', display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <div style={{ padding: '0 16px', background: t.surface, border: `1px solid ${t.line}`, borderRadius: 18 }}>
+              {REWRITE_PRESETS.map((p) => <SettRow key={p.id} icon={p.icon} label={p.name} sub={p.meta ? 'Builds new templates from your voice' : null} onTap={() => openPreset(p)} t={t} />)}
+              <SettRow icon="plus" label="New template" sub="Add your own rewrite instruction" last onTap={() => openPreset(null)} t={t} />
+            </div>
+            <GhostBtn title="Restore default templates" icon="sync" t={t} />
+          </div>
+        </div>
+        <SettGroup title="Journaling" t={t}>
+          <SettRow icon="book" label="Auto-journaling" sub={consent ? 'Group & summarize each day’s notes with AI · uses the cloud text model' : 'Groups & summarizes each day’s notes · turn on cloud transcription first'} t={t} right={<MToggle on={tg.autoDigest} onChange={(v) => setTg((s) => ({ ...s, autoDigest: v }))} t={t} />} />
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 9, padding: '13px 0', borderBottom: `1px solid ${t.lineSoft}` }}>
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 13 }}>
+              <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 34, height: 34, borderRadius: 10, background: t.surfaceUp, color: t.accentLite, flexShrink: 0 }}><MIcon k="keyboard" size={17} /></span>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontFamily: FUI, fontSize: 14.5, fontWeight: 500, color: t.text }}>What goes into the digest</div>
+                <div style={{ fontFamily: FUI, fontSize: 12, color: t.muted, marginTop: 2, lineHeight: 1.45, textWrap: 'pretty' }}>Keyboard dictations are usually chat replies — you may not want them summarized next to your real notes. Every source keeps its own tag, so this only affects the Journal.</div>
+              </div>
+            </div>
+            <MSegmented options={[{ id: 'all', label: 'All sources' }, { id: 'app', label: 'In-app only' }, { id: 'manual', label: 'Pick per day' }]} value={digestSrc} onChange={setDigestSrc} t={t} />
+            <div style={{ fontFamily: FM, fontSize: 11, color: t.faint, lineHeight: 1.5 }}>{digestSrc === 'all' ? 'Everything — in-app, keyboard, Action Button and Watch — lands in the daily digest.' : digestSrc === 'app' ? 'Only in-app dictations (mic, Action Button, Watch) are summarized. Keyboard notes stay in the library, filterable in the Journal.' : 'Nothing is auto-included — each day you tick which notes the summary should cover.'}</div>
+          </div>
+          <SettRow icon="command" label="Categorization prompts" sub="Edit how the AI sorts & summarizes your day" last onTap={() => setSub('categorize')} t={t} />
+        </SettGroup>
+      </>
+    ) },
+    sync: { title: 'Data synchronisation', body: (
+      <>
+        <SettGroup title="Storage" t={t}>
+          {pickRow(storageMode === 'iCloud', 'cloud', 'Auto sync', 'Keep the library in iCloud and sync it across your Apple devices', () => setStorageMode('iCloud'))}
+          {pickRow(storageMode === 'device', 'lock', 'On this device', 'Keep the library local until you move it manually', () => setStorageMode('device'), storageMode !== 'device')}
+          {storageMode === 'device' && <SettRow icon="cloud" label="Move library to iCloud" sub="Copies the current library into iCloud and switches this device to auto sync." last onTap={() => setStorageMode('iCloud')} t={t} />}
+        </SettGroup>
+        {footnote('Takes effect after you restart Whisperio.')}
+        <SettGroup title="Sync behavior" t={t}>
+          {pickRow(syncMode === 'automatic', 'bolt', 'Automatic', "Refresh live the moment iCloud delivers a change — today's default", () => setSyncMode('automatic'))}
+          {pickRow(syncMode === 'onOpen', 'download', 'On open', 'Sync once each time you open Whisperio, then stay quiet', () => setSyncMode('onOpen'))}
+          {pickRow(syncMode === 'interval', 'clock', 'Every few minutes', 'Sync on a timer while Whisperio is open', () => setSyncMode('interval'), syncMode !== 'interval')}
+          {syncMode === 'interval' && (
+            <div style={{ display: 'flex', gap: 8, padding: '2px 0 13px', borderBottom: `1px solid ${t.lineSoft}` }}>
+              {SYNC_INTERVALS.map((m) => (
+                <button key={m} onClick={() => setSyncMin(m)} style={{ fontFamily: FUI, fontSize: 12.5, fontWeight: 600, cursor: 'pointer', padding: '7px 13px', borderRadius: 999, background: syncMin === m ? t.accent : t.surfaceUp, color: syncMin === m ? '#fff' : t.text, border: `1px solid ${syncMin === m ? 'transparent' : t.line}` }}>{m}m</button>
+              ))}
+            </div>
+          )}
+          {pickRow(syncMode === 'manual', 'sync', 'Manual only', 'Never sync automatically — tap the Sync button on Home when you want it', () => setSyncMode('manual'), true)}
+        </SettGroup>
+        {footnote('iOS may still receive iCloud changes in the background; this controls when Whisperio actively refreshes and shows them.')}
+        <SettGroup title="GitHub mirror" t={t}>
+          <SettRow icon="sync" label="Sync to GitHub" sub="Mirror transcripts, renders & daily summaries to a Git repo" last onTap={() => setSub('github')} t={t} />
+        </SettGroup>
+      </>
+    ) },
+    developer: { title: 'Developer', body: (
+      <>
+        <SettGroup title="Diagnostics" t={t}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12, padding: '13px 0' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontFamily: FUI, fontSize: 13, fontWeight: 600, color: t.text }}>CloudKit status</div>
+                <div style={{ fontFamily: FUI, fontSize: 12, color: t.muted, marginTop: 2, lineHeight: 1.45 }}>Available. CloudKit can sync against iCloud.com.draenger.whisperio.</div>
+              </div>
+              <button onClick={() => setDiagNote('Re-read local library. Last CloudKit import: 7/16/26, 7:02:14 PM.')} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontFamily: FUI, fontSize: 12, fontWeight: 600, cursor: 'pointer', color: t.text, background: t.surfaceUp, border: `1px solid ${t.line}`, borderRadius: 999, padding: '8px 12px', flexShrink: 0 }}><MIcon k="sync" size={14} /> Refresh</button>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column' }}>
+              {DIAG_ROWS(storageMode).map(([l, v]) => (
+                <div key={l} style={{ display: 'flex', alignItems: 'flex-start', gap: 12, padding: '4px 0' }}>
+                  <span style={{ fontFamily: FUI, fontSize: 12.5, fontWeight: 600, color: t.muted, width: 116, flexShrink: 0 }}>{l}</span>
+                  <span style={{ fontFamily: FUI, fontSize: 12.5, color: t.text, minWidth: 0, overflowWrap: 'anywhere' }}>{v}</span>
+                </div>
+              ))}
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <GhostBtn title="Refresh local view" icon="sync" t={t} onClick={() => setDiagNote('Re-read local library. Last CloudKit import: 7/16/26, 7:02:14 PM.')} />
+              <span style={{ fontFamily: FUI, fontSize: 11.5, color: t.faint, lineHeight: 1.45, flex: 1 }}>{diagNote}</span>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <div style={{ fontFamily: FUI, fontSize: 12.5, fontWeight: 600, color: t.text }}>Recent cloud events</div>
+              {CLOUD_EVENTS.map((ev, i) => (
+                <div key={i} style={{ padding: 10, background: t.surfaceUp, border: `1px solid ${t.lineSoft}`, borderRadius: 12, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+                    <span style={{ fontFamily: FUI, fontSize: 11.5, fontWeight: 600, color: t.green }}>{ev.kind}</span>
+                    <span style={{ fontFamily: FUI, fontSize: 12.5, fontWeight: 600, color: t.text }}>{ev.state}</span>
+                    <span style={{ flex: 1 }} />
+                    <span style={{ fontFamily: FM, fontSize: 10.5, color: t.faint }}>{ev.time}</span>
+                  </div>
+                  <div style={{ fontFamily: FUI, fontSize: 11.5, color: t.muted }}>{ev.detail}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </SettGroup>
+      </>
+    ) },
+    system: { title: 'System', body: (
+      <>
+        <SettGroup title="Appearance" t={t}>
+          <SettRow icon={dark ? 'moon' : 'sun'} label="Dark mode" sub="Match Whisperio’s look" last t={t} right={<MToggle on={dark} onChange={(v) => setDark(v)} t={t} />} />
+        </SettGroup>
+        <div style={{ textAlign: 'center', fontFamily: FM, fontSize: 11, color: t.faint }}>Whisperio 1.4 · on-device</div>
+      </>
+    ) },
+    /* ── Deep pages ── */
+    modelsList: { title: 'On-device models', body: (
+      <SettGroup t={t}>
+        {M_MODELS.map((m, i) => {
+          let right;
+          if (m.state === 'active') right = <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontFamily: FM, fontSize: 11, fontWeight: 600, color: t.green }}><span style={{ width: 7, height: 7, borderRadius: '50%', background: t.green }} /> Active</span>;
+          else if (m.state === 'downloading') right = <span style={{ fontFamily: FM, fontSize: 11, color: t.accentLite }}>{m.pct}%</span>;
+          else if (m.tag) right = <span style={{ fontFamily: FM, fontSize: 10, color: t.faint, background: t.surfaceUp, border: `1px solid ${t.line}`, borderRadius: 999, padding: '3px 8px' }}>{m.tag}</span>;
+          else right = <span style={{ fontFamily: FUI, fontSize: 12, fontWeight: 600, color: t.accentLite, background: hexA(t.accent, 0.14), border: `1px solid ${t.hair}`, borderRadius: 999, padding: '5px 12px' }}>Get</span>;
+          return <SettRow key={m.id} icon={m.id.startsWith('apple') ? 'cpu' : 'download'} label={m.name} sub={`${m.sub} · ${m.size}`} last={i === M_MODELS.length - 1} t={t} right={right} />;
+        })}
+      </SettGroup>
+    ) },
+    triggers: { title: 'Dictation triggers', body: (
+      <>
+        {infoCard('Whisperio can start a dictation from all over iOS. Set up any of these once, then talk from anywhere — every transcript still lands back in your library.')}
+        <SettGroup title="Available triggers" t={t}>
+          {TRIGGER_TYPES.map((x, i) => <SettRow key={x.label} icon={x.icon} label={x.label} sub={x.sub} last={i === TRIGGER_TYPES.length - 1} onTap={() => {}} t={t} />)}
+        </SettGroup>
+      </>
+    ) },
+    keyboard: { title: 'Whisperio keyboard', body: (
+      <>
+        {infoCard('Add the Whisperio keyboard to dictate inside any app. The mic key opens Whisperio to record, then drops the text straight back where you were typing.', (
+          <GradButton title="Add keyboard in Settings" icon="keyboard" t={t} />
+        ))}
+        <SettGroup title="Setup" t={t}>
+          <SettRow icon="plus" label="Settings → General → Keyboard" sub="Keyboards → Add New Keyboard → Whisperio" t={t} />
+          <SettRow icon="lock" label="Allow Full Access" sub="Needed only to open the app and return text" last t={t} />
+        </SettGroup>
+      </>
+    ) },
+    github: { title: 'Sync to GitHub', body: (
+      <>
+        {infoCard('Mirror transcripts, rendered rewrites and daily summaries to a Git repository — a plain-text backup you own.', (
+          <GradButton title="Connect GitHub" icon="arrowUR" t={t} />
+        ))}
+        {field('Repository', '', () => {}, 'username/whisperio-notes', true)}
+        <SettGroup title="What syncs" t={t}>
+          <SettRow icon="check" label="Transcripts" sub="Markdown, one file per note" t={t} />
+          <SettRow icon="check" label="Daily summaries" sub="The Journal digests" t={t} />
+          <SettRow icon="check" label="Rewrites" sub="Cleaned-up renders" last t={t} />
+        </SettGroup>
+      </>
+    ) },
+    categorize: { title: 'Categorization prompts', body: (
+      <>
+        <SettGroup t={t}>
+          <SettRow icon="spark" label="Auto-categorize" sub="Sort every note into a category as it’s transcribed · on-device" last t={t} right={<MToggle on={catP.auto} onChange={(v) => setCatP((s) => ({ ...s, auto: v }))} t={t} />} />
+        </SettGroup>
+        {catP.auto && <>
+          <div style={{ padding: 16, background: t.surface, border: `1px solid ${t.line}`, borderRadius: 18, display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <div style={{ display: 'flex', alignItems: 'center' }}>
+              <SectionLabel text="Categorization prompt" t={t} /><span style={{ flex: 1 }} />
+              {catP.prompt !== CAT_DEFAULT_PROMPT && <button onClick={() => setCatP((s) => ({ ...s, prompt: CAT_DEFAULT_PROMPT }))} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontFamily: FM, fontSize: 11, fontWeight: 600, cursor: 'pointer', color: t.accentLite, background: 'none', border: 'none', padding: 0 }}><MIcon k="sync" size={12} /> Reset</button>}
+            </div>
+            <textarea value={catP.prompt} onChange={(e) => setCatP((s) => ({ ...s, prompt: e.target.value }))} rows={5} style={{ width: '100%', fontFamily: FUI, fontSize: 13.5, color: t.text, background: t.surfaceUp, border: `1px solid ${t.line}`, borderRadius: 12, padding: '11px 13px', outline: 'none', resize: 'none', lineHeight: 1.55, boxSizing: 'border-box' }} />
+            <div style={{ fontFamily: FM, fontSize: 11, color: t.faint, lineHeight: 1.5 }}>The model follows this instruction for every note. Mention your categories by name.</div>
+          </div>
+          <SettGroup title="Categories" t={t}>
+            {M_CATS.map((c) => (
+              <SettRow key={c.id} icon={c.icon} label={c.label} sub={CAT_HINTS[c.id]} onTap={() => {}} t={t} />
+            ))}
+            <SettRow icon="plus" label="New category" sub="Name it and describe when it applies" last onTap={() => {}} t={t} />
+          </SettGroup>
+        </>}
+      </>
+    ) },
+    presetEditor: { title: selPreset ? 'Edit template' : 'New template', body: (
+      <>
+        {field('Name', presetName, setPresetName, 'e.g. Meeting notes')}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+          <div style={{ paddingLeft: 4 }}><SectionLabel text="Instruction" t={t} /></div>
+          <textarea value={presetPrompt} onChange={(e) => setPresetPrompt(e.target.value)} rows={7} placeholder="How Whisperio should rewrite a transcript…" style={{ width: '100%', fontFamily: FM, fontSize: 13, color: t.text, background: t.surfaceUp, border: `1px solid ${t.line}`, borderRadius: 12, padding: '11px 13px', outline: 'none', resize: 'none', lineHeight: 1.55, boxSizing: 'border-box' }} />
+          <div style={{ fontFamily: FM, fontSize: 11, color: t.faint, lineHeight: 1.5 }}>How Whisperio should rewrite a transcript. Written as an instruction to the model.</div>
+        </div>
+        <GradButton title={presetSaved ? 'Saved ✓' : 'Save template'} icon={presetSaved ? undefined : 'check'} t={t} onClick={() => { if (presetName.trim() && presetPrompt.trim()) { setPresetSaved(true); setTimeout(() => setSub('content'), 700); } }} style={{ width: '100%', opacity: presetName.trim() && presetPrompt.trim() ? 1 : 0.5 }} />
+        {selPreset && <GhostBtn title="Delete template" icon="trash" t={t} onClick={() => setSub('content')} style={{ width: '100%' }} />}
+        {selPreset && <div style={{ fontFamily: FM, fontSize: 11, color: t.faint, lineHeight: 1.5, textAlign: 'center' }}>Deleting hides the built-in template — bring it back with “Restore default templates”.</div>}
+      </>
+    ) },
+    /* Storage & data — port of StorageView.swift + per-type policy & free-up-space explorations */
+    storage: { title: 'Storage & data', body: (
+      <>
+        <div style={{ padding: 16, background: t.surface, border: `1px solid ${t.line}`, borderRadius: 18, display: 'flex', flexDirection: 'column', gap: 12 }}>
+          {(() => {
+            const TYPE_COLORS = [t.accent, '#3da2f7', t.green];
+            const devAudio = store.erased || del.audio ? 0 : store.cleared ? 169 : 289;
+            const devTrans = store.erased || del.trans ? 0 : 117;
+            const devSumm = store.erased || del.summ ? 0 : 6;
+            const devTotal = devAudio + devTrans + devSumm;
+            const bar = (label, right, vals, denom) => (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                <div style={{ display: 'flex', alignItems: 'baseline' }}>
+                  <span style={{ fontFamily: FM, fontSize: 10.5, fontWeight: 600, letterSpacing: '.1em', textTransform: 'uppercase', color: t.faint }}>{label}</span>
+                  <span style={{ flex: 1 }} />
+                  <span style={{ fontFamily: FM, fontSize: 11.5, color: t.text }}>{right}</span>
+                </div>
+                <div style={{ display: 'flex', height: 9, borderRadius: 5, overflow: 'hidden', background: t.surfaceUp }}>
+                  {vals.map((v, i) => <span key={i} style={{ width: (v / denom * 100) + '%', background: TYPE_COLORS[i], transition: 'width .4s' }} />)}
+                </div>
+              </div>
+            );
+            return <>
+              {bar('On this iPhone', devTotal + ' MB', [devAudio, devTrans, devSumm], Math.max(devTotal, 412))}
+              {storageMode === 'iCloud' && bar('In iCloud', '412 MB of 5 GB', [289, 117, 6], 5120)}
+              <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap' }}>
+                {[['Audio', devAudio, 289], ['Transcripts', devTrans, 117], ['Summaries', devSumm, 6]].map(([l, dv, cv], i) => (
+                  <span key={l} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontFamily: FM, fontSize: 11, color: t.muted }}><span style={{ width: 8, height: 8, borderRadius: '50%', background: TYPE_COLORS[i] }} /> {l} <span style={{ color: t.faint }}>{storageMode === 'iCloud' ? dv + ' / ' + cv + ' MB' : dv + ' MB'}</span></span>
+                ))}
+              </div>
+              {storageMode === 'iCloud' && <div style={{ fontFamily: FM, fontSize: 11, color: t.faint, lineHeight: 1.5 }}>Device / iCloud · counted from the local CloudKit store — 1,284 records.</div>}
+            </>;
+          })()}
+        </div>
+        <SettGroup title="Where each type lives" t={t}>
+          {POLICY_TYPES.map(([key, icon, label, size], i) => (
+            <div key={key} style={{ display: 'flex', flexDirection: 'column', gap: 9, padding: '13px 0', borderBottom: i === POLICY_TYPES.length - 1 ? 'none' : `1px solid ${t.lineSoft}` }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 13 }}>
+                <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 34, height: 34, borderRadius: 10, background: t.surfaceUp, color: t.accentLite, flexShrink: 0 }}><MIcon k={icon} size={17} /></span>
+                <span style={{ flex: 1, fontFamily: FUI, fontSize: 14.5, fontWeight: 500, color: t.text }}>{label}</span>
+                <span style={{ fontFamily: FM, fontSize: 11, color: t.faint }}>{size}</span>
+              </div>
+              <MSegmented options={[{ id: 'icloud', label: 'iCloud' }, { id: 'device', label: 'This device' }, { id: 'off', label: 'Don’t keep' }]} value={policy[key]} onChange={(v) => setPolicy((p) => ({ ...p, [key]: v }))} t={t} />
+              <div style={{ fontFamily: FM, fontSize: 11, color: policy[key] === 'off' ? t.amber : t.faint, lineHeight: 1.5 }}>{POLICY_NOTE[policy[key]]}</div>
+            </div>
+          ))}
+        </SettGroup>
+        <SettGroup title="Auto-clean" t={t}>
+          <SettRow icon="trash" label="Auto-delete transcripts" sub="Erase notes & audio on a schedule" t={t} right={<MToggle on={store.autoDel} onChange={(v) => setStore((s) => ({ ...s, autoDel: v }))} t={t} />} />
+          {store.autoDel && (
+            <div style={{ padding: '2px 0 13px', borderBottom: `1px solid ${t.lineSoft}` }}>
+              <MSegmented options={[{ id: '1d', label: 'After 1 day' }, { id: '7d', label: '7 days' }, { id: '30d', label: '30 days' }]} value={store.after} onChange={(v) => setStore((s) => ({ ...s, after: v }))} t={t} />
+            </div>
+          )}
+          <SettRow icon="mic" label="Keep audio recordings" sub="Off keeps only text — audio is deleted right after transcription" last t={t} right={<MToggle on={store.keepAudio} onChange={(v) => setStore((s) => ({ ...s, keepAudio: v }))} t={t} />} />
+        </SettGroup>
+        {storageMode === 'iCloud' && (
+          <SettGroup title="Free up space" t={t}>
+            <SettRow icon="cpu" label="Optimize iPhone storage" sub={optimize ? 'Older audio lives only in iCloud — downloads when you open it' : 'Keep recent audio here; move older files to iCloud only'} t={t} right={<MToggle on={optimize} onChange={setOptimize} t={t} />} />
+            {delRow('offload', 'Free up space now', '241 MB', 'Removes local audio copies — everything stays safe in iCloud', true)}
+          </SettGroup>
+        )}
+        <SettGroup title="Clean up now" t={t}>
+          <SettRow icon="sync" label="Clear recordings older than 30 days" sub={store.cleared ? 'Done — freed 120 MB' : 'Removes old audio files; transcripts stay'} t={t} right={store.cleared ? <MIcon k="check" size={17} style={{ color: t.green }} /> : undefined} onTap={store.cleared ? undefined : () => setStore((s) => ({ ...s, cleared: true }))} />
+          {delRow('audio', 'Delete audio recordings', '289 MB', 'Keeps every transcript — only the sound files go')}
+          {delRow('trans', 'Delete transcripts', '117 MB', 'Removes the text notes; audio stays')}
+          {delRow('summ', 'Delete daily summaries', '6 MB', 'Clears the Journal digests')}
+          {storageMode === 'iCloud' && delRow('cloud', 'Delete from iCloud only', '412 MB', 'Clears the cloud copy — this iPhone keeps its local library')}
+          <SettRow icon="download" label="Remove unused models" sub="Whisper base · 142 MB" last onTap={() => {}} t={t} />
+        </SettGroup>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <div style={{ paddingLeft: 4, fontFamily: FM, fontSize: 10.5, fontWeight: 600, letterSpacing: '.12em', textTransform: 'uppercase', color: t.red }}>Danger</div>
+          <div style={{ padding: '0 16px', background: hexA(t.red, 0.05), border: `1px solid ${hexA(t.red, 0.3)}`, borderRadius: 18 }}>
+            <button onClick={() => !store.erased && setStore((s) => ({ ...s, eraseOpen: true }))} style={{ display: 'block', width: '100%', textAlign: 'left', background: 'none', border: 'none', cursor: store.erased ? 'default' : 'pointer', padding: 0 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 13, padding: '13px 0' }}>
+                <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 34, height: 34, borderRadius: 10, background: hexA(t.red, 0.12), color: t.red, flexShrink: 0 }}><MIcon k="trash" size={17} /></span>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontFamily: FUI, fontSize: 14.5, fontWeight: 600, color: t.red }}>{store.erased ? 'All data erased' : 'Erase all data…'}</div>
+                  <div style={{ fontFamily: FUI, fontSize: 12, color: t.muted, marginTop: 1 }}>{store.erased ? 'This iPhone is clean' : 'Transcripts, audio and summaries'}</div>
+                </div>
+                {store.erased ? <MIcon k="check" size={17} style={{ color: t.green }} /> : <MIcon k="chevR" size={17} style={{ color: t.faint }} />}
+              </div>
+            </button>
+          </div>
+        </div>
+        {infoCard('Auto-clean runs quietly when you open Whisperio. GitHub mirrors are never touched from here.')}
+      </>
+    ) },
+  };
+
+  if (sub && pages[sub]) {
+    const parent = SETT_PARENT[sub];
+    return (
+      <div style={{ position: 'relative', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+        <WHeader title={pages[sub].title} t={t} onBack={() => setSub(parent || null)} />
+        <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '6px 16px 28px', display: 'flex', flexDirection: 'column', gap: 16 }}>
+          {pages[sub].body}
+        </div>
+        {consentFor && <ConsentSheet provider={consentFor} t={t} onAccept={acceptConsent} onCancel={() => setConsentFor(null)} />}
+        {store.eraseOpen && <EraseSheet t={t} cloudSynced={storageMode === 'iCloud'} onCancel={() => setStore((s) => ({ ...s, eraseOpen: false }))} onErase={() => setStore((s) => ({ ...s, eraseOpen: false, erased: true, cleared: true }))} />}
+      </div>
+    );
+  }
+
+  /* ── Hub (SettingsView.hubView — one grouped list of 7 categories) ── */
+  return (
+    <div style={{ position: 'relative', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+      <WHeader title="Settings" t={t} onBack={onBack} />
+      <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '6px 16px 28px', display: 'flex', flexDirection: 'column', gap: 18 }}>
+        <div style={{ padding: '0 16px', background: t.surface, border: `1px solid ${t.line}`, borderRadius: 18 }}>
+          <SettRow icon="spark" label="Replay onboarding" sub="Go through the intro flow again" last onTap={() => {}} t={t} />
+        </div>
+        {[['AI', ['models', 'transcription', 'content']], ['Data', ['sync', 'storage']], ['System', ['integrations', 'developer', 'system']]].map(([gl, ids]) => (
+          <SettGroup key={gl} title={gl} t={t}>
+            {ids.map((id, i) => { const c = SETT_CATS.find((x) => x.id === id); return <SettRow key={id} icon={c.icon} label={c.title} sub={c.sub} last={i === ids.length - 1} onTap={() => setSub(c.id)} t={t} />; })}
+          </SettGroup>
+        ))}
+      </div>
+      {consentFor && <ConsentSheet provider={consentFor} t={t} onAccept={acceptConsent} onCancel={() => setConsentFor(null)} />}
+    </div>
+  );
+}
+
+Object.assign(window, { PhoneSettings, SettGroup, SettRow, ConsentSheet, REWRITE_PRESETS });

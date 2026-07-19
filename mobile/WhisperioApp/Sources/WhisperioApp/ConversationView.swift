@@ -73,22 +73,34 @@ struct ConversationView: View {
                     Spacer()
                     Text(clock).font(WZFont.mono(15)).foregroundStyle(t.text).monospacedDigit()
                 }
-                .padding(.horizontal, 24)
+                .padding(.horizontal, 24).padding(.top, 18)
 
                 VStack(alignment: .leading, spacing: 14) {
                     SectionLabel(text: statusLabel)
                     Text(phase == .error ? errorMsg : hint)
                         .font(WZFont.display(23, .medium))
                         .foregroundStyle(phase == .error ? t.red : t.muted)
-                        .lineSpacing(6).frame(minHeight: 140, alignment: .topLeading)
+                        .lineSpacing(6).frame(minHeight: 110, alignment: .topLeading)
                         .frame(maxWidth: .infinity, alignment: .leading)
+                    if phase == .listening || phase == .paused || phase == .processing {
+                        Text("Names are matched after you stop — rename or “Name with AI” in the transcript.")
+                            .font(WZFont.mono(10.5)).foregroundStyle(t.faint)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
                     if phase == .setup {
                         GradButton(title: "Open Settings", icon: "settings", action: resolveSetup)
                             .fixedSize()
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-                .padding(.horizontal, 24)
+                .padding(.horizontal, 24).padding(.top, 26)
+
+                // The design's ListeningGhost keeps the conversation company while it records
+                // and scribbles while the diarizer works (mock shows it only in these phases).
+                if phase == .listening || phase == .processing {
+                    ListeningGhost(phase: phase == .processing ? .note : .listening, size: 90)
+                        .padding(.bottom, 2)
+                }
 
                 Group {
                     if phase == .listening {

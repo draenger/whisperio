@@ -52,7 +52,7 @@ final class WhisperioAppDelegate: NSObject, UIApplicationDelegate {
 }
 #endif
 
-enum WZScreen { case onboarding, home, recording, conversation, detail, settings, models, keyboardSetup, keyboardReturn, keyboardRewrite, presetEditor, journal, digestDay, githubSync, digestPromptEditor, storage, recap, scratchpad }
+enum WZScreen { case onboarding, home, recording, conversation, detail, settings, models, keyboardSetup, keyboardReturn, keyboardRewrite, presetEditor, journal, journalNew, digestDay, githubSync, digestPromptEditor, storage, recap, scratchpad }
 
 struct WZPhoneView: View {
     @Environment(\.scenePhase) private var scenePhase
@@ -65,6 +65,9 @@ struct WZPhoneView: View {
     @State private var rec: DemoRecording = WZSample.recordings[0]
     // The day the journal detail screen is showing (.digestDay).
     @State private var digestDay: Date = Date()
+    // How the current .digestDay page was seeded by the journal composer ("ai" | "raw"), if it
+    // was — flips the summary card into its woven/raw presentation. Nil for a normal day open.
+    @State private var digestSeed: String?
     @State private var toastMsg: String?
     // True when the current dictation was launched from the keyboard (bounce-to-app flow):
     // its transcript is written to the App Group and a swipe-back explainer is shown.
@@ -80,6 +83,10 @@ struct WZPhoneView: View {
     // return to when the editor closes (Settings, or Detail for the Template Builder flow).
     @State private var editorPreset: RewritePreset = RewritePresetCatalog.seeds[0]
     @State private var editorReturn: WZScreen = .settings
+    // Category page the next SettingsView instance opens on — set on the way back from the
+    // models list (which lives outside SettingsView) so back lands on the Models category,
+    // not the hub. SettingsView consumes (clears) it on appear.
+    @State private var settingsLandingCategory: String?
     @State private var rewriteSource: String = ""
     @State private var rewritePresetID: String = ""
     // Incoming URL binding — set at App level so it fires even before setup completes.
@@ -241,11 +248,12 @@ struct WZPhoneView: View {
                          openGitHubSync: { go(.githubSync) },
                          openDigestPrompts: { go(.digestPromptEditor) },
                          openStorage: { go(.storage) },
-                         toast: showToast)
+                         toast: showToast,
+                         initialCategoryID: $settingsLandingCategory)
         case .storage:
             StorageView(onBack: { go(.settings) }, toast: showToast)
         case .models:
-            ModelsView(onBack: { go(.settings) })
+            ModelsView(onBack: { settingsLandingCategory = "models"; go(.settings) })
         case .presetEditor:
             PresetEditorView(preset: editorPreset, onBack: { go(editorReturn) }, toast: showToast)
         case .keyboardSetup:
@@ -272,8 +280,25 @@ struct WZPhoneView: View {
                      openScratchpad: { go(.scratchpad) })
         case .journal:
             JournalView(onBack: { go(.home) },
-                        openDay: { digestDay = $0; go(.digestDay) },
-                        openRecap: { go(.recap) })
+                        openDay: { digestDay = $0; digestSeed = nil; go(.digestDay) },
+                        openRecap: { go(.recap) },
+                        onAdd: { go(.journalNew) })
+        case .journalNew:
+            JournalComposerView(onBack: { go(.journal) },
+                                onDone: { kind in
+                                    switch kind {
+                                    case .blank:
+                                        go(.scratchpad)   // write/dictate straight onto the page
+                                    case .split:
+                                        go(.journal)      // each note already lives on its own day page
+                                    case .ai, .raw:
+                                        digestDay = Date()
+                                        digestSeed = kind.rawValue
+                                        go(.digestDay)
+                                    }
+                                },
+                                openSettings: { go(.settings) },
+                                toast: showToast)
         case .recap:
             RecapView(onBack: { go(.journal) })
         case .scratchpad:
@@ -282,10 +307,11 @@ struct WZPhoneView: View {
                            toast: showToast)
         case .digestDay:
             DigestDayView(day: digestDay,
-                          onBack: { go(.journal) },
+                          onBack: { digestSeed = nil; go(.journal) },
                           openRec: { rec = $0; go(.detail) },
                           openSettings: { go(.settings) },
-                          toast: showToast)
+                          toast: showToast,
+                          seed: digestSeed)
         }
     }
 

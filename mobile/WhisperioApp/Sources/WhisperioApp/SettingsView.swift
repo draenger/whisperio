@@ -25,6 +25,10 @@ struct SettingsView: View {
     var openDigestPrompts: () -> Void = {}
     var openStorage: () -> Void = {}
     var toast: (String) -> Void = { _ in }
+    // Consumed on appear — the category page (SettingsCategory raw value) this instance opens
+    // on. Set by AppShell on the way back from deep pages that live outside SettingsView (the
+    // models list), so back lands on the parent category (Models) instead of the hub.
+    @Binding var initialCategoryID: String?
 
     @State private var consentProvider: ProviderID?   // non-nil → consent sheet is up
     @State private var showTriggerGuides = false      // presents the trigger onboarding hub
@@ -102,7 +106,7 @@ struct SettingsView: View {
     }
 
     private enum SettingsCategory: String, CaseIterable, Identifiable {
-        case models, transcription, integrations, content, sync, developer, system
+        case models, transcription, integrations, content, sync, storage, connectors, developer, system
 
         var id: String { rawValue }
         var title: String {
@@ -112,6 +116,8 @@ struct SettingsView: View {
             case .integrations: return "Integrations"
             case .content: return "Content"
             case .sync: return "Sync"
+            case .storage: return "Storage & data"
+            case .connectors: return "Connectors"
             case .developer: return "Developer"
             case .system: return "System"
             }
@@ -123,6 +129,8 @@ struct SettingsView: View {
             case .integrations: return "zap"
             case .content: return "spark"
             case .sync: return "cloud"
+            case .storage: return "folder"
+            case .connectors: return "arrowUR"
             case .developer: return "hammer"
             case .system: return "gearshape"
             }
@@ -133,9 +141,11 @@ struct SettingsView: View {
             case .transcription: return "Mic behavior, cleanup, fallback, and timing"
             case .integrations: return "Keyboard, Siri, Back Tap, GitHub, and onboarding"
             case .content: return "Language, vocabulary, rewrite prompts, journaling"
-            case .sync: return "Where data lives and how it reaches iCloud"
-            case .developer: return "Diagnostics, GitHub sync, and advanced controls"
-            case .system: return "Appearance and installed models"
+            case .sync: return "How the library reaches iCloud"
+            case .storage: return "What’s on this iPhone, per-type policy, cleanup"
+            case .connectors: return "GitHub and other places your notes flow to"
+            case .developer: return "Diagnostics and advanced controls"
+            case .system: return "Appearance and app info"
             }
         }
     }
@@ -315,45 +325,54 @@ struct SettingsView: View {
             guard selectedCategory == .developer else { return }
             await refreshCloudAccountStatus()
         }
+        .onAppear {
+            // Land on the category a deep page navigated back from (see initialCategoryID).
+            if let id = initialCategoryID {
+                selectedCategory = SettingsCategory(rawValue: id)
+                initialCategoryID = nil
+            }
+        }
     }
 
     // Wrap a ProviderID so it can drive `.sheet(item:)`.
     private struct ConsentTarget: Identifiable { let id: ProviderID }
 
     private var modelCategory: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            SectionLabel(text: "Model settings").padding(.leading, 4)
-            SettGroup(title: "Transcription engine") {
-                VStack(alignment: .leading, spacing: 9) {
-                    HStack {
-                        Spacer()
-                        PrivacyBadge(mode: settings.settings.isCloud(engine) ? .cloud : .device, small: true)
-                    }
-                    .padding(.bottom, 1)
-                    VStack(spacing: 10) {
-                        engineRow(.onDevice, "Apple — on-device", "Free · private · offline", "cpu")
-                        engineRow(.openAI, "OpenAI", "Cloud · Whisper API", "globe")
-                        engineRow(.elevenLabs, "ElevenLabs", "Cloud · Scribe", "globe")
-                    }
-                    if engine == .openAI {
-                        keyField("OpenAI API key", binding(\.openAIKey))
-                        plainField("Base URL (optional, self-hosted)", "https://api.openai.com/v1", binding(\.openAIBaseURL))
-                        plainField("Model (optional)", "whisper-1", binding(\.whisperModel))
-                    }
-                    if engine == .elevenLabs { keyField("ElevenLabs API key", binding(\.elevenLabsKey)) }
-                }
+        VStack(alignment: .leading, spacing: 16) {
+            HStack {
+                SectionLabel(text: "Transcription engine")
+                Spacer(minLength: 0)
+                PrivacyBadge(mode: settings.settings.isCloud(engine) ? .cloud : .device, small: true)
             }
+            .padding(.leading, 4)
+            VStack(spacing: 10) {
+                engineRow(.onDevice, "Apple — on-device", "Free · private · offline", "cpu")
+                engineRow(.openAI, "OpenAI", "Cloud · Whisper API", "globe")
+                engineRow(.elevenLabs, "ElevenLabs", "Cloud · Scribe", "globe")
+            }
+            SettGroup(title: "On-device models") {
+                SettRow(icon: "download", label: "Manage models",
+                        sub: "Download, update or remove Apple Speech + Whisper", last: true,
+                        onTap: openModels)
+            }
+            if engine == .openAI {
+                keyField("OpenAI API key", binding(\.openAIKey))
+                plainField("Base URL (optional, self-hosted)", "https://api.openai.com/v1", binding(\.openAIBaseURL))
+                plainField("Model (optional)", "whisper-1", binding(\.whisperModel))
+            }
+            if engine == .elevenLabs { keyField("ElevenLabs API key", binding(\.elevenLabsKey)) }
         }
     }
 
     private var transcriptionCategory: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            SectionLabel(text: "Transcription").padding(.leading, 4)
-            SettGroup(title: "Mic behavior") {
+        VStack(alignment: .leading, spacing: 16) {
+            SettGroup(title: "Live") {
                 SettRow(icon: "mic", label: "Live transcription",
-                        sub: "See text as you speak · on-device, free") {
+                        sub: "See text as you speak · on-device, free", last: true) {
                     WToggle(on: boolBinding(\.liveTranscriptionEnabled))
                 }
+            }
+            SettGroup(title: "Interruptions & silence") {
                 VStack(alignment: .leading, spacing: 9) {
                     HStack(alignment: .top, spacing: 13) {
                         WIcon("clock", size: 17, weight: .regular).foregroundStyle(t.accentLite)
@@ -376,9 +395,11 @@ struct SettingsView: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 .padding(.vertical, 12)
+                .overlay(alignment: .bottom) { Rectangle().fill(t.lineSoft).frame(height: 1) }
                 VStack(alignment: .leading, spacing: 9) {
                     HStack(alignment: .top, spacing: 13) {
-                        WIcon("timer", size: 17, weight: .regular).foregroundStyle(t.accentLite)
+                        Image(systemName: "timer")
+                            .font(.system(size: 17, weight: .regular)).foregroundStyle(t.accentLite)
                             .frame(width: 34, height: 34)
                             .background(t.surfaceUp, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                         VStack(alignment: .leading, spacing: 2) {
@@ -404,6 +425,8 @@ struct SettingsView: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 .padding(.vertical, 12)
+            }
+            SettGroup(title: "Engine behavior") {
                 SettRow(icon: "globe", label: "Apple online speech",
                         sub: "Use Apple’s servers when on-device isn’t available · audio leaves the device") {
                     WToggle(on: boolBinding(\.appleAllowOnline))
@@ -413,9 +436,11 @@ struct SettingsView: View {
                     WToggle(on: boolBinding(\.cleanupEnabled))
                 }
                 SettRow(icon: "cloud", label: "Fallback engines",
-                        sub: "If the chosen engine fails, try the others") {
+                        sub: "If the chosen engine fails, try the others", last: true) {
                     WToggle(on: boolBinding(\.fallbackEnabled))
                 }
+            }
+            SettGroup(title: "History") {
                 SettRow(icon: "folder", label: "Save recordings",
                         sub: "Keep a local history of past dictations", last: true) {
                     WToggle(on: boolBinding(\.saveRecordings))
@@ -425,8 +450,7 @@ struct SettingsView: View {
     }
 
     private var integrationsCategory: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            SectionLabel(text: "Integrations").padding(.leading, 4)
+        VStack(alignment: .leading, spacing: 16) {
             #if os(iOS)
             SettGroup(title: "Quick dictation") {
                 VStack(alignment: .leading, spacing: 12) {
@@ -442,20 +466,14 @@ struct SettingsView: View {
                         sub: "Action Button, Back Tap, keyboard, widgets & more — step by step",
                         onTap: { showTriggerGuides = true })
                 SettRow(icon: "keyboard", label: "Whisperio keyboard",
-                        sub: "Dictate from any app — install & setup",
+                        sub: "Dictate from any app — install & setup", last: true,
                         onTap: openKeyboardSetup)
-            }
-            SettGroup(title: "Setup") {
-                SettRow(icon: "spark", label: "Replay onboarding",
-                        sub: "Go through the intro flow again", last: true,
-                        onTap: openOnboarding)
             }
         }
     }
 
     private var contentCategory: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            SectionLabel(text: "Content").padding(.leading, 4)
+        VStack(alignment: .leading, spacing: 16) {
             VStack(alignment: .leading, spacing: 8) {
                 SectionLabel(text: "Language & vocabulary").padding(.leading, 4)
                 VStack(spacing: 0) {
@@ -566,8 +584,7 @@ struct SettingsView: View {
     }
 
     private var syncCategory: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            SectionLabel(text: "Sync settings").padding(.leading, 4)
+        VStack(alignment: .leading, spacing: 16) {
             if iCloudSyncMismatch {
                 iCloudMismatchBanner
             }
@@ -613,12 +630,6 @@ struct SettingsView: View {
                     .font(WZFont.mono(11)).foregroundStyle(t.faint)
                     .padding(.leading, 4)
             }
-
-            SettGroup(title: "Data") {
-                SettRow(icon: "trash", label: "Storage & data",
-                        sub: "What's on this iPhone, auto-clean, and erase",
-                        last: true, onTap: openStorage)
-            }
         }
     }
 
@@ -645,14 +656,7 @@ struct SettingsView: View {
     }
 
     private var developerCategory: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            SectionLabel(text: "Developer").padding(.leading, 4)
-            SettGroup(title: "Sync") {
-                SettRow(icon: "sync", label: "Sync to GitHub",
-                        sub: "Mirror transcripts, renders & daily summaries to a Git repo",
-                        last: true, onTap: openGitHubSync)
-            }
-
+        VStack(alignment: .leading, spacing: 16) {
             SettGroup(title: "Diagnostics") {
                 VStack(alignment: .leading, spacing: 10) {
                     HStack(alignment: .center) {
@@ -668,7 +672,7 @@ struct SettingsView: View {
                             Task { await refreshCloudAccountStatus() }
                         } label: {
                             HStack(spacing: 6) {
-                                WIcon("refresh", size: 14).foregroundStyle(t.text)
+                                WIcon("sync", size: 14).foregroundStyle(t.text)
                                 Text("Refresh")
                                     .font(WZFont.ui(12, .semibold))
                                     .foregroundStyle(t.text)
@@ -710,7 +714,7 @@ struct SettingsView: View {
                         }
                         if recordings.isCloudBacked {
                             HStack(spacing: 10) {
-                                GhostButton(title: "Refresh local view", icon: "refresh") {
+                                GhostButton(title: "Refresh local view", icon: "sync") {
                                     pullCloudNow()
                                 }
                                 .fixedSize()
@@ -904,13 +908,7 @@ struct SettingsView: View {
     }
 
     private var systemCategory: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            SectionLabel(text: "System").padding(.leading, 4)
-            SettGroup(title: "On-device models") {
-                SettRow(icon: "download", label: "Manage models",
-                        sub: "Apple Speech + Whisper", last: true, onTap: openModels)
-            }
-
+        VStack(alignment: .leading, spacing: 16) {
             SettGroup(title: "Appearance") {
                 SettRow(icon: dark ? "moon" : "sun", label: "Dark mode",
                         sub: "Match Whisperio’s look", last: true) {
@@ -925,37 +923,49 @@ struct SettingsView: View {
     }
 
     private var hubView: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            SectionLabel(text: "Settings").padding(.leading, 4)
+        VStack(alignment: .leading, spacing: 18) {
             VStack(spacing: 0) {
-                ForEach(SettingsCategory.allCases) { category in
-                    Button {
-                        selectedCategory = category
-                    } label: {
-                        HStack(spacing: 13) {
-                            WIcon(category.icon, size: 17, weight: .regular).foregroundStyle(t.accentLite)
-                                .frame(width: 34, height: 34)
-                                .background(t.surfaceUp, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-                            VStack(alignment: .leading, spacing: 1) {
-                                Text(category.title).font(WZFont.ui(14.5, .medium)).foregroundStyle(t.text)
-                                Text(category.subtitle).font(WZFont.ui(12)).foregroundStyle(t.muted)
-                            }
-                            Spacer(minLength: 0)
-                            WIcon("chevR", size: 16, weight: .regular).foregroundStyle(t.faint)
-                        }
-                        .padding(.vertical, 13)
-                    }
-                    .buttonStyle(.plain)
-                    .overlay(alignment: .bottom) {
-                        if category != SettingsCategory.allCases.last {
-                            Rectangle().fill(t.lineSoft).frame(height: 1)
-                        }
-                    }
-                }
+                SettRow(icon: "spark", label: "Replay onboarding",
+                        sub: "Go through the intro flow again", last: true,
+                        onTap: openOnboarding)
             }
             .padding(.horizontal, 16)
             .background(t.surface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(t.line, lineWidth: 1))
+
+            VStack(alignment: .leading, spacing: 8) {
+                SectionLabel(text: "Settings").padding(.leading, 4)
+                VStack(spacing: 0) {
+                    ForEach(SettingsCategory.allCases) { category in
+                        Button {
+                            if category == .storage { openStorage() } else { selectedCategory = category }
+                        } label: {
+                            HStack(spacing: 13) {
+                                Image(systemName: settSymbol(category.icon))
+                                    .font(.system(size: 17, weight: .regular)).foregroundStyle(t.accentLite)
+                                    .frame(width: 34, height: 34)
+                                    .background(t.surfaceUp, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                                VStack(alignment: .leading, spacing: 1) {
+                                    Text(category.title).font(WZFont.ui(14.5, .medium)).foregroundStyle(t.text)
+                                    Text(category.subtitle).font(WZFont.ui(12)).foregroundStyle(t.muted)
+                                }
+                                Spacer(minLength: 0)
+                                WIcon("chevR", size: 16, weight: .regular).foregroundStyle(t.faint)
+                            }
+                            .padding(.vertical, 13)
+                        }
+                        .buttonStyle(.plain)
+                        .overlay(alignment: .bottom) {
+                            if category != SettingsCategory.allCases.last {
+                                Rectangle().fill(t.lineSoft).frame(height: 1)
+                            }
+                        }
+                    }
+                }
+                .padding(.horizontal, 16)
+                .background(t.surface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(t.line, lineWidth: 1))
+            }
         }
     }
 
@@ -972,10 +982,28 @@ struct SettingsView: View {
             contentCategory
         case .sync:
             syncCategory
+        case .storage:
+            EmptyView()   // hub row opens StorageView directly
+        case .connectors:
+            connectorsCategory
         case .developer:
             developerCategory
         case .system:
             systemCategory
+        }
+    }
+
+    private var connectorsCategory: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            SettGroup(title: "Connected services") {
+                SettRow(icon: "sync", label: "Sync to GitHub",
+                        sub: "Mirror transcripts, renders & daily summaries to a Git repo",
+                        last: true, onTap: openGitHubSync)
+            }
+            Text("Connectors mirror your notes outward — they never pull anything in. More (Obsidian, Notion, webhooks) are planned.")
+                .font(WZFont.mono(11)).foregroundStyle(t.faint)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.leading, 4)
         }
     }
 
@@ -1075,6 +1103,10 @@ struct SettingsView: View {
     }
 }
 
+// Icon-key → SF Symbol with a raw-name fallback, so keys missing from WZIcon.map
+// ("hammer", "gearshape", "timer") render their SF Symbol instead of a questionmark.
+func settSymbol(_ k: String) -> String { WZIcon.map[k] ?? k }
+
 struct SettGroup<Content: View>: View {
     @Environment(\.wz) private var t
     let title: String
@@ -1101,7 +1133,8 @@ struct SettRow<Right: View>: View {
 
     var body: some View {
         let row = HStack(spacing: 13) {
-            WIcon(icon, size: 17, weight: .regular).foregroundStyle(t.accentLite)
+            Image(systemName: settSymbol(icon))
+                .font(.system(size: 17, weight: .regular)).foregroundStyle(t.accentLite)
                 .frame(width: 34, height: 34)
                 .background(t.surfaceUp, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
             VStack(alignment: .leading, spacing: 1) {

@@ -79,13 +79,15 @@ struct StateHome<Banner: View>: View {
                     } else {
                         ScrollView(showsIndicators: false) {
                             VStack(alignment: .leading, spacing: 0) {
-                                SectionLabel(text: "Recent").padding(.bottom, 4)
+                                // RecRow (variant D) self-pads 16pt horizontally, so only the
+                                // label needs the inset here — rows run full-bleed.
+                                SectionLabel(text: "Recent").padding(.horizontal, 16).padding(.bottom, 4)
                                 ForEach(Array(rows.enumerated()), id: \.element.id) { idx, r in
                                     RecRow(r: r) {}
                                     if idx < rows.count - 1 { Divider().overlay(t.lineSoft) }
                                 }
                             }
-                            .padding(.horizontal, 16).padding(.top, 16).padding(.bottom, 130)
+                            .padding(.top, 16).padding(.bottom, 130)
                         }
                     }
                 }

@@ -21,6 +21,9 @@ struct DigestDayView: View {
     var openRec: (DemoRecording) -> Void
     var openSettings: () -> Void = {}
     var toast: (String) -> Void = { _ in }
+    // How the journal composer seeded this page ("ai" | "raw"), if it did — "raw" flips the
+    // summary card into its on-device stacked-notes presentation. Nil for a normal day open.
+    var seed: String? = nil
 
     @State private var generating = false
     @State private var showConsent = false
@@ -43,7 +46,10 @@ struct DigestDayView: View {
     var body: some View {
         ScreenScaffold {
             VStack(spacing: 0) {
-                WHeader(title: JournalFormat.dayTitle(day), onBack: onBack)
+                WHeader(title: JournalFormat.dayTitle(day), onBack: onBack) {
+                    Text("\(dayRecs.count) note\(dayRecs.count == 1 ? "" : "s")")
+                        .font(WZFont.mono(11)).foregroundStyle(t.faint)
+                }
                 ScrollView(showsIndicators: false) {
                     VStack(alignment: .leading, spacing: 18) {
                         summaryCard
@@ -72,9 +78,9 @@ struct DigestDayView: View {
     private var summaryCard: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 8) {
-                SectionLabel(text: "Daily summary")
+                SectionLabel(text: seed == "raw" ? "Notes · raw" : "Daily summary")
                 Spacer(minLength: 0)
-                PrivacyBadge(mode: .cloud, small: true)
+                PrivacyBadge(mode: seed == "raw" ? .device : .cloud, small: true)
             }
             if generating {
                 HStack(spacing: 11) {
@@ -84,11 +90,14 @@ struct DigestDayView: View {
                 }
             } else if let summary = cached?.summary, !summary.isEmpty {
                 Text(summary)
-                    .font(WZFont.ui(15)).foregroundStyle(t.text).lineSpacing(4)
+                    .font(WZFont.ui(15.5)).foregroundStyle(t.text).lineSpacing(5)
                     .fixedSize(horizontal: false, vertical: true)
                     .textSelection(.enabled)
                 HStack(spacing: 8) {
-                    if let at = cached?.summaryGeneratedAt {
+                    if seed == "raw" {
+                        Text("Stacked verbatim · nothing sent to the cloud")
+                            .font(WZFont.mono(10.5)).foregroundStyle(t.faint)
+                    } else if let at = cached?.summaryGeneratedAt {
                         Text(JournalFormat.generatedMeta(at)).font(WZFont.mono(10.5)).foregroundStyle(t.faint)
                     }
                     Spacer(minLength: 0)
@@ -137,11 +146,12 @@ struct DigestDayView: View {
                     let demo = DemoRecording(item)
                     RecRow(r: demo, category: known,
                            onTap: { openRec(demo) }, onDelete: { recordings.delete(item) })
-                        .padding(.horizontal, 14)
                     if idx < recs.count - 1 { Divider().overlay(t.lineSoft) }
                 }
             }
             .background(t.surface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            // Clip so a swiped-open row's red delete action stays inside the rounded card.
+            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(t.line, lineWidth: 1))
         }
     }

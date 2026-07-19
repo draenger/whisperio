@@ -16,6 +16,7 @@ struct ScratchpadView: View {
     @StateObject private var live = LiveDictation()
     var onBack: () -> Void
     var openSettings: () -> Void = {}
+    var summarizeDay: () -> Void = {}
     var toast: (String) -> Void = { _ in }
 
     private enum Stage { case idle, listening, processing }
@@ -76,10 +77,24 @@ struct ScratchpadView: View {
                             noteCard
                                 .padding(.horizontal, 16)
                             if stage == .idle && !entries.isEmpty {
-                                Text("At midnight this note rolls into your Journal")
-                                    .font(WZFont.mono(11)).foregroundStyle(t.faint)
-                                    .frame(maxWidth: .infinity)
-                                    .padding(.top, 14)
+                                VStack(spacing: 8) {
+                                    Text("At midnight this note rolls into your Journal")
+                                        .font(WZFont.mono(11)).foregroundStyle(t.faint)
+                                    Button(action: summarizeDay) {
+                                        HStack(spacing: 6) {
+                                            WIcon("spark", size: 13)
+                                            Text("Summarize the day now")
+                                        }
+                                        .font(WZFont.mono(11.5, .semibold))
+                                        .foregroundStyle(t.accentLite)
+                                        .padding(.horizontal, 14).padding(.vertical, 7)
+                                        .background(t.accent.opacity(0.12), in: Capsule())
+                                        .overlay(Capsule().stroke(t.hair, lineWidth: 1))
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                                .frame(maxWidth: .infinity)
+                                .padding(.top, 14)
                             }
                             Color.clear.frame(height: 150).id("bottom")
                         }
@@ -169,6 +184,7 @@ struct ScratchpadView: View {
                 Text(clock).font(WZFont.mono(10.5)).foregroundStyle(t.faint).monospacedDigit()
             }
             (Text(live.transcript).foregroundStyle(t.text)
+                .underline(pattern: .dot, color: t.accent.opacity(0.6))
                 + Text("|").foregroundStyle(t.accent))
                 .font(WZFont.ui(15)).lineSpacing(5)
                 .frame(minHeight: 23, alignment: .leading)

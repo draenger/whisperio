@@ -153,8 +153,8 @@ struct RecapView: View {
             Text(weekLabel)
                 .font(WZFont.mono(10.5, .semibold)).tracking(1.5)
                 .foregroundStyle(.white.opacity(0.85))
-            Text("\(totalWords)")
-                .font(WZFont.display(46, .bold))
+            Text(totalWords.formatted())
+                .font(WZFont.display(46, .bold)).tracking(-0.9)
                 .foregroundStyle(.white)
                 .padding(.top, 10)
             Text("words spoken · \(weekItems.count) note\(weekItems.count == 1 ? "" : "s")")
@@ -199,7 +199,7 @@ struct RecapView: View {
                 SectionLabel(text: "Words per day")
                 Spacer(minLength: 0)
                 if let peak, peak.1 > 0 {
-                    Text("peak \(peakName) · \(peak.1)")
+                    Text("peak \(peakName) · \(peak.1.formatted())")
                         .font(WZFont.mono(11)).foregroundStyle(t.faint)
                 }
             }

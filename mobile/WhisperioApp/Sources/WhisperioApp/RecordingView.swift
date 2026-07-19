@@ -78,7 +78,7 @@ struct RecordingView: View {
                     Spacer()
                     Text(clock).font(WZFont.mono(15)).foregroundStyle(t.text).monospacedDigit()
                 }
-                .padding(.horizontal, 24)
+                .padding(.horizontal, 24).padding(.top, 18)
 
                 VStack(alignment: .leading, spacing: 14) {
                     SectionLabel(text: statusLabel)
@@ -90,7 +90,7 @@ struct RecordingView: View {
                         .animation(.easeOut(duration: 0.15), value: live.transcript)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-                .padding(.horizontal, 24)
+                .padding(.horizontal, 24).padding(.top, 26)
 
                 // The design's ListeningGhost: leans in and nods while you talk, scribbles
                 // on its notepad while transcribing, startles ("?!") on an error.

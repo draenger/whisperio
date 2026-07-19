@@ -334,6 +334,13 @@ final class DigestStore: ObservableObject {
         }
     }
 
+    /// Journal composer (New page): cache a digest assembled outside the classify/summarize
+    /// pipeline — a raw stacked page built on-device, or an AI-woven summary the composer already
+    /// produced from user-picked notes. Same upsert path as `generate`, minus the orchestration.
+    func storeComposed(_ digest: DailyDigest) {
+        upsert(digest)
+    }
+
     // MARK: - Upsert (routes to whichever backend is live)
 
     private func upsert(_ digest: DailyDigest) {

@@ -145,11 +145,11 @@ struct DetailView: View {
             get: { renameSpeaker != nil },
             set: { if !$0 { renameSpeaker = nil } }
         )) {
-            TextField("Name", text: $renameText)
+            TextField("Name, nickname, role…", text: $renameText)
             Button("Save") { commitRename() }
             Button("Cancel", role: .cancel) { renameSpeaker = nil }
         } message: {
-            Text("Shown instead of the generic speaker label, everywhere this conversation appears.")
+            Text("Shown instead of the generic label, everywhere this conversation appears.")
         }
         // The informed-consent moment for local models on a conversation: diarization only
         // works in the cloud (ElevenLabs Scribe), so a plain engine drops the speaker labels.
@@ -163,7 +163,7 @@ struct DetailView: View {
             }
             Button("Cancel", role: .cancel) { confirmPlainEngine = nil }
         } message: {
-            Text("Speaker detection only works with ElevenLabs Scribe in the cloud — it doesn’t work with local models. Retranscribing this conversation with another engine produces plain text and removes the speaker labels.")
+            Text("Speaker detection only works with ElevenLabs Scribe in the cloud. Retranscribing with \(confirmPlainEngine.map(engineName) ?? "another engine") produces plain text and removes the speaker labels.")
         }
     }
 
@@ -181,7 +181,7 @@ struct DetailView: View {
             Section("Retranscribe audio") {
                 if audioURL == nil {
                     Button {} label: {
-                        Label("No audio saved for this note", systemImage: "waveform.slash")
+                        Label("No audio saved", systemImage: "waveform.slash")
                     }
                     .disabled(true)
                 } else {
@@ -191,6 +191,12 @@ struct DetailView: View {
                                  isConversation ? "ElevenLabs — keeps speakers" : "ElevenLabs — cloud",
                                  "globe")
                 }
+            }
+            Button(role: .destructive) {
+                if let source { recordings.delete(source) }
+                onBack()
+            } label: {
+                Label("Delete note", systemImage: WZIcon.symbol("trash"))
             }
         } label: {
             WIcon("more", size: 19, weight: .regular)
@@ -282,7 +288,7 @@ struct DetailView: View {
     }
 
     private var retranscribingCard: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 11) {
             ProgressView().tint(t.accent)
             Text("Retranscribing…").font(WZFont.mono(13)).foregroundStyle(t.accentLite)
             Spacer(minLength: 0)
@@ -384,8 +390,8 @@ struct DetailView: View {
                         .font(WZFont.mono(10, .semibold))
                         .foregroundStyle(t.accentLite)
                         .padding(.horizontal, 9).padding(.vertical, 4)
-                        .background(t.accent.opacity(t.dark ? 0.14 : 0.10), in: Capsule())
-                        .overlay(Capsule().stroke(t.accent.opacity(t.dark ? 0.28 : 0.24), lineWidth: 1))
+                        .background(t.accent.opacity(0.14), in: Capsule())
+                        .overlay(Capsule().stroke(t.accent.opacity(0.28), lineWidth: 1))
                     }
                     .buttonStyle(.plain)
                 }
@@ -424,9 +430,11 @@ struct DetailView: View {
         .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(t.line, lineWidth: 1))
     }
 
-    // Stable per-speaker accent: the theme accent for the first voice, then distinct hues.
+    // Stable per-speaker accent: the theme accent for the first voice, then distinct hues
+    // matching the design (amber, violet, pink, mint, yellow).
     private func speakerColor(_ index: Int) -> Color {
-        let palette: [Color] = [t.accent, .orange, .purple, .pink, .mint, .yellow]
+        let palette: [Color] = [t.accent, .hex(0xf59e0b), .hex(0xa78bfa),
+                                .hex(0xf472b6), .hex(0x34d399), .hex(0xfbbf24)]
         return palette[index % palette.count]
     }
 
@@ -476,7 +484,7 @@ struct DetailView: View {
     private var processingCard: some View {
         HStack(spacing: 11) {
             ProgressView().tint(t.accent)
-            Text("Rewriting…").font(WZFont.ui(14, .medium)).foregroundStyle(t.muted)
+            Text("Rewriting…").font(WZFont.ui(14)).foregroundStyle(t.muted)
             Spacer(minLength: 0)
         }
         .padding(18)
@@ -495,7 +503,7 @@ struct DetailView: View {
                 PrivacyBadge(mode: .cloud, small: true)
             }
             Text(text)
-                .font(WZFont.ui(16)).foregroundStyle(t.text).lineSpacing(4)
+                .font(WZFont.ui(16)).foregroundStyle(t.text).lineSpacing(5)
                 .fixedSize(horizontal: false, vertical: true)
                 .textSelection(.enabled)
             HStack(spacing: 9) {
@@ -641,7 +649,15 @@ private struct RewriteSheet: View {
                 .padding(.horizontal, 9).padding(.vertical, 6)
                 .background(t.surfaceUp, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(t.line, lineWidth: 1))
-            Text("A one-off instruction, e.g. “Rewrite this as formal meeting minutes.” It isn’t saved — add a template in Settings to keep it.")
+                .overlay(alignment: .topLeading) {
+                    if customPrompt.isEmpty {
+                        Text("Rewrite this as formal meeting minutes…")
+                            .font(WZFont.mono(13)).foregroundStyle(t.faint)
+                            .padding(.horizontal, 14).padding(.vertical, 14)
+                            .allowsHitTesting(false)
+                    }
+                }
+            Text("A one-off instruction. It isn’t saved — add a template in Settings to keep it.")
                 .font(WZFont.mono(11)).foregroundStyle(t.faint)
                 .fixedSize(horizontal: false, vertical: true)
             GradButton(title: "Rewrite with this", icon: "spark",

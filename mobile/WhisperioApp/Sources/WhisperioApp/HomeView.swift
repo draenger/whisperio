@@ -185,11 +185,13 @@ struct HomeView: View {
                     let demo = DemoRecording(item)
                     let cat = WZCategories.of(recordings.categoryId(for: demo))
                     RecRow(r: demo, category: cat, onTap: { openRec(demo) }, onDelete: { recordings.delete(item) })
-                        .padding(.horizontal, 14)
                     if idx < recs.count - 1 { Divider().overlay(t.lineSoft) }
                 }
             }
             .background(t.surface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            // The card clips its rows so the sliding content and the red delete action stay
+            // inside the rounded corners while a row is swiped open.
+            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(t.line, lineWidth: 1))
         }
     }
@@ -243,8 +245,8 @@ struct HomeView: View {
             HStack(spacing: 10) {
                 Button(action: openRecording) {
                     HStack(spacing: 10) {
-                        WIcon("mic", size: 19, weight: .bold)
-                        Text("Dictate").font(WZFont.ui(16, .semibold))
+                        WIcon("mic", size: 20, weight: .bold)
+                        Text("Dictate").font(WZFont.display(16, .semibold))
                     }
                     .foregroundStyle(.white)
                     .frame(maxWidth: .infinity)
@@ -280,7 +282,11 @@ struct HomeView: View {
     }
 }
 
-// A recording row (port of RecRow).
+// A recording row (port of RecRow — variant D "eyebrow"): meta strip on top with a small
+// source glyph, title beneath. Double-tap copies the transcript (centered "Copied" pill for
+// ~1.3s); swiping left slides the row open to −88 and reveals an 80pt red Delete action
+// behind it — snaps open past halfway, and a tap while open just closes it again. The
+// trailing copy button of the previous variant is gone: double-tap replaced it.
 struct RecRow: View {
     @Environment(\.wz) private var t
     let r: DemoRecording
@@ -288,6 +294,13 @@ struct RecRow: View {
     var onTap: () -> Void
     var onDelete: (() -> Void)? = nil
     @State private var copied = false
+    // Horizontal slide of the row content: 0 (closed) … openOffset (delete revealed).
+    @State private var dx: CGFloat = 0
+    // dx captured when a horizontal drag claims the gesture; nil while not dragging.
+    @State private var dragBase: CGFloat? = nil
+
+    private let openOffset: CGFloat = -88
+    private let snap = Animation.timingCurve(0.2, 0.8, 0.3, 1, duration: 0.22)
 
     private var srcIcon: String {
         switch r.src {
@@ -298,43 +311,46 @@ struct RecRow: View {
     }
 
     var body: some View {
-        HStack(alignment: .top, spacing: 11) {
-            Button(action: onTap) {
-                HStack(alignment: .top, spacing: 13) {
-                    WIcon(srcIcon, size: 17, weight: .regular).foregroundStyle(t.accentLite)
-                        .frame(width: 38, height: 38)
-                        .background(t.surfaceUp, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(t.line, lineWidth: 1))
-                    VStack(alignment: .leading, spacing: 7) {
-                        Text(r.title).font(WZFont.ui(14.5, .medium)).foregroundStyle(t.text)
-                            .lineLimit(2).multilineTextAlignment(.leading).lineSpacing(2)
-                        if let category {
-                            CategoryTag(category: category)
-                        }
-                        HStack(spacing: 8) {
-                            Text(r.app).foregroundStyle(t.muted)
-                            Text("·"); Text(r.when); Text("·"); Text(r.dur)
-                            Spacer(minLength: 0)
-                            WIcon(r.engine == "cloud" ? "cloud" : "lock", size: 12, weight: .regular)
-                                .foregroundStyle(r.engine == "cloud" ? t.amber : t.green)
-                        }
-                        .font(WZFont.mono(11)).foregroundStyle(t.faint)
+        rowContent
+            .offset(x: dx)
+            // Stationary layer behind the sliding content — exposed as the row moves left.
+            .background(alignment: .trailing) { deleteAction }
+    }
+
+    private var rowContent: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            HStack(spacing: 7) {
+                WIcon(srcIcon, size: 12, weight: .regular).foregroundStyle(t.accentLite)
+                Text(r.when); Text("·"); Text(r.dur)
+                Spacer(minLength: 0)
+                if let category {
+                    let hue = category.hue(t)
+                    HStack(spacing: 5) {
+                        Circle().fill(hue).frame(width: 6, height: 6)
+                        Text(category.label).fontWeight(.semibold)
                     }
+                    .foregroundStyle(hue)
                 }
+                WIcon(r.engine == "cloud" ? "cloud" : "lock", size: 11, weight: .regular)
+                    .foregroundStyle(r.engine == "cloud" ? t.amber : t.green)
             }
-            .buttonStyle(.plain)
-            copyButton
+            .font(WZFont.mono(10)).foregroundStyle(t.faint)
+
+            Text(r.title).font(WZFont.ui(14.5, .medium)).foregroundStyle(t.text)
+                .lineLimit(2).multilineTextAlignment(.leading).lineSpacing(3)
         }
-        .padding(.vertical, 13)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 16).padding(.vertical, 11)
+        .background(t.surface)
+        .overlay { if copied { copiedOverlay } }
+        .contentShape(Rectangle())
+        // Double-tap declared first so it wins; SwiftUI then delays the single tap until the
+        // double-tap has failed — the native equivalent of the mock's 270ms disambiguation.
+        .onTapGesture(count: 2) { handleDoubleTap() }
+        .onTapGesture { handleSingleTap() }
+        .simultaneousGesture(swipe)
         .contextMenu {
-            Button {
-#if canImport(UIKit)
-                UIPasteboard.general.string = r.title
-#elseif canImport(AppKit)
-                NSPasteboard.general.clearContents()
-                NSPasteboard.general.setString(r.title, forType: .string)
-#endif
-            } label: { Label("Copy", systemImage: "doc.on.doc") }
+            Button(action: copyTranscript) { Label("Copy", systemImage: "doc.on.doc") }
             if let onDelete {
                 Button(role: .destructive, action: onDelete) {
                     Label("Delete", systemImage: "trash")
@@ -343,25 +359,87 @@ struct RecRow: View {
         }
     }
 
-    private var copyButton: some View {
+    // 80pt red column (trash glyph over "Delete") pinned to the trailing edge, only visible
+    // once the row has actually slid (dx < −8), so it never ghosts through the closed row.
+    private var deleteAction: some View {
         Button {
-#if canImport(UIKit)
-            UIPasteboard.general.string = r.title
-            UINotificationFeedbackGenerator().notificationOccurred(.success)
-#elseif canImport(AppKit)
-            NSPasteboard.general.clearContents()
-            NSPasteboard.general.setString(r.title, forType: .string)
-#endif
-            copied = true
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { copied = false }
+            withAnimation(.easeOut(duration: 0.22)) { onDelete?() }
         } label: {
-            WIcon(copied ? "check" : "copy", size: 16, weight: .regular)
-                .foregroundStyle(copied ? t.green : t.accentLite)
-                .frame(width: 36, height: 36)
-                .background(t.surfaceUp, in: RoundedRectangle(cornerRadius: 11, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 11, style: .continuous).stroke(t.line, lineWidth: 1))
+            VStack(spacing: 4) {
+                WIcon("trash", size: 16, weight: .regular)
+                Text("Delete").font(WZFont.ui(11, .semibold))
+            }
+            .foregroundStyle(.white)
+            .frame(width: 80)
+            .frame(maxHeight: .infinity)
+            .background(t.red)
         }
         .buttonStyle(.plain)
+        .opacity(dx < -8 ? 1 : 0)
+    }
+
+    private var copiedOverlay: some View {
+        ZStack {
+            t.bg.opacity(0.55)
+            HStack(spacing: 7) {
+                WIcon("check", size: 14, weight: .semibold)
+                Text("Copied").font(WZFont.ui(12.5, .semibold))
+            }
+            .foregroundStyle(t.green)
+            .padding(.horizontal, 14).padding(.vertical, 7)
+            .background(t.elevated, in: Capsule())
+            .overlay(Capsule().stroke(t.green.opacity(0.4), lineWidth: 1))
+        }
+        .transition(.opacity)
+        .allowsHitTesting(false)
+    }
+
+    // Horizontal-only drag: claimed at the first change whose horizontal travel beats the
+    // vertical, so the enclosing ScrollView keeps vertical pans. Clamped to [openOffset, 0];
+    // on release it snaps open past the halfway point, closed otherwise (mirrors the mock).
+    private var swipe: some Gesture {
+        DragGesture(minimumDistance: 8)
+            .onChanged { g in
+                guard onDelete != nil else { return }
+                let base: CGFloat
+                if let dragBase {
+                    base = dragBase
+                } else {
+                    guard abs(g.translation.width) > abs(g.translation.height) else { return }
+                    base = dx
+                    dragBase = base
+                }
+                dx = min(0, max(openOffset, base + g.translation.width))
+            }
+            .onEnded { _ in
+                guard dragBase != nil else { return }
+                dragBase = nil
+                withAnimation(snap) { dx = dx < openOffset / 2 ? openOffset : 0 }
+            }
+    }
+
+    private func handleSingleTap() {
+        if dx != 0 { withAnimation(snap) { dx = 0 }; return }
+        onTap()
+    }
+
+    private func handleDoubleTap() {
+        if dx != 0 { withAnimation(snap) { dx = 0 }; return }
+        copyTranscript()
+    }
+
+    private func copyTranscript() {
+#if canImport(UIKit)
+        UIPasteboard.general.string = r.title
+        UINotificationFeedbackGenerator().notificationOccurred(.success)
+#elseif canImport(AppKit)
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(r.title, forType: .string)
+#endif
+        withAnimation(.easeOut(duration: 0.18)) { copied = true }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.3) {
+            withAnimation(.easeOut(duration: 0.18)) { copied = false }
+        }
     }
 }
 

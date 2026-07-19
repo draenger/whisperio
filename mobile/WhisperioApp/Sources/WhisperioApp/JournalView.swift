@@ -12,12 +12,17 @@ struct JournalView: View {
     var onBack: () -> Void
     var openDay: (Date) -> Void
     var openRecap: () -> Void = {}
+    // New page (journal composer) — the header's + button, per PhoneJournal's onAdd.
+    var onAdd: () -> Void = {}
 
     var body: some View {
         ScreenScaffold {
             VStack(spacing: 0) {
                 WHeader(title: "Journal", onBack: onBack) {
-                    SquareIconButton(icon: "zap", action: openRecap)
+                    HStack(spacing: 8) {
+                        SquareIconButton(icon: "zap", action: openRecap)
+                        SquareIconButton(icon: "plus", action: onAdd)
+                    }
                 }
                 if days.isEmpty {
                     emptyState
