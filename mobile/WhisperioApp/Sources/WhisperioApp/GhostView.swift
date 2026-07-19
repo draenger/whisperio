@@ -114,6 +114,25 @@ struct WGhost: View {
     var tint: Color? = nil
     /// Loop the design's arm-wave ("Machanie ręką") on top of the idle sway.
     var wave: Bool = false
+    /// The design's `clickFun`: tapping plays one random one-shot reaction
+    /// (rock / spin / jelly / phase-out / tilt), then the ghost settles back to idle.
+    var tapFun: Bool = false
+
+    // One-shot reactions from the design's LG_EXTRA keyframes; durations match the CSS.
+    private enum Fun: CaseIterable {
+        case rock, spin, jelly, phasefx, tilt
+        var duration: Double {
+            switch self {
+            case .rock: return 2.6
+            case .spin: return 3.6
+            case .jelly: return 2.8
+            case .phasefx: return 4.4
+            case .tilt: return 5.2
+            }
+        }
+    }
+    @State private var fun: Fun?
+    @State private var funStart: TimeInterval = 0
 
     private var bodyColor: Color { tint ?? wz.accent }
     private let faceColor = Color(red: 0x0d / 255, green: 0x3f / 255, blue: 0x39 / 255)
@@ -129,10 +148,16 @@ struct WGhost: View {
             }
         }
         .frame(width: size, height: size)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            guard tapFun, !reduceMotion else { return }
+            fun = Fun.allCases.randomElement()
+            funStart = Date.timeIntervalSinceReferenceDate
+        }
         .accessibilityHidden(true)
     }
 
-    @ViewBuilder private func ghost(at t: TimeInterval?) -> some View {
+    private func ghost(at t: TimeInterval?) -> some View {
         // Idle sway — CSS `idlesway`, 5s: rotate 0→2.5°→0→-2.5°→0, lift up to 2% height.
         let swayPhase = t.map { loopPhase($0, period: 5.0) } ?? 0
         let swayAngle = keyframe(swayPhase, [(0, 0), (0.25, 2.5), (0.5, 0), (0.75, -2.5), (1, 0)])
@@ -154,7 +179,41 @@ struct WGhost: View {
         ]) : 0
         let nudge = wave ? keyframe(wavePhase, [(0, 0), (0.10, -2.5), (0.26, 2), (0.42, 0), (1, 0)]) : 0
 
-        ZStack {
+        // Tap reaction — progress through the active one-shot, nil when idle/expired.
+        let funP: Double? = {
+            guard let fun, let t else { return nil }
+            let elapsed = t - funStart
+            guard elapsed >= 0, elapsed < fun.duration else { return nil }
+            return elapsed / fun.duration
+        }()
+        // Fun transforms (design LG_EXTRA). While one plays, the idle sway is suppressed —
+        // the CSS swaps the animation class the same way. Blink keeps running throughout.
+        var funAngle = 0.0, funSX = 1.0, funSY = 1.0, funDX = 0.0, funOpacity = 1.0, funBlur = 0.0
+        var funAnchor = UnitPoint(x: 0.5, y: 0.9)
+        if let p = funP, let fun {
+            switch fun {
+            case .rock:
+                funAngle = keyframe(p, [(0, 0), (0.08, -11), (0.20, 9), (0.32, -7), (0.44, 4), (0.55, 0), (1, 0)])
+                funAnchor = UnitPoint(x: 0.5, y: 0.88)
+            case .spin:
+                funAngle = keyframe(p, [(0, 0), (0.14, 0), (0.52, 360), (0.62, 352), (0.72, 363), (0.80, 360), (1, 360)])
+                funAnchor = UnitPoint(x: 0.5, y: 0.55)
+            case .jelly:
+                funSX = keyframe(p, [(0, 1), (0.08, 1.12), (0.16, 0.92), (0.24, 1.07), (0.32, 0.97), (0.40, 1.02), (0.50, 1), (1, 1)])
+                funSY = keyframe(p, [(0, 1), (0.08, 0.88), (0.16, 1.10), (0.24, 0.94), (0.32, 1.04), (0.40, 0.99), (0.50, 1), (1, 1)])
+            case .phasefx:
+                funOpacity = keyframe(p, [(0, 1), (0.20, 1), (0.38, 0.15), (0.50, 0.1), (0.66, 1), (1, 1)])
+                funDX = keyframe(p, [(0, 0), (0.20, 0), (0.38, -14), (0.50, 12), (0.66, 0), (1, 0)]) / 230 * size
+                funBlur = keyframe(p, [(0, 0), (0.20, 0), (0.38, 3), (0.50, 4), (0.66, 0), (1, 0)]) / 230 * size
+            case .tilt:
+                funAngle = keyframe(p, [(0, 0), (0.18, 0), (0.28, 10), (0.40, 10), (0.50, 0), (0.62, -9), (0.74, -9), (0.84, 0), (1, 0)])
+                funAnchor = UnitPoint(x: 0.5, y: 0.62)
+            }
+        }
+        let idleAngle = funP == nil ? swayAngle + nudge : 0
+        let idleLift = funP == nil ? swayLift : 0
+
+        return ZStack {
             // Body with the hand region erased, then the face on top.
             ZStack {
                 GhostPart(cgPath: GhostShapes.body).fill(bodyColor)
@@ -172,8 +231,11 @@ struct WGhost: View {
                 .rotationEffect(.degrees(armAngle), anchor: UnitPoint(x: 0.753, y: 0.531))
             GhostPart(cgPath: GhostShapes.pivotDisc).fill(bodyColor)
         }
-        .rotationEffect(.degrees(swayAngle + nudge), anchor: UnitPoint(x: 0.5, y: 0.9))
-        .offset(y: swayLift * size)
+        .rotationEffect(.degrees(idleAngle + funAngle), anchor: funP == nil ? UnitPoint(x: 0.5, y: 0.9) : funAnchor)
+        .scaleEffect(x: funSX, y: funSY, anchor: UnitPoint(x: 0.5, y: 1))
+        .offset(x: funDX, y: idleLift * size)
+        .opacity(funOpacity)
+        .blur(radius: funBlur)
     }
 }
 

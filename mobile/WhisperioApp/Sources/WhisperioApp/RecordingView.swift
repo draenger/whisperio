@@ -234,7 +234,7 @@ struct RecordingView: View {
             SharedStore.setRecordingActive(false)
             phase = .error; errorMsg = "Nothing was transcribed — try again and speak clearly."; return
         }
-        let rec = Recording(filename: clip?.filename ?? "", duration: clip?.duration ?? 0,
+        let rec = Recording(filename: keptFilename(clip?.filename), duration: clip?.duration ?? 0,
                             status: .completed, provider: .onDevice, transcription: text)
         // Save even when the clip is missing — the live transcript is the result, and losing
         // it from history just because the audio file failed to persist would be worse.
@@ -263,7 +263,7 @@ struct RecordingView: View {
         switch result {
         case .success(let tr):
             let text = settings.cleanup(tr.text)
-            let rec = Recording(filename: clip.filename, duration: clip.duration,
+            let rec = Recording(filename: keptFilename(clip.filename), duration: clip.duration,
                                 status: .completed, provider: tr.provider, transcription: text)
             if settings.settings.saveRecordings { recordings.add(rec) }
 #if canImport(UIKit)
@@ -292,6 +292,16 @@ struct RecordingView: View {
                 errorMsg = first
             }
         }
+    }
+
+    // Storage & data → "Keep audio recordings" off: discard the clip file right after
+    // transcription and persist the recording as text-only.
+    private func keptFilename(_ filename: String?) -> String {
+        guard let filename, !filename.isEmpty else { return "" }
+        guard !settings.settings.keepAudioRecordings else { return filename }
+        try? FileManager.default.removeItem(
+            at: FileManager.default.temporaryDirectory.appendingPathComponent(filename))
+        return ""
     }
 
     private func cancel() {

@@ -52,7 +52,7 @@ final class WhisperioAppDelegate: NSObject, UIApplicationDelegate {
 }
 #endif
 
-enum WZScreen { case onboarding, home, recording, conversation, detail, settings, models, keyboardSetup, keyboardReturn, keyboardRewrite, presetEditor, journal, digestDay, githubSync, digestPromptEditor }
+enum WZScreen { case onboarding, home, recording, conversation, detail, settings, models, keyboardSetup, keyboardReturn, keyboardRewrite, presetEditor, journal, digestDay, githubSync, digestPromptEditor, storage, recap, scratchpad }
 
 struct WZPhoneView: View {
     @Environment(\.scenePhase) private var scenePhase
@@ -114,6 +114,7 @@ struct WZPhoneView: View {
             SharedStore.recordAppHeartbeat()
             consumePending()
             runAutoJournaling()
+            runAutoClean()
             if let url = incomingURL { handle(url); incomingURL = nil }
             if scenePhase == .active { restartSyncNudgeTimer() }
         }
@@ -125,6 +126,7 @@ struct WZPhoneView: View {
             if phase == .active {
                 consumePending()
                 runAutoJournaling()
+                runAutoClean()
                 // A CloudKit import can land silently while backgrounded (or without a push at
                 // all, if remote-notification wasn't delivered) — re-check on every foreground so
                 // a stalled sync always has recourse beyond waiting for a push. Every mode except
@@ -238,7 +240,10 @@ struct WZPhoneView: View {
                          openPresetEditor: { openEditor($0 ?? Self.newPreset(), from: .settings) },
                          openGitHubSync: { go(.githubSync) },
                          openDigestPrompts: { go(.digestPromptEditor) },
+                         openStorage: { go(.storage) },
                          toast: showToast)
+        case .storage:
+            StorageView(onBack: { go(.settings) }, toast: showToast)
         case .models:
             ModelsView(onBack: { go(.settings) })
         case .presetEditor:
@@ -263,16 +268,39 @@ struct WZPhoneView: View {
                      openRecording: { go(.recording) },
                      openConversation: { go(.conversation) },
                      openSettings: { go(.settings) },
-                     openJournal: { go(.journal) })
+                     openJournal: { go(.journal) },
+                     openScratchpad: { go(.scratchpad) })
         case .journal:
             JournalView(onBack: { go(.home) },
-                        openDay: { digestDay = $0; go(.digestDay) })
+                        openDay: { digestDay = $0; go(.digestDay) },
+                        openRecap: { go(.recap) })
+        case .recap:
+            RecapView(onBack: { go(.journal) })
+        case .scratchpad:
+            ScratchpadView(onBack: { go(.home) },
+                           openSettings: { go(.settings) },
+                           toast: showToast)
         case .digestDay:
             DigestDayView(day: digestDay,
                           onBack: { go(.journal) },
                           openRec: { rec = $0; go(.detail) },
                           openSettings: { go(.settings) },
                           toast: showToast)
+        }
+    }
+
+    // Auto-clean (Storage & data): erase recordings older than the user's retention window.
+    // Runs off the same foreground hooks as consumePending() — opt-in, off by default.
+    private func runAutoClean() {
+        guard settings.settings.autoDeleteEnabled else { return }
+        let days = max(1, settings.settings.autoDeleteAfterDays)
+        let cutoff = Date().addingTimeInterval(-Double(days) * 24 * 3600)
+        for r in recordings.items where r.timestamp < cutoff {
+            if !r.filename.isEmpty {
+                try? FileManager.default.removeItem(
+                    at: FileManager.default.temporaryDirectory.appendingPathComponent(r.filename))
+            }
+            recordings.delete(r)
         }
     }
 

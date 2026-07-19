@@ -323,6 +323,17 @@ final class DigestStore: ObservableObject {
         }
     }
 
+    /// Erase every daily summary (both backends). Used by Storage & data → Erase all data.
+    func eraseAll() {
+        switch backend {
+        case .sync(let store):
+            for digest in digests { store.delete(digest) }
+        case .json(let url):
+            digests = []
+            saveJSON(to: url)
+        }
+    }
+
     // MARK: - Upsert (routes to whichever backend is live)
 
     private func upsert(_ digest: DailyDigest) {

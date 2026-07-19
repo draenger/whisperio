@@ -332,6 +332,20 @@ public final class DigestSyncStore: ObservableObject {
         reload()
     }
 
+    /// Remove every row for the digest's day (CloudKit duplicates included). Mirrors
+    /// `RecordingSyncStore.delete` — the deletion propagates to other devices via CloudKit.
+    public func delete(_ digest: DailyDigest) {
+        let dayKey = digest.id
+        let descriptor = FetchDescriptor<DigestEntity>(
+            predicate: #Predicate { $0.dayKey == dayKey }
+        )
+        if let matches = try? context.fetch(descriptor) {
+            for entity in matches { context.delete(entity) }
+        }
+        save()
+        reload()
+    }
+
     /// Re-read the local SwiftData snapshot into `digests`. Mirrors
     /// `RecordingSyncStore.requestRefresh()`: SwiftData exposes no public API to force an
     /// `NSPersistentCloudKitContainer` fetch, so this does **not** reach out to CloudKit — it only

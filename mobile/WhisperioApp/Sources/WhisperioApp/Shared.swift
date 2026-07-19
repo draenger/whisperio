@@ -36,7 +36,9 @@ struct WHeader<Right: View>: View {
                 }
                 .buttonStyle(.plain)
             } else {
-                WGhost(size: 26)
+                // Design WHeader logo slot: the animated ghost at 40pt, tappable for a
+                // one-shot fun reaction (rock/spin/jelly/phase/tilt).
+                WGhost(size: 40, tapFun: true)
             }
             Text(title)
                 .font(WZFont.display(onBack == nil ? 24 : 17))

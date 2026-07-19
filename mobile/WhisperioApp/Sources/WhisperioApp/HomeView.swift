@@ -18,6 +18,7 @@ struct HomeView: View {
     var openConversation: () -> Void = {}
     var openSettings: () -> Void
     var openJournal: () -> Void = {}
+    var openScratchpad: () -> Void = {}
 
     // nil → the "All" filter (show every category).
     @State private var selectedCategory: String? = nil
@@ -30,6 +31,7 @@ struct HomeView: View {
                     WHeader(title: "Whisperio") {
                         HStack(spacing: 9) {
                             HeaderSyncGlyph()
+                            SquareIconButton(icon: "edit", action: openScratchpad)
                             SquareIconButton(icon: "book", action: openJournal)
                             SquareIconButton(icon: "settings", action: openSettings)
                         }

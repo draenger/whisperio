@@ -116,6 +116,15 @@ public struct WhisperioSettings: Codable, Sendable, Equatable {
     /// value is honored; a non-positive or missing value falls back to the default.
     public var syncIntervalMinutes: Int
 
+    // Storage & data (auto-clean). Off by default — nothing is ever deleted unless the user
+    // opts in on the Storage & data screen.
+    /// When on, recordings older than `autoDeleteAfterDays` are erased on foreground.
+    public var autoDeleteEnabled: Bool
+    /// Retention window for auto-delete. The UI offers 1/7/30; any positive value is honored.
+    public var autoDeleteAfterDays: Int
+    /// When off, the audio file is discarded right after transcription — only text is kept.
+    public var keepAudioRecordings: Bool
+
     public init(
         providerChain: [ProviderID] = [.onDevice],
         openAIKey: String = "",
@@ -142,7 +151,10 @@ public struct WhisperioSettings: Codable, Sendable, Equatable {
         githubToken: String = "",
         storageMode: StorageMode = .iCloud,
         syncMode: SyncMode = .automatic,
-        syncIntervalMinutes: Int = 15
+        syncIntervalMinutes: Int = 15,
+        autoDeleteEnabled: Bool = false,
+        autoDeleteAfterDays: Int = 7,
+        keepAudioRecordings: Bool = true
     ) {
         self.providerChain = providerChain
         self.openAIKey = openAIKey
@@ -170,6 +182,9 @@ public struct WhisperioSettings: Codable, Sendable, Equatable {
         self.storageMode = storageMode
         self.syncMode = syncMode
         self.syncIntervalMinutes = syncIntervalMinutes
+        self.autoDeleteEnabled = autoDeleteEnabled
+        self.autoDeleteAfterDays = autoDeleteAfterDays
+        self.keepAudioRecordings = keepAudioRecordings
     }
 
     // Tolerant decoding — missing keys (older persisted settings, or future-added fields)
@@ -209,6 +224,10 @@ public struct WhisperioSettings: Codable, Sendable, Equatable {
         syncMode = (try? c.decodeIfPresent(SyncMode.self, forKey: .syncMode)) ?? d.syncMode
         let decodedMinutes = try c.decodeIfPresent(Int.self, forKey: .syncIntervalMinutes) ?? d.syncIntervalMinutes
         syncIntervalMinutes = decodedMinutes > 0 ? decodedMinutes : d.syncIntervalMinutes
+        autoDeleteEnabled = try c.decodeIfPresent(Bool.self, forKey: .autoDeleteEnabled) ?? d.autoDeleteEnabled
+        let decodedDays = try c.decodeIfPresent(Int.self, forKey: .autoDeleteAfterDays) ?? d.autoDeleteAfterDays
+        autoDeleteAfterDays = decodedDays > 0 ? decodedDays : d.autoDeleteAfterDays
+        keepAudioRecordings = try c.decodeIfPresent(Bool.self, forKey: .keepAudioRecordings) ?? d.keepAudioRecordings
     }
 
     /// Whether the given engine requires (and currently has) cloud consent to run.

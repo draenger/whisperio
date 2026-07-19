@@ -23,6 +23,7 @@ struct SettingsView: View {
     var openPresetEditor: (RewritePreset?) -> Void = { _ in }
     var openGitHubSync: () -> Void = {}
     var openDigestPrompts: () -> Void = {}
+    var openStorage: () -> Void = {}
     var toast: (String) -> Void = { _ in }
 
     @State private var consentProvider: ProviderID?   // non-nil → consent sheet is up
@@ -611,6 +612,12 @@ struct SettingsView: View {
                 Text("iOS may still receive iCloud changes in the background; this controls when Whisperio actively refreshes and shows them.")
                     .font(WZFont.mono(11)).foregroundStyle(t.faint)
                     .padding(.leading, 4)
+            }
+
+            SettGroup(title: "Data") {
+                SettRow(icon: "trash", label: "Storage & data",
+                        sub: "What's on this iPhone, auto-clean, and erase",
+                        last: true, onTap: openStorage)
             }
         }
     }

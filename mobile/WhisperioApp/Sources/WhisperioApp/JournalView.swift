@@ -11,11 +11,14 @@ struct JournalView: View {
     @EnvironmentObject private var digests: DigestStore
     var onBack: () -> Void
     var openDay: (Date) -> Void
+    var openRecap: () -> Void = {}
 
     var body: some View {
         ScreenScaffold {
             VStack(spacing: 0) {
-                WHeader(title: "Journal", onBack: onBack)
+                WHeader(title: "Journal", onBack: onBack) {
+                    SquareIconButton(icon: "zap", action: openRecap)
+                }
                 if days.isEmpty {
                     emptyState
                 } else {
