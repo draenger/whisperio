@@ -2,9 +2,13 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<key>com.apple.security.application-groups</key>
-	<array>
-		<string>group.ai.whisperio.mobile</string>
-	</array>
+	<!-- App Group temporarily disabled for headless TestFlight signing: the group
+	     group.ai.whisperio.mobile is not yet ASSIGNED to this bundle id (portal-only
+	     step; the public ASC API can only enable the capability). After assigning it
+	     in developer.apple.com (Identifiers -> WhisperioWidget -> App Groups ->
+	     Configure), restore:
+	     com.apple.security.application-groups = [group.ai.whisperio.mobile]
+	     and regenerate the "WZ AppStore WhisperioWidget 4412" profile. Widgets render
+	     their empty states until then (SharedStore snapshot reads return nil). -->
 </dict>
 </plist>
