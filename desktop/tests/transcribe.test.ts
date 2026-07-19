@@ -59,7 +59,7 @@ vi.mock('electron', () => ({
   }
 }))
 
-import { transcribeAudio, cleanupOnDemand } from '../src/main/transcribe'
+import { transcribeAudio, cleanupOnDemand, rewriteClipboardForCommand, NotConfiguredError } from '../src/main/transcribe'
 
 describe('transcribeAudio', () => {
   beforeEach(() => {
@@ -1137,5 +1137,77 @@ describe('cleanupOnDemand', () => {
 
     expect(result).toEqual({ text: 'raw transcript', ok: false, cleanedWith: 'cleanup disabled' })
     expect(fetchMock).not.toHaveBeenCalled()
+  })
+})
+
+// COMMAND mode (v1.7 — dictation/hotkeyManager.ts's 'command' DictationState):
+// rewriteClipboardForCommand() is the entrypoint hotkeyManager.ts calls with
+// the clipboard's current text + the spoken instruction. It reuses the exact
+// same LLM candidate chain as transcript cleanup (buildCleanupCandidates +
+// selectProvider), so these tests mirror the "AI cleanup wiring" tests above.
+describe('rewriteClipboardForCommand', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('throws NotConfiguredError (never fabricates a rewrite) when no LLM provider is reachable', async () => {
+    // aiProvider: 'local' with no local model server running is the one
+    // buildCleanupCandidates/selectProvider combination that can actually
+    // resolve to a null provider: the selected candidate IS the local
+    // fallback, so once its own availability check fails there is nothing
+    // left to fall back to (unlike aiProvider: 'openai'/etc, where the
+    // always-present local candidate is itself the fallback).
+    mockLoadSettings.mockReturnValue({
+      aiProvider: 'local'
+    })
+    const fetchMock = vi.fn().mockRejectedValue(new Error('ECONNREFUSED'))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(rewriteClipboardForCommand('Dear team,', 'make this more formal')).rejects.toThrow(
+      NotConfiguredError
+    )
+  })
+
+  it('rewrites the clipboard text (not the spoken instruction) through the configured LLM provider', async () => {
+    mockLoadSettings.mockReturnValue({
+      aiProvider: 'openai',
+      openaiApiKey: 'sk-test'
+    })
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ choices: [{ message: { content: 'Dear team, we will ship tomorrow.' } }] })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const result = await rewriteClipboardForCommand('Dear team, we ship tomorrow.', 'make this more formal')
+
+    expect(result).toEqual({ text: 'Dear team, we will ship tomorrow.', ok: true })
+    // llm/prompts.ts's buildCommandMessages puts the spoken instruction AND
+    // the clipboard text into the user message (system carries the fixed
+    // "apply the instruction, change nothing else" discipline) — assert both
+    // made it into the actual completion request body (as opposed to the
+    // availability GET to /v1/models that selectProvider also fires).
+    const completionCall = fetchMock.mock.calls.find(([url]) => String(url).includes('/chat/completions'))
+    expect(completionCall).toBeDefined()
+    const [, init] = completionCall as [string, RequestInit]
+    const body = JSON.parse(init.body as string) as { messages: { role: string; content: string }[] }
+    const userContent = body.messages.find((m) => m.role === 'user')?.content
+    expect(userContent).toContain('make this more formal')
+    expect(userContent).toContain('Dear team, we ship tomorrow.')
+    expect(body.messages.find((m) => m.role === 'system')?.content).toContain("Apply the user's instruction")
+  })
+
+  it('resolves ok: false (never throws) when the configured provider call itself fails — command mode still avoids pasting a fabricated result', async () => {
+    mockLoadSettings.mockReturnValue({
+      aiProvider: 'openai',
+      openaiApiKey: 'sk-test'
+    })
+    const fetchMock = vi.fn().mockResolvedValue({ ok: false, status: 500, json: async () => ({}) })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const result = await rewriteClipboardForCommand('some clipboard text', 'make this more formal')
+
+    expect(result).toEqual({ text: 'some clipboard text', ok: false })
   })
 })

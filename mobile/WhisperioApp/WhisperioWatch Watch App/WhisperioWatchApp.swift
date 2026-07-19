@@ -19,7 +19,10 @@ struct WatchRootView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 12) {
-                Text("Whisperio").font(.headline)
+                HStack(spacing: 4) {
+                    WatchGhostIcon(size: 14)
+                    Text("Whisperio").font(.headline)
+                }
 
                 Button(action: conn.toggle) {
                     Image(systemName: conn.isRecording ? "stop.fill" : "mic.fill")
@@ -33,21 +36,102 @@ struct WatchRootView: View {
                 }
                 .buttonStyle(.plain)
 
-                Text(conn.status)
-                    .font(.caption2).foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
+                if conn.isRecording {
+                    WatchMiniWave(color: Color(red: 28 / 255, green: 200 / 255, blue: 180 / 255))
+                }
+
+                HStack(spacing: 4) {
+                    if conn.status.contains("Transcribing") {
+                        WatchSpinner()
+                    }
+                    Text(conn.status)
+                        .font(.caption2)
+                        .foregroundStyle(Color(white: 1.0, opacity: 0.55))
+                        .multilineTextAlignment(.center)
+                }
 
                 if !conn.transcript.isEmpty {
                     Text(conn.transcript)
                         .font(.footnote)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(8)
-                        .background(.gray.opacity(0.2), in: RoundedRectangle(cornerRadius: 10))
+                        .background(Color(white: 1.0, opacity: 0.2), in: RoundedRectangle(cornerRadius: 10))
                 }
             }
             .padding(.horizontal, 6)
         }
         .onAppear { conn.activate() }
+    }
+}
+
+// MARK: - Minimal local equivalents of shared-app components
+// The watch app target doesn't link WhisperioKit/WhisperioApp's shared UI
+// helpers (MiniWave, WGhost), so lightweight versions live here.
+
+/// 16-bar animated waveform, mirrors the phone app's MiniWave for the
+/// recording state (mob-screens.jsx WatchApp: n=16, height=14, color #1cc8b4).
+private struct WatchMiniWave: View {
+    let color: Color
+    private let barCount = 16
+    private let barHeight: CGFloat = 14
+
+    @State private var phase: CGFloat = 0
+
+    private let timer = Timer.publish(every: 0.06, on: .main, in: .common).autoconnect()
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 2) {
+            ForEach(0..<barCount, id: \.self) { i in
+                Capsule()
+                    .fill(color.opacity(0.55))
+                    .frame(width: 2, height: barHeight * heightFactor(for: i))
+            }
+        }
+        .frame(height: barHeight)
+        .onReceive(timer) { _ in phase += 0.35 }
+    }
+
+    private func heightFactor(for index: Int) -> CGFloat {
+        let sine = sin(phase + CGFloat(index) * 0.6)
+        return max(0.15, (sine + 1) / 2)
+    }
+}
+
+/// 10x10 rotating ring spinner shown next to the status label while
+/// "Transcribing on iPhone…" (mob-screens.jsx WatchApp: spinner, .8s rotation).
+private struct WatchSpinner: View {
+    @State private var rotation: Double = 0
+
+    var body: some View {
+        Circle()
+            .trim(from: 0, to: 0.75)
+            .stroke(
+                AngularGradient(
+                    colors: [Color(red: 28 / 255, green: 200 / 255, blue: 180 / 255), Color.white.opacity(0.3)],
+                    center: .center
+                ),
+                style: StrokeStyle(lineWidth: 1.5, lineCap: .round)
+            )
+            .frame(width: 10, height: 10)
+            .rotationEffect(.degrees(rotation))
+            .onAppear {
+                withAnimation(.linear(duration: 0.8).repeatForever(autoreverses: false)) {
+                    rotation = 360
+                }
+            }
+    }
+}
+
+/// Tiny ghost glyph for the header, standing in for GhostView.swift's WGhost
+/// (not reachable from the watch app target).
+private struct WatchGhostIcon: View {
+    let size: CGFloat
+
+    var body: some View {
+        Image(systemName: "sparkle")
+            .font(.system(size: size, weight: .semibold))
+            .foregroundStyle(.white.opacity(0.85))
+            .frame(width: size, height: size)
     }
 }
 

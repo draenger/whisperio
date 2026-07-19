@@ -1,0 +1,251 @@
+[
+ {
+  "platform": "Whisperio (inventory)",
+  "summary": "Inventory complete: Whisperio repo contains an existing GitHub Pages landing website at docs/index.html served via whisperio.danielkasprzyk.com (CNAME configured). Five Xcode build schemes found for the WhisperioApp project: WhisperioApp, WhisperioKeyboard, WhisperioMac, WhisperioWatch Watch App, and WhisperioWidget. The docs/index.html is a full marketing site with styling, metadata, and feature sections, not a design mock requiring parity work.",
+  "gaps": [
+   {
+    "title": "Landing page target exists",
+    "severity": "high",
+    "detail": "GitHub Pages website exists at /Volumes/DevDisk/Projects/whisperio/docs/index.html, served via CNAME whisperio.danielkasprzyk.com. This is a complete, production landing page with CSS styling, open graph metadata, structured data, and feature sections. Differs from a design mock \u2014 already fully implemented and live.",
+    "codeRef": "/Volumes/DevDisk/Projects/whisperio/docs/index.html, /Volumes/DevDisk/Projects/whisperio/docs/CNAME"
+   },
+   {
+    "title": "Exact WhisperioMac Xcode scheme names",
+    "severity": "high",
+    "detail": "Shared scheme files in /Volumes/DevDisk/Projects/whisperio/mobile/WhisperioApp/WhisperioApp.xcodeproj/xcshareddata/xcschemes/: (1) WhisperioApp.xcscheme, (2) WhisperioKeyboard.xcscheme, (3) WhisperioMac.xcscheme, (4) WhisperioWatch Watch App.xcscheme, (5) WhisperioWidget.xcscheme",
+    "codeRef": "/Volumes/DevDisk/Projects/whisperio/mobile/WhisperioApp/WhisperioApp.xcodeproj/xcshareddata/xcschemes/"
+   }
+  ],
+  "buildCommand": "n/a"
+ },
+ {
+  "platform": "iOS Keyboard Extension (mobile/WhisperioApp/Keyboard/KeyboardRootView.swift)",
+  "summary": "The keyboard extension is very close to 1:1 with the design after the recent redesign commit: tray colors, key metrics (h40 r7), top-bar composition, full-access banner copy, suggestion pills, number/symbol planes, and the .97/.68 press animation all match SYNC-NOTES.md exactly. The one real remaining visual delta is the rewrite (\"sparkles\") trigger: the design specifies a bespoke floating menu card (w190, r12, elevated, icon+label rows), but the code uses a plain SwiftUI Menu, which renders as a stock iOS context-menu list with system chrome (no accent-colored icons, no card radius/elevation matching the tray, no width constraint) instead of the designed card. A couple of very minor metric deltas (123-plane-toggle key width) are below reporting threshold and not included as separate gaps since SYNC-NOTES doesn't pin an exact value for them.",
+  "buildCommand": "xcodebuild -scheme WhisperioKeyboard -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build (from /Volumes/DevDisk/Projects/whisperio/mobile/WhisperioApp)",
+  "risks": "Low risk overall \u2014 the extension already matches the shipped redesign closely. The only change proposed (custom rewrite-menu popover) touches presentation only, not the preset data model or action wiring, so risk of regression is low. Keyboard extensions have limited memory/entitlements; a custom popover overlay must stay lightweight (no heavy animations/blur) to avoid extension memory-jetsam risk.",
+  "gaps": [
+   {
+    "title": "Rewrite (sparkles) menu uses stock SwiftUI Menu instead of the designed floating card",
+    "severity": "medium",
+    "detail": "Design (mob-triggers.jsx KeyboardSceneClassic, SYNC-NOTES.md 'rewrite menu'): the \u2728 button opens a custom elevated card, width 190pt, corner radius 12, listing non-meta rewrite presets as rows with an accent-colored sparkle icon + label. Code (KeyboardRootView.swift lines 130-144) instead uses `Menu { ForEach(...) { Button(preset.name) {...} } }` with `.menuStyle(.borderlessButton)` \u2014 this renders the OS-native context-menu popover (system font, system corner radius/shadow, no accent icon per row, no fixed 190pt width), visually inconsistent with the rest of the bespoke tray UI. Fix: replace `Menu` with a custom overlay/popover view \u2014 e.g. a ZStack with `.overlay(alignment: .topTrailing)` anchored card, styled as RoundedRectangle(cornerRadius: 12) ~190pt wide, background matching the tray's specialFill/keyFill surface with a subtle elevation shadow, rows = HStack(sparkles icon in accent color, preset.name in keyText), same filter (`RewritePresetCatalog.seeds.filter { !$0.isMeta }`) and same action (`model.rewrite(presetID:)`). Preserve equivalent VoiceOver labels.",
+    "codeRef": "mobile/WhisperioApp/Keyboard/KeyboardRootView.swift:130-144 (rewriteMenu)",
+    "designRef": ".claude/design-ref/wz2/SYNC-NOTES.md line 61 ('rewrite menu = non-meta presets'); .claude/design-ref/wz2/mob-triggers.jsx lines 9-12 ('menu: Clean up/Bullet points/Email reply/Action items/Summary, w190 elevated r12')",
+    "feasibility": "Fully real, no fabricated data. The preset list already comes from the live RewritePresetCatalog.seeds (real, user-editable presets: Clean up, Email, Message in English, Bullet summary, Slack message, Tweet, plus meta 'Template Builder' correctly excluded via isMeta filter). Only the container chrome needs to change from system Menu styling to a custom card; filtering/action wiring is already correct and should be reused as-is."
+   }
+  ]
+ },
+ {
+  "platform": "WidgetKit extension (mobile/WhisperioApp/Widget/WhisperioWidget.swift + WhisperioKit/Sources/WhisperioKit/SharedStore.swift)",
+  "summary": "The shipped widget only implements a single-purpose 'Dictate' button across accessoryCircular/accessoryRectangular/systemSmall + a Control Center control, and two of the three shipped families have cosmetic mismatches against the design spec (missing circle/stroke on accessoryCircular, missing tinted background on the Control Center label). None of the six CONCEPT widgets (Quick-dictate gradient, This-week stats, Recent-notes, Today's-digest, Lock Screen combo, StandBy) exist in code at all. SharedStore.swift currently only carries keyboard hand-off state (pending transcript, heartbeats, rewrite payloads, recordingActive) \u2014 it has zero fields for recent recordings, word counts, streaks, or digest text, so the widget process cannot currently read any of that even though the main app already computes it (RecapView streak, Categories.swift, Digest feature, M_RECS recordings store). Building the data-driven concepts is real feasible work (write-through from app to App Group) rather than mock/fabricated data, but it requires new plumbing before any widget UI can be built.",
+  "buildCommand": "xcodebuild -scheme WhisperioWidget -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build (from /Volumes/DevDisk/Projects/whisperio/mobile/WhisperioApp)",
+  "gaps": [
+   {
+    "title": "accessoryCircular family missing the circle stroke around the mic glyph",
+    "severity": "low",
+    "detail": "Design spec: accessoryCircular = 'mic in 34 circle stroke white .4' \u2014 a 34pt circle outline behind/around the mic icon. Code (WhisperioWidget.swift lines ~29-30) renders only `Image(systemName: \"mic.fill\").font(.system(size: 22, weight: .bold))` with no circle/stroke at all. Add a `Circle().strokeBorder(.white.opacity(0.4))` (or `AccessoryWidgetBackground`) sized ~34pt behind the icon inside the `.accessoryCircular` case.",
+    "codeRef": "mobile/WhisperioApp/Widget/WhisperioWidget.swift lines 29-30 (DictateWidgetView, case .accessoryCircular)",
+    "designRef": ".claude/design-ref/wz2/mob-triggers.jsx WidgetScene comment, line 39: 'accessoryCircular (mic in 34 circle stroke white .4)'",
+    "feasibility": "Trivial SwiftUI change, no data needed."
+   },
+   {
+    "title": "Control Center control lacks the accent-tinted rounded background treatment",
+    "severity": "low",
+    "detail": "Design spec: Control Center iOS18 button = 'mic in 34 r10 accent .16' (a 34pt square/rounded-10 tile tinted with the teal accent at 16% opacity behind the mic glyph). Code's `DictateControl` (WhisperioWidget.swift lines 68-76) just does `Label(\"Dictate\", systemImage: \"mic.fill\")` with default ControlWidgetButton styling \u2014 no accent tint applied. Apply `.tint(accent)` (teal #1cc8b4) where ControlWidgetButton supports it.",
+    "codeRef": "mobile/WhisperioApp/Widget/WhisperioWidget.swift lines 67-77 (DictateControl)",
+    "designRef": ".claude/design-ref/wz2/mob-triggers.jsx WidgetScene comment, line 40: 'Control Center iOS18 (mic in 34 r10 accent .16)'",
+    "feasibility": "Small SwiftUI/ControlWidget change; iOS Control Center styling APIs are limited so exact r10/accent.16 tile may not be reproducible pixel-for-pixel, but a tint gets close. No data dependency."
+   },
+   {
+    "title": "SharedStore has no data channel for recording history, word counts, streaks, or digest text \u2014 blocks all CONCEPT widgets",
+    "severity": "high",
+    "detail": "Add new keys/accessors to SharedStore.swift for: (a) an array of recent recording summaries (id, title/firstLine, source app icon name, timestamp) capped at ~5 entries for the 'Recent notes' widget's 2-row list; (b) a 7-day word-count array + current streak int for the 'This week' stats widget's bar chart and 'N words \u00b7 N-day streak' label; (c) today's digest summary text + note count + category count for the 'Today's digest' widget ('4 notes \u00b7 3 categories' copy). The main app already computes equivalents of all three (RecapView streak logic, Categories.swift, the Digest feature, and the M_RECS recordings store) \u2014 this is exporting existing real data to the App Group, not inventing data. Until these fields exist, none of the three data-driven CONCEPT widgets can be built without fabricating placeholder numbers.",
+    "codeRef": "mobile/WhisperioKit/Sources/WhisperioKit/SharedStore.swift (add new Key entries + get/set pairs, following the existing pattern e.g. `recordingActive`); write-side calls belong wherever RecapView/Categories/Digest already compute these values in WhisperioApp/Sources/WhisperioApp/{RecapView,Categories,DigestDayView}.swift",
+    "designRef": ".claude/design-ref/wz2/mob-triggers.jsx WidgetScene comment, lines 42-45 (This-week stats, Recent, Today's digest concepts)",
+    "feasibility": "Real, implementable \u2014 data already exists in-app and just needs to be written to the shared App Group on a schedule (e.g. on app background / after each recording). Do NOT hardcode/mock the numbers shown in the design mock (e.g. '1,240' words, '4 notes \u00b7 3 categories') in the widget itself; those are illustrative sample values, not real user data."
+   },
+   {
+    "title": "Missing CONCEPT widget: 'Quick dictate' gradient small (Home Screen)",
+    "severity": "medium",
+    "detail": "Design: systemSmall gradient variant \u2014 mic circle 46pt at white .22 opacity over a gradient background, 'Quick dictate' label FD17 weight. This is purely a visual variant of the already-shipped Dictate button (same DictateIntent action) with a gradient background and slightly different label/sizing \u2014 no new data required. Add as a second `StaticConfiguration` widget (or a second family layout branch) in WhisperioWidget.swift.",
+    "codeRef": "mobile/WhisperioApp/Widget/WhisperioWidget.swift (add alongside DictateWidget)",
+    "designRef": ".claude/design-ref/wz2/mob-triggers.jsx WidgetScene comment, line 41: \"Small gradient 'Quick dictate' (mic circle 46 white .22, FD17)\"",
+    "feasibility": "Fully feasible with real behavior (same DictateIntent action, no fabricated data) \u2014 purely cosmetic/layout work."
+   },
+   {
+    "title": "Missing CONCEPT widget: 'This week' stats small with 7-day bar chart",
+    "severity": "medium",
+    "detail": "Design: small widget with spark icon + 'THIS WEEK' label (FM10.5), big number FD30/700 (e.g. word count), 'words \u00b7 N-day streak' caption (FUI12), and a 7-bar chart (heights 5/8/4/9/7/3/6 flex, r2 corner radius, accent color, peak bar solid/highlighted). Depends on the SharedStore word-count/streak gap above being resolved first.",
+    "codeRef": "mobile/WhisperioApp/Widget/WhisperioWidget.swift (new widget + TimelineProvider reading SharedStore weekly stats)",
+    "designRef": ".claude/design-ref/wz2/mob-triggers.jsx WidgetScene comment, lines 42-43",
+    "feasibility": "Implementable with real data only after the SharedStore weekly-stats/streak fields exist (see high-severity gap above). Do not ship with hardcoded/sample bar heights \u2014 that would be mock-only theater."
+   },
+   {
+    "title": "Missing CONCEPT widget: 'Recent' medium (2-row recent recordings list)",
+    "severity": "medium",
+    "detail": "Design: medium widget, book icon 14pt header, two rows each with a 26pt source-app-icon chip (r8), a one-line title (FUI12.5), and a relative timestamp (FM10). Depends on the SharedStore recent-recordings gap above.",
+    "codeRef": "mobile/WhisperioApp/Widget/WhisperioWidget.swift (new widget + TimelineProvider reading SharedStore recent recordings array)",
+    "designRef": ".claude/design-ref/wz2/mob-triggers.jsx WidgetScene comment, lines 43-44",
+    "feasibility": "Implementable with real data (actual recent recordings/titles/source apps) once the SharedStore export exists. Do not fabricate sample recording titles."
+   },
+   {
+    "title": "Missing CONCEPT widget: 'Today's digest' medium",
+    "severity": "low",
+    "detail": "Design: medium widget with spark icon + small on-device/cloud PrivacyBadge, digest body text (FUI13.5, line-height 1.5), and a footer caption '4 notes \u00b7 3 categories' style summary (FM10.5). Depends on the digest-text/category-count SharedStore gap above and on the app's existing Digest feature (DigestDayView.swift) already producing this text.",
+    "codeRef": "mobile/WhisperioApp/Widget/WhisperioWidget.swift (new widget); source digest text from WhisperioApp/Sources/WhisperioApp/DigestPromptEditorView.swift / DigestDayView.swift",
+    "designRef": ".claude/design-ref/wz2/mob-triggers.jsx WidgetScene comment, lines 44-45",
+    "feasibility": "Feasible with real data \u2014 the app's Digest feature already generates this text; it just needs to be written to the App Group daily. If digest generation requires network/LLM calls that may not always have run by widget-refresh time, show an empty/placeholder state ('No digest yet') rather than fabricate a note/category count."
+   },
+   {
+    "title": "Missing CONCEPT widget: Lock Screen combo card ('N notes today / Tap to review')",
+    "severity": "low",
+    "detail": "Design: lock-screen-style gradient card (#2a2350\u2192#0c1020, r22) with a 58pt mic circle (white .14), a 58pt-tall row 'N notes today / Tap to review' (book icon 32 r9 gradient chip), plus a bottom inline row: mic 13pt + 'Whisperio \u00b7 Dictate' (FUI12.5, white .82) + a MiniWave. Note iOS Lock Screen widgets are limited to accessoryCircular/Rectangular/Inline families with monochrome rendering \u2014 this rich gradient/color card as drawn is not achievable as a literal Lock Screen widget; it would need reinterpreting within accessoryRectangular's monochrome constraints (today's note count + 'Tap to review').",
+    "codeRef": "mobile/WhisperioApp/Widget/WhisperioWidget.swift (extend accessoryRectangular case, or add new widget kind)",
+    "designRef": ".claude/design-ref/wz2/mob-triggers.jsx WidgetScene comment, lines 46-48",
+    "feasibility": "Partially feasible \u2014 the note-count data is real (once exported via SharedStore), but the literal gradient/color visual in the mock cannot render on the actual Lock Screen (system enforces tinted monochrome). Treat the JSX rendering of this concept as illustrative-only, not a literal target."
+   },
+   {
+    "title": "Missing CONCEPT widget: StandBy card (clock + date + Dictate button)",
+    "severity": "low",
+    "detail": "Design: black r22 StandBy card showing FD44 clock + FUI12 white .5 date on one side, and a 56pt gradient mic circle with 'Dictate' (FM10 accentLite) label on the other. StandBy mode reuses systemMedium-class widget content in landscape; needs a StandBy-aware layout branch (check widget family/context) to render clock+date (real system clock, no fabrication needed) alongside the existing Dictate action.",
+    "codeRef": "mobile/WhisperioApp/Widget/WhisperioWidget.swift (new widget or layout branch keyed on StandBy environment)",
+    "designRef": ".claude/design-ref/wz2/mob-triggers.jsx WidgetScene comment, lines 49-50",
+    "feasibility": "Fully feasible with real data (system clock/date, real DictateIntent action) \u2014 no dependency on the SharedStore gaps above."
+   }
+  ]
+ },
+ {
+  "platform": "Electron desktop (settings window, overlay, tray) \u2014 desktop/src/renderer + desktop/src/main",
+  "summary": "The desktop settings window already carries most of the REDESIGN structural work: bordered r14 cards, StatusHeader strip, autosave footer (replacing the Save button), sidebar nav with active accent bar, and the provider-chain expand/reorder pattern are all implemented in SettingsForm.tsx, closely tracking wz-parts.jsx/wz-tabs.jsx. The overlay (DictationOverlay.tsx) also carries the core redesign look (red live dot, teal\u2192sky progress sweep, Ghost mascot). The real remaining gaps are (1) a genuine feature gap \u2014 4 of the design's STT providers (Groq, Deepgram, AssemblyAI, Mistral) have no UI entry and, more importantly, no backend engine implementation at all; (2) the overlay is missing 3 of the design's 5 states (armed/idle-visible, on-device badge, done/pasted-with-word-count) and the entire COMMAND-mode state, all of which require real state-machine work in hotkeyManager.ts, not just styling; and (3) a card elevation token bug where cards use the heavy window drop-shadow (`theme.shadow`) instead of the light per-card elevation (`theme.e1`, already defined in tokens.css but not wired into the Theme TS type). Tray menu restyling is constrained by Electron's native Menu API and cannot achieve the mock's custom dropdown chrome (logo, rounded corners, embedded hotkey line) without replacing it with a custom BrowserWindow popup \u2014 flagged as a real engineering tradeoff, not a quick restyle.",
+  "buildCommand": "cd desktop && npm run typecheck:node && npm run typecheck:web && npm run build",
+  "gaps": [
+   {
+    "title": "Provider chain missing Groq / Deepgram / AssemblyAI / Mistral engines (UI + backend)",
+    "severity": "high",
+    "detail": "wz-tabs.jsx's ProviderExpanded() (lines 75-79) explicitly adds groq/deepgram/assembly/mistral (plus existing openai/elevenlabs/replicate/selfhosted) as provider-chain entries, each with a password API-key input with a distinct placeholder: groq='gsk_...', deepgram='dg_...', assembly='aai_...', mistral='api key...'. The desktop's ALL_PROVIDERS array in SettingsForm.tsx (line 1390) only has openai/elevenlabs/selfhosted/replicate \u2014 the 4 new providers are entirely absent from the UI. Grepping desktop/src/main and desktop/src/renderer for groq/deepgram/assembly/mistral finds zero hits outside model catalogs \u2014 there is no backend STT client for any of these providers (src/main/llm has no groq.ts/deepgram.ts/assembly.ts/mistral.ts). Implement: (a) add provider entries + `<id>ApiKey` state fields to SettingsForm.tsx mirroring the replicateApiKey pattern (state, load, save payload), (b) add the 4 rows to ALL_PROVIDERS with matching desc strings, (c) add the password inputs with the exact placeholders above inside the expanded-provider block (~line 1608), (d) write real STT client implementations under src/main/llm/ that call each provider's actual transcription API and wire them into the provider-chain fallback dispatcher \u2014 this is real backend integration work (actual HTTP calls to real provider APIs), not UI-only; do not stub these with fabricated transcription results.",
+    "codeRef": "desktop/src/renderer/components/settings/SettingsForm.tsx:1390 (ALL_PROVIDERS), :1608 (expanded provider block); desktop/src/main/llm/ (new provider clients needed)",
+    "designRef": "wz-tabs.jsx lines 75-79 (ProviderExpanded groq/deepgram/assembly/mistral branch)",
+    "feasibility": "Real feature requiring genuine backend provider integrations (actual API keys hitting actual Groq/Deepgram/AssemblyAI/Mistral transcription endpoints) \u2014 substantial work, not a UI reskin. Do not fake success by hardcoding a working-looking key field with no live call behind it."
+   },
+   {
+    "title": "Dictation overlay missing armed/done/on-device states and COMMAND mode",
+    "severity": "high",
+    "detail": "wz-overlay.jsx models 5 states (armed, rec, cmd, proc, done) plus an always-visible on-device badge (OvlOnDevice, green pill 'on-device' with lock icon) shown during armed/rec/proc. The shipped DictationOverlay.tsx only implements 3 states (recording/transcribing/pasting driven by hotkeyManager.ts's DictationState = 'idle'|'recording'|'transcribing'|'pasting') and renders an empty `<div/>` for idle \u2014 there is no pre-recording 'armed' pill (mic icon + hotkey text at 0.85 opacity), no on-device badge anywhere, and no brief 'done' confirmation (green checkmark + 'Pasted' + word count, e.g. '14 words') before the overlay hides \u2014 it just disappears. COMMAND mode (phase 'cmd': red COMMAND badge, 'Listening for a command' text, distinct sky-blue accent, 'Speak a transform \u2014 it rewrites, doesn't insert' hint) has zero equivalent in hotkeyManager.ts's state machine at all. To close: (1) add an 'armed' visual state shown right when the hotkey is pressed/window focused before recording starts, (2) add a transient 'done' state (~1.2s) after pasting completes showing a checkmark + real word count of the pasted text, (3) add the on-device badge conditioned on whichever provider chain currently resolves to the local/selfhosted engine, (4) decide whether COMMAND mode is in scope \u2014 if so it needs a new DictationState variant in hotkeyManager.ts plus a real 'rewrite instead of insert' code path (likely tied to the existing dictateAndSendHotkey or a new hotkey), not just a colored badge with no behavior behind it.",
+    "codeRef": "desktop/src/renderer/components/dictation/DictationOverlay.tsx:6,25-166; desktop/src/main/dictation/hotkeyManager.ts:12 (DictationState)",
+    "designRef": "wz-overlay.jsx lines 21-127 (phase state machine), lines 13-19 (OvlOnDevice)",
+    "feasibility": "armed/done states and on-device badge are straightforward, real, and backed by existing data (word count from the real transcript, provider-chain resolution already known). COMMAND mode is a genuine new behavior (rewrite vs insert) requiring real main-process logic \u2014 do not implement it as a cosmetic badge with no functional difference from normal recording."
+   },
+   {
+    "title": "Cards use heavy window drop-shadow instead of the light per-card elevation token",
+    "severity": "medium",
+    "detail": "wz-parts.jsx's makeUI() card style specifies `boxShadow: theme.e1` (a subtle 1-2px card lift \u2014 tokens.css defines `--wsp-e1: 0 1px 2px rgba(0,0,0,.45)` dark / `0 1px 2px rgba(13,27,38,.05), 0 1px 1px rgba(13,27,38,.03)` light) and the redesign's navItemActive also gets `boxShadow: theme.e1`. The shipped makeStyles() in SettingsForm.tsx (line 2703) instead sets card boxShadow to `theme.shadow`, which resolves to `--wsp-shadow: 0 40px 90px -30px rgba(0,0,0,.85)` \u2014 the same huge window-level drop shadow meant for the whole settings window, not a per-card lift. Every Section card in every tab currently renders with an oversized soft shadow instead of the crisp subtle elevation the redesign calls for. navItemActive (line 2679) has no boxShadow at all, missing the e1 lift on the active sidebar tab entirely. Fix: add `e1: 'var(--wsp-e1)'` to the Theme interface in theme.ts (VAR_THEME + the Theme type), then change card's boxShadow to theme.e1 and add boxShadow: theme.e1 to navItemActive in SettingsForm.tsx's makeStyles().",
+    "codeRef": "desktop/src/renderer/theme.ts:5-27,104-126 (Theme interface / VAR_THEME); desktop/src/renderer/components/settings/SettingsForm.tsx:2695-2704 (card), 2679-2682 (navItemActive)",
+    "designRef": "wz-parts.jsx lines 47-50 (card boxShadow: theme.e1), line 39 (navItemActive boxShadow: theme.e1); wz-shell-SPEC.md line 27 (active tab '+ e1 shadow')",
+    "feasibility": "Trivial, fully real \u2014 the --wsp-e1 CSS custom property already exists in tokens.css for both themes; this is purely wiring it through the TS Theme type and swapping which token two style objects reference."
+   },
+   {
+    "title": "Tray context menu cannot match the mock's custom dropdown chrome",
+    "severity": "low",
+    "detail": "wz-shell-SPEC.md (lines 36-40) shows a tray dropdown with a 218-220px-wide r10-12 rounded panel, a header row (ghost logo 20px + 'Whisperio' + 'Ctrl+Shift+Space to dictate' in mono), item rows for Settings/Recordings, a divider, and a red-hover 'Quit Whisperio' item. The shipped tray.ts (rebuildMenu()) uses Electron's native `Menu.buildFromTemplate` with 4 plain string-label items (Settings, Recordings, separator, Quit) and no logo, no hotkey subtitle, and no custom styling \u2014 native OS context menus can't render arbitrary radius/logos/colored hover states. Getting the mock's exact chrome would require abandoning Tray's native contextMenu and building a custom borderless BrowserWindow positioned under the tray icon instead (its own click-outside-to-dismiss, platform-position logic, etc.) \u2014 real engineering effort, not a CSS tweak. Low priority since the current menu is functional and native-feeling; if pursued, scope it as a custom popup window replacement, not a 'restyle'.",
+    "codeRef": "desktop/src/main/tray.ts:71-83 (rebuildMenu)",
+    "designRef": "wz-shell-SPEC.md lines 36-40",
+    "feasibility": "The mock's exact visual is not achievable via native Tray/Menu APIs on any platform; a real implementation requires swapping to a custom frameless popup window. Do not attempt to fake it with menu icons/labels alone \u2014 flag as an explicit scope decision before starting."
+   },
+   {
+    "title": "TitleBar height 44px vs spec's 38px",
+    "severity": "low",
+    "detail": "wz-shell-SPEC.md line 9 specifies a 38px title bar. TitleBar.tsx (line 31) renders it at 44px. Minor visual density mismatch \u2014 not confirmed to cause any layout break since settingsWindow.ts's 760\u00d7780 already matches spec, but worth a one-line fix (`height: '44px'` \u2192 `'38px'`) plus checking padding/icon sizes still look balanced at the smaller height (title bar ghost/theme-toggle button are 32-34px, will feel cramped at 38px \u2014 may need proportional shrink too, e.g. ghost 16\u219214px, toggle 34\u219232px per spec's 32\u00d732 button spec).",
+    "codeRef": "desktop/src/renderer/components/common/TitleBar.tsx:31",
+    "designRef": "wz-shell-SPEC.md line 9 (TitleBar 38px), line 12 (theme toggle button 32\u00d732 r6)",
+    "feasibility": "Trivial CSS change; real, no fabrication involved."
+   }
+  ]
+ },
+ {
+  "platform": "watchOS",
+  "summary": "The watchOS watch app implementation is functionally complete but has several visual/styling gaps vs. design spec. Recording and transcription work end-to-end, but missing: waveform animation during recording, spinner animation during transcribing, and color styling mismatches on status text and transcript card backgrounds. The header lacks the ghost icon. All core strings match the spec exactly.",
+  "gaps": [
+   {
+    "title": "Recording waveform animation missing",
+    "severity": "high",
+    "codeRef": "/Volumes/DevDisk/Projects/whisperio/mobile/WhisperioApp/WhisperioWatch Watch App/WhisperioWatchApp.swift (WatchRootView, after line 32)",
+    "designRef": "mob-screens.jsx WatchApp function, line 900: {stage === 'recording' && <MiniWave t={t} color=\"#1cc8b4\" n={16} height={14} />}",
+    "detail": "When isRecording is true, display animated waveform with 16 bars, height 14pt, teal color #1cc8b4. Current code shows no visual feedback. Design shows MiniWave component (16 vertical capsules, sine-wave heights, 2pt spacing, .55 opacity, animating continuously).",
+    "feasibility": "MiniWave component exists in main app (Components.swift) but watch app target cannot access it due to separate build target. Must either: (a) re-implement lightweight waveform for watchOS using Canvas or direct shape drawing, or (b) configure watch app target to link WhisperioApp module. Option (a) recommended for minimal dependencies."
+   },
+   {
+    "title": "Status text color wrong",
+    "severity": "medium",
+    "codeRef": "/Volumes/DevDisk/Projects/whisperio/mobile/WhisperioApp/WhisperioWatch Watch App/WhisperioWatchApp.swift, line 37",
+    "designRef": "mob-screens.jsx WatchApp line 901: style={{ color: 'rgba(255,255,255,.55)' }}",
+    "detail": "Status text uses .foregroundStyle(.secondary) which renders as system gray. Design specifies rgba(255,255,255, 0.55) \u2014 white at 55% opacity. Font size matches (caption2 \u2248 11pt), but color contrast differs significantly on black watch background.",
+    "feasibility": "Straightforward one-line change: replace .foregroundStyle(.secondary) with .foregroundStyle(Color(white: 1.0, opacity: 0.55))"
+   },
+   {
+    "title": "Transcript card background color wrong",
+    "severity": "medium",
+    "codeRef": "/Volumes/DevDisk/Projects/whisperio/mobile/WhisperioApp/WhisperioWatch Watch App/WhisperioWatchApp.swift, line 45",
+    "designRef": "mob-screens.jsx WatchApp lines 905\u2013908: .background('rgba(255,255,255,.2)')",
+    "detail": "Transcript card uses .background(.gray.opacity(0.2)) which renders as dark gray overlay. Design specifies rgba(255,255,255, 0.2) \u2014 white at 20% opacity, appearing as a subtle light frosted glass effect on black bg. Current styling too dark.",
+    "feasibility": "Change background color: replace .gray.opacity(0.2) with Color(white: 1.0, opacity: 0.2)"
+   },
+   {
+    "title": "Spinner animation missing during transcribing phase",
+    "severity": "medium",
+    "codeRef": "/Volumes/DevDisk/Projects/whisperio/mobile/WhisperioApp/WhisperioWatch Watch App/WhisperioWatchApp.swift (after line 36)",
+    "designRef": "mob-screens.jsx WatchApp lines 901\u2013903: {stage === 'sending' && <span style={{ spinner styles }}>{status}</span>}",
+    "detail": "When conn.status is 'Transcribing on iPhone\u2026', design shows a 10\u00d710 spinner icon (circular border 1.5px white .3 opacity, teal top, rotating at .8s) left of status text. Current code displays status text only without spinner visual.",
+    "feasibility": "Add conditional ProgressView or custom spinner shape that appears when isRecording==false and status contains 'Transcribing'. Can use SwiftUI ProgressView(.circular).frame(width: 10, height: 10) or hand-draw with Circle + trim."
+   },
+   {
+    "title": "Header ghost icon missing",
+    "severity": "low",
+    "codeRef": "/Volumes/DevDisk/Projects/whisperio/mobile/WhisperioApp/WhisperioWatch Watch App/WhisperioWatchApp.swift, line 22",
+    "designRef": "mob-screens.jsx WatchApp line 896: <div><WGhost size={14} /><span>Whisperio</span></div>",
+    "detail": "Header should show WGhost icon (14pt) before 'Whisperio' text. Current code is bare Text('Whisperio').font(.headline). Design detail; does not affect functionality.",
+    "feasibility": "WGhost component defined in GhostView.swift but not accessible to watch app target. Requires either: re-implementing minimal ghost shape for watch (SVG-like Path drawing), or restructuring shared components. Cosmetic-only, low priority."
+   }
+  ],
+  "buildCommand": "xcodebuild -project /Volumes/DevDisk/Projects/whisperio/mobile/WhisperioApp/WhisperioApp.xcodeproj -scheme 'WhisperioWatch Watch App' -destination 'generic/platform=watchOS Simulator' CODE_SIGNING_ALLOWED=NO build",
+  "risks": "Watch app target is architecturally separate from main iOS app and cannot import shared component library (MiniWave, WGhost). Any visual components (waveform, spinner) must be re-implemented or require module restructuring. Opacity-based colors may render slightly different on actual watch hardware vs. simulator due to display characteristics. All status strings match design exactly; gaps are purely visual/aesthetic, not functional."
+ },
+ {
+  "platform": "Mac (WhisperioMac) + iPad split view",
+  "summary": "The Mac target builds clean (xcodebuild succeeds) and reuses iPadSplitView, which is a fairly faithful port of AppleSplit/AppleJournal for the sidebar+detail library screen. The single biggest gap is that the iPad split view is never actually reached on a real device: the universal iOS target (TARGETED_DEVICE_FAMILY 1,2) always renders the phone shell (WZPhoneView) with no idiom/size-class branch to iPadSplitView, so iPad users get the phone UI, not the Obsidian-style split the design specifies. On Mac, the top 'engine bar' is implemented as an interactive 3-way engine-selector pill instead of the design's compact read-only status strip, and it is not gated behind a Mac-only flag the way the design's `engineBar` prop implies (mock: engineBar shown for Mac variant, plain/no bar for iPad). The live Journal tab (JournalView/DigestDayView) has evolved into a bookshelf/notebook IA that no longer matches the flat Today/Yesterday day-index the AppleJournal mock specifies \u2014 likely an intentional post-mock feature addition, flagged for confirmation rather than as a straightforward regression. Referenced SMacWindow / 920x600 title-bar chrome mock could not be located anywhere in the vendored .claude/design-ref/wz2/ tree, so no chrome diff could be produced against a real source; native SwiftUI/AppKit already supplies real traffic-light window chrome for free so that part of the brief may be moot.",
+  "buildCommand": "xcodebuild -project /Volumes/DevDisk/Projects/whisperio/mobile/WhisperioApp/WhisperioApp.xcodeproj -scheme WhisperioMac -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO build",
+  "risks": "The iPad-wiring fix touches the app's root routing (AppShell.swift RootView) which is shared with the phone shell already signed off as at-parity \u2014 must gate strictly on idiom/size class so iPhone behavior is untouched. The engine-bar restyle changes an existing, real (non-mock) engine-selection interaction; removing the selector functionality from iPad (per design's 'plain' variant) would remove a way to change the primary engine on iPad, so it needs an alternate access point (e.g. via Settings) before hiding it, or should stay as a Mac-only visual restyle without removing capability. The Journal bookshelf-vs-flat-day-index divergence needs a product decision \u2014 do not resurrect the flat day list if the book feature is the intended current design; only art-direct it back to AppleJournal styling if product confirms the mock is authoritative. No mock-only/fabricated-data concerns found in this diff \u2014 all data paths reviewed (recordings, journal digests, engine chain) are real store-backed data, not placeholder theater.",
+  "gaps": [
+   {
+    "title": "iPad never renders the split view \u2014 ships the phone shell on real iPad hardware",
+    "severity": "high",
+    "detail": "WhisperioApp (@main, AppShell.swift) is a universal iOS target (TARGETED_DEVICE_FAMILY = \"1,2\" in project.pbxproj) but RootView (AppShell.swift lines 453-464) unconditionally renders WZPhoneView(initialScreen: .home, incomingURL: $incomingURL) once setup completes, with zero idiom or horizontalSizeClass branching anywhere in Sources/WhisperioApp (grep for userInterfaceIdiom/horizontalSizeClass returns nothing outside iPadView.swift's own definition). iPadSplitView (Sources/WhisperioApp/iPadView.swift) is only ever instantiated from MacApp/WhisperioMacApp.swift and the dev-only Gallery.swift preview harness \u2014 never from the real iOS app. Concrete fix: in RootView (AppShell.swift ~453), add `@Environment(\\.horizontalSizeClass)` (or `UIDevice.current.userInterfaceIdiom == .pad`) and branch to `iPadSplitView().environment(\\.wzLiveJournal, true)` (injecting the existing settings/recordings/digests EnvironmentObjects, same as WhisperioMacApp.swift lines 24-29) when regular/regular or .pad, else WZPhoneView as today.",
+    "codeRef": "mobile/WhisperioApp/Sources/WhisperioApp/AppShell.swift:453-464 (RootView), mobile/WhisperioApp/Sources/WhisperioApp/iPadView.swift:17 (iPadSplitView), mobile/WhisperioApp/MacApp/WhisperioMacApp.swift:22-30 (wiring pattern to copy)",
+    "designRef": ".claude/design-ref/wz2/mob-screens.jsx:799-876 (AppleSplit) \u2014 the whole point of the AppleSplit mock is the iPad-idiom experience",
+    "feasibility": "Fully real \u2014 wires existing live stores (SettingsStore/RecordingsStore/DigestStore), no fabricated data. Straightforward SwiftUI size-class/idiom branch; low risk since iPadSplitView already compiles and runs (proven by the Mac build)."
+   },
+   {
+    "title": "Engine bar is a full interactive engine-selector, not the design's compact read-only status strip, and is unconditionally shown instead of Mac-only",
+    "severity": "medium",
+    "detail": "Design's `engineBar` (mob-screens.jsx:806-813) is a thin, full-width, single-row status strip: 9px vertical padding, background t.surface with a bottom border only (no pill container), a cog icon, muted 'Engines:' label, and a mono-font read-only chain rendering 'On-device \u2192 OpenAI \u2192 ElevenLabs' with faint arrow separators, plus a right-aligned PrivacyBadge \u2014 and it is only rendered when the `engineBar` prop is true (Mac variant); the iPad variant passes it false ('plain for iPad'). The Swift implementation (iPadView.swift:66-102, `engineBar` computed property + `engineItem`) instead renders a 3-button interactive segmented pill styled exactly like the Library/Journal toggle (rounded 12pt container, per-button accent-fill on selection, lock badge for consent-gated engines) that lets the user directly switch the primary engine \u2014 a materially different visual and interaction from the design, and it is rendered unconditionally at the top of iPadSplitView for every caller (no boolean parameter to omit it), so once iPad wiring (gap above) lands, iPad would also get this Mac-styled selector instead of 'plain'. Fix: add a `showEngineBar: Bool` parameter to iPadSplitView (default true), pass `true` from WhisperioMacApp.swift's call site and `false` from the new iPad call site in RootView; restyle the Mac bar to match the compact single-row strip (or, at minimum, keep the current selector but gate its visibility with the new parameter so iPad matches 'plain').",
+    "codeRef": "mobile/WhisperioApp/Sources/WhisperioApp/iPadView.swift:31-77 (body + engineBar property), :79-102 (engineItem)",
+    "designRef": ".claude/design-ref/wz2/mob-screens.jsx:806-813 (engineBar block inside AppleSplit)",
+    "feasibility": "Real feature (provider chain + cloud consent already exist in SettingsStore) \u2014 this is a styling/visibility gap, not fabricated data. Restyling is a pure SwiftUI layout change; gating visibility is a one-parameter threading change through the two call sites."
+   },
+   {
+    "title": "Live Journal tab (bookshelf/notebooks) has diverged from the AppleJournal day-index mock the split view is specified against",
+    "severity": "low",
+    "detail": "AppleJournal (mob-screens.jsx:709-796) \u2014 the mock this platform is scoped against \u2014 is a flat day index (Today/Yesterday cards with note-count + category tags + 'Summary ready'/'Generate summary' status) next to a single daily-summary digest card and category-grouped note lists. The Mac's live Journal tab (IPadLiveJournal in iPadView.swift:249-286, wired to real JournalView.swift/DigestDayView.swift) instead shows a 'bookshelf' IA \u2014 'Automatic journals' / 'Manual journals' sections, book tiles with spine color, chapter counts, and a New Book tile (JournalView.swift:39-63) \u2014 that has no equivalent in the AppleJournal mock at all. This is likely an intentional feature evolution past the vendored mock rather than a regression, so before doing any work here confirm with product/design whether AppleJournal is stale (superseded by the book feature, in which case no change needed) or authoritative (in which case the Mac/iPad split's Journal tab would need a flat day-index alternate view rather than reusing the phone's book-library JournalView).",
+    "codeRef": "mobile/WhisperioApp/Sources/WhisperioApp/iPadView.swift:249-286 (IPadLiveJournal), mobile/WhisperioApp/Sources/WhisperioApp/JournalView.swift:1-63",
+    "designRef": ".claude/design-ref/wz2/mob-screens.jsx:709-796 (AppleJournal)",
+    "feasibility": "Ambiguous by design intent, not by data \u2014 JournalView is fully store-backed (real books/chapters), nothing fabricated. Flag-only; do not implement a 'regression' back to the flat list without confirming the mock is still authoritative, since the book feature may itself be the newer, correct design that superseded this cut of AppleJournal."
+   },
+   {
+    "title": "Referenced Mac window chrome mock (SMacWindow, 920\u00d7600 title bar) does not exist in the vendored design-ref, so window sizing can't be verified against it",
+    "severity": "low",
+    "detail": "Grepped the entire .claude/design-ref/wz2/ tree (all .jsx/.md) for 'SMacWindow', '920', and general 'title bar'/'traffic light' chrome markers \u2014 no match. The only window-chrome spec present (wz-shell-SPEC.md) documents the Electron desktop settings window (760\u00d7780, custom traffic-lights drawn in HTML/CSS) for a different, non-native surface \u2014 not the native SwiftUI Mac app. The native Mac app currently sets `.defaultSize(width: 1100, height: 760)` with `.frame(minWidth: 820, minHeight: 560)` (WhisperioMacApp.swift:30,47); since real AppKit/SwiftUI WindowGroup already renders genuine traffic-light chrome for free, there is likely nothing to build here, but the 920\u00d7600 figure in the task brief could not be corroborated against any file in this repo \u2014 recommend asking the design owner where that spec lives before changing the window's default/min size.",
+    "codeRef": "mobile/WhisperioApp/MacApp/WhisperioMacApp.swift:30,47",
+    "designRef": "Not found in .claude/design-ref/wz2/ (checked mob-screens.jsx, mob-core.jsx, wz-parts.jsx, wz-shell-SPEC.md, SYNC-NOTES.md, DELTA-QUEUE.md)",
+    "feasibility": "Cannot verify without the source spec \u2014 do not guess-resize the window off an unconfirmed number; flagged for a follow-up look at wherever SMacWindow actually lives (possibly a design-ref cut not vendored into this repo)."
+   }
+  ]
+ }
+]

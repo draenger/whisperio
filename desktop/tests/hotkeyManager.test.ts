@@ -10,6 +10,8 @@ const mockIpcHandle = vi.fn()
 const mockIpcRemoveListener = vi.fn()
 const mockIpcRemoveHandler = vi.fn()
 
+const mockClipboardReadText = vi.fn(() => '')
+
 vi.mock('electron', () => ({
   app: {
     getPath: vi.fn(() => '/mock/userData')
@@ -25,6 +27,9 @@ vi.mock('electron', () => ({
     handle: (...args: unknown[]) => mockIpcHandle(...args),
     removeListener: (...args: unknown[]) => mockIpcRemoveListener(...args),
     removeHandler: (...args: unknown[]) => mockIpcRemoveHandler(...args)
+  },
+  clipboard: {
+    readText: (...args: unknown[]) => mockClipboardReadText(...args)
   },
   Notification: class MockNotification {
     static isSupported = vi.fn(() => false)
@@ -77,12 +82,26 @@ interface MockSettings {
   dictationHotkey: string
   dictateAndSendHotkey: string
   outputRecordingHotkey: string
+  commandHotkey: string
 }
 let mockSettings: MockSettings
 const mockLoadSettings = vi.fn(() => mockSettings)
 
 vi.mock('../src/main/settingsManager', () => ({
   loadSettings: (...args: unknown[]) => mockLoadSettings(...args)
+}))
+
+// --- COMMAND mode mocks (transcribe.ts's rewrite entrypoint + error surfacing) ---
+const mockRewriteClipboardForCommand = vi.fn()
+
+vi.mock('../src/main/transcribe', () => ({
+  rewriteClipboardForCommand: (...args: unknown[]) => mockRewriteClipboardForCommand(...args)
+}))
+
+const mockHandleCommandError = vi.fn()
+
+vi.mock('../src/main/errorHandler', () => ({
+  handleCommandError: (...args: unknown[]) => mockHandleCommandError(...args)
 }))
 
 // --- Fresh module per test (resets module-level state) ---
@@ -112,8 +131,11 @@ describe('hotkeyManager', () => {
     mockSettings = {
       dictationHotkey: '',
       dictateAndSendHotkey: '',
-      outputRecordingHotkey: ''
+      outputRecordingHotkey: '',
+      commandHotkey: ''
     }
+    mockClipboardReadText.mockReturnValue('')
+    mockRewriteClipboardForCommand.mockReset()
 
     // Fresh module — resets `state` and `activeHotkey`
     vi.resetModules()
@@ -604,5 +626,170 @@ describe('hotkeyManager', () => {
     expect(mockUnregister).toHaveBeenCalledWith('B')
     expect(mockUnregister).toHaveBeenCalledWith('C')
     expect(mod.getActiveSendHotkey()).toBeNull()
+  })
+
+  // --- COMMAND mode (v1.7) ---
+
+  it('registers the command hotkey when configured', () => {
+    mockSettings.commandHotkey = 'Ctrl+Shift+C'
+    mod.registerHotkey()
+
+    expect(mockRegister).toHaveBeenCalledWith('Ctrl+Shift+C', expect.any(Function))
+    expect(mod.getActiveCommandHotkey()).toBe('Ctrl+Shift+C')
+  })
+
+  it('does not register a command hotkey when left empty', () => {
+    mod.registerHotkey()
+    expect(mod.getActiveCommandHotkey()).toBeNull()
+  })
+
+  it('activateCommand drives idle -> command -> transcribing, sending activate/deactivate like normal dictation', async () => {
+    mockSettings.commandHotkey = 'Ctrl+Shift+C'
+    mod.registerHotkey()
+    const cmdCall = mockRegister.mock.calls.find((c) => c[0] === 'Ctrl+Shift+C') as unknown[]
+    const activateCommand = cmdCall[1] as () => Promise<void>
+
+    await activateCommand() // -> command
+    expect(mod.getState()).toBe('command')
+    // Reuses the SAME recording-start event as normal dictation — no
+    // renderer changes needed to capture the spoken instruction.
+    expect(mockSendToPrimaryOverlay).toHaveBeenCalledWith('dictation:activate')
+
+    await activateCommand() // -> transcribing
+    expect(mod.getState()).toBe('transcribing')
+    expect(mockSendToPrimaryOverlay).toHaveBeenCalledWith('dictation:deactivate', expect.any(Number))
+  })
+
+  it('force-resets a stuck command session when the plain dictation hotkey is pressed', async () => {
+    mockSettings.commandHotkey = 'Ctrl+Shift+C'
+    mod.registerHotkey()
+    const cmdCall = mockRegister.mock.calls.find((c) => c[0] === 'Ctrl+Shift+C') as unknown[]
+    const activateCommand = cmdCall[1] as () => Promise<void>
+    const activate = mockRegister.mock.calls.find((c) => c[0] === 'Ctrl+Shift+Space') as unknown[]
+    const activateFn = activate[1] as () => Promise<void>
+
+    await activateCommand() // -> command
+    expect(mod.getState()).toBe('command')
+
+    await activateFn() // plain dictation hotkey force-resets the stuck command session
+    expect(mod.getState()).toBe('idle')
+    expect(mockHideOverlay).toHaveBeenCalled()
+  })
+
+  it('command-mode result rewrites the clipboard instead of pasting the spoken words', async () => {
+    mockSettings.commandHotkey = 'Ctrl+Shift+C'
+    mockClipboardReadText.mockReturnValue('Dear team, we ship tomorrow.')
+    mockRewriteClipboardForCommand.mockResolvedValue({ text: 'Dear team, we will ship tomorrow.', ok: true })
+    mod.registerHotkey()
+    const cmdCall = mockRegister.mock.calls.find((c) => c[0] === 'Ctrl+Shift+C') as unknown[]
+    const activateCommand = cmdCall[1] as () => Promise<void>
+    const handleResult = (
+      mockIpcHandle.mock.calls.find((c) => c[0] === 'dictation:result') as unknown[]
+    )[1] as (event: unknown, text: string, sessionId?: number) => Promise<void>
+
+    await activateCommand() // -> command
+    await activateCommand() // -> transcribing
+
+    await handleResult({}, 'make this more formal')
+
+    expect(mockRewriteClipboardForCommand).toHaveBeenCalledWith(
+      'Dear team, we ship tomorrow.',
+      'make this more formal'
+    )
+    // The REWRITTEN text is pasted — never the spoken instruction itself.
+    expect(mockAutoPaste).toHaveBeenCalledWith('Dear team, we will ship tomorrow.')
+    expect(mockAutoPaste).not.toHaveBeenCalledWith('make this more formal')
+    expect(mod.getState()).toBe('idle')
+  })
+
+  it('command mode surfaces an error and leaves the clipboard untouched when the clipboard is empty', async () => {
+    mockSettings.commandHotkey = 'Ctrl+Shift+C'
+    mockClipboardReadText.mockReturnValue('')
+    mod.registerHotkey()
+    const cmdCall = mockRegister.mock.calls.find((c) => c[0] === 'Ctrl+Shift+C') as unknown[]
+    const activateCommand = cmdCall[1] as () => Promise<void>
+    const handleResult = (
+      mockIpcHandle.mock.calls.find((c) => c[0] === 'dictation:result') as unknown[]
+    )[1] as (event: unknown, text: string, sessionId?: number) => Promise<void>
+
+    await activateCommand()
+    await activateCommand()
+    await handleResult({}, 'make this more formal')
+
+    expect(mockRewriteClipboardForCommand).not.toHaveBeenCalled()
+    expect(mockAutoPaste).not.toHaveBeenCalled()
+    expect(mockHandleCommandError).toHaveBeenCalledWith(expect.any(Error))
+    expect(mod.getState()).toBe('idle')
+  })
+
+  it('command mode surfaces a NotConfigured-style error and does not paste when no LLM provider is reachable', async () => {
+    mockSettings.commandHotkey = 'Ctrl+Shift+C'
+    mockClipboardReadText.mockReturnValue('some text to rewrite')
+    const notConfigured = new Error('No AI provider is set up for command-mode rewriting.')
+    notConfigured.name = 'NotConfigured'
+    mockRewriteClipboardForCommand.mockRejectedValue(notConfigured)
+    mod.registerHotkey()
+    const cmdCall = mockRegister.mock.calls.find((c) => c[0] === 'Ctrl+Shift+C') as unknown[]
+    const activateCommand = cmdCall[1] as () => Promise<void>
+    const handleResult = (
+      mockIpcHandle.mock.calls.find((c) => c[0] === 'dictation:result') as unknown[]
+    )[1] as (event: unknown, text: string, sessionId?: number) => Promise<void>
+
+    await activateCommand()
+    await activateCommand()
+    await handleResult({}, 'make this more formal')
+
+    expect(mockAutoPaste).not.toHaveBeenCalled()
+    expect(mockHandleCommandError).toHaveBeenCalledWith(notConfigured)
+    expect(mod.getState()).toBe('idle')
+  })
+
+  it('command mode leaves the clipboard unchanged (no paste) when the rewrite is rejected (ok: false)', async () => {
+    mockSettings.commandHotkey = 'Ctrl+Shift+C'
+    mockClipboardReadText.mockReturnValue('original clipboard text')
+    mockRewriteClipboardForCommand.mockResolvedValue({ text: 'original clipboard text', ok: false })
+    mod.registerHotkey()
+    const cmdCall = mockRegister.mock.calls.find((c) => c[0] === 'Ctrl+Shift+C') as unknown[]
+    const activateCommand = cmdCall[1] as () => Promise<void>
+    const handleResult = (
+      mockIpcHandle.mock.calls.find((c) => c[0] === 'dictation:result') as unknown[]
+    )[1] as (event: unknown, text: string, sessionId?: number) => Promise<void>
+
+    await activateCommand()
+    await activateCommand()
+    await handleResult({}, 'make this more formal')
+
+    expect(mockAutoPaste).not.toHaveBeenCalled()
+    expect(mockHandleCommandError).toHaveBeenCalled()
+    expect(mod.getState()).toBe('idle')
+  })
+
+  it('a normal (non-command) dictation result still pastes the spoken words directly', async () => {
+    mockSettings.commandHotkey = 'Ctrl+Shift+C'
+    mod.registerHotkey()
+    const activate = mockRegister.mock.calls.find((c) => c[0] === 'Ctrl+Shift+Space') as unknown[]
+    const activateFn = activate[1] as () => Promise<void>
+    const handleResult = (
+      mockIpcHandle.mock.calls.find((c) => c[0] === 'dictation:result') as unknown[]
+    )[1] as (event: unknown, text: string) => Promise<void>
+
+    await activateFn() // -> recording (NOT command)
+    await activateFn() // -> transcribing
+    await handleResult({}, 'hello world')
+
+    expect(mockRewriteClipboardForCommand).not.toHaveBeenCalled()
+    expect(mockAutoPaste).toHaveBeenCalledWith('hello world')
+  })
+
+  it('pauseHotkeys/resumeHotkeys include the command hotkey', () => {
+    mockSettings.commandHotkey = 'Ctrl+Shift+C'
+    mod.registerHotkey()
+    mockUnregister.mockClear()
+    mod.pauseHotkeys()
+    expect(mockUnregister).toHaveBeenCalledWith('Ctrl+Shift+C')
+
+    mockRegister.mockClear()
+    mod.resumeHotkeys()
+    expect(mockRegister).toHaveBeenCalledWith('Ctrl+Shift+C', expect.any(Function))
   })
 })

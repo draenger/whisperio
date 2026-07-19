@@ -6,7 +6,15 @@ import { join } from 'path'
 // ToneProfileId + its human-readable descriptions (Work Item B).
 import type { ToneProfileId } from './llm/prompts'
 
-export type ProviderId = 'openai' | 'elevenlabs' | 'selfhosted' | 'replicate'
+export type ProviderId =
+  | 'openai'
+  | 'elevenlabs'
+  | 'selfhosted'
+  | 'replicate'
+  | 'groq'
+  | 'deepgram'
+  | 'assemblyai'
+  | 'mistral'
 
 export type AccentColor = 'graphite' | 'blue' | 'teal' | 'emerald' | 'amber'
 
@@ -44,6 +52,19 @@ export interface AppSettings {
   // (see DEFAULT_REPLICATE_MODEL in transcribe.ts).
   replicateApiKey: string
   sttReplicateModel: string
+  // Cloud STT+ (v1.6): BYO-key providers matching the mobile app's provider
+  // chain (Groq/Deepgram/AssemblyAI/Mistral — see llm/groq.ts, llm/deepgram.ts,
+  // llm/assembly.ts, llm/mistral.ts). Empty string = provider unconfigured,
+  // same convention as replicateApiKey above. Each `stt<Provider>Model` is
+  // empty = the client's built-in default model.
+  groqApiKey: string
+  sttGroqModel: string
+  deepgramApiKey: string
+  sttDeepgramModel: string
+  assemblyaiApiKey: string
+  sttAssemblyaiModel: string
+  mistralApiKey: string
+  sttMistralModel: string
   // STT+ (v1.5): Bearer token for a private/self-hosted STT server (the
   // `selfhosted` provider, which posts to `openaiBaseUrl`). Empty string (the
   // default) preserves today's behavior — no Authorization header is sent —
@@ -109,6 +130,15 @@ export interface AppSettings {
   launchAtStartup: boolean
   dictationHotkey: string
   dictateAndSendHotkey: string
+  // COMMAND mode (v1.7): a dedicated hotkey that, instead of inserting the
+  // spoken words, records a spoken INSTRUCTION and uses it to rewrite the
+  // current clipboard text in place (see dictation/hotkeyManager.ts's
+  // 'command' DictationState + transcribe.ts's rewriteClipboardForCommand).
+  // Empty string = disabled (same "no candidates fallback" convention as
+  // dictateAndSendHotkey/outputRecordingHotkey below — only the primary
+  // dictationHotkey ever falls back to HOTKEY_CANDIDATES); defaulted non-empty
+  // in DEFAULT_SETTINGS below so the feature is on out of the box.
+  commandHotkey: string
   // 'violet-legacy' (added in STEP0 theming wiring) was removed from the
   // product in VIOLET-OUT — see migrateLegacyTheme() below, which maps any
   // saved 'violet-legacy' value back to 'dark' on load.
@@ -235,6 +265,14 @@ const DEFAULT_SETTINGS: AppSettings = {
   elevenlabsApiKey: '',
   replicateApiKey: '',
   sttReplicateModel: '',
+  groqApiKey: '',
+  sttGroqModel: '',
+  deepgramApiKey: '',
+  sttDeepgramModel: '',
+  assemblyaiApiKey: '',
+  sttAssemblyaiModel: '',
+  mistralApiKey: '',
+  sttMistralModel: '',
   sttApiKey: '',
   transcriptionLanguage: 'auto',
   transcriptionPrompt: '',
@@ -258,6 +296,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   launchAtStartup: true,
   dictationHotkey: '',
   dictateAndSendHotkey: '',
+  commandHotkey: 'Ctrl+Shift+C',
   theme: 'dark',
   accentColor: 'blue',
   inputDeviceId: '',

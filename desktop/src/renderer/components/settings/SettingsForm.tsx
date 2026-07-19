@@ -435,7 +435,24 @@ interface CleanupSettings {
   aiModel: string
   anthropicApiKey: string
 }
-type SettingsWithCleanup = Awaited<ReturnType<Window['api']['settings']['load']>> & Partial<CleanupSettings>
+/*
+ * Cloud STT+ (v1.6) provider keys — same "declared locally, cast through"
+ * situation as CleanupSettings above: preload's AppSettings doesn't know
+ * about the Groq/Deepgram/AssemblyAI/Mistral providers yet.
+ */
+interface ProviderKeySettings {
+  groqApiKey: string
+  sttGroqModel: string
+  deepgramApiKey: string
+  sttDeepgramModel: string
+  assemblyaiApiKey: string
+  sttAssemblyaiModel: string
+  mistralApiKey: string
+  sttMistralModel: string
+}
+type SettingsWithCleanup = Awaited<ReturnType<Window['api']['settings']['load']>> &
+  Partial<CleanupSettings> &
+  Partial<ProviderKeySettings>
 
 export function SettingsForm(): ReactElement {
   const { theme } = useTheme()
@@ -509,6 +526,14 @@ export function SettingsForm(): ReactElement {
   // key, both uses (see settingsManager.ts's `replicateApiKey` doc comment).
   const [replicateApiKey, setReplicateApiKey] = useState('')
   const [sttReplicateModel, setSttReplicateModel] = useState('')
+  // Cloud STT+ (v1.6): Groq/Deepgram/AssemblyAI/Mistral BYO-key providers —
+  // mirrors the mobile app's provider chain. Model fields are currently
+  // unexposed in the UI (each client falls back to a sensible default model
+  // when left blank — see src/main/llm/{groq,deepgram,assembly,mistral}.ts).
+  const [groqApiKey, setGroqApiKey] = useState('')
+  const [deepgramApiKey, setDeepgramApiKey] = useState('')
+  const [assemblyaiApiKey, setAssemblyaiApiKey] = useState('')
+  const [mistralApiKey, setMistralApiKey] = useState('')
   const [sttApiKey, setSttApiKey] = useState('')
   const [transcriptionLanguage, setTranscriptionLanguage] = useState('auto')
   const [prompt, setPrompt] = useState('')
@@ -563,6 +588,10 @@ export function SettingsForm(): ReactElement {
       setElevenlabsApiKey(settings.elevenlabsApiKey ?? '')
       setReplicateApiKey(settings.replicateApiKey ?? '')
       setSttReplicateModel(settings.sttReplicateModel ?? '')
+      setGroqApiKey(settings.groqApiKey ?? '')
+      setDeepgramApiKey(settings.deepgramApiKey ?? '')
+      setAssemblyaiApiKey(settings.assemblyaiApiKey ?? '')
+      setMistralApiKey(settings.mistralApiKey ?? '')
       setSttApiKey(settings.sttApiKey ?? '')
       setTranscriptionLanguage(settings.transcriptionLanguage ?? 'auto')
       setPrompt(settings.transcriptionPrompt ?? '')
@@ -645,6 +674,10 @@ export function SettingsForm(): ReactElement {
       elevenlabsApiKey,
       replicateApiKey,
       sttReplicateModel,
+      groqApiKey,
+      deepgramApiKey,
+      assemblyaiApiKey,
+      mistralApiKey,
       sttApiKey,
       transcriptionLanguage,
       transcriptionPrompt: prompt,
@@ -689,6 +722,7 @@ export function SettingsForm(): ReactElement {
     setTimeout(() => setSaved(false), 1400)
   }, [
     providerChain, apiKey, openaiBaseUrl, whisperModel, elevenlabsApiKey, replicateApiKey, sttReplicateModel,
+    groqApiKey, deepgramApiKey, assemblyaiApiKey, mistralApiKey,
     sttApiKey, transcriptionLanguage, prompt,
     vocabulary, removedDefaultVocabulary, aiPostProcessing, launchAtStartup, dictationHotkey,
     dictateAndSendHotkey, inputDeviceId, outputDeviceId, saveRecordings,
@@ -867,6 +901,14 @@ export function SettingsForm(): ReactElement {
                       setReplicateApiKey={setReplicateApiKey}
                       sttReplicateModel={sttReplicateModel}
                       setSttReplicateModel={setSttReplicateModel}
+                      groqApiKey={groqApiKey}
+                      setGroqApiKey={setGroqApiKey}
+                      deepgramApiKey={deepgramApiKey}
+                      setDeepgramApiKey={setDeepgramApiKey}
+                      assemblyaiApiKey={assemblyaiApiKey}
+                      setAssemblyaiApiKey={setAssemblyaiApiKey}
+                      mistralApiKey={mistralApiKey}
+                      setMistralApiKey={setMistralApiKey}
                       sttApiKey={sttApiKey}
                       setSttApiKey={setSttApiKey}
                       transcriptionLanguage={transcriptionLanguage}
@@ -1391,7 +1433,11 @@ const ALL_PROVIDERS: { id: string; label: string; desc: string }[] = [
   { id: 'openai', label: 'OpenAI', desc: 'gpt-4o-transcribe' },
   { id: 'elevenlabs', label: 'ElevenLabs', desc: 'Scribe v2' },
   { id: 'selfhosted', label: 'Local Model', desc: 'Offline, private' },
-  { id: 'replicate', label: 'Replicate', desc: 'Cloud Whisper' }
+  { id: 'replicate', label: 'Replicate', desc: 'Cloud Whisper' },
+  { id: 'groq', label: 'Groq', desc: 'Fast cloud Whisper' },
+  { id: 'deepgram', label: 'Deepgram', desc: 'Nova' },
+  { id: 'assemblyai', label: 'AssemblyAI', desc: 'Universal' },
+  { id: 'mistral', label: 'Mistral', desc: 'Voxtral' }
 ]
 
 // Built-in seed vocabulary shown as removable/restorable chips. Mirror of
@@ -1422,6 +1468,10 @@ function ProvidersTab({
   elevenlabsApiKey, setElevenlabsApiKey,
   replicateApiKey, setReplicateApiKey,
   sttReplicateModel, setSttReplicateModel,
+  groqApiKey, setGroqApiKey,
+  deepgramApiKey, setDeepgramApiKey,
+  assemblyaiApiKey, setAssemblyaiApiKey,
+  mistralApiKey, setMistralApiKey,
   sttApiKey, setSttApiKey,
   transcriptionLanguage, setTranscriptionLanguage,
   prompt, setPrompt,
@@ -1455,6 +1505,14 @@ function ProvidersTab({
   setReplicateApiKey: (v: string) => void
   sttReplicateModel: string
   setSttReplicateModel: (v: string) => void
+  groqApiKey: string
+  setGroqApiKey: (v: string) => void
+  deepgramApiKey: string
+  setDeepgramApiKey: (v: string) => void
+  assemblyaiApiKey: string
+  setAssemblyaiApiKey: (v: string) => void
+  mistralApiKey: string
+  setMistralApiKey: (v: string) => void
   /** Bearer token for a private/self-hosted STT server (empty = no Authorization header, today's behavior). */
   sttApiKey: string
   setSttApiKey: (v: string) => void
@@ -1663,6 +1721,58 @@ function ProvidersTab({
                           style={s.input}
                         />
                         <span style={s.hint}>Any Replicate speech-to-text model, as owner/name. Defaults to openai/whisper.</span>
+                      </>
+                    )}
+                    {provider.id === 'groq' && (
+                      <>
+                        <label style={s.label}>API Key</label>
+                        <input
+                          type="password"
+                          value={groqApiKey}
+                          onChange={(e) => setGroqApiKey(e.target.value)}
+                          placeholder="gsk_..."
+                          style={s.input}
+                        />
+                        <KeyStorageHint s={s} />
+                      </>
+                    )}
+                    {provider.id === 'deepgram' && (
+                      <>
+                        <label style={s.label}>API Key</label>
+                        <input
+                          type="password"
+                          value={deepgramApiKey}
+                          onChange={(e) => setDeepgramApiKey(e.target.value)}
+                          placeholder="dg_..."
+                          style={s.input}
+                        />
+                        <KeyStorageHint s={s} />
+                      </>
+                    )}
+                    {provider.id === 'assemblyai' && (
+                      <>
+                        <label style={s.label}>API Key</label>
+                        <input
+                          type="password"
+                          value={assemblyaiApiKey}
+                          onChange={(e) => setAssemblyaiApiKey(e.target.value)}
+                          placeholder="aai_..."
+                          style={s.input}
+                        />
+                        <KeyStorageHint s={s} />
+                      </>
+                    )}
+                    {provider.id === 'mistral' && (
+                      <>
+                        <label style={s.label}>API Key</label>
+                        <input
+                          type="password"
+                          value={mistralApiKey}
+                          onChange={(e) => setMistralApiKey(e.target.value)}
+                          placeholder="api key..."
+                          style={s.input}
+                        />
+                        <KeyStorageHint s={s} />
                       </>
                     )}
                   </div>
@@ -2678,7 +2788,8 @@ function makeStyles(theme: Theme) {
     } as React.CSSProperties,
     navItemActive: {
       background: `rgba(${theme.accentRgb}, 0.13)`,
-      color: theme.accentLight
+      color: theme.accentLight,
+      boxShadow: theme.e1
     } as React.CSSProperties,
     versionBadge: {
       display: 'flex',
@@ -2700,7 +2811,7 @@ function makeStyles(theme: Theme) {
       background: theme.bgSecondary,
       border: `1px solid ${theme.border}`,
       borderRadius: '14px',
-      boxShadow: theme.shadow
+      boxShadow: theme.e1
     },
     cardTitle: {
       fontFamily: "'Space Grotesk', sans-serif",

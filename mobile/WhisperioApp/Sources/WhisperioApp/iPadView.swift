@@ -20,6 +20,10 @@ struct iPadSplitView: View {
     // Set by the live shell (Mac/iPad entry) once the real stores are injected. When true the
     // Journal tab is store-backed (JournalView + DigestDayView); otherwise it stays on sample data.
     @Environment(\.wzLiveJournal) private var liveJournal
+    // Design's `engineBar` prop (mob-screens.jsx AppleSplit): shown for the Mac variant, false
+    // ("plain") for iPad. Defaults to true so existing callers (Mac, Gallery preview) are unchanged;
+    // the real iPad entry point in AppShell.swift passes false.
+    var showEngineBar: Bool = true
     @State private var tab = "library"   // library | journal
     @State private var sel = WZSample.recordings[0].id
     @State private var showCloudConsent = false
@@ -30,11 +34,9 @@ struct iPadSplitView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack {
+            if showEngineBar {
                 engineBar
-                Spacer(minLength: 0)
             }
-            .padding(.horizontal, 18).padding(.top, 12)
             HStack {
                 segmented.frame(width: 260)
                 Spacer(minLength: 0)
@@ -63,42 +65,65 @@ struct iPadSplitView: View {
         }
     }
 
+    // Compact, read-only engine status strip (mob-screens.jsx AppleSplit `engineBar`): a thin
+    // full-width row — cog glyph, muted "Engines:" label, a mono read-only rendering of the
+    // active provider chain with faint arrow separators, and a right-aligned PrivacyBadge. Not
+    // a selector; the strip itself carries no per-item highlight/interaction chrome. Wrapped in
+    // a `Menu` so the real "change primary engine" capability (incl. the cloud-consent flow) is
+    // still reachable from the same control, matching the strip's appearance when closed.
     private var engineBar: some View {
-        HStack(spacing: 3) {
-            engineItem(id: .onDevice, title: "On-device", icon: "cpu")
-            engineItem(id: .openAI, title: "OpenAI", icon: "globe")
-            engineItem(id: .elevenLabs, title: "ElevenLabs", icon: "cloud")
-            Spacer(minLength: 0)
-            PrivacyBadge(mode: settings.settings.isCloud(primaryEngine) ? .cloud : .device, small: true)
+        Menu {
+            engineChoice(id: .onDevice, title: "On-device")
+            engineChoice(id: .openAI, title: "OpenAI")
+            engineChoice(id: .elevenLabs, title: "ElevenLabs")
+        } label: {
+            HStack(spacing: 10) {
+                WIcon("settings", size: 15).foregroundStyle(t.faint)
+                Text("Engines:").font(WZFont.ui(13)).foregroundStyle(t.muted)
+                Text(engineChainText).font(WZFont.mono(12.5)).foregroundStyle(t.text)
+                Spacer(minLength: 0)
+                PrivacyBadge(mode: settings.settings.isCloud(primaryEngine) ? .cloud : .device, small: true)
+            }
+            .padding(.horizontal, 16).padding(.vertical, 9)
+            .background(t.surface)
+            .overlay(alignment: .bottom) { Rectangle().fill(t.line).frame(height: 1) }
+            .contentShape(Rectangle())
         }
-        .padding(3)
-        .background(t.surfaceUp, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(t.line, lineWidth: 1))
+        .menuStyle(.borderlessButton)
+        .accessibilityLabel("Engines: \(engineChainText). Tap to change the primary transcription engine.")
     }
 
-    private func engineItem(id: ProviderID, title: String, icon: String) -> some View {
-        let on = primaryEngine == id
+    // Read-only "On-device → OpenAI → ElevenLabs"-style rendering of the live provider chain,
+    // reflecting the real SettingsStore data (not a hardcoded sample string).
+    private var engineChainText: String {
+        settings.settings.providerChain.map(engineLabel).joined(separator: " → ")
+    }
+
+    private func engineLabel(_ id: ProviderID) -> String {
+        switch id {
+        case .onDevice: return "On-device"
+        case .openAI: return "OpenAI"
+        case .elevenLabs: return "ElevenLabs"
+        case .groq: return "Groq"
+        case .deepgram: return "Deepgram"
+        case .assemblyAI: return "AssemblyAI"
+        case .mistral: return "Mistral"
+        }
+    }
+
+    private func engineChoice(id: ProviderID, title: String) -> some View {
         let needsConsent = settings.settings.isCloud(id) && !cloudConsentGranted
         return Button {
             selectEngine(id)
         } label: {
-            HStack(spacing: 6) {
-                WIcon(icon, size: 13)
+            if id == primaryEngine {
+                Label(title, systemImage: "checkmark")
+            } else if needsConsent {
+                Label(title, systemImage: "lock")
+            } else {
                 Text(title)
             }
-            .font(WZFont.ui(13, .semibold))
-            .foregroundStyle(on ? .white : t.muted)
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 8)
-            .background(on ? t.accent : .clear, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
-            .overlay(alignment: .topTrailing) {
-                if needsConsent {
-                    WIcon("lock", size: 9).foregroundStyle(t.amber)
-                        .padding(.top, 3).padding(.trailing, 6)
-                }
-            }
         }
-        .buttonStyle(.plain)
     }
 
     private func selectEngine(_ id: ProviderID) {

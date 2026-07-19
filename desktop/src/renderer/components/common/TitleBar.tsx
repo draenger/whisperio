@@ -28,7 +28,7 @@ export function TitleBar({ title }: TitleBarProps): ReactElement {
     <div style={{
       display: 'flex',
       alignItems: 'center',
-      height: '44px',
+      height: '38px',
       background: mode === 'dark'
         ? 'rgba(8, 13, 21, 0.9)'
         : 'rgba(248, 250, 252, 0.94)',
@@ -59,7 +59,7 @@ export function TitleBar({ title }: TitleBarProps): ReactElement {
           border: `1px solid ${theme.border}`,
           flexShrink: 0
         }}>
-          <Ghost size={16} />
+          <Ghost size={14} />
           <span style={{
             fontSize: '11px',
             fontWeight: 700,
@@ -95,8 +95,8 @@ export function TitleBar({ title }: TitleBarProps): ReactElement {
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          width: '34px',
-          height: '34px',
+          width: '32px',
+          height: '32px',
           borderRadius: '999px',
           color: theme.textMuted,
           transition: 'background 0.15s, color 0.15s, border-color 0.15s'

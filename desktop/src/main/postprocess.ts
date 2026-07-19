@@ -12,7 +12,7 @@
 // enforced here, not by callers remembering to catch.
 
 import type { LLMProvider, LLMMessage } from './llm/provider'
-import { buildCleanupMessages, buildFormatMessages, type CleanupMode as PromptCleanupMode } from './llm/prompts'
+import { buildCleanupMessages, buildFormatMessages, buildCommandMessages, type CleanupMode as PromptCleanupMode } from './llm/prompts'
 import { recordLLM } from './usageTracker'
 
 export type CleanupMode = 'off' | PromptCleanupMode
@@ -189,4 +189,29 @@ export async function formatTranscription(raw: string, opts: FormatOptions): Pro
   if (!opts.instruction || !opts.instruction.trim()) return { text: raw, ok: false }
   const messages = buildFormatMessages({ raw, instruction: opts.instruction })
   return runCleanupCore(raw, messages, opts.provider, opts.signal)
+}
+
+export interface CommandRewriteOptions {
+  /** The user's SPOKEN instruction (a command-mode dictation transcript,
+   * e.g. "make this more formal"), not text to insert. */
+  command: string
+  provider: LLMProvider | null
+  signal?: AbortSignal
+}
+
+/**
+ * COMMAND mode (desktop hotkey — dictation/hotkeyManager.ts): rewrite an
+ * arbitrary piece of text (the current clipboard contents) per a spoken
+ * instruction, instead of inserting the spoken words themselves. Same
+ * fail-soft contract as formatTranscription/cleanupTranscription — a missing
+ * provider, a provider error, an aborted call, or a hallucinated-length
+ * completion all resolve to `{ text: selection, ok: false }` rather than
+ * throwing; the caller (transcribe.ts's rewriteClipboardForCommand) treats
+ * `ok: false` as "leave the clipboard text untouched", never pastes
+ * something the model didn't actually produce.
+ */
+export async function rewriteSelection(selection: string, opts: CommandRewriteOptions): Promise<CleanupResult> {
+  if (!opts.command || !opts.command.trim()) return { text: selection, ok: false }
+  const messages = buildCommandMessages({ command: opts.command, selection })
+  return runCleanupCore(selection, messages, opts.provider, opts.signal)
 }

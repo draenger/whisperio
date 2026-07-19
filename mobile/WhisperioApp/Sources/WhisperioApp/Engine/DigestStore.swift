@@ -3,6 +3,7 @@ import Combine
 import os
 import SwiftData
 import WhisperioKit
+import WidgetKit
 
 // Persisted daily digests (the journal). Prefers the SwiftData + CloudKit-backed
 // DigestSyncStore (WhisperioKit) so the journal follows the user across devices; falls back to
@@ -351,6 +352,24 @@ final class DigestStore: ObservableObject {
             upsertJSON(digest)
             saveJSON(to: url)
         }
+        refreshWidgetSnapshotIfToday(digest)
+    }
+
+    // MARK: - Widget snapshot (digest-owned fields)
+
+    /// Exports the digest-owned slice of the WidgetKit snapshot — real summary text/counts
+    /// straight off the digest DigestDayView already renders, not a fabricated blurb. Only
+    /// today's digest matters to the "Today's digest" widget, so a write for any other day is a
+    /// no-op here. Leaves the recordings fields `RecordingsStore` owns untouched.
+    private func refreshWidgetSnapshotIfToday(_ digest: DailyDigest) {
+        let todayKey = DigestGrouping.dayKey(for: Date(), calendar: Calendar.current)
+        guard digest.id == todayKey else { return }
+        SharedStore.updateWidgetSnapshot { snapshot in
+            snapshot.digestText = digest.summary
+            snapshot.digestNoteCount = digest.recordingIDs.count
+            snapshot.digestCategoryCount = digest.groups.count
+        }
+        WidgetCenter.shared.reloadAllTimelines()
     }
 
     /// Insert-or-update the local `digests` last-writer-wins on day key. A new day is inserted

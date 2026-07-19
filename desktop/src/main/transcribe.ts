@@ -7,7 +7,7 @@ import { AppSettings, getActiveVocabulary, type ProviderId, type CleanupMode } f
 import { getEffectiveSettings } from './secure/keyAccessor'
 import { handleTranscriptionError, notifyInfo } from './errorHandler'
 import { OpenAICompatibleProvider, AnthropicProvider, ReplicateProvider, selectProvider, isLocalHost, type LLMProvider } from './llm/provider'
-import { cleanupTranscription, cleanupTranscriptionDetailed, formatTranscription, type CleanupResult } from './postprocess'
+import { cleanupTranscription, cleanupTranscriptionDetailed, formatTranscription, rewriteSelection, type CleanupResult } from './postprocess'
 import { getServerStatus } from './localServer'
 import { recordSTT, estimateAudioSeconds } from './usageTracker'
 import { getRecording, updateRecording } from './recordingStore'
@@ -21,6 +21,16 @@ import { getRecording, updateRecording } from './recordingStore'
 // never a live snapshot of whatever's in the foreground right now.
 import { resolveToneProfile, type DictationContext } from './context'
 import { TONE_PROFILE_DESCRIPTIONS } from './llm/prompts'
+// Cloud STT+ (v1.6): Groq/Deepgram/AssemblyAI/Mistral BYO-key clients — mirrors
+// the mobile app's provider chain (see each file's doc comment for the source
+// Swift provider it was ported from). Each is a standalone client function
+// following the same shape as whisperTranscribe/elevenLabsTranscribe/
+// replicateTranscribe below, not the llm/provider.ts LLMProvider interface
+// (that abstraction is for text completion, not speech-to-text).
+import { groqTranscribe } from './llm/groq'
+import { deepgramTranscribe } from './llm/deepgram'
+import { assemblyAITranscribe } from './llm/assembly'
+import { mistralTranscribe } from './llm/mistral'
 
 // True only in unpackaged (development) builds. Used to gate logging of
 // privacy-sensitive transcript content so it never reaches production stdout.
@@ -53,7 +63,11 @@ const PROVIDER_LABELS: Record<ProviderId, string> = {
   openai: 'OpenAI',
   elevenlabs: 'ElevenLabs',
   selfhosted: 'Local Model',
-  replicate: 'Replicate'
+  replicate: 'Replicate',
+  groq: 'Groq',
+  deepgram: 'Deepgram',
+  assemblyai: 'AssemblyAI',
+  mistral: 'Mistral'
 }
 
 interface TranscribeResult {
@@ -77,8 +91,13 @@ const DEFAULT_REPLICATE_CLEANUP_MODEL = 'meta/meta-llama-3-8b-instruct'
  * decides which backends exist; `selectProvider` (STEP1) then picks one and
  * `cleanupTranscription` (this module's postprocess.ts sibling) does the
  * actual call. No inline fetch here or anywhere downstream.
+ *
+ * Exported (not just used internally) so COMMAND mode's
+ * rewriteClipboardForCommand() below can select from the exact same
+ * candidate chain as transcript cleanup — one LLM config surface for the
+ * whole app, not a separate one for command-mode rewriting.
  */
-function buildCleanupCandidates(settings: AppSettings): LLMProvider[] {
+export function buildCleanupCandidates(settings: AppSettings): LLMProvider[] {
   const candidates: LLMProvider[] = []
   const baseUrl = settings.aiBaseUrl?.trim() || ''
   const model = settings.aiModel?.trim() || ''
@@ -188,6 +207,46 @@ async function applyCleanup(settings: AppSettings, raw: string, context: Dictati
       activeCleanupAbort = null
     }
   }
+}
+
+// COMMAND mode (v1.7 — dictation/hotkeyManager.ts's 'command' DictationState):
+// thrown by rewriteClipboardForCommand() below when no LLM candidate is
+// reachable at all. Unlike transcript cleanup (which has an acceptable no-op
+// fallback — paste the raw transcript), command mode has nothing sensible to
+// paste if it can't rewrite: the spoken words are an instruction, not text to
+// insert, so silently pasting them (or the untouched clipboard) would be
+// actively wrong. `name` is set to 'NotConfigured' so callers can recognize
+// this specific case without string-matching the message.
+export class NotConfiguredError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'NotConfigured'
+  }
+}
+
+/**
+ * COMMAND mode: rewrite arbitrary text (the current clipboard contents, per
+ * dictation/hotkeyManager.ts's command-hotkey flow) according to a spoken
+ * instruction — using the SAME LLM candidate chain as transcript cleanup
+ * (buildCleanupCandidates + selectProvider above), not a separate provider
+ * config surface. Throws NotConfiguredError (rather than failing soft to the
+ * untouched clipboard text, postprocess.ts's usual convention) when no
+ * candidate is reachable — see that class's doc comment for why command mode
+ * can't just no-op the way cleanup does.
+ */
+export async function rewriteClipboardForCommand(
+  clipboardText: string,
+  spokenCommand: string
+): Promise<CleanupResult> {
+  const settings = getEffectiveSettings()
+  const provider = await selectProvider(settings, buildCleanupCandidates(settings))
+  if (!provider) {
+    throw new NotConfiguredError(
+      'No AI provider is set up for command-mode rewriting. Add an OpenAI, Anthropic, or Replicate API key, ' +
+        'or a local model, in Settings.'
+    )
+  }
+  return rewriteSelection(clipboardText, { command: spokenCommand, provider })
 }
 
 // ROUGH-FIRST UX (v1.4 PR2): on-demand "Clean up" action for an already-saved
@@ -377,6 +436,10 @@ function isProviderConfigured(settings: AppSettings, provider: ProviderId): bool
   if (provider === 'elevenlabs') return !!settings.elevenlabsApiKey
   if (provider === 'selfhosted') return !!settings.openaiBaseUrl?.trim()
   if (provider === 'replicate') return !!settings.replicateApiKey
+  if (provider === 'groq') return !!settings.groqApiKey
+  if (provider === 'deepgram') return !!settings.deepgramApiKey
+  if (provider === 'assemblyai') return !!settings.assemblyaiApiKey
+  if (provider === 'mistral') return !!settings.mistralApiKey
   return false
 }
 
@@ -454,6 +517,64 @@ async function transcribeWithProvider(
       : basePrompt
     const lang = settings.transcriptionLanguage?.trim() || 'auto'
     return replicateTranscribe(apiKey, model, audioBuffer, prompt, lang)
+  }
+
+  if (provider === 'groq') {
+    const apiKey = settings.groqApiKey
+    if (!apiKey) {
+      const err = new Error('No Groq API key configured. Open Settings to set it.')
+      handleTranscriptionError(err, 'groq')
+      throw err
+    }
+    const model = settings.sttGroqModel?.trim() || ''
+    const basePrompt = settings.transcriptionPrompt || DEFAULT_PROMPT
+    const vocab = getActiveVocabulary(settings)
+    const prompt = vocab
+      ? `${basePrompt}\n\nTechnical terms that may appear (use these exact spellings): ${vocab}`
+      : basePrompt
+    const lang = settings.transcriptionLanguage?.trim() || 'auto'
+    return groqTranscribe(apiKey, audioBuffer, filename, prompt, model, lang)
+  }
+
+  if (provider === 'deepgram') {
+    const apiKey = settings.deepgramApiKey
+    if (!apiKey) {
+      const err = new Error('No Deepgram API key configured. Open Settings to set it.')
+      handleTranscriptionError(err, 'deepgram')
+      throw err
+    }
+    const model = settings.sttDeepgramModel?.trim() || ''
+    const lang = settings.transcriptionLanguage?.trim() || 'auto'
+    return deepgramTranscribe(apiKey, audioBuffer, model, lang)
+  }
+
+  if (provider === 'assemblyai') {
+    const apiKey = settings.assemblyaiApiKey
+    if (!apiKey) {
+      const err = new Error('No AssemblyAI API key configured. Open Settings to set it.')
+      handleTranscriptionError(err, 'assemblyai')
+      throw err
+    }
+    const model = settings.sttAssemblyaiModel?.trim() || ''
+    const lang = settings.transcriptionLanguage?.trim() || 'auto'
+    return assemblyAITranscribe(apiKey, audioBuffer, model, lang)
+  }
+
+  if (provider === 'mistral') {
+    const apiKey = settings.mistralApiKey
+    if (!apiKey) {
+      const err = new Error('No Mistral API key configured. Open Settings to set it.')
+      handleTranscriptionError(err, 'mistral')
+      throw err
+    }
+    const model = settings.sttMistralModel?.trim() || ''
+    const basePrompt = settings.transcriptionPrompt || DEFAULT_PROMPT
+    const vocab = getActiveVocabulary(settings)
+    const prompt = vocab
+      ? `${basePrompt}\n\nTechnical terms that may appear (use these exact spellings): ${vocab}`
+      : basePrompt
+    const lang = settings.transcriptionLanguage?.trim() || 'auto'
+    return mistralTranscribe(apiKey, audioBuffer, filename, prompt, model, lang)
   }
 
   // openai

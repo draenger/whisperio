@@ -1,5 +1,5 @@
 import { vi, describe, it, expect } from 'vitest'
-import { cleanupTranscription, cleanupTranscriptionDetailed, formatTranscription } from '../src/main/postprocess'
+import { cleanupTranscription, cleanupTranscriptionDetailed, formatTranscription, rewriteSelection } from '../src/main/postprocess'
 import type { LLMProvider, LLMRequest } from '../src/main/llm/provider'
 
 function fakeProvider(complete: (req: LLMRequest) => Promise<string>): LLMProvider {
@@ -343,5 +343,73 @@ describe('formatTranscription', () => {
       provider: fakeProvider(complete)
     })
     expect(result).toEqual({ text: raw, ok: false })
+  })
+})
+
+// COMMAND mode (v1.7 — dictation/hotkeyManager.ts's 'command' DictationState):
+// rewriteSelection() rewrites an arbitrary piece of text (the desktop's
+// clipboard contents) per a spoken instruction, instead of formatting a
+// transcript per a fixed template. Same fail-soft contract as
+// formatTranscription — mirrors that describe block's cases.
+describe('rewriteSelection', () => {
+  it('applies the spoken command and returns ok: true with the rewritten text', async () => {
+    let captured: LLMRequest | undefined
+    const complete = vi.fn().mockImplementation(async (req: LLMRequest) => {
+      captured = req
+      return 'Dear team, we will ship tomorrow.'
+    })
+
+    const result = await rewriteSelection('Dear team, we ship tomorrow.', {
+      command: 'make this more formal',
+      provider: fakeProvider(complete)
+    })
+
+    expect(result).toEqual({ text: 'Dear team, we will ship tomorrow.', ok: true })
+    // buildCommandMessages (llm/prompts.ts) puts BOTH the instruction and the
+    // selection into the user message; system carries the fixed
+    // "apply the instruction, change nothing else" discipline.
+    const user = captured?.messages.find((m) => m.role === 'user')
+    expect(user?.content).toContain('make this more formal')
+    expect(user?.content).toContain('Dear team, we ship tomorrow.')
+    const system = captured?.messages.find((m) => m.role === 'system')
+    expect(system?.content).toContain("Apply the user's instruction")
+  })
+
+  it('falls back to the untouched selection (ok: false) when there is no provider', async () => {
+    const result = await rewriteSelection('some clipboard text', {
+      command: 'make this shorter',
+      provider: null
+    })
+    expect(result).toEqual({ text: 'some clipboard text', ok: false })
+  })
+
+  it('falls back to the untouched selection (ok: false) when the command is empty, without calling the provider', async () => {
+    const complete = vi.fn().mockResolvedValue('should not be used')
+    const result = await rewriteSelection('some clipboard text', {
+      command: '   ',
+      provider: fakeProvider(complete)
+    })
+    expect(result).toEqual({ text: 'some clipboard text', ok: false })
+    expect(complete).not.toHaveBeenCalled()
+  })
+
+  it('falls back to the untouched selection (ok: false) when the provider call rejects', async () => {
+    const complete = vi.fn().mockRejectedValue(new Error('network down'))
+    const result = await rewriteSelection('some clipboard text', {
+      command: 'make this shorter',
+      provider: fakeProvider(complete)
+    })
+    expect(result).toEqual({ text: 'some clipboard text', ok: false })
+  })
+
+  it('guards against hallucination the same way formatTranscription does', async () => {
+    const selection = 'short input'
+    const hallucinated = 'this is a way way way way way way way way way too long fabricated continuation'
+    const complete = vi.fn().mockResolvedValue(hallucinated)
+    const result = await rewriteSelection(selection, {
+      command: 'rewrite this',
+      provider: fakeProvider(complete)
+    })
+    expect(result).toEqual({ text: selection, ok: false })
   })
 })

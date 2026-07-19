@@ -121,6 +121,29 @@ export function handleTranscriptionError(error: Error, provider: string): void {
   console.error(`[Whisperio] ${provider} error [${category}]: ${error.message}`)
 }
 
+// COMMAND mode (v1.7 — dictation/hotkeyManager.ts's 'command' DictationState):
+// surfaces a command-mode rewrite failure (most commonly transcribe.ts's
+// NotConfiguredError, when no LLM provider is set up) the same way a
+// transcription error is surfaced — a native Notification plus an
+// `errors:new` broadcast the overlay/renderer can render — without routing
+// through parseApiError/categorizeError, since there's no HTTP response here
+// to parse.
+export function handleCommandError(error: Error): void {
+  const whisperioError: WhisperioError = {
+    category: error.name === 'NotConfigured' ? 'API_KEY_MISSING' : 'UNKNOWN',
+    message: error.message,
+    provider: 'command',
+    timestamp: Date.now(),
+    rawError: error.message
+  }
+
+  addRecentError(whisperioError)
+  notifyError('Whisperio — Command mode', error.message)
+  emitErrorToRenderer(whisperioError)
+
+  console.error(`[Whisperio] Command mode error: ${error.message}`)
+}
+
 function addRecentError(error: WhisperioError): void {
   recentErrors.push(error)
   if (recentErrors.length > MAX_RECENT_ERRORS) {

@@ -218,7 +218,12 @@ app.whenReady().then(() => {
         path: process.execPath,
       })
     }
-    if ('dictationHotkey' in newSettings || 'dictateAndSendHotkey' in newSettings || 'outputRecordingHotkey' in newSettings) {
+    if (
+      'dictationHotkey' in newSettings ||
+      'dictateAndSendHotkey' in newSettings ||
+      'outputRecordingHotkey' in newSettings ||
+      'commandHotkey' in newSettings
+    ) {
       reRegisterHotkeys()
     }
     return saved

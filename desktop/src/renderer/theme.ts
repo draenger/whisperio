@@ -24,6 +24,7 @@ export interface Theme {
   success: string
   successGlow: string
   shadow: string
+  e1: string
 }
 
 /* Switchable accent palettes — matches the redesigned site & app preview. */
@@ -122,7 +123,8 @@ const VAR_THEME: Theme = {
   dangerGlow: 'var(--wsp-danger-glow)',
   success: 'var(--wsp-success)',
   successGlow: 'var(--wsp-success-glow)',
-  shadow: 'var(--wsp-shadow)'
+  shadow: 'var(--wsp-shadow)',
+  e1: 'var(--wsp-e1)'
 }
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars

@@ -3,6 +3,7 @@ import Combine
 import os
 import SwiftData
 import WhisperioKit
+import WidgetKit
 
 // Real, persisted recordings. Prefers the SwiftData + CloudKit-backed RecordingSyncStore
 // (WhisperioKit) so history follows the user across devices; falls back to the legacy JSON
@@ -230,6 +231,70 @@ final class RecordingsStore: ObservableObject {
             upsertJSON(r)
             saveJSON(to: url)
         }
+        refreshWidgetSnapshot()
+    }
+
+    // MARK: - Widget snapshot (recordings-owned fields)
+
+    /// Exports the recordings-owned slice of the WidgetKit snapshot (recent list, today's word
+    /// count, 7-day word counts, streak) — real numbers straight off `items`, the same math
+    /// `RecapView` already does for its own UI. Leaves the digest fields `DigestStore` owns
+    /// untouched. Called after every save so the Home/Lock Screen widgets stay current.
+    private func refreshWidgetSnapshot() {
+        var calendar = Calendar.current
+        calendar.firstWeekday = 2   // Mon…Sun, matching RecapView
+
+        func wordCount(_ r: Recording) -> Int {
+            (r.transcription ?? "").split { $0.isWhitespace || $0.isNewline }.count
+        }
+
+        let today = calendar.startOfDay(for: Date())
+        let recentRecordings = items
+            .filter { $0.status == .completed && !($0.transcription ?? "").isEmpty }
+            .sorted { $0.timestamp > $1.timestamp }
+            .prefix(5)
+            .map {
+                SharedStore.WidgetRecentRecording(
+                    id: $0.id,
+                    title: $0.transcription ?? "",
+                    iconSystemName: $0.isConversation ? "person.2.fill" : "mic.fill",
+                    timestamp: $0.timestamp
+                )
+            }
+
+        // Trailing 7 days, oldest first (index 6 = today) — the "This week" widget's bar chart.
+        var weeklyWordCounts = [Int](repeating: 0, count: 7)
+        for r in items {
+            let day = calendar.startOfDay(for: r.timestamp)
+            guard let offset = calendar.dateComponents([.day], from: day, to: today).day,
+                  (0..<7).contains(offset) else { continue }
+            weeklyWordCounts[6 - offset] += wordCount(r)
+        }
+        let todayWordCount = weeklyWordCounts.last ?? 0
+
+        // All-time "days with a note" streak, ending today/yesterday — same definition as
+        // RecapView.streaks.current.
+        let daysWithNotes = Set(items.map { calendar.startOfDay(for: $0.timestamp) })
+        var currentStreak = 0
+        if !daysWithNotes.isEmpty {
+            var probe = today
+            if !daysWithNotes.contains(probe) {
+                probe = calendar.date(byAdding: .day, value: -1, to: probe) ?? probe
+            }
+            while daysWithNotes.contains(probe) {
+                currentStreak += 1
+                guard let prev = calendar.date(byAdding: .day, value: -1, to: probe) else { break }
+                probe = prev
+            }
+        }
+
+        SharedStore.updateWidgetSnapshot { snapshot in
+            snapshot.recentRecordings = Array(recentRecordings)
+            snapshot.todayWordCount = todayWordCount
+            snapshot.weeklyWordCounts = weeklyWordCounts
+            snapshot.currentStreak = currentStreak
+        }
+        WidgetCenter.shared.reloadAllTimelines()
     }
 
     /// Insert-or-update the local `items` last-writer-wins. A new id is inserted newest-first;

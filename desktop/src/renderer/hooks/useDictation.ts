@@ -33,6 +33,10 @@ async function webmToWav(webmBuffer: ArrayBuffer): Promise<ArrayBuffer> {
 
 interface UseDictationReturn {
   isRecording: boolean
+  /** Word count of the most recently transcribed (non-empty) result — real
+   * data from the actual transcript, used by DictationOverlay to render the
+   * post-paste "done" confirmation. Null once no transcript is available. */
+  lastWordCount: number | null
   startRecording: () => Promise<void>
   startOutputRecording: () => Promise<void>
   stopAndTranscribe: (sessionId?: number) => Promise<void>
@@ -41,6 +45,7 @@ interface UseDictationReturn {
 
 export function useDictation(): UseDictationReturn {
   const [isRecording, setIsRecording] = useState(false)
+  const [lastWordCount, setLastWordCount] = useState<number | null>(null)
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const chunksRef = useRef<Blob[]>([])
   const streamRef = useRef<MediaStream | null>(null)
@@ -171,6 +176,7 @@ export function useDictation(): UseDictationReturn {
       const recorder = mediaRecorderRef.current
       if (!recorder || recorder.state === 'inactive') {
         console.warn('[Whisperio] No active recorder — sending empty result to reset state')
+        setLastWordCount(null)
         await window.api.dictation.sendResult('', sessionId)
         return
       }
@@ -201,6 +207,7 @@ export function useDictation(): UseDictationReturn {
 
       if (audioBlob.size < 1000) {
         console.warn('[Whisperio] Audio too short, sending empty result')
+        setLastWordCount(null)
         await window.api.dictation.sendResult('', sessionId)
         return
       }
@@ -242,6 +249,11 @@ export function useDictation(): UseDictationReturn {
       const text = await window.api.dictation.transcribe(sendBuffer, sendFilename)
       console.log(`[Whisperio] Transcription result: "${text}"`)
 
+      // Real word count of the actual transcript — consumed by the overlay's
+      // post-paste "done" confirmation (docs/design/wz-overlay.jsx phase 'done').
+      const trimmed = text ? text.trim() : ''
+      setLastWordCount(trimmed ? trimmed.split(/\s+/).filter(Boolean).length : null)
+
       // Update recording with successful transcription
       if (savedRecordingId) {
         try {
@@ -257,6 +269,7 @@ export function useDictation(): UseDictationReturn {
       await window.api.dictation.sendResult(text || '', sessionId)
     } catch (err) {
       console.error('[Whisperio] stopAndTranscribe error:', err)
+      setLastWordCount(null)
       // Mark the saved recording as failed so the Recordings UI stops showing
       // it as "Processing..." forever, and surface the error text.
       if (savedRecordingId) {
@@ -285,7 +298,8 @@ export function useDictation(): UseDictationReturn {
     }
     stopTracks()
     chunksRef.current = []
+    setLastWordCount(null)
   }, [stopTracks])
 
-  return { isRecording, startRecording, startOutputRecording, stopAndTranscribe, cancelRecording }
+  return { isRecording, lastWordCount, startRecording, startOutputRecording, stopAndTranscribe, cancelRecording }
 }

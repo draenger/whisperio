@@ -66,6 +66,14 @@ export interface AppSettings {
   elevenlabsApiKey: string
   replicateApiKey: string
   sttReplicateModel: string
+  groqApiKey: string
+  sttGroqModel: string
+  deepgramApiKey: string
+  sttDeepgramModel: string
+  assemblyaiApiKey: string
+  sttAssemblyaiModel: string
+  mistralApiKey: string
+  sttMistralModel: string
   sttApiKey: string
   transcriptionLanguage: string
   transcriptionPrompt: string

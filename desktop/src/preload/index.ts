@@ -68,6 +68,16 @@ export interface AppSettings {
   elevenlabsApiKey: string
   replicateApiKey: string
   sttReplicateModel: string
+  // Cloud STT+ (v1.6) — see settingsManager.ts's AppSettings for the full doc
+  // comment. Empty string = provider unconfigured / built-in default model.
+  groqApiKey: string
+  sttGroqModel: string
+  deepgramApiKey: string
+  sttDeepgramModel: string
+  assemblyaiApiKey: string
+  sttAssemblyaiModel: string
+  mistralApiKey: string
+  sttMistralModel: string
   sttApiKey: string
   transcriptionLanguage: string
   transcriptionPrompt: string
@@ -90,6 +100,9 @@ export interface AppSettings {
   launchAtStartup: boolean
   dictationHotkey: string
   dictateAndSendHotkey: string
+  // COMMAND mode (v1.7) — see settingsManager.ts's AppSettings for the full
+  // doc comment. Empty string = disabled.
+  commandHotkey: string
   theme: 'dark' | 'light'
   accentColor: 'graphite' | 'blue' | 'teal' | 'emerald' | 'amber'
   inputDeviceId: string

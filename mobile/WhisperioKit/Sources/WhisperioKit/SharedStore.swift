@@ -33,6 +33,7 @@ public enum SharedStore {
         static let rewritePresetID   = "kbd.rewritePresetID"
         static let rewriteResult     = "kbd.rewriteResult"
         static let rewriteResultAt   = "kbd.rewriteResultAt"
+        static let widgetSnapshot    = "widget.snapshot.v1"
     }
 
     // MARK: - Transcript handoff (app → keyboard)
@@ -200,5 +201,98 @@ public enum SharedStore {
         }
         if created > 0, Date().timeIntervalSince1970 - created > maxAge { return nil }
         return text
+    }
+
+    // MARK: - Widget snapshot (app → WidgetKit extension)
+
+    /// One row of the "Recent" widget's list — a lightweight mirror of a real `Recording`, not a
+    /// fabricated placeholder. `iconSystemName` is derived from real recording metadata
+    /// (conversation vs. plain dictation), not a per-app source (Whisperio has no share-sheet
+    /// "recorded from" concept to report).
+    public struct WidgetRecentRecording: Codable, Sendable, Equatable, Identifiable {
+        public var id: UUID
+        public var title: String
+        public var iconSystemName: String
+        public var timestamp: Date
+
+        public init(id: UUID, title: String, iconSystemName: String, timestamp: Date) {
+            self.id = id
+            self.title = title
+            self.iconSystemName = iconSystemName
+            self.timestamp = timestamp
+        }
+    }
+
+    /// Everything the WidgetKit extension needs to render the CONCEPT widgets, written by the
+    /// app whenever the underlying data changes. Every field mirrors something the app already
+    /// computes for its own UI (RecapView's streak/word-count math, DigestStore's daily
+    /// summaries) — the widget process just can't reach `RecordingsStore`/`DigestStore`
+    /// directly, so this is the exported read-only snapshot. A missing/absent snapshot (fresh
+    /// install, no App Group access yet) must render an empty state — never fall back to fake
+    /// numbers.
+    public struct WidgetSnapshot: Codable, Sendable, Equatable {
+        /// Most recent recordings, newest first, capped by the writer (~5) for the "Recent" widget.
+        public var recentRecordings: [WidgetRecentRecording]
+        /// Words spoken today (calendar day), for the "This week" widget's headline number.
+        public var todayWordCount: Int
+        /// Word counts for the trailing 7 days, oldest first (index 6 = today) — the bar chart.
+        public var weeklyWordCounts: [Int]
+        /// Current days-with-a-note streak (same definition as RecapView.streaks.current).
+        public var currentStreak: Int
+        /// Today's digest summary text, if one has been generated yet.
+        public var digestText: String?
+        /// Number of recordings folded into today's digest.
+        public var digestNoteCount: Int
+        /// Number of distinct categories represented in today's digest.
+        public var digestCategoryCount: Int
+        /// When this snapshot was written — lets a widget show a stale/last-updated hint if ever needed.
+        public var updatedAt: Date
+
+        public init(
+            recentRecordings: [WidgetRecentRecording] = [],
+            todayWordCount: Int = 0,
+            weeklyWordCounts: [Int] = Array(repeating: 0, count: 7),
+            currentStreak: Int = 0,
+            digestText: String? = nil,
+            digestNoteCount: Int = 0,
+            digestCategoryCount: Int = 0,
+            updatedAt: Date = Date()
+        ) {
+            self.recentRecordings = recentRecordings
+            self.todayWordCount = todayWordCount
+            self.weeklyWordCounts = weeklyWordCounts
+            self.currentStreak = currentStreak
+            self.digestText = digestText
+            self.digestNoteCount = digestNoteCount
+            self.digestCategoryCount = digestCategoryCount
+            self.updatedAt = updatedAt
+        }
+    }
+
+    /// The last snapshot written by the app, or `nil` if none has ever been written (fresh
+    /// install / App Group unavailable) — callers must treat `nil` as "show an empty state",
+    /// never substitute placeholder data.
+    public static var widgetSnapshot: WidgetSnapshot? {
+        guard let d = defaults, let data = d.data(forKey: Key.widgetSnapshot) else { return nil }
+        return try? JSONDecoder().decode(WidgetSnapshot.self, from: data)
+    }
+
+    /// Overwrite the whole snapshot. Prefer `updateWidgetSnapshot(_:)` from a call site that only
+    /// owns part of the data (e.g. `RecordingsStore` shouldn't clobber the digest fields
+    /// `DigestStore` last wrote, and vice versa).
+    public static func setWidgetSnapshot(_ snapshot: WidgetSnapshot) {
+        guard let d = defaults, let data = try? JSONEncoder().encode(snapshot) else { return }
+        d.set(data, forKey: Key.widgetSnapshot)
+    }
+
+    /// Read-modify-write the snapshot: starts from the last written snapshot (or a fresh empty
+    /// one on first write), applies `mutate`, stamps `updatedAt`, and persists. This is what lets
+    /// `RecordingsStore` and `DigestStore` each update only the fields they own without racing
+    /// each other's writes.
+    public static func updateWidgetSnapshot(_ mutate: (inout WidgetSnapshot) -> Void) {
+        var snapshot = widgetSnapshot ?? WidgetSnapshot()
+        mutate(&snapshot)
+        snapshot.updatedAt = Date()
+        setWidgetSnapshot(snapshot)
     }
 }

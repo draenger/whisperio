@@ -12,6 +12,7 @@
 		1A000000000000000000002E /* DictateIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A000000000000000000002D /* DictateIntent.swift */; };
 		1A0000000000000000000040 /* WhisperioWatch Watch App.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = 65DB73B02FE4974400C0E269 /* WhisperioWatch Watch App.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		1B0000000000000000000012 /* WhisperioKit in Frameworks */ = {isa = PBXBuildFile; productRef = 1B0000000000000000000011 /* WhisperioKit */; };
+		1D0000000000000000000012 /* WhisperioKit in Frameworks */ = {isa = PBXBuildFile; productRef = 1D0000000000000000000011 /* WhisperioKit */; };
 		1B000000000000000000002C /* WhisperioKeyboard.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 1B0000000000000000000022 /* WhisperioKeyboard.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		1C0000000000000000000012 /* WhisperioKit in Frameworks */ = {isa = PBXBuildFile; productRef = 1C0000000000000000000011 /* WhisperioKit */; };
 /* End PBXBuildFile section */
@@ -156,6 +157,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				1D0000000000000000000012 /* WhisperioKit in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -270,6 +272,7 @@
 			);
 			name = WhisperioWidget;
 			packageProductDependencies = (
+				1D0000000000000000000011 /* WhisperioKit */,
 			);
 			productName = WhisperioWidget;
 			productReference = 1A0000000000000000000022 /* WhisperioWidget.appex */;
@@ -674,6 +677,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = Widget/WhisperioWidget.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 49;
 				DEVELOPMENT_TEAM = 953Q6T2WTB;
@@ -701,6 +705,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = Widget/WhisperioWidget.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 49;
 				DEVELOPMENT_TEAM = 953Q6T2WTB;
@@ -1066,6 +1071,10 @@
 			productName = WhisperioKit;
 		};
 		1C0000000000000000000011 /* WhisperioKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = WhisperioKit;
+		};
+		1D0000000000000000000011 /* WhisperioKit */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = WhisperioKit;
 		};

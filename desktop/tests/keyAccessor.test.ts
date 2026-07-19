@@ -44,9 +44,19 @@ describe('keyAccessor', () => {
   })
 
   describe('PROVIDER_KEY_FIELDS', () => {
-    it('covers exactly the five documented provider-key settings fields', () => {
+    it('covers exactly the documented provider-key settings fields', () => {
       expect([...PROVIDER_KEY_FIELDS].sort()).toEqual(
-        ['anthropicApiKey', 'elevenlabsApiKey', 'openaiApiKey', 'replicateApiKey', 'sttApiKey'].sort()
+        [
+          'anthropicApiKey',
+          'elevenlabsApiKey',
+          'openaiApiKey',
+          'replicateApiKey',
+          'groqApiKey',
+          'deepgramApiKey',
+          'assemblyaiApiKey',
+          'mistralApiKey',
+          'sttApiKey'
+        ].sort()
       )
     })
   })

@@ -12,6 +12,10 @@ export const PROVIDER_KEY_FIELDS = [
   'elevenlabsApiKey',
   'anthropicApiKey',
   'replicateApiKey',
+  'groqApiKey',
+  'deepgramApiKey',
+  'assemblyaiApiKey',
+  'mistralApiKey',
   'sttApiKey'
 ] as const satisfies readonly (keyof AppSettings)[]
 

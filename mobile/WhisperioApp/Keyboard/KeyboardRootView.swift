@@ -14,6 +14,7 @@ struct KeyboardRootView: View {
     @ObservedObject var model: KeyboardModel
     @Environment(\.colorScheme) private var scheme
     @State private var plane: KBPlane = .letters
+    @State private var showRewriteMenu = false
 
     // Rezme tokens — mirrors WZTheme.rezmeTheme / rezmeLightTheme (the Keyboard extension
     // doesn't link the app module, so the values are mirrored here rather than imported).
@@ -63,6 +64,23 @@ struct KeyboardRootView: View {
             .padding(.horizontal, 4)
             .padding(.top, 7)
             .padding(.bottom, 8)
+
+            if showRewriteMenu {
+                // Tap-outside-to-dismiss catcher, then the anchored card itself.
+                Color.black.opacity(0.001)
+                    .ignoresSafeArea()
+                    .onTapGesture { withAnimation(.easeOut(duration: 0.15)) { showRewriteMenu = false } }
+                VStack {
+                    HStack {
+                        Spacer()
+                        rewriteMenuCard
+                            .padding(.trailing, 4)
+                    }
+                    Spacer()
+                }
+                .padding(.top, 42)
+                .transition(.opacity.combined(with: .scale(scale: 0.96, anchor: .topTrailing)))
+            }
         }
     }
 
@@ -128,19 +146,51 @@ struct KeyboardRootView: View {
     }
 
     private var rewriteMenu: some View {
-        Menu {
-            ForEach(RewritePresetCatalog.seeds.filter { !$0.isMeta }) { preset in
-                Button(preset.name) { model.rewrite(presetID: preset.id) }
-            }
-        } label: {
+        Button(action: { withAnimation(.easeOut(duration: 0.15)) { showRewriteMenu.toggle() } }) {
             Image(systemName: "sparkles")
                 .font(.system(size: 14, weight: .semibold))
                 .foregroundStyle(accent)
                 .frame(width: 30, height: 30)
                 .background(specialFill, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
         }
-        .menuStyle(.borderlessButton)
+        .buttonStyle(KBPressStyle())
         .accessibilityLabel("Rewrite")
+    }
+
+    // Bespoke floating card replacing the stock SwiftUI Menu (mob-triggers.jsx
+    // KeyboardSceneClassic rwOpen popover): w190, r12, elevated, accent sparkle
+    // icon per row, hairline separators between rows.
+    private var rewriteMenuCard: some View {
+        let presets = RewritePresetCatalog.seeds.filter { !$0.isMeta }
+        return VStack(spacing: 0) {
+            ForEach(Array(presets.enumerated()), id: \.element.id) { index, preset in
+                if index > 0 {
+                    Divider().background(border)
+                }
+                Button(action: {
+                    model.rewrite(presetID: preset.id)
+                    withAnimation(.easeOut(duration: 0.15)) { showRewriteMenu = false }
+                }) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "sparkles")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(accent)
+                        Text(preset.name)
+                            .font(.system(size: 14, weight: .medium))
+                            .foregroundStyle(keyText)
+                            .lineLimit(1)
+                        Spacer(minLength: 0)
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 10)
+                }
+                .buttonStyle(KBPressStyle())
+            }
+        }
+        .frame(width: 190)
+        .background(keyFill, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(border, lineWidth: 1))
+        .shadow(color: .black.opacity(dark ? 0.45 : 0.18), radius: 14, y: 6)
     }
 
     private var suggestionsRow: some View {

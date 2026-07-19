@@ -453,10 +453,30 @@ struct WhisperioApp: App {
 private struct RootView: View {
     @EnvironmentObject private var settings: SettingsStore
     @Binding var incomingURL: URL?
+    // Real iPad hardware (not just a widened iPhone) gets the Obsidian-style split view instead
+    // of the phone shell — the whole point of the AppleSplit design. Regular/regular is the
+    // idiom-independent signal SwiftUI recommends, but we gate on the iPad idiom itself too so a
+    // Slide Over / multitasked-narrow iPhone-class layout never flips into the split by accident.
+#if os(iOS)
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    private var isPad: Bool {
+        UIDevice.current.userInterfaceIdiom == .pad && horizontalSizeClass == .regular
+    }
+#else
+    private var isPad: Bool { false }
+#endif
 
     var body: some View {
         if settings.didCompleteSetup {
-            WZPhoneView(initialScreen: .home, incomingURL: $incomingURL)
+            if isPad {
+                // Same wiring WhisperioMacApp.swift uses to make the split view's Journal tab
+                // store-backed; the engine bar is Mac-only chrome, so iPad gets it hidden (design's
+                // "plain" iPad variant).
+                iPadSplitView(showEngineBar: false)
+                    .environment(\.wzLiveJournal, true)
+            } else {
+                WZPhoneView(initialScreen: .home, incomingURL: $incomingURL)
+            }
         } else {
             SetupView()
                 .environment(\.wz, WZTheme.of(true))
