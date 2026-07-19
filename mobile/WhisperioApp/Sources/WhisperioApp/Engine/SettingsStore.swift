@@ -118,16 +118,56 @@ final class SettingsStore: ObservableObject {
         }
     }
 
-    // Build the diarizing transcriber for Conversation mode (ElevenLabs Scribe v2 with
-    // diarize=true — the only configured engine that separates speakers). Gated the same way
-    // makeChain() gates cloud STT: nil until the user granted cloud consent AND pasted an
-    // ElevenLabs key, so callers surface the setup state instead of failing silently.
-    func makeConversationTranscriber() -> ElevenLabsProvider? {
+    // Engines that can diarize at all (architectural capability, independent of whether they're
+    // currently configured) — the set Conversation mode's gating and the retranscribe menu's
+    // "keeps speakers" labeling both key off of.
+    private static let diarizingProviderIDs: [ProviderID] = [.elevenLabs, .deepgram, .assemblyAI]
+
+    /// Whether `id` names an engine capable of diarization at all (key/consent-independent) —
+    /// drives which retranscribe options warn about losing speaker labels vs. which keep them.
+    func isDiarizingEngine(_ id: ProviderID) -> Bool { Self.diarizingProviderIDs.contains(id) }
+
+    /// Build the diarizing transcriber for Conversation mode: the first diarization-capable engine
+    /// (ElevenLabs Scribe, Deepgram Nova, or AssemblyAI Universal) that's actually configured,
+    /// preferring the user's own model-order ranking among diarizing engines (so a chosen primary
+    /// sticks), then falling back through the rest — so a user who's only set up Deepgram or
+    /// AssemblyAI still gets real diarization instead of a dead end. Gated the same way makeChain()
+    /// gates cloud STT: nil until cloud consent is granted, so callers surface the setup state
+    /// instead of failing silently.
+    func makeConversationTranscriber() -> (any DiarizingProvider)? {
         let s = settings
-        guard s.cloudConsentGranted,
-              !s.elevenLabsKey.trimmingCharacters(in: .whitespaces).isEmpty else { return nil }
-        return ElevenLabsProvider(apiKey: s.elevenLabsKey,
-                                  languageCode: s.language, keyterms: s.vocabularyTerms)
+        guard s.cloudConsentGranted else { return nil }
+        var order = s.modelOrder.map(\.provider).filter { Self.diarizingProviderIDs.contains($0) }
+        for id in Self.diarizingProviderIDs where !order.contains(id) { order.append(id) }
+        for id in order {
+            if let candidate = provider(for: id, s) as? any DiarizingProvider, candidate.isConfigured {
+                return candidate
+            }
+        }
+        return nil
+    }
+
+    /// One-off diarizing transcriber for a specific engine the user explicitly picked (e.g. a
+    /// retranscribe menu's "keeps speakers" option). Unlike makeConversationTranscriber() this
+    /// never substitutes a different engine — it returns the requested one only if it's both
+    /// diarization-capable and configured, so "retranscribe with X" can never silently run as Y.
+    func makeDiarizingProvider(_ id: ProviderID) -> (any DiarizingProvider)? {
+        let s = settings
+        guard s.cloudConsentGranted, Self.diarizingProviderIDs.contains(id) else { return nil }
+        guard let candidate = provider(for: id, s) as? any DiarizingProvider, candidate.isConfigured else { return nil }
+        return candidate
+    }
+
+    /// Best-guess diarizing engine for Conversation-mode setup/consent copy, before consent is
+    /// granted (so `makeConversationTranscriber()` can't run yet to tell us): whichever diarizing
+    /// engine already has a key saved wins; ElevenLabs is the default when none do, preserving the
+    /// original copy for a fresh install.
+    var conversationEngineHint: ProviderID {
+        let s = settings
+        if !s.elevenLabsKey.trimmingCharacters(in: .whitespaces).isEmpty { return .elevenLabs }
+        if !s.deepgramKey.trimmingCharacters(in: .whitespaces).isEmpty { return .deepgram }
+        if !s.assemblyAIKey.trimmingCharacters(in: .whitespaces).isEmpty { return .assemblyAI }
+        return .elevenLabs
     }
 
     // Build the text-LLM client for rewrite (render presets) + journaling. Gated the same

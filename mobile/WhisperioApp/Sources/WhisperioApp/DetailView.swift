@@ -157,8 +157,8 @@ struct DetailView: View {
         } message: {
             Text("Shown instead of the generic label, everywhere this conversation appears.")
         }
-        // The informed-consent moment for local models on a conversation: diarization only
-        // works in the cloud (ElevenLabs Scribe), so a plain engine drops the speaker labels.
+        // The informed-consent moment for non-diarizing engines on a conversation: speaker
+        // detection needs one of the diarizing cloud engines, so a plain engine drops the labels.
         .alert("Speakers need the cloud", isPresented: Binding(
             get: { confirmPlainEngine != nil },
             set: { if !$0 { confirmPlainEngine = nil } }
@@ -169,7 +169,7 @@ struct DetailView: View {
             }
             Button("Cancel", role: .cancel) { confirmPlainEngine = nil }
         } message: {
-            Text("Speaker detection only works with ElevenLabs Scribe in the cloud. Retranscribing with \(confirmPlainEngine.map(engineName) ?? "another engine") produces plain text and removes the speaker labels.")
+            Text("Speaker detection needs a diarizing cloud engine (ElevenLabs, Deepgram, or AssemblyAI) — retranscribing with \(confirmPlainEngine.map(engineName) ?? "another engine") produces plain text and removes the speaker labels.")
         }
     }
 
@@ -195,6 +195,12 @@ struct DetailView: View {
                     engineOption(.openAI, "OpenAI — cloud", "globe")
                     engineOption(.elevenLabs,
                                  isConversation ? "ElevenLabs — keeps speakers" : "ElevenLabs — cloud",
+                                 "globe")
+                    engineOption(.deepgram,
+                                 isConversation ? "Deepgram — keeps speakers" : "Deepgram — cloud",
+                                 "globe")
+                    engineOption(.assemblyAI,
+                                 isConversation ? "AssemblyAI — keeps speakers" : "AssemblyAI — cloud",
                                  "globe")
                 }
             }
@@ -229,7 +235,7 @@ struct DetailView: View {
             openSettings()
             return
         }
-        if isConversation && id != .elevenLabs {
+        if isConversation && !settings.isDiarizingEngine(id) {
             confirmPlainEngine = id   // inform before dropping the speaker labels
         } else {
             retranscribe(id)
@@ -246,16 +252,17 @@ struct DetailView: View {
                 return
             }
             let clip = AudioClip(data: data, filename: source.filename, duration: source.duration)
-            if id == .elevenLabs, isConversation {
-                // Conversations re-run through Scribe with diarize=true so speakers survive.
-                guard let transcriber = settings.makeConversationTranscriber() else {
+            if settings.isDiarizingEngine(id), isConversation {
+                // Conversations re-run through the exact engine the user picked so speakers
+                // survive — never substitute a different diarizing engine.
+                guard let transcriber = settings.makeDiarizingProvider(id) else {
                     retranscribing = false
                     openSettings()
                     return
                 }
                 do {
                     let result = try await transcriber.transcribeDiarized(clip)
-                    applyRetranscription(settings.cleanup(result.text), .elevenLabs,
+                    applyRetranscription(settings.cleanup(result.text), id,
                                          result.segments.isEmpty ? nil : result.segments)
                 } catch {
                     retranscribing = false

@@ -10,7 +10,8 @@ import AppKit
 
 // Conversation mode — long-form mic capture of an in-person conversation (a chat in a café,
 // an interview) with user-controlled pause/resume, transcribed with speaker diarization
-// (ElevenLabs Scribe v2, diarize=true). Distinct from RecordingView on purpose: dictation is
+// (whichever diarizing cloud engine — ElevenLabs Scribe, Deepgram Nova, or AssemblyAI
+// Universal — the user has configured). Distinct from RecordingView on purpose: dictation is
 // a short single-voice clip with live partials; a conversation is long, multi-voice, and only
 // transcribable in the cloud — so this screen is always file-based and never auto-stops.
 struct ConversationView: View {
@@ -49,8 +50,9 @@ struct ConversationView: View {
         switch phase {
         case .setup:
             return "Conversations are transcribed in the cloud with speaker detection " +
-                   "(ElevenLabs Scribe) — this mode doesn’t work with the on-device models. " +
-                   "Grant cloud consent and add an ElevenLabs API key in Settings to use it."
+                   "(ElevenLabs Scribe, Deepgram Nova, or AssemblyAI Universal) — this mode " +
+                   "doesn’t work with the on-device models. Grant cloud consent and add an " +
+                   "API key for one of them in Settings to use it."
         case .listening:
             return "Recording everyone near the microphone. Pause anytime — tap stop when " +
                    "the conversation is over."
@@ -68,7 +70,8 @@ struct ConversationView: View {
         ScreenScaffold(bg: t.bg2) {
             VStack(spacing: 0) {
                 HStack {
-                    EngineChip(label: phase == .processing ? "Transcribing…" : "ElevenLabs · speakers",
+                    EngineChip(label: phase == .processing ? "Transcribing…" :
+                                        "\(settings.makeConversationTranscriber()?.id.displayName ?? "Cloud") · speakers",
                                icon: phase == .processing ? "spark" : "people")
                     Spacer()
                     Text(clock).font(WZFont.mono(15)).foregroundStyle(t.text).monospacedDigit()
@@ -148,7 +151,7 @@ struct ConversationView: View {
         }
         #endif
         .sheet(isPresented: $showConsent) {
-            CloudConsentSheet(provider: .elevenLabs,
+            CloudConsentSheet(provider: settings.conversationEngineHint,
                               onAccept: grantConsent,
                               onCancel: { showConsent = false })
                 .environment(\.wz, t)
@@ -212,7 +215,7 @@ struct ConversationView: View {
         if settings.makeConversationTranscriber() != nil {
             Task { await begin() }
         } else {
-            openSettings()   // consented, but no ElevenLabs key yet
+            openSettings()   // consented, but no diarizing engine key yet
         }
     }
 
@@ -239,13 +242,15 @@ struct ConversationView: View {
             phase = .error; errorMsg = "Nothing was recorded."; return
         }
         guard let transcriber = settings.makeConversationTranscriber() else {
-            phase = .error; errorMsg = "ElevenLabs isn’t configured. Check Settings."; return
+            phase = .error
+            errorMsg = "No diarizing engine is configured. Add an ElevenLabs, Deepgram, or AssemblyAI key in Settings."
+            return
         }
         do {
             let result = try await transcriber.transcribeDiarized(clip)
             let text = settings.cleanup(result.text)
             let rec = Recording(filename: clip.filename, duration: clip.duration,
-                                status: .completed, provider: .elevenLabs,
+                                status: .completed, provider: transcriber.id,
                                 transcription: text,
                                 segments: result.segments.isEmpty ? nil : result.segments)
             // Conversations always persist — unlike a quick dictation (pasted immediately,

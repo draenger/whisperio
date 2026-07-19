@@ -4,7 +4,12 @@ import WhisperioKit
 // Cloud transcription via AssemblyAI (BYO key). Universal models — a three-step async flow:
 // upload the raw audio, create a transcript job, then poll until it completes. Uses the shared
 // uploadSession so the upload leg gets the same timeouts as the other providers.
-struct AssemblyAIProvider: TranscriptionProvider {
+//
+// Diarization: passing `speaker_labels: true` on job creation makes AssemblyAI return an
+// `utterances` array (speaker letter + text + ms timestamps) alongside the flat `text` —
+// folded into `SpeakerSegment`s by `AssemblyAISegmentMapper` (WhisperioKit, unit-tested there
+// since this App-target file has no test target of its own).
+struct AssemblyAIProvider: DiarizingProvider {
     let id: ProviderID = .assemblyAI
     let apiKey: String
     let model: String
@@ -32,9 +37,27 @@ struct AssemblyAIProvider: TranscriptionProvider {
         let status: String
         let text: String?
         let error: String?
+        let utterances: [AssemblyAISegmentMapper.Utterance]?
     }
 
     func transcribe(_ clip: AudioClip) async throws -> String {
+        let job = try await runJob(clip, diarize: false)
+        guard let text = job.text else { throw Self.err("AssemblyAI returned no transcript.") }
+        return text
+    }
+
+    /// Conversation mode: same job flow with `speaker_labels: true`, folding the returned
+    /// utterances into per-speaker segments.
+    func transcribeDiarized(_ clip: AudioClip) async throws -> DiarizedTranscription {
+        let job = try await runJob(clip, diarize: true)
+        guard let text = job.text else { throw Self.err("AssemblyAI returned no transcript.") }
+        let segments = AssemblyAISegmentMapper.segments(from: job.utterances ?? [])
+        return DiarizedTranscription(text: text, segments: segments)
+    }
+
+    // Upload the raw audio, create the transcript job (speaker_labels when diarizing), then
+    // poll until it completes or errors.
+    private func runJob(_ clip: AudioClip, diarize: Bool) async throws -> Job {
         // 1. Upload the raw audio; the response carries a private URL for step 2.
         guard let uploadURL = URL(string: Self.base + "/upload") else {
             throw Self.err("Invalid AssemblyAI URL.")
@@ -60,6 +83,7 @@ struct AssemblyAIProvider: TranscriptionProvider {
             let speech_model: String
             let language_code: String?
             let language_detection: Bool?
+            let speaker_labels: Bool?
         }
         let auto = language == "auto" || language.isEmpty
         var create = URLRequest(url: jobURL)
@@ -69,7 +93,8 @@ struct AssemblyAIProvider: TranscriptionProvider {
         create.httpBody = try JSONEncoder().encode(JobRequest(
             audio_url: audioURL, speech_model: apiModel,
             language_code: auto ? nil : language,
-            language_detection: auto ? true : nil))
+            language_detection: auto ? true : nil,
+            speaker_labels: diarize ? true : nil))
         let job = try JSONDecoder().decode(Job.self, from: try await send(create, step: "transcript"))
 
         // 3. Poll until the job settles.
@@ -83,8 +108,7 @@ struct AssemblyAIProvider: TranscriptionProvider {
             let state = try JSONDecoder().decode(Job.self, from: try await send(poll, step: "status"))
             switch state.status {
             case "completed":
-                guard let text = state.text else { throw Self.err("AssemblyAI returned no transcript.") }
-                return text
+                return state
             case "error":
                 throw Self.err("AssemblyAI failed: \(state.error ?? "unknown error")")
             default:

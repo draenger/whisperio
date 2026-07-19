@@ -151,26 +151,140 @@ import Foundation
         let paths = Set(changes.map(\.path))
         let min = Self.stamp(Self.noon, "yyyy-MM-dd_HH-mm")
         let day = Self.stamp(Self.noon, "yyyy-MM-dd")
+        let weekKey = JournalGrouping.isoWeekKey(for: Self.noon)
         #expect(paths.contains("notes/work/\(min)-6f1a2b3c/transcript.md"))
         #expect(paths.contains("notes/work/\(min)-6f1a2b3c/render.md"))
         #expect(paths.contains("notes/\(day)-summary.md"))
-        #expect(changes.count == 3)
+        #expect(paths.contains("notes/journal/weeks/\(weekKey).md"))
+        #expect(paths.contains("notes/journal/topics/work.md"))
+        #expect(changes.count == 5)
     }
 
     @Test func syncPlanSkipsUnchangedFiles() {
         let id = UUID(uuidString: "6F1A2B3C-4D5E-6F70-8192-A3B4C5D6E7F8")!
         let one = item(id: id)
-        // First pass: nothing remote, so the transcript is emitted with its blob sha.
+        // First pass: nothing remote, so the transcript plus its journal week/topic books are
+        // emitted with their blob shas.
         let first = SyncPlan.build(items: [one], syntheses: [], prefix: "notes")
-        #expect(first.count == 1)
-        // Feed that blob sha back as the remote state — the identical render is now skipped.
-        let remote = [first[0].path: first[0].blobSha]
+        #expect(first.count == 3)
+        // Feed those blob shas back as the remote state — everything identical is now skipped.
+        var remote: [String: String] = [:]
+        for c in first { remote[c.path] = c.blobSha }
         let second = SyncPlan.build(items: [one], syntheses: [], prefix: "notes", remoteBlobShas: remote)
         #expect(second.isEmpty)
-        // A changed transcript re-emits (different bytes → different blob sha).
+        // A changed transcript re-emits (different bytes → different blob sha) — and so do its
+        // journal week/topic books, since their rendered excerpt line changed too.
         let edited = item(id: id, transcript: "changed text")
         let third = SyncPlan.build(items: [edited], syntheses: [], prefix: "notes", remoteBlobShas: remote)
-        #expect(third.count == 1)
+        #expect(third.count == 3)
+    }
+
+    // MARK: - Journal book grouping/rendering
+
+    // Builds a date via DateComponents in a plain Gregorian calendar with the CURRENT (not
+    // epoch-based) timezone, so the asserted local calendar date is deterministic regardless of
+    // the CI host's timezone — verified against Python's `datetime.isocalendar()`: 2026-01-15 is
+    // ISO week 3, and 2025-12-29 is ISO week 1 of 2026 (a year-rollover case).
+    private func localDate(_ y: Int, _ m: Int, _ d: Int, _ h: Int) -> Date {
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = .current
+        var c = DateComponents()
+        c.year = y; c.month = m; c.day = d; c.hour = h
+        return cal.date(from: c)!
+    }
+
+    @Test func relativePathWalksUpToCommonAncestor() {
+        #expect(GitHubPaths.relativePath(from: "notes/journal/weeks", to: "notes/work/x/transcript.md")
+                 == "../../work/x/transcript.md")
+        #expect(GitHubPaths.relativePath(from: "journal/weeks", to: "work/x/transcript.md")
+                 == "../../work/x/transcript.md")
+    }
+
+    @Test func isoWeekKeyMatchesKnownWeek() {
+        #expect(JournalGrouping.isoWeekKey(for: localDate(2026, 1, 15, 12)) == "2026-W03")
+    }
+
+    @Test func isoWeekKeyRollsIntoNextYearAtBoundary() {
+        #expect(JournalGrouping.isoWeekKey(for: localDate(2025, 12, 29, 12)) == "2026-W01")
+    }
+
+    @Test func journalWeekMarkdownListsEntryWithLink() {
+        let md = MarkdownRenderer.journalWeekMarkdown(
+            weekKey: "2026-W03",
+            entries: [(item: item(id: UUID()), link: "../../work/x/transcript.md")])
+        #expect(md.contains("type: journal-week"))
+        #expect(md.contains("week: 2026-W03"))
+        #expect(md.contains("notes: 1"))
+        #expect(md.contains("[hello world](../../work/x/transcript.md)"))
+    }
+
+    @Test func journalTopicMarkdownListsEntryWithLink() {
+        let md = MarkdownRenderer.journalTopicMarkdown(
+            categoryId: "work", categoryLabel: "Work",
+            entries: [(item: item(id: UUID()), link: "../../work/x/transcript.md")])
+        #expect(md.contains("type: journal-topic"))
+        #expect(md.contains("category: work"))
+        #expect(md.contains("notes: 1"))
+        #expect(md.contains("# Work"))
+        #expect(md.contains("[hello world](../../work/x/transcript.md)"))
+    }
+
+    @Test func journalEntryExcerptIsClippedToOneLine() {
+        let longTranscript = String(repeating: "a", count: 60) + "\n" + String(repeating: "b", count: 60)
+        let md = MarkdownRenderer.journalWeekMarkdown(
+            weekKey: "2026-W03",
+            entries: [(item: item(id: UUID(), transcript: longTranscript), link: "x.md")])
+        #expect(md.contains("…"))
+        // Exactly one list line for the single entry — the embedded newline was flattened to a
+        // space rather than becoming a second Markdown list line.
+        let listLines = md.components(separatedBy: "\n").filter { $0.hasPrefix("- **") }
+        #expect(listLines.count == 1)
+        #expect(listLines[0].contains(String(repeating: "a", count: 60)))
+    }
+
+    @Test func syncPlanEmitsJournalWeekAndTopicBooks() {
+        let a = UUID(uuidString: "11111111-1111-4111-8111-111111111111")!
+        let b = UUID(uuidString: "22222222-2222-4222-8222-222222222222")!
+        let weekKey = JournalGrouping.isoWeekKey(for: Self.noon)
+        let changes = SyncPlan.build(items: [item(id: a), item(id: b)], syntheses: [], prefix: "notes")
+        let paths = Set(changes.map(\.path))
+        #expect(paths.contains("notes/journal/weeks/\(weekKey).md"))
+        #expect(paths.contains("notes/journal/topics/work.md"))
+        let topicFile = changes.first { $0.path == "notes/journal/topics/work.md" }
+        #expect(topicFile.map { String(data: $0.contents, encoding: .utf8) ?? "" }?.contains("notes: 2") == true)
+    }
+
+    @Test func uncategorizedExcludedFromTopicBooksButKeptInWeekBook() {
+        let changes = SyncPlan.build(
+            items: [item(id: UUID(), category: uncategorizedCategoryID, label: "Uncategorized")],
+            syntheses: [], prefix: "notes")
+        let paths = changes.map(\.path)
+        #expect(!paths.contains { $0.hasPrefix("notes/journal/topics/") })
+        #expect(paths.contains { $0.hasPrefix("notes/journal/weeks/") })
+    }
+
+    @Test func journalBooksAreIdempotentThenGrowOnNewEntry() {
+        let id = UUID(uuidString: "6F1A2B3C-4D5E-6F70-8192-A3B4C5D6E7F8")!
+        let one = item(id: id)
+        // First pass: capture blob shas for ALL paths (transcript + the two new journal files).
+        let first = SyncPlan.build(items: [one], syntheses: [], prefix: "notes")
+        var remoteBlobShas: [String: String] = [:]
+        for c in first { remoteBlobShas[c.path] = c.blobSha }
+
+        // Second pass: same item, same remote shas → nothing changed.
+        let second = SyncPlan.build(items: [one], syntheses: [], prefix: "notes", remoteBlobShas: remoteBlobShas)
+        #expect(second.isEmpty)
+
+        // Third pass: a second same-week/same-topic item — the journal books grow, but the
+        // FIRST item's own transcript.md is untouched (proving the rebuild didn't force a
+        // spurious re-diff of unrelated files).
+        let secondID = UUID(uuidString: "7A2B3C4D-5E6F-4081-92A3-B4C5D6E7F8A9")!
+        let two = item(id: secondID)
+        let third = SyncPlan.build(items: [one, two], syntheses: [], prefix: "notes", remoteBlobShas: remoteBlobShas)
+        let thirdPaths = Set(third.map(\.path))
+        #expect(thirdPaths.contains { $0.hasPrefix("notes/journal/weeks/") })
+        #expect(thirdPaths.contains { $0.hasPrefix("notes/journal/topics/") })
+        #expect(!thirdPaths.contains { $0.hasSuffix("/transcript.md") && $0.contains("6f1a2b3c") })
     }
 
     // MARK: - GitHubClient request shape via mock transport (no network)

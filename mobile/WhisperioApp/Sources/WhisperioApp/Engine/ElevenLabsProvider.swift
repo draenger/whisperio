@@ -2,7 +2,7 @@ import Foundation
 import WhisperioKit
 
 // Cloud transcription via ElevenLabs Speech-to-Text (BYO key).
-struct ElevenLabsProvider: TranscriptionProvider {
+struct ElevenLabsProvider: DiarizingProvider {
     let id: ProviderID = .elevenLabs
     let apiKey: String
     var languageCode: String = ""
@@ -24,12 +24,6 @@ struct ElevenLabsProvider: TranscriptionProvider {
         struct R: Decodable { let text: String }
         let data = try await send(clip, diarize: false)
         return try JSONDecoder().decode(R.self, from: data).text
-    }
-
-    /// A diarized conversation transcript: the flat text plus per-speaker segments.
-    struct DiarizedTranscription {
-        let text: String
-        let segments: [SpeakerSegment]
     }
 
     /// Conversation mode: same endpoint with `diarize=true` (Scribe v2 — diarization needs

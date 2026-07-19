@@ -660,7 +660,7 @@ struct OnboardingView: View {
 
     // MARK: - Step 7 · more than a transcript
     private static let featureRows: [(String, String, String)] = [
-        ("people", "Group transcription", "Records the whole room and separates speakers. Requires ElevenLabs (up to 32 speakers) or OpenAI (up to 4)."),
+        ("people", "Group transcription", "Records the whole room and separates speakers. Requires a diarizing cloud engine — ElevenLabs (up to 32 speakers), Deepgram or AssemblyAI."),
         ("book", "Journal & daily digest", "Notes bind themselves into days, weeks and topic books."),
         ("spark", "Rewrite templates", "Turn a rambling take into a standup update, email or list."),
         ("list", "Custom vocabulary", "Teach it your project names, tools and shorthand.")
@@ -781,7 +781,7 @@ private struct ProviderConnectSheet: View {
 
     private static let providers: [(ProviderID, String)] = [
         (.elevenLabs, "Scribe · group up to 32 speakers"),
-        (.openAI, "Transcribe · group up to 4 speakers"),
+        (.openAI, "Transcribe · Whisper API"),
         (.deepgram, "Nova · fast streaming")
     ]
 

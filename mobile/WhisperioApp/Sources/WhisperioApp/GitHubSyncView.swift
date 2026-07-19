@@ -49,6 +49,16 @@ struct GitHubSyncView: View {
                             plainField("Folder (optional)", "whisperio", binding(\.githubPathPrefix))
                         }
 
+                        // Keep this list in lockstep with what SyncPlan.build actually emits — if a
+                        // future SyncPlan change adds/removes a file kind without a matching copy
+                        // update here, this comment is the trip wire a reviewer should catch it on.
+                        SettGroup(title: "What syncs") {
+                            SettRow(icon: "check", label: "Transcripts", sub: "Markdown, one file per note")
+                            SettRow(icon: "check", label: "Journals", sub: "Days, weeks and topic books")
+                            SettRow(icon: "check", label: "Daily summaries", sub: "The Journal digests")
+                            SettRow(icon: "check", label: "Rewrites", sub: "Cleaned-up renders", last: true)
+                        }
+
                         SettGroup(title: "Status") {
                             SettRow(icon: "sync", label: "Last synced", sub: statusSubtitle, last: true) {
                                 Circle().fill(statusColor).frame(width: 10, height: 10)

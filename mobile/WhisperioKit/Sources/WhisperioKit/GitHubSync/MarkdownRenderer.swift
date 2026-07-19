@@ -71,4 +71,64 @@ public enum MarkdownRenderer {
         lines.append(synthesis.body)
         return lines.joined(separator: "\n") + "\n"
     }
+
+    /// One Markdown list line for a journal book entry, linking to that recording's own
+    /// `transcript.md`. The excerpt is the raw transcript (guaranteed non-empty when SyncPlan
+    /// mirrors it), trimmed, newlines flattened to spaces, and clipped to 100 chars with a
+    /// trailing `…` when longer — falls back to `(empty)` should that ever not hold.
+    private static func journalEntryLine(_ item: SyncItem, link: String) -> String {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.timeZone = GitHubPaths.timeZone
+        f.dateFormat = "yyyy-MM-dd HH:mm"
+        let when = f.string(from: item.timestamp)
+
+        let flattened = item.transcript
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: "\r\n", with: " ")
+            .replacingOccurrences(of: "\n", with: " ")
+            .replacingOccurrences(of: "\r", with: " ")
+        let excerpt: String
+        if flattened.isEmpty {
+            excerpt = "(empty)"
+        } else if flattened.count > 100 {
+            excerpt = "\(flattened.prefix(100))…"
+        } else {
+            excerpt = flattened
+        }
+
+        return "- **\(when)** · \(item.categoryLabel) — [\(excerpt)](\(link))"
+    }
+
+    /// `journal/weeks/<weekKey>.md` — every recording from that ISO week, oldest-first.
+    public static func journalWeekMarkdown(weekKey: String, entries: [(item: SyncItem, link: String)]) -> String {
+        var lines = ["---"]
+        lines.append("type: journal-week")
+        lines.append("week: \(weekKey)")
+        lines.append("source: whisperio-ios")
+        lines.append("notes: \(entries.count)")
+        lines.append("---")
+        lines.append("")
+        lines.append("# Week \(weekKey)")
+        for (item, link) in entries {
+            lines.append(journalEntryLine(item, link: link))
+        }
+        return lines.joined(separator: "\n") + "\n"
+    }
+
+    /// `journal/topics/<category>.md` — every recording ever filed under that category, oldest-first.
+    public static func journalTopicMarkdown(categoryId: String, categoryLabel: String, entries: [(item: SyncItem, link: String)]) -> String {
+        var lines = ["---"]
+        lines.append("type: journal-topic")
+        lines.append("category: \(categoryId)")
+        lines.append("source: whisperio-ios")
+        lines.append("notes: \(entries.count)")
+        lines.append("---")
+        lines.append("")
+        lines.append("# \(categoryLabel)")
+        for (item, link) in entries {
+            lines.append(journalEntryLine(item, link: link))
+        }
+        return lines.joined(separator: "\n") + "\n"
+    }
 }

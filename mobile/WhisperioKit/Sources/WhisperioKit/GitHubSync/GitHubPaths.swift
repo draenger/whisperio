@@ -97,4 +97,34 @@ public enum GitHubPaths {
         }
         return out
     }
+
+    /// `<prefix>/journal/weeks/<weekKey>.md` — one file per ISO week.
+    public static func journalWeekPath(prefix: String, weekKey: String) -> String {
+        join([prefix, "journal", "weeks", "\(weekKey).md"])
+    }
+
+    /// `<prefix>/journal/topics/<sanitized-category>.md` — one file per topic, across all time.
+    public static func journalTopicPath(prefix: String, categoryId: String) -> String {
+        join([prefix, "journal", "topics", "\(sanitizeCategory(categoryId)).md"])
+    }
+
+    /// A relative path from a directory to a target file, so a journal book can link to the exact
+    /// `transcript.md` emitted the same pass regardless of `prefix` depth. Splits both on `/`, walks
+    /// up past the shared prefix with `..` for each remaining `sourceDir` segment, then appends the
+    /// remaining `targetPath` segments (including its filename). `journal/weeks/*` and
+    /// `journal/topics/*` sit at the SAME depth under `<prefix>` as `<prefix>/<category>/<folder>/`,
+    /// so this always walks exactly `../..` today, but the general helper stays correct if that
+    /// ever changes.
+    public static func relativePath(from sourceDir: String, to targetPath: String) -> String {
+        let sourceParts = sourceDir.split(separator: "/").map(String.init)
+        let targetParts = targetPath.split(separator: "/").map(String.init)
+        var shared = 0
+        while shared < sourceParts.count, shared < targetParts.count - 1,
+              sourceParts[shared] == targetParts[shared] {
+            shared += 1
+        }
+        let ups = Array(repeating: "..", count: sourceParts.count - shared)
+        let downs = targetParts[shared...]
+        return (ups + downs).joined(separator: "/")
+    }
 }

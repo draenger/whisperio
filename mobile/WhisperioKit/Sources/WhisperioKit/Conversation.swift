@@ -111,6 +111,65 @@ public enum SpeakerSegmentBuilder {
     }
 }
 
+/// Maps AssemblyAI's `utterances` array (present when `speaker_labels=true`) into
+/// `SpeakerSegment`s. `Utterance` is `Decodable` with field names matching AssemblyAI's wire
+/// JSON directly, so the provider decodes straight into it (no duplicate wrapper struct) and
+/// tests can feed it realistic fixture JSON.
+public enum AssemblyAISegmentMapper {
+    public struct Utterance: Decodable, Sendable, Equatable {
+        public var speaker: String
+        public var text: String
+        public var start: Int   // milliseconds
+        public var end: Int     // milliseconds
+
+        public init(speaker: String, text: String, start: Int, end: Int) {
+            self.speaker = speaker
+            self.text = text
+            self.start = start
+            self.end = end
+        }
+    }
+
+    public static func segments(from utterances: [Utterance]) -> [SpeakerSegment] {
+        utterances.compactMap { u in
+            let text = u.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !text.isEmpty else { return nil }
+            let letter = u.speaker.trimmingCharacters(in: .whitespaces).lowercased()
+            return SpeakerSegment(speaker: "speaker_\(letter)",
+                                  start: Double(u.start) / 1000,
+                                  end: Double(u.end) / 1000,
+                                  text: text)
+        }
+    }
+}
+
+/// Maps Deepgram's `results.utterances` array (present when `diarize=true&utterances=true`)
+/// into `SpeakerSegment`s. `Utterance` mirrors Deepgram's wire JSON directly (note the field is
+/// called `transcript`, not `text`, matching the real response).
+public enum DeepgramSegmentMapper {
+    public struct Utterance: Decodable, Sendable, Equatable {
+        public var speaker: Int
+        public var transcript: String
+        public var start: TimeInterval   // seconds
+        public var end: TimeInterval     // seconds
+
+        public init(speaker: Int, transcript: String, start: TimeInterval, end: TimeInterval) {
+            self.speaker = speaker
+            self.transcript = transcript
+            self.start = start
+            self.end = end
+        }
+    }
+
+    public static func segments(from utterances: [Utterance]) -> [SpeakerSegment] {
+        utterances.compactMap { u in
+            let text = u.transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !text.isEmpty else { return nil }
+            return SpeakerSegment(speaker: "speaker_\(u.speaker)", start: u.start, end: u.end, text: text)
+        }
+    }
+}
+
 /// Prompt + strict parse for LLM speaker-name guessing ("who said X"): the model reads the
 /// labeled transcript and maps speaker ids to real names ONLY where the conversation itself
 /// reveals them (introductions, being addressed by name). Mirrors the digest classify
