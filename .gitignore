@@ -31,3 +31,7 @@ mobile/**/build/
 desktop/coverage/
 coverage/
 DerivedData-Sim/
+# Playwright click-test harness artifacts (P0.1) — reports/traces from local runs
+desktop/test-results/
+desktop/playwright-report/
+desktop/blob-report/
