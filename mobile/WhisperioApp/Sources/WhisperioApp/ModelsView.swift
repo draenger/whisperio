@@ -71,6 +71,10 @@ struct ModelsView: View {
         case .onDevice: return "Apple"
         case .openAI: return "OpenAI"
         case .elevenLabs: return "ElevenLabs"
+        case .groq: return "Groq"
+        case .deepgram: return "Deepgram"
+        case .assemblyAI: return "AssemblyAI"
+        case .mistral: return "Mistral"
         }
     }
 

@@ -79,6 +79,7 @@ function HomeSyncButton({ t }) {
 
 function PhoneHome({ t, onOpenRec, onRecord, onConversation, onSettings, onJournal, onDigest, onRecap, onScratchpad, manualSync }) {
   const [cat, setCat] = React.useState(null);
+  const [cur, setCur] = React.useState('usd');
   const visible = cat ? M_RECS.filter((r) => r.category === cat) : M_RECS;
   const today = visible.filter((r) => r.today);
   const earlier = visible.filter((r) => !r.today);
@@ -92,7 +93,7 @@ function PhoneHome({ t, onOpenRec, onRecord, onConversation, onSettings, onJourn
   );
   return (
     <div style={{ position: 'relative', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
-      <WHeader title="Whisperio" logo t={t} right={<div style={{ display: 'flex', alignItems: 'center', gap: 9 }}><span title="iCloud sync · idle" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 22, height: 22, color: t.faint }}><MIcon k="cloud" size={15} /></span><SquareIconButton icon="cog" t={t} onClick={onSettings} /></div>} />
+      <WHeader title="Whisperio" logo t={t} right={<div style={{ display: 'flex', alignItems: 'center', gap: 9 }}><button onClick={() => setCur((c) => c === 'usd' ? 'eur' : 'usd')} title="Cloud spend this week — API dollars plus ElevenLabs credits valued as their share of your subscription. Tap to switch USD/EUR." style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontFamily: FM, fontSize: 10.5, fontWeight: 700, cursor: 'pointer', color: t.accentLite, background: hexA(t.accent, 0.12), border: `1px solid ${t.hair}`, borderRadius: 999, padding: '5px 10px' }}>{cur === 'usd' ? '$0.48' : '€0.44'}</button><span title="iCloud sync · idle" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 22, height: 22, color: t.faint }}><MIcon k="cloud" size={15} /></span><SquareIconButton icon="cog" t={t} onClick={onSettings} /></div>} />
       {manualSync && (
         <div style={{ padding: '10px 16px 0' }}>
           <HomeSyncButton t={t} />
@@ -590,9 +591,15 @@ function PhoneJournal({ t, onBack, onOpenDay, onToday, onAdd, onOpenRecap }) {
     <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
       <WHeader title="Journal" t={t} onBack={onBack} right={<SquareIconButton icon="bolt" t={t} onClick={onOpenRecap} />} />
       <div style={{ padding: '0 20px 8px', fontFamily: FM, fontSize: 10.5, color: t.faint }}>Your notes, bound into books — by week, month or topic.</div>
-      <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '8px 16px 30px' }}>
+      <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '8px 16px 30px', display: 'flex', flexDirection: 'column', gap: 18 }}>
+        {[['Automatic journals', books.filter((b) => !b.custom), 'Bound for you — by week, month and topic'], ['Manual journals', books.filter((b) => b.custom), 'Your own notebooks — pages, chapters, whatever you need']].map(([gl, list, hint]) => (
+        <div key={gl} style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, paddingLeft: 4 }}>
+          <SectionLabel text={gl} t={t} />
+          <span style={{ fontFamily: FM, fontSize: 9.5, color: t.faint }}>{hint}</span>
+        </div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-          {books.map((b) => {
+          {list.map((b) => {
             const noteCount = b.cat ? M_RECS.filter((r) => r.category === b.cat).length : Object.values(PHONE_JOURNAL_DAYS).reduce((n, d) => n + d.recs.length, 0);
             return (
               <button key={b.id} onClick={() => setBookId(b.id)} style={{ position: 'relative', height: 170, textAlign: 'left', cursor: 'pointer', padding: '16px 14px 14px 20px', borderRadius: 16, background: t.surface, border: `1px solid ${t.line}`, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
@@ -610,11 +617,15 @@ function PhoneJournal({ t, onBack, onOpenDay, onToday, onAdd, onOpenRecap }) {
               </button>
             );
           })}
-          <button onClick={addBook} style={{ height: 170, cursor: 'pointer', borderRadius: 16, background: 'none', border: `1.5px dashed ${t.line}`, color: t.faint, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
-            <MIcon k="plus" size={20} />
-            <span style={{ fontFamily: FUI, fontSize: 12.5, fontWeight: 600 }}>New book</span>
-          </button>
+          {gl === 'Manual journals' && (
+            <button onClick={addBook} style={{ height: 170, cursor: 'pointer', borderRadius: 16, background: 'none', border: `1.5px dashed ${t.line}`, color: t.faint, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+              <MIcon k="plus" size={20} />
+              <span style={{ fontFamily: FUI, fontSize: 12.5, fontWeight: 600 }}>New book</span>
+            </button>
+          )}
         </div>
+        </div>
+        ))}
       </div>
     </div>
   );

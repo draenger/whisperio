@@ -31,6 +31,10 @@ final class SettingsStore: ObservableObject {
         let legacyGitHub = loaded.githubToken
         loaded.openAIKey = Keychain.get(.openAIKey) ?? legacyOpenAI
         loaded.elevenLabsKey = Keychain.get(.elevenLabsKey) ?? legacyEleven
+        loaded.groqKey = Keychain.get(.groqKey) ?? loaded.groqKey
+        loaded.deepgramKey = Keychain.get(.deepgramKey) ?? loaded.deepgramKey
+        loaded.assemblyAIKey = Keychain.get(.assemblyAIKey) ?? loaded.assemblyAIKey
+        loaded.mistralKey = Keychain.get(.mistralKey) ?? loaded.mistralKey
         loaded.githubToken = Keychain.get(.githubToken) ?? legacyGitHub
         settings = loaded
 
@@ -47,24 +51,33 @@ final class SettingsStore: ObservableObject {
         // the key fields blanked so no API secret is ever written in plaintext.
         Keychain.set(settings.openAIKey, for: .openAIKey)
         Keychain.set(settings.elevenLabsKey, for: .elevenLabsKey)
+        Keychain.set(settings.groqKey, for: .groqKey)
+        Keychain.set(settings.deepgramKey, for: .deepgramKey)
+        Keychain.set(settings.assemblyAIKey, for: .assemblyAIKey)
+        Keychain.set(settings.mistralKey, for: .mistralKey)
         Keychain.set(settings.githubToken, for: .githubToken)
         var sanitized = settings
         sanitized.openAIKey = ""
         sanitized.elevenLabsKey = ""
+        sanitized.groqKey = ""
+        sanitized.deepgramKey = ""
+        sanitized.assemblyAIKey = ""
+        sanitized.mistralKey = ""
         sanitized.githubToken = ""
         if let data = try? JSONEncoder().encode(sanitized) {
             UserDefaults.standard.set(data, forKey: Self.key)
         }
     }
 
-    // Build the live provider chain. The primary engine first; if fallback is on,
-    // the other engines follow (unconfigured ones are skipped by ProviderChain).
+    // Build the live provider chain. The primary engine first; if fallback is on, the user's
+    // ordered fallback chain follows (the primary is skipped if it also appears in the chain;
+    // unconfigured engines are skipped by ProviderChain).
     func makeChain() -> ProviderChain {
         let s = settings
         let primary = s.providerChain.first ?? .onDevice
         var order: [ProviderID] = [primary]
         if s.fallbackEnabled {
-            for id in [ProviderID.onDevice, .openAI, .elevenLabs] where id != primary {
+            for id in s.fallbackChain where id != primary && !order.contains(id) {
                 order.append(id)
             }
         }
@@ -96,6 +109,14 @@ final class SettingsStore: ObservableObject {
             return s.cloudConsentGranted && !s.openAIKey.trimmingCharacters(in: .whitespaces).isEmpty
         case .elevenLabs:
             return s.cloudConsentGranted && !s.elevenLabsKey.trimmingCharacters(in: .whitespaces).isEmpty
+        case .groq:
+            return s.cloudConsentGranted && !s.groqKey.trimmingCharacters(in: .whitespaces).isEmpty
+        case .deepgram:
+            return s.cloudConsentGranted && !s.deepgramKey.trimmingCharacters(in: .whitespaces).isEmpty
+        case .assemblyAI:
+            return s.cloudConsentGranted && !s.assemblyAIKey.trimmingCharacters(in: .whitespaces).isEmpty
+        case .mistral:
+            return s.cloudConsentGranted && !s.mistralKey.trimmingCharacters(in: .whitespaces).isEmpty
         }
     }
 
@@ -157,6 +178,18 @@ final class SettingsStore: ObservableObject {
         case .elevenLabs:
             return ElevenLabsProvider(apiKey: s.elevenLabsKey,
                                       languageCode: s.language, keyterms: s.vocabularyTerms)
+        case .groq:
+            return GroqProvider(apiKey: s.groqKey, model: s.groqModel,
+                                language: s.language, prompt: s.customVocabulary)
+        case .deepgram:
+            return DeepgramProvider(apiKey: s.deepgramKey, model: s.deepgramModel,
+                                    language: s.language)
+        case .assemblyAI:
+            return AssemblyAIProvider(apiKey: s.assemblyAIKey, model: s.assemblyAIModel,
+                                      language: s.language)
+        case .mistral:
+            return MistralProvider(apiKey: s.mistralKey, model: s.mistralModel,
+                                   language: s.language)
         }
     }
 

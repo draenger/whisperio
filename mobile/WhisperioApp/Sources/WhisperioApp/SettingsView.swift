@@ -32,6 +32,7 @@ struct SettingsView: View {
 
     @State private var consentProvider: ProviderID?   // non-nil → consent sheet is up
     @State private var showTriggerGuides = false      // presents the trigger onboarding hub
+    @State private var chainAddOpen = false           // "Add fallback" row expanded to chips
     @State private var showRestoreConfirm = false     // confirm before restoring seed templates
     @State private var selectedCategory: SettingsCategory? = nil
     @State private var cloudAccountStatusText = "Checking iCloud status…"
@@ -106,18 +107,16 @@ struct SettingsView: View {
     }
 
     private enum SettingsCategory: String, CaseIterable, Identifiable {
-        case models, transcription, integrations, content, sync, storage, connectors, developer, system
+        case models, transcription, content, sync, storage, developer, system
 
         var id: String { rawValue }
         var title: String {
             switch self {
             case .models: return "Models"
             case .transcription: return "Transcription"
-            case .integrations: return "Integrations"
             case .content: return "Content"
-            case .sync: return "Sync"
+            case .sync: return "Data synchronisation"
             case .storage: return "Storage & data"
-            case .connectors: return "Connectors"
             case .developer: return "Developer"
             case .system: return "System"
             }
@@ -126,11 +125,9 @@ struct SettingsView: View {
             switch self {
             case .models: return "cpu"
             case .transcription: return "mic"
-            case .integrations: return "zap"
             case .content: return "spark"
             case .sync: return "cloud"
             case .storage: return "folder"
-            case .connectors: return "arrowUR"
             case .developer: return "hammer"
             case .system: return "gearshape"
             }
@@ -139,13 +136,11 @@ struct SettingsView: View {
             switch self {
             case .models: return "Choose the primary engine and API keys"
             case .transcription: return "Mic behavior, cleanup, fallback, and timing"
-            case .integrations: return "Keyboard, Siri, Back Tap, GitHub, and onboarding"
             case .content: return "Language, vocabulary, rewrite prompts, journaling"
-            case .sync: return "How the library reaches iCloud"
+            case .sync: return "iCloud sync behavior and GitHub mirror"
             case .storage: return "What’s on this iPhone, per-type policy, cleanup"
-            case .connectors: return "GitHub and other places your notes flow to"
             case .developer: return "Diagnostics and advanced controls"
-            case .system: return "Appearance and app info"
+            case .system: return "Integrations, appearance and app info"
             }
         }
     }
@@ -349,19 +344,246 @@ struct SettingsView: View {
                 engineRow(.onDevice, "Apple — on-device", "Free · private · offline", "cpu")
                 engineRow(.openAI, "OpenAI", "Cloud · Whisper API", "globe")
                 engineRow(.elevenLabs, "ElevenLabs", "Cloud · Scribe", "globe")
+                engineRow(.groq, "Groq", "Cloud · fastest Whisper inference", "bolt")
+                engineRow(.deepgram, "Deepgram", "Cloud · Nova, streaming & diarization", "globe")
+                engineRow(.assemblyAI, "AssemblyAI", "Cloud · Universal, speaker labels", "globe")
+                engineRow(.mistral, "Mistral", "Cloud · Voxtral, open weights", "globe")
+            }
+            if let choices = Self.engineModelChoices[engine] {
+                modelPicker(choices, engineModelBinding(engine))
             }
             SettGroup(title: "On-device models") {
-                SettRow(icon: "download", label: "Manage models",
+                SettRow(icon: "download", label: "Manage on-device models",
                         sub: "Download, update or remove Apple Speech + Whisper", last: true,
                         onTap: openModels)
             }
+            fallbackChainSection
             if engine == .openAI {
                 keyField("OpenAI API key", binding(\.openAIKey))
                 plainField("Base URL (optional, self-hosted)", "https://api.openai.com/v1", binding(\.openAIBaseURL))
                 plainField("Model (optional)", "whisper-1", binding(\.whisperModel))
             }
             if engine == .elevenLabs { keyField("ElevenLabs API key", binding(\.elevenLabsKey)) }
+            if engine == .groq { keyField("Groq API key", binding(\.groqKey), placeholder: "gsk_…") }
+            if engine == .deepgram { keyField("Deepgram API key", binding(\.deepgramKey)) }
+            if engine == .assemblyAI { keyField("AssemblyAI API key", binding(\.assemblyAIKey)) }
+            if engine == .mistral { keyField("Mistral API key", binding(\.mistralKey)) }
         }
+    }
+
+    // Per-engine model choices (persisted id → display name) for the cloud engines that carry
+    // a selected-model setting. Mirrors ENGINE_MODELS in mob-settings.jsx.
+    private static let engineModelChoices: [ProviderID: [(id: String, name: String)]] = [
+        .groq: [("whisper-large-v3-turbo", "whisper-v3 turbo"),
+                ("whisper-large-v3", "whisper large-v3"),
+                ("distil-whisper", "distil-whisper")],
+        .deepgram: [("nova-3", "Nova-3"), ("nova-2", "Nova-2"), ("whisper-cloud", "Whisper cloud")],
+        .assemblyAI: [("universal-2", "Universal-2"), ("universal-1", "Universal-1")],
+        .mistral: [("voxtral-small", "Voxtral Small"), ("voxtral-mini", "Voxtral Mini")],
+    ]
+
+    private func engineModelBinding(_ id: ProviderID) -> Binding<String> {
+        switch id {
+        case .groq: return binding(\.groqModel)
+        case .deepgram: return binding(\.deepgramModel)
+        case .assemblyAI: return binding(\.assemblyAIModel)
+        case .mistral: return binding(\.mistralModel)
+        default: return binding(\.whisperModel)   // unreached — only chip engines call this
+        }
+    }
+
+    // Model chips under the engine list — capsule per choice, accent tint on the selection.
+    private func modelPicker(_ choices: [(id: String, name: String)],
+                             _ selection: Binding<String>) -> some View {
+        VStack(alignment: .leading, spacing: 7) {
+            SectionLabel(text: "Model").padding(.leading, 4)
+            HStack(spacing: 7) {
+                ForEach(choices, id: \.id) { choice in
+                    let on = selection.wrappedValue == choice.id
+                    Button { selection.wrappedValue = choice.id } label: {
+                        Text(choice.name)
+                            .font(WZFont.mono(11.5, .semibold))
+                            .foregroundStyle(on ? t.accentLite : t.muted)
+                            .padding(.horizontal, 12).padding(.vertical, 7)
+                            .background(on ? t.accent.opacity(0.16) : t.surfaceUp, in: Capsule())
+                            .overlay(Capsule().stroke(on ? t.hair : t.line, lineWidth: 1))
+                    }
+                    .buttonStyle(.plain)
+                }
+                Spacer(minLength: 0)
+            }
+        }
+        .padding(.top, 2)
+    }
+
+    // MARK: - Fallback chain (Models page)
+
+    /// Display name for an engine in the fallback-chain card. Mirrors ENGINE_NAME in
+    /// mob-settings.jsx (only the ProviderIDs this app actually has).
+    private func engineDisplayName(_ id: ProviderID) -> String {
+        switch id {
+        case .onDevice: return "Apple — on-device"
+        case .openAI: return "OpenAI"
+        case .elevenLabs: return "ElevenLabs"
+        case .groq: return "Groq"
+        case .deepgram: return "Deepgram"
+        case .assemblyAI: return "AssemblyAI"
+        case .mistral: return "Mistral"
+        }
+    }
+
+    private static let chainOrdinals = ["Secondary", "Third", "Fourth", "Fifth", "Sixth"]
+
+    /// The chain as shown: the stored order minus the current primary — switching primaries
+    /// never rewrites the stored chain, the primary is just skipped (same as makeChain()).
+    private var chainEntries: [ProviderID] {
+        settings.settings.fallbackChain.filter { $0 != engine }
+    }
+
+    /// Engines not yet in the chain (and not the primary) — offered by "Add fallback".
+    private var chainFreeEngines: [ProviderID] {
+        let entries = chainEntries
+        return ProviderID.allCases.filter { $0 != engine && !entries.contains($0) }
+    }
+
+    private func setChain(_ chain: [ProviderID]) {
+        var s = settings.settings
+        s.fallbackChain = chain
+        settings.settings = s
+    }
+
+    private func moveChainEntry(at index: Int, by delta: Int) {
+        var entries = chainEntries
+        let j = index + delta
+        guard entries.indices.contains(index), entries.indices.contains(j) else { return }
+        entries.swapAt(index, j)
+        setChain(entries)
+    }
+
+    private var fallbackChainSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            SectionLabel(text: "Fallback chain").padding(.leading, 4)
+            VStack(spacing: 0) {
+                // Primary row — always index 1, follows the engine picked above.
+                HStack(spacing: 13) {
+                    Text("1")
+                        .font(WZFont.mono(11, .bold)).foregroundStyle(t.accentLite)
+                        .frame(width: 24, height: 24)
+                        .background(t.accent.opacity(0.16), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    Text(engineDisplayName(engine))
+                        .font(WZFont.ui(14, .semibold)).foregroundStyle(t.text)
+                    Spacer(minLength: 0)
+                    Text("PRIMARY")
+                        .font(WZFont.mono(10, .bold)).kerning(0.8)
+                        .foregroundStyle(t.accentLite)
+                }
+                .padding(.vertical, 11)
+                .overlay(alignment: .bottom) { Rectangle().fill(t.lineSoft).frame(height: 1) }
+
+                let entries = chainEntries
+                ForEach(Array(entries.enumerated()), id: \.element) { index, id in
+                    chainRow(id, index: index, count: entries.count)
+                }
+
+                if chainAddOpen {
+                    chainAddChips
+                }
+
+                Button {
+                    withAnimation(.easeInOut(duration: 0.15)) { chainAddOpen.toggle() }
+                } label: {
+                    HStack(spacing: 10) {
+                        WIcon("plus", size: 15).foregroundStyle(t.accentLite)
+                        Text(chainAddOpen ? "Close" : "Add fallback")
+                            .font(WZFont.ui(13.5, .semibold)).foregroundStyle(t.accentLite)
+                        Spacer(minLength: 0)
+                    }
+                    .padding(.vertical, 11)
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.horizontal, 16).padding(.vertical, 4)
+            .background(t.surface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(t.line, lineWidth: 1))
+            Text("If the primary engine fails, Whisperio tries the chain in order. Runs only when “Fallback engines” is on in Transcription.")
+                .font(WZFont.mono(11)).foregroundStyle(t.faint).lineSpacing(3)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.leading, 4)
+        }
+    }
+
+    // One ordered fallback row — index chip, name + ordinal sublabel, up/down/remove controls.
+    private func chainRow(_ id: ProviderID, index: Int, count: Int) -> some View {
+        HStack(spacing: 13) {
+            Text("\(index + 2)")
+                .font(WZFont.mono(11, .bold)).foregroundStyle(t.muted)
+                .frame(width: 24, height: 24)
+                .background(t.surfaceUp, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            VStack(alignment: .leading, spacing: 1) {
+                Text(engineDisplayName(id)).font(WZFont.ui(14)).foregroundStyle(t.text)
+                Text((index < Self.chainOrdinals.count ? Self.chainOrdinals[index] : "Then").uppercased())
+                    .font(WZFont.mono(9, .bold)).kerning(0.7).foregroundStyle(t.faint)
+            }
+            Spacer(minLength: 0)
+            chainArrowButton(up: true, disabled: index == 0) { moveChainEntry(at: index, by: -1) }
+            chainArrowButton(up: false, disabled: index == count - 1) { moveChainEntry(at: index, by: 1) }
+            Button {
+                setChain(chainEntries.filter { $0 != id })
+            } label: {
+                WIcon("x", size: 12).foregroundStyle(t.muted)
+                    .frame(width: 26, height: 26)
+                    .background(t.surfaceUp, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(t.line, lineWidth: 1))
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.vertical, 9)
+        .overlay(alignment: .bottom) { Rectangle().fill(t.lineSoft).frame(height: 1) }
+    }
+
+    private func chainArrowButton(up: Bool, disabled: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            WIcon("chevD", size: 13)
+                .rotationEffect(.degrees(up ? 180 : 0))
+                .foregroundStyle(disabled ? t.faint : t.text)
+                .frame(width: 26, height: 26)
+                .background(t.surfaceUp, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(t.line, lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+        .disabled(disabled)
+    }
+
+    // Expanded "Add fallback" content — wrap chips of the engines still free, or the
+    // everything-is-in note when there's nothing left to add.
+    private var chainAddChips: some View {
+        Group {
+            if chainFreeEngines.isEmpty {
+                HStack {
+                    Text("Every engine is already in the chain.")
+                        .font(WZFont.mono(11)).foregroundStyle(t.faint)
+                    Spacer(minLength: 0)
+                }
+            } else {
+                FlowLayout(spacing: 7) {
+                    ForEach(chainFreeEngines, id: \.self) { id in
+                        Button {
+                            setChain(chainEntries + [id])
+                            chainAddOpen = false
+                        } label: {
+                            Text(engineDisplayName(id))
+                                .font(WZFont.ui(12, .semibold)).foregroundStyle(t.muted)
+                                .padding(.horizontal, 12).padding(.vertical, 6)
+                                .background(t.surfaceUp, in: Capsule())
+                                .overlay(Capsule().stroke(t.line, lineWidth: 1))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+        }
+        .padding(.vertical, 11)
+        .overlay(alignment: .bottom) { Rectangle().fill(t.lineSoft).frame(height: 1) }
     }
 
     private var transcriptionCategory: some View {
@@ -427,10 +649,6 @@ struct SettingsView: View {
                 .padding(.vertical, 12)
             }
             SettGroup(title: "Engine behavior") {
-                SettRow(icon: "globe", label: "Apple online speech",
-                        sub: "Use Apple’s servers when on-device isn’t available · audio leaves the device") {
-                    WToggle(on: boolBinding(\.appleAllowOnline))
-                }
                 SettRow(icon: "spark", label: "Cleanup",
                         sub: "Tidy punctuation, casing & spacing") {
                     WToggle(on: boolBinding(\.cleanupEnabled))
@@ -445,29 +663,6 @@ struct SettingsView: View {
                         sub: "Keep a local history of past dictations", last: true) {
                     WToggle(on: boolBinding(\.saveRecordings))
                 }
-            }
-        }
-    }
-
-    private var integrationsCategory: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            #if os(iOS)
-            SettGroup(title: "Quick dictation") {
-                VStack(alignment: .leading, spacing: 12) {
-                    Text("Say “Dictate with Whisperio” to Siri — or add the shortcut, then assign it to Back Tap (Settings → Accessibility → Touch → Back Tap → Run Shortcut).")
-                        .font(WZFont.ui(13)).foregroundStyle(t.muted).lineSpacing(3)
-                    SiriTipView(intent: DictateIntent()).tint(t.accent)
-                    ShortcutsLink().tint(t.accent)
-                }
-            }
-            #endif
-            SettGroup(title: "Dictate from anywhere") {
-                SettRow(icon: "zap", label: "Set up dictation triggers",
-                        sub: "Action Button, Back Tap, keyboard, widgets & more — step by step",
-                        onTap: { showTriggerGuides = true })
-                SettRow(icon: "keyboard", label: "Whisperio keyboard",
-                        sub: "Dictate from any app — install & setup", last: true,
-                        onTap: openKeyboardSetup)
             }
         }
     }
@@ -629,6 +824,12 @@ struct SettingsView: View {
                 Text("iOS may still receive iCloud changes in the background; this controls when Whisperio actively refreshes and shows them.")
                     .font(WZFont.mono(11)).foregroundStyle(t.faint)
                     .padding(.leading, 4)
+            }
+
+            SettGroup(title: "GitHub mirror") {
+                SettRow(icon: "sync", label: "Sync to GitHub",
+                        sub: "Mirror transcripts, renders & daily summaries to a Git repo",
+                        last: true, onTap: openGitHubSync)
             }
         }
     }
@@ -909,6 +1110,25 @@ struct SettingsView: View {
 
     private var systemCategory: some View {
         VStack(alignment: .leading, spacing: 16) {
+            #if os(iOS)
+            SettGroup(title: "Quick dictation") {
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Say “Dictate with Whisperio” to Siri — or add the shortcut, then assign it to Back Tap (Settings → Accessibility → Touch → Back Tap → Run Shortcut).")
+                        .font(WZFont.ui(13)).foregroundStyle(t.muted).lineSpacing(3)
+                    SiriTipView(intent: DictateIntent()).tint(t.accent)
+                    ShortcutsLink().tint(t.accent)
+                }
+            }
+            #endif
+            SettGroup(title: "Dictate from anywhere") {
+                SettRow(icon: "zap", label: "Set up dictation triggers",
+                        sub: "Action Button, Back Tap, keyboard, widgets & more — step by step",
+                        onTap: { showTriggerGuides = true })
+                SettRow(icon: "keyboard", label: "Whisperio keyboard",
+                        sub: "Dictate from any app — install & setup", last: true,
+                        onTap: openKeyboardSetup)
+            }
+
             SettGroup(title: "Appearance") {
                 SettRow(icon: dark ? "moon" : "sun", label: "Dark mode",
                         sub: "Match Whisperio’s look", last: true) {
@@ -933,39 +1153,46 @@ struct SettingsView: View {
             .background(t.surface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(t.line, lineWidth: 1))
 
-            VStack(alignment: .leading, spacing: 8) {
-                SectionLabel(text: "Settings").padding(.leading, 4)
-                VStack(spacing: 0) {
-                    ForEach(SettingsCategory.allCases) { category in
-                        Button {
-                            if category == .storage { openStorage() } else { selectedCategory = category }
-                        } label: {
-                            HStack(spacing: 13) {
-                                Image(systemName: settSymbol(category.icon))
-                                    .font(.system(size: 17, weight: .regular)).foregroundStyle(t.accentLite)
-                                    .frame(width: 34, height: 34)
-                                    .background(t.surfaceUp, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-                                VStack(alignment: .leading, spacing: 1) {
-                                    Text(category.title).font(WZFont.ui(14.5, .medium)).foregroundStyle(t.text)
-                                    Text(category.subtitle).font(WZFont.ui(12)).foregroundStyle(t.muted)
-                                }
-                                Spacer(minLength: 0)
-                                WIcon("chevR", size: 16, weight: .regular).foregroundStyle(t.faint)
+            hubGroup("AI", [.models, .transcription, .content])
+            hubGroup("Data", [.sync, .storage])
+            hubGroup("System", [.system, .developer])
+        }
+    }
+
+    // One titled hub group (AI · Data · System) of category rows.
+    private func hubGroup(_ title: String, _ categories: [SettingsCategory]) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            SectionLabel(text: title).padding(.leading, 4)
+            VStack(spacing: 0) {
+                ForEach(categories) { category in
+                    Button {
+                        if category == .storage { openStorage() } else { selectedCategory = category }
+                    } label: {
+                        HStack(spacing: 13) {
+                            Image(systemName: settSymbol(category.icon))
+                                .font(.system(size: 17, weight: .regular)).foregroundStyle(t.accentLite)
+                                .frame(width: 34, height: 34)
+                                .background(t.surfaceUp, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(category.title).font(WZFont.ui(14.5, .medium)).foregroundStyle(t.text)
+                                Text(category.subtitle).font(WZFont.ui(12)).foregroundStyle(t.muted)
                             }
-                            .padding(.vertical, 13)
+                            Spacer(minLength: 0)
+                            WIcon("chevR", size: 16, weight: .regular).foregroundStyle(t.faint)
                         }
-                        .buttonStyle(.plain)
-                        .overlay(alignment: .bottom) {
-                            if category != SettingsCategory.allCases.last {
-                                Rectangle().fill(t.lineSoft).frame(height: 1)
-                            }
+                        .padding(.vertical, 13)
+                    }
+                    .buttonStyle(.plain)
+                    .overlay(alignment: .bottom) {
+                        if category != categories.last {
+                            Rectangle().fill(t.lineSoft).frame(height: 1)
                         }
                     }
                 }
-                .padding(.horizontal, 16)
-                .background(t.surface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(t.line, lineWidth: 1))
             }
+            .padding(.horizontal, 16)
+            .background(t.surface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(t.line, lineWidth: 1))
         }
     }
 
@@ -976,34 +1203,16 @@ struct SettingsView: View {
             modelCategory
         case .transcription:
             transcriptionCategory
-        case .integrations:
-            integrationsCategory
         case .content:
             contentCategory
         case .sync:
             syncCategory
         case .storage:
             EmptyView()   // hub row opens StorageView directly
-        case .connectors:
-            connectorsCategory
         case .developer:
             developerCategory
         case .system:
             systemCategory
-        }
-    }
-
-    private var connectorsCategory: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            SettGroup(title: "Connected services") {
-                SettRow(icon: "sync", label: "Sync to GitHub",
-                        sub: "Mirror transcripts, renders & daily summaries to a Git repo",
-                        last: true, onTap: openGitHubSync)
-            }
-            Text("Connectors mirror your notes outward — they never pull anything in. More (Obsidian, Notion, webhooks) are planned.")
-                .font(WZFont.mono(11)).foregroundStyle(t.faint)
-                .fixedSize(horizontal: false, vertical: true)
-                .padding(.leading, 4)
         }
     }
 
@@ -1060,10 +1269,11 @@ struct SettingsView: View {
         .buttonStyle(.plain)
     }
 
-    private func keyField(_ label: String, _ text: Binding<String>) -> some View {
+    private func keyField(_ label: String, _ text: Binding<String>,
+                          placeholder: String = "paste key…") -> some View {
         VStack(alignment: .leading, spacing: 7) {
             SectionLabel(text: label).padding(.leading, 4)
-            SecureField("paste key…", text: text)
+            SecureField(placeholder, text: text)
                 #if os(iOS)
                 .textInputAutocapitalization(.never)
                 #endif
@@ -1175,7 +1385,17 @@ struct CloudConsentSheet: View {
     var onAccept: () -> Void
     var onCancel: () -> Void
 
-    private var name: String { provider == .openAI ? "OpenAI" : "ElevenLabs" }
+    private var name: String {
+        switch provider {
+        case .onDevice: return "Apple"   // never reaches the consent sheet
+        case .openAI: return "OpenAI"
+        case .elevenLabs: return "ElevenLabs"
+        case .groq: return "Groq"
+        case .deepgram: return "Deepgram"
+        case .assemblyAI: return "AssemblyAI"
+        case .mistral: return "Mistral"
+        }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {

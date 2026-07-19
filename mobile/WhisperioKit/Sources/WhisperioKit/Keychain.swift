@@ -11,6 +11,10 @@ public enum Keychain {
     public enum Item: String {
         case openAIKey = "whisperio.key.openai"
         case elevenLabsKey = "whisperio.key.elevenlabs"
+        case groqKey = "whisperio.key.groq"
+        case deepgramKey = "whisperio.key.deepgram"
+        case assemblyAIKey = "whisperio.key.assemblyai"
+        case mistralKey = "whisperio.key.mistral"
         case githubToken = "whisperio.key.github"
     }
 

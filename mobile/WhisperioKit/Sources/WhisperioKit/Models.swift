@@ -6,6 +6,10 @@ public enum ProviderID: String, Codable, Sendable, CaseIterable {
     case onDevice = "ondevice"
     case openAI = "openai"
     case elevenLabs = "elevenlabs"
+    case groq = "groq"
+    case deepgram = "deepgram"
+    case assemblyAI = "assemblyai"
+    case mistral = "mistral"
 }
 
 /// A captured audio clip handed to a transcription provider.

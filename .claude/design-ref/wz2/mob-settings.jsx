@@ -24,14 +24,13 @@ const TRIGGER_TYPES = [
 const SETT_CATS = [
   { id: 'models', icon: 'cpu', title: 'Models', sub: 'Choose the primary engine and API keys' },
   { id: 'transcription', icon: 'mic', title: 'Transcription', sub: 'Mic behavior, cleanup, fallback, and timing' },
-  { id: 'integrations', icon: 'zap', title: 'Integrations', sub: 'Keyboard, Siri, Back Tap and dictation triggers' },
   { id: 'content', icon: 'spark', title: 'Content', sub: 'Language, vocabulary, rewrite prompts, journaling' },
   { id: 'sync', icon: 'cloud', title: 'Data synchronisation', sub: 'iCloud sync behavior and GitHub mirror' },
   { id: 'storage', icon: 'folder', title: 'Storage & data', sub: 'What’s on this iPhone, per-type policy, cleanup' },
   { id: 'developer', icon: 'hammer', title: 'Developer', sub: 'Diagnostics and advanced controls' },
-  { id: 'system', icon: 'cog', title: 'System', sub: 'Appearance and app info' },
+  { id: 'system', icon: 'cog', title: 'System', sub: 'Integrations, appearance and app info' },
 ];
-const SETT_PARENT = { modelsList: 'models', keyboard: 'integrations', triggers: 'integrations', github: 'sync', categorize: 'content', presetEditor: 'content' };
+const SETT_PARENT = { modelsList: 'models', keyboard: 'system', triggers: 'system', github: 'sync', categorize: 'content', presetEditor: 'content' };
 const SYNC_INTERVALS = [5, 15, 30, 60];
 const DIAG_ROWS = (storageMode) => [
   ['Device', 'iPhone 15 Pro · iPhone · iOS 18.5'],
@@ -151,6 +150,14 @@ function PhoneSettings({ t, dark, setDark, onBack, initial }) {
     assembly: [['universal-2', 'Universal-2'], ['universal-1', 'Universal-1']],
     mistral: [['voxtral-small', 'Voxtral Small'], ['voxtral-mini', 'Voxtral Mini']],
   };
+  const ENGINE_NAME = { device: 'Apple — on-device', openai: 'OpenAI', eleven: 'ElevenLabs', replicate: 'Replicate', groq: 'Groq', deepgram: 'Deepgram', assembly: 'AssemblyAI', mistral: 'Mistral', self: 'Self-hosted' };
+  const [chain, setChain] = React.useState([{ p: 'device', m: 'apple-speech' }, { p: 'groq', m: 'whisper-large-v3-turbo' }, { p: 'groq', m: 'whisper-large-v3' }, { p: 'openai', m: 'whisper-1' }]);
+  const [chainAdd, setChainAdd] = React.useState(null); // null | 'provider' | providerId (picking model)
+  const CHAIN_ORD2 = ['Primary', 'Secondary', 'Third', 'Fourth', 'Fifth', 'Sixth'];
+  const mLabel = (p, m) => p === 'self' ? (m || keys.selfModel) : ((ENGINE_MODELS[p] || []).find(([id]) => id === m) || [, m])[1];
+  const inChain = (p, m) => chain.some((x) => x.p === p && x.m === m);
+  const chainMove = (i, dir) => setChain((c) => { const n = [...c]; const j = i + dir; if (j < 0 || j >= n.length) return c; [n[i], n[j]] = [n[j], n[i]]; return n; });
+
   const modelChips = (eng) => (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 7, marginTop: 2 }}>
       <div style={{ paddingLeft: 4 }}><SectionLabel text="Model" t={t} /></div>
@@ -186,20 +193,22 @@ function PhoneSettings({ t, dark, setDark, onBack, initial }) {
   const langName = (SETT_LANGS.find(([c]) => c === lang) || [, lang])[1];
   const isCloud = (e) => e !== 'device' && e !== 'self';
   const hasKey = keys.openai.trim().length > 0;
-  const pickEngine = (e) => { if (isCloud(e) && !consent) { setConsentFor(e); } else setEngine(e); };
+  const pickEngine = (e) => { if (e && isCloud(e) && !consent) { setConsentFor(e); } else setEngine(e); };
   const acceptConsent = () => { setConsent(true); setEngine(consentFor); setConsentFor(null); };
 
+  const connStatus = (id) => id === 'device' ? 'Built-in · ready' : id === 'self' ? (keys.selfUrl ? 'Connected · ' + keys.selfUrl : 'Add your server URL') : (({ openai: keys.openai, eleven: keys.eleven, replicate: keys.replicate, groq: keys.groq, deepgram: keys.deepgram, assembly: keys.assembly, mistral: keys.mistral })[id] ? 'Connected' : 'Add API key to connect');
   const engineRow = (id, title, sub2, icon) => {
     const on = engine === id; const needs = isCloud(id) && !consent;
     return (
-      <button onClick={() => pickEngine(id)} style={{ display: 'flex', alignItems: 'center', gap: 13, width: '100%', textAlign: 'left', cursor: 'pointer', padding: 13, borderRadius: 15, background: t.surface, border: `${on ? 2 : 1}px solid ${on ? t.accent : t.line}` }}>
+      <button onClick={() => pickEngine(on ? null : id)} style={{ display: 'flex', alignItems: 'center', gap: 13, width: '100%', textAlign: 'left', cursor: 'pointer', padding: 13, borderRadius: 15, background: on ? t.surfaceUp : t.surface, border: `1px solid ${t.line}` }}>
         <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 38, height: 38, borderRadius: 11, background: t.surfaceUp, color: on ? t.accent : t.muted, flexShrink: 0 }}><MIcon k={icon} size={17} /></span>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontFamily: FUI, fontSize: 14.5, fontWeight: 600, color: t.text }}>{title}</div>
           <div style={{ fontFamily: FM, fontSize: 11, color: t.faint, marginTop: 1 }}>{sub2}</div>
+          <div style={{ fontFamily: FM, fontSize: 10, fontWeight: 600, color: connStatus(id).startsWith('Connected') || connStatus(id).startsWith('Built-in') ? t.green : t.amber, marginTop: 2 }}>{connStatus(id)}</div>
         </div>
         {needs && <MIcon k="lock" size={13} style={{ color: t.amber }} />}
-        {on && <MIcon k="check" size={18} style={{ color: t.accent }} />}
+        <MIcon k="chevD" size={15} style={{ color: t.faint, transform: on ? 'rotate(180deg)' : 'none', transition: 'transform .2s' }} />
       </button>
     );
   };
@@ -246,9 +255,9 @@ function PhoneSettings({ t, dark, setDark, onBack, initial }) {
     models: { title: 'Models', body: (
       <>
         <div style={{ display: 'flex', alignItems: 'center', paddingLeft: 4 }}>
-          <SectionLabel text="Transcription engine" t={t} /><span style={{ flex: 1 }} />{engine === 'self'
+          <SectionLabel text="Connections" t={t} /><span style={{ flex: 1 }} />{(chain[0] || {}).p === 'self'
             ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, whiteSpace: 'nowrap', fontFamily: FM, fontSize: 10.5, fontWeight: 600, color: t.green, padding: '3px 9px', borderRadius: 999, background: hexA(t.green, 0.1), border: `1px solid ${hexA(t.green, 0.25)}` }}><MIcon k="server" size={11} /> your server</span>
-            : <PrivacyBadge mode={isCloud(engine) ? 'cloud' : 'device'} small t={t} />}
+            : <PrivacyBadge mode={isCloud((chain[0] || {}).p) ? 'cloud' : 'device'} small t={t} />}
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           {engineRow('device', 'Apple — on-device', 'Free · private · offline', 'cpu')}
@@ -261,10 +270,53 @@ function PhoneSettings({ t, dark, setDark, onBack, initial }) {
           {engineRow('mistral', 'Mistral', 'Cloud · Voxtral, open weights', 'globe')}
           {engineRow('self', 'Self-hosted', 'Your server · whisper.cpp / faster-whisper', 'server')}
         </div>
-        {engine !== 'self' && modelChips(engine)}
+        {engine && engine !== 'self' && modelChips(engine)}
+        {footnote('Tap a provider to configure its connection and model. Which one is actually used — and in what order — is set above.')}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <div style={{ paddingLeft: 4 }}><SectionLabel text="Model order" t={t} /></div>
+          <div style={{ padding: '4px 16px', background: t.surface, border: `1px solid ${t.line}`, borderRadius: 18 }}>
+            {chain.map((e, i) => (
+              <div key={e.p + e.m + i} style={{ display: 'flex', alignItems: 'center', gap: 13, padding: '9px 0', borderBottom: `1px solid ${t.lineSoft}` }}>
+                <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 24, height: 24, borderRadius: 8, background: i === 0 ? hexA(t.accent, 0.16) : t.surfaceUp, color: i === 0 ? t.accentLite : t.muted, fontFamily: FM, fontSize: 11, fontWeight: 700, flexShrink: 0 }}>{i + 1}</span>
+                <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
+                  <span style={{ fontFamily: FUI, fontSize: 14, fontWeight: i === 0 ? 600 : 400, color: t.text }}>{ENGINE_NAME[e.p]} <span style={{ color: t.accentLite, fontFamily: FM, fontSize: 12 }}>· {mLabel(e.p, e.m)}</span></span>
+                  <span style={{ fontFamily: FM, fontSize: 9, color: t.faint }}>{(CHAIN_ORD2[i] || 'Then').toUpperCase()}</span>
+                </div>
+                <button onClick={() => chainMove(i, -1)} disabled={i === 0} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 26, height: 26, borderRadius: 8, background: t.surfaceUp, border: `1px solid ${t.line}`, color: i === 0 ? t.faint : t.text, cursor: i === 0 ? 'default' : 'pointer' }}><MIcon k="chevD" size={13} style={{ transform: 'rotate(180deg)' }} /></button>
+                <button onClick={() => chainMove(i, 1)} disabled={i === chain.length - 1} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 26, height: 26, borderRadius: 8, background: t.surfaceUp, border: `1px solid ${t.line}`, color: i === chain.length - 1 ? t.faint : t.text, cursor: i === chain.length - 1 ? 'default' : 'pointer' }}><MIcon k="chevD" size={13} /></button>
+                <button onClick={() => chain.length > 1 && setChain((c) => c.filter((_, j) => j !== i))} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 26, height: 26, borderRadius: 8, background: t.surfaceUp, border: `1px solid ${t.line}`, color: t.muted, cursor: chain.length > 1 ? 'pointer' : 'default', opacity: chain.length > 1 ? 1 : 0.4 }}><MIcon k="x" size={12} /></button>
+              </div>
+            ))}
+            {chainAdd === 'provider' && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 7, padding: '11px 0', borderBottom: `1px solid ${t.lineSoft}` }}>
+                <span style={{ fontFamily: FM, fontSize: 10, letterSpacing: '.1em', textTransform: 'uppercase', color: t.faint }}>1 · Provider</span>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7 }}>
+                  {Object.keys(ENGINE_NAME).map((p) => (
+                    <button key={p} onClick={() => setChainAdd(p)} style={{ fontFamily: FUI, fontSize: 12, fontWeight: 600, cursor: 'pointer', padding: '6px 12px', borderRadius: 999, background: t.surfaceUp, color: t.muted, border: `1px solid ${t.line}` }}>{ENGINE_NAME[p]}</button>
+                  ))}
+                </div>
+              </div>
+            )}
+            {chainAdd && chainAdd !== 'provider' && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 7, padding: '11px 0', borderBottom: `1px solid ${t.lineSoft}` }}>
+                <span style={{ fontFamily: FM, fontSize: 10, letterSpacing: '.1em', textTransform: 'uppercase', color: t.faint }}>2 · Model — {ENGINE_NAME[chainAdd]}</span>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7 }}>
+                  {(chainAdd === 'self' ? [[keys.selfModel, keys.selfModel]] : ENGINE_MODELS[chainAdd] || []).map(([id, name]) => (
+                    <button key={id} disabled={inChain(chainAdd, id)} onClick={() => { setChain((c) => [...c, { p: chainAdd, m: id }]); setChainAdd(null); }} style={{ fontFamily: FM, fontSize: 11.5, fontWeight: 600, cursor: inChain(chainAdd, id) ? 'default' : 'pointer', opacity: inChain(chainAdd, id) ? 0.4 : 1, padding: '6px 12px', borderRadius: 999, background: t.surfaceUp, color: t.muted, border: `1px solid ${t.line}` }}>{name}{inChain(chainAdd, id) ? ' ✓' : ''}</button>
+                  ))}
+                </div>
+              </div>
+            )}
+            <button onClick={() => setChainAdd((o) => o ? null : 'provider')} style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', textAlign: 'left', cursor: 'pointer', background: 'none', border: 'none', padding: '11px 0', fontFamily: FUI, fontSize: 13.5, fontWeight: 600, color: t.accentLite }}>
+              <MIcon k="plus" size={15} /> {chainAdd ? 'Cancel' : 'Add provider + model'}
+            </button>
+          </div>
+          <div style={{ fontFamily: FM, fontSize: 11, color: t.faint, lineHeight: 1.5, paddingLeft: 4 }}>Provider + model per slot — the same provider can appear more than once with different models. Whisperio uses #1 and walks down on failure (with “Fallback engines” on).</div>
+        </div>
         <SettGroup title="On-device models" t={t}>
-          <SettRow icon="download" label="Manage models" sub="Download, update or remove Apple Speech + Whisper" last onTap={() => setSub('modelsList')} t={t} />
+          <SettRow icon="download" label="Manage on-device models" sub="Download, update or remove Apple Speech + Whisper" last onTap={() => setSub('modelsList')} t={t} />
         </SettGroup>
+
         {engine === 'openai' && <>
           {field('OpenAI API key', keys.openai, (v) => setKeys((k) => ({ ...k, openai: v })), 'paste key…', true)}
           {field('Base URL (optional, self-hosted)', keys.base, (v) => setKeys((k) => ({ ...k, base: v })), 'https://api.openai.com/v1', true)}
@@ -303,29 +355,11 @@ function PhoneSettings({ t, dark, setDark, onBack, initial }) {
             autoStop === 0 ? 'No automatic stop. Only manual stop or interruption will release the mic.' : `When the app is quiet for ${autoStop} seconds, Whisperio stops listening.`, true)}
         </SettGroup>
         <SettGroup title="Engine behavior" t={t}>
-          {toggleRow('globe', 'Apple online speech', 'Use Apple’s servers when on-device isn’t available · audio leaves the device', 'appleOnline')}
           {toggleRow('spark', 'Cleanup', 'Tidy punctuation, casing & spacing', 'cleanup')}
           {toggleRow('cloud', 'Fallback engines', 'If the chosen engine fails, try the others', 'fallback', true)}
         </SettGroup>
         <SettGroup title="History" t={t}>
           {toggleRow('folder', 'Save recordings', 'Keep a local history of past dictations', 'saveRec', true)}
-        </SettGroup>
-      </>
-    ) },
-    integrations: { title: 'Integrations', body: (
-      <>
-        <SettGroup title="Quick dictation" t={t}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12, padding: '13px 0' }}>
-            <div style={{ fontFamily: FUI, fontSize: 13, color: t.muted, lineHeight: 1.5, textWrap: 'pretty' }}>Say “Dictate with Whisperio” to Siri — or add the shortcut, then assign it to Back Tap (Settings → Accessibility → Touch → Back Tap → Run Shortcut).</div>
-            <div style={{ display: 'flex', gap: 9 }}>
-              <GhostBtn title="Add to Siri" icon="spark" t={t} style={{ flex: 1 }} />
-              <GhostBtn title="Shortcuts" icon="arrowUR" t={t} style={{ flex: 1 }} />
-            </div>
-          </div>
-        </SettGroup>
-        <SettGroup title="Dictate from anywhere" t={t}>
-          <SettRow icon="zap" label="Set up dictation triggers" sub="Action Button, Back Tap, keyboard, widgets & more — step by step" onTap={() => setSub('triggers')} t={t} />
-          <SettRow icon="keyboard" label="Whisperio keyboard" sub="Dictate from any app — install & setup" last onTap={() => setSub('keyboard')} t={t} />
         </SettGroup>
       </>
     ) },
@@ -455,6 +489,19 @@ function PhoneSettings({ t, dark, setDark, onBack, initial }) {
     ) },
     system: { title: 'System', body: (
       <>
+        <SettGroup title="Quick dictation" t={t}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12, padding: '13px 0' }}>
+            <div style={{ fontFamily: FUI, fontSize: 13, color: t.muted, lineHeight: 1.5, textWrap: 'pretty' }}>Say “Dictate with Whisperio” to Siri — or add the shortcut, then assign it to Back Tap (Settings → Accessibility → Touch → Back Tap → Run Shortcut).</div>
+            <div style={{ display: 'flex', gap: 9 }}>
+              <GhostBtn title="Add to Siri" icon="spark" t={t} style={{ flex: 1 }} />
+              <GhostBtn title="Shortcuts" icon="arrowUR" t={t} style={{ flex: 1 }} />
+            </div>
+          </div>
+        </SettGroup>
+        <SettGroup title="Dictate from anywhere" t={t}>
+          <SettRow icon="zap" label="Set up dictation triggers" sub="Action Button, Back Tap, keyboard, widgets & more — step by step" onTap={() => setSub('triggers')} t={t} />
+          <SettRow icon="keyboard" label="Whisperio keyboard" sub="Dictate from any app — install & setup" last onTap={() => setSub('keyboard')} t={t} />
+        </SettGroup>
         <SettGroup title="Appearance" t={t}>
           <SettRow icon={dark ? 'moon' : 'sun'} label="Dark mode" sub="Match Whisperio’s look" last t={t} right={<MToggle on={dark} onChange={(v) => setDark(v)} t={t} />} />
         </SettGroup>
@@ -463,6 +510,7 @@ function PhoneSettings({ t, dark, setDark, onBack, initial }) {
     ) },
     /* ── Deep pages ── */
     modelsList: { title: 'On-device models', body: (
+      <>
       <SettGroup t={t}>
         {M_MODELS.map((m, i) => {
           let right;
@@ -473,6 +521,10 @@ function PhoneSettings({ t, dark, setDark, onBack, initial }) {
           return <SettRow key={m.id} icon={m.id.startsWith('apple') ? 'cpu' : 'download'} label={m.name} sub={`${m.sub} · ${m.size}`} last={i === M_MODELS.length - 1} t={t} right={right} />;
         })}
       </SettGroup>
+      <SettGroup title="Apple engine" t={t}>
+        {toggleRow('globe', 'Apple online speech', 'Use Apple’s servers when the on-device model isn’t available · audio leaves the device', 'appleOnline', true)}
+      </SettGroup>
+      </>
     ) },
     triggers: { title: 'Dictation triggers', body: (
       <>
@@ -654,7 +706,7 @@ function PhoneSettings({ t, dark, setDark, onBack, initial }) {
         <div style={{ padding: '0 16px', background: t.surface, border: `1px solid ${t.line}`, borderRadius: 18 }}>
           <SettRow icon="spark" label="Replay onboarding" sub="Go through the intro flow again" last onTap={() => {}} t={t} />
         </div>
-        {[['AI', ['models', 'transcription', 'content']], ['Data', ['sync', 'storage']], ['System', ['integrations', 'developer', 'system']]].map(([gl, ids]) => (
+        {[['AI', ['models', 'transcription', 'content']], ['Data', ['sync', 'storage']], ['System', ['system', 'developer']]].map(([gl, ids]) => (
           <SettGroup key={gl} title={gl} t={t}>
             {ids.map((id, i) => { const c = SETT_CATS.find((x) => x.id === id); return <SettRow key={id} icon={c.icon} label={c.title} sub={c.sub} last={i === ids.length - 1} onTap={() => setSub(c.id)} t={t} />; })}
           </SettGroup>

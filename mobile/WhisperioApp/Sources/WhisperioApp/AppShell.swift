@@ -257,9 +257,11 @@ struct WZPhoneView: View {
         case .presetEditor:
             PresetEditorView(preset: editorPreset, onBack: { go(editorReturn) }, toast: showToast)
         case .keyboardSetup:
-            KeyboardSetupView(onBack: { go(.settings) })
+            // Back lands on the System page — the keyboard deep page's parent.
+            KeyboardSetupView(onBack: { settingsLandingCategory = "system"; go(.settings) })
         case .githubSync:
-            GitHubSyncView(onBack: { go(.settings) }, toast: showToast)
+            // Back lands on the sync ("Data synchronisation") page — the GitHub deep page's parent.
+            GitHubSyncView(onBack: { settingsLandingCategory = "sync"; go(.settings) }, toast: showToast)
         case .digestPromptEditor:
             DigestPromptEditorView(onBack: { go(.settings) }, toast: showToast)
         case .keyboardReturn:

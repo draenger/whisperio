@@ -284,6 +284,10 @@ struct DetailView: View {
         case .onDevice: return "Apple on-device"
         case .openAI: return "OpenAI"
         case .elevenLabs: return "ElevenLabs"
+        case .groq: return "Groq"
+        case .deepgram: return "Deepgram"
+        case .assemblyAI: return "AssemblyAI"
+        case .mistral: return "Mistral"
         }
     }
 

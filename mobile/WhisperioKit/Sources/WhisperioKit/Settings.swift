@@ -52,6 +52,18 @@ public struct WhisperioSettings: Codable, Sendable, Equatable {
     public var openAIBaseURL: String
     public var whisperModel: String
     public var elevenLabsKey: String
+    /// Groq — OpenAI-compatible Whisper inference (fastest cloud Whisper).
+    public var groqKey: String
+    public var groqModel: String
+    /// Deepgram — Nova models, streaming & diarization.
+    public var deepgramKey: String
+    public var deepgramModel: String
+    /// AssemblyAI — Universal models, speaker labels.
+    public var assemblyAIKey: String
+    public var assemblyAIModel: String
+    /// Mistral — Voxtral open-weights transcription.
+    public var mistralKey: String
+    public var mistralModel: String
     /// Chat model for the text-LLM (rewrite render presets + journaling summary) — one
     /// configurable value both flows share, ported from the desktop's 'gpt-4o-mini' default.
     public var chatModel: String
@@ -63,6 +75,12 @@ public struct WhisperioSettings: Codable, Sendable, Equatable {
     // Behavior.
     public var cleanupEnabled: Bool      // tidy punctuation/casing/spacing after transcription
     public var fallbackEnabled: Bool     // try the other configured engines if the primary fails
+    /// Ordered fallback engines tried after the primary when `fallbackEnabled` is on and the
+    /// primary fails. The primary is skipped if it also appears here, so switching primaries
+    /// never rewrites the stored chain. Defaults to every engine in the classic implicit order
+    /// — preserving the pre-chain "try all the others" behavior for existing users. An empty
+    /// chain means no fallback even with the toggle on.
+    public var fallbackChain: [ProviderID]
     public var saveRecordings: Bool
     /// Stream on-device partial results so text appears live as you speak. On-device only
     /// (and free) — when off, or when a cloud engine is primary, dictation transcribes once
@@ -131,11 +149,21 @@ public struct WhisperioSettings: Codable, Sendable, Equatable {
         openAIBaseURL: String = "",
         whisperModel: String = "",
         elevenLabsKey: String = "",
+        groqKey: String = "",
+        groqModel: String = "whisper-large-v3-turbo",
+        deepgramKey: String = "",
+        deepgramModel: String = "nova-3",
+        assemblyAIKey: String = "",
+        assemblyAIModel: String = "universal-2",
+        mistralKey: String = "",
+        mistralModel: String = "voxtral-small",
         chatModel: String = "gpt-4o-mini",
         language: String = "auto",
         customVocabulary: String = "",
         cleanupEnabled: Bool = false,
         fallbackEnabled: Bool = false,
+        fallbackChain: [ProviderID] = [.onDevice, .openAI, .elevenLabs,
+                                       .groq, .deepgram, .assemblyAI, .mistral],
         saveRecordings: Bool = true,
         liveTranscriptionEnabled: Bool = true,
         appleAllowOnline: Bool = false,
@@ -161,11 +189,20 @@ public struct WhisperioSettings: Codable, Sendable, Equatable {
         self.openAIBaseURL = openAIBaseURL
         self.whisperModel = whisperModel
         self.elevenLabsKey = elevenLabsKey
+        self.groqKey = groqKey
+        self.groqModel = groqModel
+        self.deepgramKey = deepgramKey
+        self.deepgramModel = deepgramModel
+        self.assemblyAIKey = assemblyAIKey
+        self.assemblyAIModel = assemblyAIModel
+        self.mistralKey = mistralKey
+        self.mistralModel = mistralModel
         self.chatModel = chatModel
         self.language = language
         self.customVocabulary = customVocabulary
         self.cleanupEnabled = cleanupEnabled
         self.fallbackEnabled = fallbackEnabled
+        self.fallbackChain = fallbackChain
         self.saveRecordings = saveRecordings
         self.liveTranscriptionEnabled = liveTranscriptionEnabled
         self.appleAllowOnline = appleAllowOnline
@@ -197,11 +234,22 @@ public struct WhisperioSettings: Codable, Sendable, Equatable {
         openAIBaseURL = try c.decodeIfPresent(String.self, forKey: .openAIBaseURL) ?? d.openAIBaseURL
         whisperModel = try c.decodeIfPresent(String.self, forKey: .whisperModel) ?? d.whisperModel
         elevenLabsKey = try c.decodeIfPresent(String.self, forKey: .elevenLabsKey) ?? d.elevenLabsKey
+        groqKey = try c.decodeIfPresent(String.self, forKey: .groqKey) ?? d.groqKey
+        groqModel = try c.decodeIfPresent(String.self, forKey: .groqModel) ?? d.groqModel
+        deepgramKey = try c.decodeIfPresent(String.self, forKey: .deepgramKey) ?? d.deepgramKey
+        deepgramModel = try c.decodeIfPresent(String.self, forKey: .deepgramModel) ?? d.deepgramModel
+        assemblyAIKey = try c.decodeIfPresent(String.self, forKey: .assemblyAIKey) ?? d.assemblyAIKey
+        assemblyAIModel = try c.decodeIfPresent(String.self, forKey: .assemblyAIModel) ?? d.assemblyAIModel
+        mistralKey = try c.decodeIfPresent(String.self, forKey: .mistralKey) ?? d.mistralKey
+        mistralModel = try c.decodeIfPresent(String.self, forKey: .mistralModel) ?? d.mistralModel
         chatModel = try c.decodeIfPresent(String.self, forKey: .chatModel) ?? d.chatModel
         language = try c.decodeIfPresent(String.self, forKey: .language) ?? d.language
         customVocabulary = try c.decodeIfPresent(String.self, forKey: .customVocabulary) ?? d.customVocabulary
         cleanupEnabled = try c.decodeIfPresent(Bool.self, forKey: .cleanupEnabled) ?? d.cleanupEnabled
         fallbackEnabled = try c.decodeIfPresent(Bool.self, forKey: .fallbackEnabled) ?? d.fallbackEnabled
+        // `try?` so an unknown engine raw value (a future build's provider) falls back to the
+        // default chain instead of throwing away the whole settings blob.
+        fallbackChain = (try? c.decodeIfPresent([ProviderID].self, forKey: .fallbackChain)) ?? d.fallbackChain
         saveRecordings = try c.decodeIfPresent(Bool.self, forKey: .saveRecordings) ?? d.saveRecordings
         liveTranscriptionEnabled = try c.decodeIfPresent(Bool.self, forKey: .liveTranscriptionEnabled) ?? d.liveTranscriptionEnabled
         appleAllowOnline = try c.decodeIfPresent(Bool.self, forKey: .appleAllowOnline) ?? d.appleAllowOnline
@@ -231,7 +279,7 @@ public struct WhisperioSettings: Codable, Sendable, Equatable {
     }
 
     /// Whether the given engine requires (and currently has) cloud consent to run.
-    public func isCloud(_ id: ProviderID) -> Bool { id == .openAI || id == .elevenLabs }
+    public func isCloud(_ id: ProviderID) -> Bool { id != .onDevice }
 
     /// Vocabulary parsed into trimmed, non-empty terms.
     public var vocabularyTerms: [String] {

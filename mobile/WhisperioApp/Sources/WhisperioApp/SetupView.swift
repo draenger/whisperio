@@ -18,6 +18,8 @@ struct SetupView: View {
         case .onDevice: return true
         case .openAI: return !openAIKey.trimmingCharacters(in: .whitespaces).isEmpty
         case .elevenLabs: return !elevenKey.trimmingCharacters(in: .whitespaces).isEmpty
+        // Not offered by the first-run picker — configured later in Settings → Models.
+        case .groq, .deepgram, .assemblyAI, .mistral: return false
         }
     }
 

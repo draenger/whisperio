@@ -48,6 +48,10 @@ struct RecordingView: View {
         switch settings.settings.providerChain.first {
         case .openAI: return "OpenAI · cloud"
         case .elevenLabs: return "ElevenLabs · cloud"
+        case .groq: return "Groq · cloud"
+        case .deepgram: return "Deepgram · cloud"
+        case .assemblyAI: return "AssemblyAI · cloud"
+        case .mistral: return "Mistral · cloud"
         default: return "Apple Speech · on-device"
         }
     }
