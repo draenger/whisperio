@@ -86,6 +86,14 @@ struct ConversationView: View {
                         .lineSpacing(6).frame(minHeight: 110, alignment: .topLeading)
                         .frame(maxWidth: .infinity, alignment: .leading)
                     if phase == .listening || phase == .paused || phase == .processing {
+                        // Static "diarization is on" cue — mirrors the design's spChip row but
+                        // without the alternating active-speaker pulse, since there's no real
+                        // per-speaker signal during capture (only batch diarization after stop).
+                        HStack(spacing: 8) {
+                            speakerChip("Speaker 1", color: t.accent)
+                            speakerChip("Speaker 2", color: .hex(0x3da2f7))
+                            Text("2 voices").font(WZFont.mono(10.5)).foregroundStyle(t.faint)
+                        }
                         Text("Names are matched after you stop — rename or “Name with AI” in the transcript.")
                             .font(WZFont.mono(10.5)).foregroundStyle(t.faint)
                             .frame(maxWidth: .infinity, alignment: .leading)
@@ -164,6 +172,19 @@ struct ConversationView: View {
 
     // Listening OR paused — the session is live and stop() can finalize it.
     private var isCapturing: Bool { phase == .listening || phase == .paused }
+
+    // Neutral, non-pulsing capsule communicating that speaker detection is enabled for this
+    // capture — not which speaker is currently talking (no such live signal exists).
+    private func speakerChip(_ name: String, color: Color) -> some View {
+        HStack(spacing: 7) {
+            Circle().fill(color.opacity(0.55)).frame(width: 7, height: 7)
+            Text(name).font(WZFont.mono(11, .semibold))
+        }
+        .foregroundStyle(color.opacity(0.7))
+        .padding(.horizontal, 12).padding(.vertical, 6)
+        .background(t.surfaceUp, in: Capsule())
+        .overlay(Capsule().stroke(t.line, lineWidth: 1))
+    }
 
     private func circleButton(icon: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {

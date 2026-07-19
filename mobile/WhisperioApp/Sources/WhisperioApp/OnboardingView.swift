@@ -717,6 +717,11 @@ struct OnboardingView: View {
         var s = settings.settings
         s.language = "auto"
         settings.settings = s
+        // Mirrors SetupView.swift's legacy completion flag so RootView's first-run gate
+        // flips over to the real app the moment onboarding finishes — replaying onboarding
+        // from Settings (openOnboarding) already has didCompleteSetup == true, so this is a
+        // harmless no-op reassignment there.
+        settings.didCompleteSetup = true
         done()
     }
 }

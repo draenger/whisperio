@@ -38,12 +38,19 @@ struct HomeView: View {
                             }
                             SquareIconButton(icon: "edit", action: openScratchpad)
                             SquareIconButton(icon: "book", action: openJournal)
-                            SquareIconButton(icon: "bolt", action: openRecap)
                             SquareIconButton(icon: "settings", action: openSettings)
                         }
                     }
-                    // search + filters
+                    // Pinned block (never scrolls away): journal/recap row, search bar, category
+                    // chips — port of PhoneHome's `t.design === 'redesign'` row sitting between
+                    // the header and the search bar (mob-screens.jsx ~95-118). The recap streak
+                    // tile is this row's only entry point to Recap now that the header's bolt
+                    // glyph is gone.
                     VStack(spacing: 13) {
+                        HStack(spacing: 9) {
+                            todaysDigestCard
+                            recapStreakTile
+                        }
                         HStack(spacing: 9) {
                             WIcon("search", size: 17, weight: .regular).foregroundStyle(t.faint)
                             TextField("Search transcripts", text: $searchText)
@@ -89,7 +96,6 @@ struct HomeView: View {
                         } else {
                             ScrollView(showsIndicators: false) {
                                 VStack(spacing: 18) {
-                                    todaysDigestCard
                                     let today = visible.filter { Calendar.current.isDateInToday($0.timestamp) }
                                     let earlier = visible.filter { !Calendar.current.isDateInToday($0.timestamp) }
                                     if !today.isEmpty { brainGroup("Today", today) }
@@ -117,9 +123,9 @@ struct HomeView: View {
         }
     }
 
-    // "Today's digest" card — a gradient icon tile + one-line preview of today's journal entry,
-    // sitting above the grouped list. Tapping it opens the Journal (same destination as the book
-    // icon in the header). Reads the cached DailyDigest for today's day key; before a summary
+    // "My journal" tile — the pinned flex-1 entry point into the Journal, port of PhoneHome's
+    // journal button (mob-screens.jsx ~97-103: pencil badge on `t.primary`/`t.primaryInk`,
+    // "My journal" eyebrow). Reads the cached DailyDigest for today's day key; before a summary
     // exists it falls back to a note count so the card is never blank.
     private var todaysDigestCard: some View {
         let dayKey = DigestGrouping.dayKey(for: Date(), calendar: .current)
@@ -137,11 +143,11 @@ struct HomeView: View {
             HStack(spacing: 13) {
                 ZStack {
                     RoundedRectangle(cornerRadius: 12, style: .continuous).fill(t.primary)
-                    WIcon("book", size: 18, weight: .semibold).foregroundStyle(t.primaryInk)
+                    WIcon("pencil", size: 17, weight: .semibold).foregroundStyle(t.primaryInk)
                 }
                 .frame(width: 40, height: 40)
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("TODAY'S DIGEST")
+                    Text("MY JOURNAL")
                         .font(WZFont.mono(11, .semibold)).tracking(1.1).foregroundStyle(t.accentLite)
                     Text(preview)
                         .font(WZFont.ui(13.5)).foregroundStyle(t.muted)
@@ -151,10 +157,57 @@ struct HomeView: View {
                 WIcon("chevR", size: 14, weight: .semibold).foregroundStyle(t.faint)
             }
             .padding(14)
+            .frame(maxWidth: .infinity, alignment: .leading)
             .background(t.surface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(t.line, lineWidth: 1))
         }
         .buttonStyle(.plain)
+    }
+
+    // Recap streak tile — the 76pt companion to the journal tile (mob-screens.jsx ~104-108: bolt
+    // icon, streak value, uppercase "Recap" label). This is now the body's only entry point to
+    // Recap — the header's bolt glyph was removed in favor of this real, streak-bearing tile.
+    // The streak itself mirrors RecapView.streaks.current exactly (days-with-a-note run ending
+    // today or yesterday); a zero streak renders neutrally rather than claiming a fake "0d" win.
+    private var recapStreakTile: some View {
+        let streak = currentStreak
+        return Button(action: openRecap) {
+            VStack(spacing: 4) {
+                WIcon("bolt", size: 17, weight: .regular).foregroundStyle(t.accentLite)
+                Text(streak > 0 ? "\(streak)d" : "–")
+                    .font(WZFont.display(15, .bold))
+                    .foregroundStyle(streak > 0 ? t.text : t.faint)
+                Text("RECAP")
+                    .font(WZFont.mono(8.5, .semibold)).tracking(1.0).foregroundStyle(t.faint)
+            }
+            .frame(width: 76)
+            .padding(.vertical, 12)
+            .background(t.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(t.line, lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(streak > 0 ? "Weekly recap, \(streak) day streak" : "Weekly recap")
+    }
+
+    // Days-with-a-note streak ending today (or yesterday, so a streak isn't lost the instant the
+    // clock passes midnight before today's first note lands) — the same definition RecapView's
+    // `streaks.current` uses, computed independently here since Home has no dependency on Recap.
+    private var currentStreak: Int {
+        let calendar = Calendar.current
+        let days = Set(recordings.items.map { calendar.startOfDay(for: $0.timestamp) })
+        guard !days.isEmpty else { return 0 }
+        var probe = calendar.startOfDay(for: Date())
+        if !days.contains(probe) {
+            guard let yesterday = calendar.date(byAdding: .day, value: -1, to: probe) else { return 0 }
+            probe = yesterday
+        }
+        var current = 0
+        while days.contains(probe) {
+            current += 1
+            guard let prev = calendar.date(byAdding: .day, value: -1, to: probe) else { break }
+            probe = prev
+        }
+        return current
     }
 
     // The recordings that match the active category filter (All → everything) and the search

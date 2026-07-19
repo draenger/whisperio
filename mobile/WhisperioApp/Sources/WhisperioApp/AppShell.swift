@@ -289,7 +289,8 @@ struct WZPhoneView: View {
         case .journal:
             JournalView(onBack: { go(.home) },
                         openDay: { digestDay = $0; digestSeed = nil; go(.digestDay) },
-                        onAdd: { journalComposerInitialMode = nil; go(.journalNew) })
+                        onAdd: { journalComposerInitialMode = nil; go(.journalNew) },
+                        onOpenToday: { go(.scratchpad) })
         case .journalNew:
             JournalComposerView(onBack: { go(.journal) },
                                 onDone: { kind in
@@ -454,7 +455,7 @@ struct WhisperioApp: App {
 #endif
 }
 
-// Gate: first run shows the engine picker; afterwards the app.
+// Gate: first run shows the onboarding flow (OnboardingView); afterwards the app.
 // incomingURL is stored here so a deep link that arrives during setup is not dropped.
 private struct RootView: View {
     @EnvironmentObject private var settings: SettingsStore
@@ -484,7 +485,7 @@ private struct RootView: View {
                 WZPhoneView(initialScreen: .home, incomingURL: $incomingURL)
             }
         } else {
-            SetupView()
+            OnboardingView { }
                 .environment(\.wz, WZTheme.of(true))
                 .preferredColorScheme(.dark)
         }

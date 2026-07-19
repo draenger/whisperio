@@ -28,6 +28,18 @@ struct DigestDayView: View {
     @State private var generating = false
     @State private var showConsent = false
 
+    // Manual "Start from scratch" authoring — a free-text alternative to the AI summary,
+    // reachable on any day, with real on-device/cloud dictation appending straight into it
+    // (mirrors ScratchpadView's live-vs-record-then-transcribe dictation, minus its running-note
+    // bookkeeping since here we're just filling a single text field).
+    private enum DictateStage { case idle, listening, processing }
+    @State private var manual = false
+    @State private var manualText = ""
+    @State private var dictateStage: DictateStage = .idle
+    @StateObject private var dictation = LiveDictation()
+    @StateObject private var micRecorder = AudioRecorder()
+    @FocusState private var manualFocused: Bool
+
     private var dayKey: String { DigestGrouping.dayKey(for: day, calendar: .current) }
 
     // The day's completed notes, and their live grouping by category (order = the display order).
@@ -71,6 +83,10 @@ struct DigestDayView: View {
                 .presentationDetents([.medium, .large])
                 #endif
         }
+        .onChange(of: manual) { _, isManual in manualFocused = isManual }
+        .onDisappear {
+            if dictateStage == .listening { dictation.cancel(); micRecorder.cancel() }
+        }
     }
 
     // MARK: - Summary card
@@ -104,17 +120,83 @@ struct DigestDayView: View {
                     GhostButton(title: "Copy", icon: "copy") { copy(summary) }.fixedSize()
                     GhostButton(title: "Regenerate", icon: "sync") { generate() }.fixedSize()
                 }
+            } else if manual {
+                manualCard
             } else {
-                Text("Group this day’s notes by category and write a short digest with AI.")
+                Text("Start with an AI summary of the day’s notes — or write it yourself from scratch.")
                     .font(WZFont.ui(13.5)).foregroundStyle(t.muted).lineSpacing(3)
                     .fixedSize(horizontal: false, vertical: true)
-                GradButton(title: "Generate summary", icon: "spark") { generate() }
+                HStack(spacing: 9) {
+                    GradButton(title: "Generate summary", icon: "spark") { generate() }
+                    GhostButton(title: "Start from scratch", icon: "pencil") { manual = true }
+                }
             }
         }
         .padding(18)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(t.surface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(t.line, lineWidth: 1))
+    }
+
+    // The manual-authoring mode: a free-text editor (with placeholder), a mic button that
+    // dictates straight into it, an "AI instead" escape hatch back to `generate()`, and Save,
+    // which caches the typed text as this day's summary through the same store path
+    // JournalComposerView.composeRaw uses for a composed page.
+    @ViewBuilder private var manualCard: some View {
+        TextEditor(text: $manualText)
+            .font(WZFont.ui(14.5)).foregroundStyle(t.text)
+            .scrollContentBackground(.hidden)
+            .frame(minHeight: 110, maxHeight: 180)
+            .focused($manualFocused)
+            .disabled(dictateStage != .idle)
+            #if os(iOS)
+            .textInputAutocapitalization(.sentences)
+            #endif
+            .padding(.horizontal, 9).padding(.vertical, 6)
+            .background(t.surfaceUp, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(t.line, lineWidth: 1))
+            .overlay(alignment: .topLeading) {
+                if manualText.isEmpty {
+                    Text("Write the day in your own words — or dictate straight into it…")
+                        .font(WZFont.ui(14.5)).foregroundStyle(t.faint)
+                        .padding(.horizontal, 14).padding(.vertical, 14)
+                        .allowsHitTesting(false)
+                }
+            }
+        HStack(spacing: 8) {
+            Button(action: toggleDictate) {
+                Group {
+                    if dictateStage == .processing {
+                        ProgressView().tint(t.primaryInk)
+                    } else {
+                        WIcon(dictateStage == .listening ? "stop" : "mic", size: 17)
+                            .foregroundStyle(t.primaryInk)
+                    }
+                }
+                .frame(width: 40, height: 40)
+                .background(t.primary, in: Circle())
+            }
+            .buttonStyle(.plain)
+            .disabled(dictateStage == .processing)
+            Spacer(minLength: 0)
+            GhostButton(title: "AI instead", icon: "spark") { manual = false; generate() }
+                .fixedSize()
+                .disabled(dictateStage != .idle)
+            GradButton(title: "Save", icon: "check") { saveManual() }
+                .fixedSize()
+                .opacity(manualText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? 0.5 : 1)
+                .disabled(manualText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || dictateStage != .idle)
+        }
+        Text(dictateCaption)
+            .font(WZFont.mono(10.5)).foregroundStyle(t.faint)
+    }
+
+    private var dictateCaption: String {
+        switch dictateStage {
+        case .listening: return "Listening — tap the mic to stop"
+        case .processing: return "Transcribing…"
+        case .idle: return "Dictate into the summary · on-device"
+        }
     }
 
     // MARK: - Copy
@@ -183,6 +265,91 @@ struct DigestDayView: View {
                 toast("Couldn’t generate summary")
             }
         }
+    }
+
+    // MARK: - Manual authoring
+
+    // Persist the hand-written (or dictated) text as this day's summary, the same store path
+    // JournalComposerView.composeRaw uses for a composed page — keeps whatever grouping already
+    // exists for the day, just replaces the summary field.
+    private func saveManual() {
+        let text = manualText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return }
+        digests.storeComposed(DailyDigest(
+            id: dayKey, date: day,
+            recordingIDs: dayRecs.map(\.id), groups: groups,
+            summary: text, summaryGeneratedAt: Date()))
+        manual = false
+        manualText = ""
+    }
+
+    // Whether live streaming dictation is available right now — same formula ScratchpadView uses
+    // to decide between live partials and record-then-transcribe.
+    private var useLiveDictation: Bool {
+        settings.settings.liveTranscriptionEnabled
+            && (settings.settings.providerChain.first ?? .onDevice) == .onDevice
+            && LiveDictation.isSupported(language: settings.settings.language,
+                                         requireOnDevice: !settings.settings.appleAllowOnline)
+    }
+
+    private func toggleDictate() {
+        switch dictateStage {
+        case .idle: startDictate()
+        case .listening: stopDictate()
+        case .processing: break
+        }
+    }
+
+    private func startDictate() {
+        Task {
+            let ok = await micRecorder.requestPermissions()
+            guard ok else {
+                toast("Microphone access denied — enable it in Settings.")
+                return
+            }
+            do {
+                if useLiveDictation {
+                    try dictation.start(language: settings.settings.language,
+                                         vocabulary: settings.settings.vocabularyTerms,
+                                         requireOnDevice: !settings.settings.appleAllowOnline)
+                } else {
+                    try micRecorder.start()
+                }
+                dictateStage = .listening
+            } catch {
+                toast(error.localizedDescription)
+            }
+        }
+    }
+
+    private func stopDictate() {
+        guard dictateStage == .listening else { return }
+        dictateStage = .processing
+        if useLiveDictation {
+            Task {
+                let (raw, _) = await dictation.finish()
+                appendDictated(raw)
+                dictateStage = .idle
+            }
+        } else {
+            let clip = micRecorder.stop()
+            Task {
+                defer { dictateStage = .idle }
+                guard let clip else { return }
+                let result = await settings.makeChain().transcribe(clip)
+                if case .success(let tr) = result { appendDictated(tr.text) }
+                if !settings.settings.keepAudioRecordings {
+                    try? FileManager.default.removeItem(
+                        at: FileManager.default.temporaryDirectory.appendingPathComponent(clip.filename))
+                }
+            }
+        }
+    }
+
+    private func appendDictated(_ raw: String) {
+        let cleaned = settings.cleanup(raw).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleaned.isEmpty else { return }
+        manualText = manualText.isEmpty ? cleaned : manualText + " " + cleaned
     }
 
     // Accepting cloud consent from the digest flow: persist the grant, then route to Settings if the

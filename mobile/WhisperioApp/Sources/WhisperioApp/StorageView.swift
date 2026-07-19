@@ -12,13 +12,20 @@ struct StorageView: View {
     var toast: (String) -> Void = { _ in }
 
     @State private var audioBytes: Int64 = 0
-    @State private var textBytes: Int64 = 0
+    @State private var transcriptBytes: Int64 = 0
+    @State private var summaryBytes: Int64 = 0
     @State private var eraseOpen = false
     @State private var erased = false
     // Bytes freed by "Clear old recordings" — nil until run this visit.
     @State private var clearedBytes: Int64?
+    // Bytes freed by the granular "Delete audio files" / "Delete daily summaries" rows —
+    // each nil until run this visit, then holds what was actually freed.
+    @State private var audioDeletedBytes: Int64?
+    @State private var summariesDeletedBytes: Int64?
+    @State private var confirmDeleteAudio = false
+    @State private var confirmDeleteSummaries = false
 
-    private var totalBytes: Int64 { audioBytes + textBytes }
+    private var totalBytes: Int64 { audioBytes + transcriptBytes + summaryBytes }
 
     private var autoDeleteBinding: Binding<Bool> {
         Binding(get: { settings.settings.autoDeleteEnabled },
@@ -69,6 +76,18 @@ struct StorageView: View {
                 .presentationDetents([.medium])
                 #endif
         }
+        .alert("Delete all audio recordings?", isPresented: $confirmDeleteAudio) {
+            Button("Delete", role: .destructive) { deleteAllAudio() }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("Removes every recorded audio file on this iPhone. Transcripts stay.")
+        }
+        .alert("Delete all daily summaries?", isPresented: $confirmDeleteSummaries) {
+            Button("Delete", role: .destructive) { deleteAllSummaries() }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("Clears every day’s AI summary from the Journal. Recordings and transcripts stay.")
+        }
         .onAppear(perform: measure)
     }
 
@@ -86,6 +105,8 @@ struct StorageView: View {
                     if totalBytes > 0 {
                         Rectangle().fill(t.accent)
                             .frame(width: geo.size.width * CGFloat(audioBytes) / CGFloat(totalBytes))
+                        Rectangle().fill(Color.hex(0x3da2f7))
+                            .frame(width: geo.size.width * CGFloat(transcriptBytes) / CGFloat(totalBytes))
                         Rectangle().fill(t.green)
                     } else {
                         Rectangle().fill(t.surfaceUp)
@@ -98,7 +119,8 @@ struct StorageView: View {
             .animation(.easeOut(duration: 0.4), value: totalBytes)
             HStack(spacing: 14) {
                 legend("Audio", audioBytes, t.accent)
-                legend("Text", textBytes, t.green)
+                legend("Transcripts", transcriptBytes, Color.hex(0x3da2f7))
+                legend("Summaries", summaryBytes, t.green)
             }
         }
         .padding(16)
@@ -148,6 +170,20 @@ struct StorageView: View {
                     onTap: clearedBytes == nil ? clearOldAudio : nil) {
                 if clearedBytes != nil { WIcon("check", size: 17).foregroundStyle(t.green) }
             }
+            SettRow(icon: "trash",
+                    label: audioDeletedBytes != nil ? "Audio files — deleted" : "Delete audio files",
+                    sub: audioDeletedBytes.map { "Freed \(Self.format($0))" }
+                        ?? "Keeps every transcript — only the sound files go",
+                    onTap: audioDeletedBytes == nil ? { confirmDeleteAudio = true } : nil) {
+                if audioDeletedBytes != nil { WIcon("check", size: 17).foregroundStyle(t.green) }
+            }
+            SettRow(icon: "trash",
+                    label: summariesDeletedBytes != nil ? "Daily summaries — deleted" : "Delete daily summaries",
+                    sub: summariesDeletedBytes.map { "Freed \(Self.format($0))" }
+                        ?? "Clears the Journal digests",
+                    onTap: summariesDeletedBytes == nil ? { confirmDeleteSummaries = true } : nil) {
+                if summariesDeletedBytes != nil { WIcon("check", size: 17).foregroundStyle(t.green) }
+            }
             Button(action: { if !erased { eraseOpen = true } }) {
                 HStack(spacing: 13) {
                     WIcon("trash", size: 17, weight: .regular).foregroundStyle(t.red)
@@ -186,13 +222,14 @@ struct StorageView: View {
 
     private func measure() {
         audioBytes = audioFiles().reduce(0) { $0 + Self.size(of: $1) }
-        // Text = every transcript + render + daily summary currently in memory — a fair
-        // proxy for both backends (JSON file on disk, SwiftData store for CloudKit).
+        // Transcripts = every transcription + render currently in memory; Summaries = every
+        // cached daily-digest summary — a fair proxy for both backends (JSON file on disk,
+        // SwiftData store for CloudKit), split the same 3 ways the design's usage bar is.
         let transcriptChars = recordings.items.reduce(0) {
             $0 + ($1.transcription?.count ?? 0) + ($1.render?.count ?? 0)
         }
-        let digestChars = digests.digests.reduce(0) { $0 + ($1.summary?.count ?? 0) }
-        textBytes = Int64(transcriptChars + digestChars)
+        transcriptBytes = Int64(transcriptChars)
+        summaryBytes = Int64(digests.digests.reduce(0) { $0 + ($1.summary?.count ?? 0) })
     }
 
     private func clearOldAudio() {
@@ -212,11 +249,41 @@ struct StorageView: View {
         toast("Freed \(Self.format(freed))")
     }
 
+    // Deletes every audio file on this iPhone — the recordings themselves (transcripts, renders,
+    // categories) are untouched, only their sound files go. Confirmed via confirmDeleteAudio.
+    private func deleteAllAudio() {
+        var freed: Int64 = 0
+        for url in audioFiles() {
+            freed += Self.size(of: url)
+            try? FileManager.default.removeItem(at: url)
+        }
+        audioDeletedBytes = freed
+        measure()
+        toast("Freed \(Self.format(freed))")
+    }
+
+    // Clears just the AI-written summary text (and its timestamp) off every cached daily
+    // digest — the day's real recording groups/categories stay, since those are derived from
+    // recordings that are still there. Confirmed via confirmDeleteSummaries.
+    private func deleteAllSummaries() {
+        let freed = summaryBytes
+        for digest in digests.digests where digest.summary != nil {
+            digests.storeComposed(DailyDigest(id: digest.id, date: digest.date,
+                                               recordingIDs: digest.recordingIDs, groups: digest.groups,
+                                               summary: nil, summaryGeneratedAt: nil))
+        }
+        summariesDeletedBytes = freed
+        measure()
+        toast("Freed \(Self.format(freed))")
+    }
+
     private func eraseAll() {
         for r in recordings.items { recordings.delete(r) }
         digests.eraseAll()
         for url in audioFiles() { try? FileManager.default.removeItem(at: url) }
         erased = true
+        audioDeletedBytes = nil
+        summariesDeletedBytes = nil
         measure()
         toast("All data erased")
     }

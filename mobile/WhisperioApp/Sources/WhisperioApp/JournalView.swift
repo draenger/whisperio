@@ -16,6 +16,10 @@ struct JournalView: View {
     var openDay: (Date) -> Void
     // New page (journal composer) — the book view's + menu, per PhoneJournal's onAdd.
     var onAdd: () -> Void = {}
+    // Today's page routes to the live running note (Scratchpad) instead of the generic digest —
+    // per PhoneJournal's onToday. Defaults to a no-op for previews/galleries; AppShell wires the
+    // real route.
+    var onOpenToday: () -> Void = {}
 
     // Which book is open; nil → the library shelf. Ids are stable across re-derivation.
     @State private var openBookID: String? = nil
@@ -369,7 +373,43 @@ struct JournalView: View {
             .sorted { $0.key > $1.key }
     }
 
-    private func dayCard(_ day: JournalDay) -> some View {
+    // Today's page is a distinct "running note" shortcut into Scratchpad rather than the generic
+    // digest card every other day gets — same live take count, primary-colored badge and
+    // uppercase eyebrow the design uses for it (mob-screens.jsx pageCard('today')).
+    private func todayCard(_ day: JournalDay) -> some View {
+        Button(action: onOpenToday) {
+            HStack(spacing: 11) {
+                WIcon("pencil", size: 16, weight: .semibold)
+                    .foregroundStyle(t.primaryInk)
+                    .frame(width: 36, height: 36)
+                    .background(t.primary, in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("TODAY · RUNNING NOTE")
+                        .font(WZFont.mono(9.5, .semibold)).tracking(1.1).foregroundStyle(t.accentLite)
+                    Text("\(day.recs.count) take\(day.recs.count == 1 ? "" : "s") so far — open to continue")
+                        .font(WZFont.ui(13)).foregroundStyle(t.text)
+                }
+                Spacer(minLength: 0)
+                WIcon("chevR", size: 15).foregroundStyle(t.faint)
+            }
+            .padding(14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(t.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(t.hair, lineWidth: 1))
+            .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        }
+        .buttonStyle(.plain)
+    }
+
+    @ViewBuilder private func dayCard(_ day: JournalDay) -> some View {
+        if Calendar.current.isDateInToday(day.date) {
+            todayCard(day)
+        } else {
+            genericDayCard(day)
+        }
+    }
+
+    private func genericDayCard(_ day: JournalDay) -> some View {
         let cats = categories(in: day.recs)
         let ready = digests.digest(for: day.key)?.summary?.isEmpty == false
         return VStack(alignment: .leading, spacing: 12) {

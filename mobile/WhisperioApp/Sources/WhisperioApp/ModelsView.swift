@@ -27,6 +27,7 @@ struct ModelsView: View {
                         engineCard(.onDevice, "Apple Speech", "Built-in · on-device", "cpu", tag: "Default")
                         engineCard(.openAI, "OpenAI", "Cloud · Whisper API", "globe")
                         engineCard(.elevenLabs, "ElevenLabs", "Cloud · Scribe", "globe")
+                        appleEngineGroup
                     }
                     .padding(.horizontal, 16).padding(.top, 6).padding(.bottom, 28)
                 }
@@ -64,6 +65,18 @@ struct ModelsView: View {
         .background((isCloudActive ? t.amber : t.green).opacity(t.dark ? 0.10 : 0.08), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke((isCloudActive ? t.amber : t.green).opacity(t.dark ? 0.22 : 0.20), lineWidth: 1))
         .padding(.bottom, 5)
+    }
+
+    // Apple's own "use the network when the on-device model isn't available" behavior —
+    // parented under Models here (design's modelsList page), not Transcription.
+    private var appleEngineGroup: some View {
+        SettGroup(title: "Apple engine") {
+            SettRow(icon: "globe", label: "Apple online speech",
+                    sub: "Use Apple’s servers when the on-device model isn’t available · audio leaves the device",
+                    last: true) {
+                WToggle(on: boolBinding(\.appleAllowOnline))
+            }
+        }
     }
 
     private func engineName(_ id: ProviderID) -> String {
@@ -168,6 +181,11 @@ struct ModelsView: View {
     }
 
     private func binding(_ keyPath: WritableKeyPath<WhisperioSettings, String>) -> Binding<String> {
+        Binding(get: { settings.settings[keyPath: keyPath] },
+                set: { var s = settings.settings; s[keyPath: keyPath] = $0; settings.settings = s })
+    }
+
+    private func boolBinding(_ keyPath: WritableKeyPath<WhisperioSettings, Bool>) -> Binding<Bool> {
         Binding(get: { settings.settings[keyPath: keyPath] },
                 set: { var s = settings.settings; s[keyPath: keyPath] = $0; settings.settings = s })
     }

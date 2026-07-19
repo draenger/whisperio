@@ -275,7 +275,7 @@ struct iPadSplitView: View {
 
     private func sidebarRow(_ r: DemoRecording) -> some View {
         let on = sel == r.id
-        let icon = r.src == "watch" ? "watch" : r.src == "action" ? "bolt" : r.src == "keyboard" ? "keyboard" : "mic"
+        let icon = r.src == "watch" ? "watch" : r.src == "action" ? "bolt" : r.src == "keyboard" ? "keyboard" : r.src == "backtap" ? "command" : "mic"
         let category = categoryFor(r)
         return HStack(alignment: .top, spacing: 11) {
             WIcon(icon, size: 15, weight: .regular).foregroundStyle(t.accentLite)
@@ -366,8 +366,8 @@ struct iPadSplitView: View {
                         Text(cur.title).font(WZFont.display(28, .medium)).foregroundStyle(t.text).lineSpacing(8)
                     }
                     HStack(spacing: 16) {
-                        Circle().fill(t.gradient).frame(width: 46, height: 46)
-                            .overlay(WIcon("bolt", size: 20).foregroundStyle(.white))
+                        Circle().fill(t.primary).frame(width: 46, height: 46)
+                            .overlay(WIcon("bolt", size: 20).foregroundStyle(t.primaryInk))
                         MiniWave(color: t.accent, n: 64, height: 32).frame(maxWidth: .infinity)
                         Text(cur.dur).font(WZFont.mono(13)).foregroundStyle(t.faint)
                     }

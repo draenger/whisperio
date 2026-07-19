@@ -345,7 +345,7 @@ struct SettingsView: View {
             modelOrderSection
             SettGroup(title: "On-device models") {
                 SettRow(icon: "download", label: "Manage on-device models",
-                        sub: "Download, update or remove Apple Speech + Whisper", last: true,
+                        sub: "Apple Speech and cloud engine picker", last: true,
                         onTap: openModels)
             }
             HStack {
@@ -728,13 +728,6 @@ struct SettingsView: View {
                 SettRow(icon: "cloud", label: "Fallback engines",
                         sub: "If the chosen engine fails, try the others", last: true) {
                     WToggle(on: boolBinding(\.fallbackEnabled))
-                }
-            }
-            SettGroup(title: "Apple engine") {
-                SettRow(icon: "globe", label: "Apple online speech",
-                        sub: "Use Apple’s servers when the on-device model isn’t available · audio leaves the device",
-                        last: true) {
-                    WToggle(on: boolBinding(\.appleAllowOnline))
                 }
             }
             SettGroup(title: "History") {

@@ -74,8 +74,8 @@ function HomeSyncButton({ t }) {
   );
 }
 
-function PhoneHome({ t, onOpenRec, onRecord, onConversation, onSettings, onJournal, onDigest, onRecap, onScratchpad, manualSync }) {
-  const [cat, setCat] = React.useState(null);
+function PhoneHome({ t, onOpenRec, onRecord, onConversation, onSettings, onJournal, onDigest, onRecap, onScratchpad, manualSync, initialCat }) {
+  const [cat, setCat] = React.useState(initialCat || null);
   const [cur, setCur] = React.useState('usd');
   const visible = cat ? M_RECS.filter((r) => r.category === cat) : M_RECS;
   const today = visible.filter((r) => r.today);
@@ -143,8 +143,8 @@ function PhoneHome({ t, onOpenRec, onRecord, onConversation, onSettings, onJourn
   );
 }
 
-function PhoneRecording({ t, onCancel, onDone }) {
-  const [phase, setPhase] = React.useState('listening');
+function PhoneRecording({ t, onCancel, onDone, initialPhase }) {
+  const [phase, setPhase] = React.useState(initialPhase || 'listening');
   const [ghPhase, setGhPhase] = React.useState('start');
   React.useEffect(() => { const id = setTimeout(() => setGhPhase((p) => p === 'start' ? 'idle' : p), 1400); return () => clearTimeout(id); }, []);
   const [secs, setSecs] = React.useState(0);
@@ -189,22 +189,22 @@ function PhoneRecording({ t, onCancel, onDone }) {
 }
 
 const SPEAKER_HUES = ['', '#f59e0b', '#a78bfa', '#f472b6', '#34d399', '#fbbf24'];
-function PhoneDetail({ t, r, onBack, openEditor, initialSheet }) {
-  const [rewrite, setRewrite] = React.useState(null);
-  const [rewriteName, setRewriteName] = React.useState('Rewrite');
+function PhoneDetail({ t, r, onBack, openEditor, initialSheet, initialMore, initialRename, initialConfirmPlain, initialRewrite }) {
+  const [rewrite, setRewrite] = React.useState(initialRewrite ? '• Launch moves to Thursday.\n• Staging cert must land by Tuesday.\n• Mara owns release notes + App Store copy.' : null);
+  const [rewriteName, setRewriteName] = React.useState(initialRewrite ? 'Bullet points' : 'Rewrite');
   const [rewriting, setRewriting] = React.useState(false);
   const [retrans, setRetrans] = React.useState(false);
   const [copied, setCopied] = React.useState(false);
   const [catId, setCatId] = React.useState(r.category);
   const [catOpen, setCatOpen] = React.useState(false);
-  const [moreOpen, setMoreOpen] = React.useState(false);
+  const [moreOpen, setMoreOpen] = React.useState(!!initialMore);
   const [sheet, setSheet] = React.useState(!!initialSheet);
   const [custom, setCustom] = React.useState('');
   const [names, setNames] = React.useState(r.speakerNames || {});
   const [naming, setNaming] = React.useState(false);
-  const [renameSp, setRenameSp] = React.useState(null);
+  const [renameSp, setRenameSp] = React.useState(initialRename ? 'speaker_1' : null);
   const [renameTxt, setRenameTxt] = React.useState('');
-  const [confirmPlain, setConfirmPlain] = React.useState(null);
+  const [confirmPlain, setConfirmPlain] = React.useState(initialConfirmPlain ? 'Apple' : null);
   const cat = catOf(catId);
   const isConvo = !!(r.segments && r.segments.length);
   const order = isConvo ? [...new Set(r.segments.map((x) => x.speaker))] : [];
@@ -495,12 +495,12 @@ const JOURNAL_BOOKS = [
   { id: 'work', title: 'Work', sub: 'auto-book · 12 notes', spine: '#4a8cf7', cat: 'work', chapters: [{ title: 'Sprint 24', pages: ['today'] }, { title: 'Sprint 23', pages: ['yesterday'] }] },
   { id: 'ideas', title: 'Ideas', sub: 'auto-book · 6 notes', spine: '#fbbf24', cat: 'ideas', chapters: [{ title: 'Someday', pages: ['today', 'yesterday'] }] },
 ];
-function PhoneJournal({ t, onBack, onOpenDay, onToday, onAdd, onOpenRecap }) {
+function PhoneJournal({ t, onBack, onOpenDay, onToday, onAdd, onOpenRecap, initialBook, initialAdd }) {
   const catsIn = (recs) => M_CATS.filter((c) => recs.some((r) => r.category === c.id));
   const ready = { yesterday: 'Generated 20 hr. ago' };
   const [books, setBooks] = React.useState(JOURNAL_BOOKS);
-  const [bookId, setBookId] = React.useState(null); // null → library
-  const [addOpen, setAddOpen] = React.useState(false);
+  const [bookId, setBookId] = React.useState(initialBook || null); // null → library
+  const [addOpen, setAddOpen] = React.useState(!!initialAdd);
   const book = books.find((b) => b.id === bookId);
   const addBook = () => {
     const n = books.filter((b) => b.custom).length + 1;
@@ -756,13 +756,13 @@ function AppleJournal({ t }) {
         <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '24px 40px' }}>
           <div style={{ maxWidth: 680, display: 'flex', flexDirection: 'column', gap: 20 }}>
             <div style={{ padding: 22, background: t.surface, border: `1px solid ${t.line}`, borderRadius: 18, display: 'flex', flexDirection: 'column', gap: 12 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><SectionLabel text={seed === 'raw' ? 'Notes · raw' : 'Daily summary'} t={t} /><span style={{ flex: 1 }} /><PrivacyBadge mode={seed === 'raw' ? 'device' : 'cloud'} small t={t} /></div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><SectionLabel text={digestSeed === 'raw' ? 'Notes · raw' : 'Daily summary'} t={t} /><span style={{ flex: 1 }} /><PrivacyBadge mode={digestSeed === 'raw' ? 'device' : 'cloud'} small t={t} /></div>
               {generating
                 ? <div style={{ display: 'flex', alignItems: 'center', gap: 11 }}><span style={{ width: 18, height: 18, borderRadius: '50%', border: `2px solid ${t.hair}`, borderTopColor: t.accent, animation: 'mspin .8s linear infinite' }} /><span style={{ fontFamily: FUI, fontSize: 14, color: t.muted }}>Summarizing your day…</span></div>
                 : ready
                   ? <>
                       <div style={{ fontFamily: FUI, fontSize: 15.5, color: t.text, lineHeight: 1.6 }}>{summ[dayKey]}</div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><span style={{ fontFamily: FM, fontSize: 10.5, color: t.faint }}>{seed === 'raw' ? 'Stacked verbatim · nothing sent to the cloud' : 'Generated just now'}</span><span style={{ flex: 1 }} /><GhostBtn title="Regenerate" icon="sync" t={t} onClick={generate} /></div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><span style={{ fontFamily: FM, fontSize: 10.5, color: t.faint }}>{digestSeed === 'raw' ? 'Stacked verbatim · nothing sent to the cloud' : 'Generated just now'}</span><span style={{ flex: 1 }} /><GhostBtn title="Regenerate" icon="sync" t={t} onClick={generate} /></div>
                     </>
                   : <>
                       <div style={{ fontFamily: FUI, fontSize: 14, color: t.muted, lineHeight: 1.55 }}>Group this day’s notes by category and write a short digest with AI.</div>
@@ -793,9 +793,9 @@ function AppleJournal({ t }) {
 }
 
 /* ─── iPad / Mac: Obsidian-style split (iPadView.swift) ─── */
-function AppleSplit({ t, engineBar, journal = true }) {
+function AppleSplit({ t, engineBar, journal = true, initialMode }) {
   const [sel, setSel] = React.useState(M_RECS[0].id);
-  const [mode, setMode] = React.useState('library');
+  const [mode, setMode] = React.useState(initialMode || 'library');
   const cur = M_RECS.find((r) => r.id === sel) || M_RECS[0];
   const tabs = ['All', 'Keyboard', 'Watch'];
   return (
@@ -930,8 +930,8 @@ function WatchApp({ t, initialStage }) {
 }
 
 /* ─── iPhone: conversation mode (ConversationView.swift) — cloud ElevenLabs diarization ─── */
-function PhoneConversation({ t, onCancel, onDone, needsSetup }) {
-  const [phase, setPhase] = React.useState(needsSetup ? 'setup' : 'listening'); // starting|setup|listening|paused|processing|error
+function PhoneConversation({ t, onCancel, onDone, needsSetup, initialPhase }) {
+  const [phase, setPhase] = React.useState(initialPhase || (needsSetup ? 'setup' : 'listening')); // starting|setup|listening|paused|processing|error
   const [secs, setSecs] = React.useState(0);
   React.useEffect(() => {
     const clk = setInterval(() => setPhase((p) => { if (p === 'listening') setSecs((x) => x + 1); return p; }), 1000);
@@ -1082,4 +1082,4 @@ function OldDeviceView({ t }) {
   );
 }
 
-Object.assign(window, { PhoneApp, AppleSplit, AppleJournal, WatchApp, RecRow, PhoneConversation, StateBanner, StateHome, OldDeviceView, HomeSyncButton, PhoneRecording, PhoneDetail, PhoneJournal, PhoneDigest, PhoneJournalNew });
+Object.assign(window, { PhoneApp, AppleSplit, AppleJournal, WatchApp, RecRow, PhoneConversation, StateBanner, StateHome, OldDeviceView, HomeSyncButton, PhoneRecording, PhoneDetail, PhoneJournal, PhoneDigest, PhoneJournalNew, PhoneHome });

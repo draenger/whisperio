@@ -121,9 +121,9 @@ function EraseSheet({ t, cloudSynced, onErase, onCancel }) {
   );
 }
 
-function PhoneSettings({ t, dark, setDark, onBack, initial }) {
+function PhoneSettings({ t, dark, setDark, onBack, initial, initialConsentFor, initialEraseOpen, initialPresetId }) {
   const [sub, setSub] = React.useState(initial || null);
-  const [store, setStore] = React.useState({ autoDel: true, after: '7d', keepAudio: true, cleared: false, eraseOpen: false, erased: false });
+  const [store, setStore] = React.useState({ autoDel: true, after: '7d', keepAudio: true, cleared: false, eraseOpen: !!initialEraseOpen, erased: false });
   const [del, setDel] = React.useState({});
   const [optimize, setOptimize] = React.useState(false);
   const [policy, setPolicy] = React.useState({ audio: 'icloud', trans: 'icloud', summ: 'device' });
@@ -137,7 +137,7 @@ function PhoneSettings({ t, dark, setDark, onBack, initial }) {
   const [catP, setCatP] = React.useState({ auto: true, prompt: CAT_DEFAULT_PROMPT });
   const [engine, setEngine] = React.useState(null);
   const [consent, setConsent] = React.useState(false);
-  const [consentFor, setConsentFor] = React.useState(null);
+  const [consentFor, setConsentFor] = React.useState(initialConsentFor || null);
   const [keys, setKeys] = React.useState({ openai: '', base: 'https://api.openai.com/v1', model: '', eleven: '', replicate: '', groq: '', deepgram: '', assembly: '', mistral: '', selfUrl: '', selfModel: 'whisper-large-v3' });
   const [models, setModels] = React.useState({ device: 'apple-speech', openai: 'whisper-1', eleven: 'scribe_v2', replicate: 'incredibly-fast-whisper', groq: 'whisper-large-v3-turbo', deepgram: 'nova-3', assembly: 'universal-2', mistral: 'voxtral-small' });
   const ENGINE_MODELS = {
@@ -180,9 +180,10 @@ function PhoneSettings({ t, dark, setDark, onBack, initial }) {
   const [syncMode, setSyncMode] = React.useState('automatic');
   const [syncMin, setSyncMin] = React.useState(15);
   const [diagNote, setDiagNote] = React.useState('Awaiting sync details…');
-  const [selPreset, setSelPreset] = React.useState(null); // null → new template draft
-  const [presetName, setPresetName] = React.useState('');
-  const [presetPrompt, setPresetPrompt] = React.useState('');
+  const initPreset = initialPresetId ? REWRITE_PRESETS.find((p) => p.id === initialPresetId) : null;
+  const [selPreset, setSelPreset] = React.useState(initPreset || null); // null → new template draft
+  const [presetName, setPresetName] = React.useState(initPreset ? initPreset.name : '');
+  const [presetPrompt, setPresetPrompt] = React.useState(initPreset ? 'Fix punctuation, casing and spacing. Keep the meaning and tone. Output only the cleaned text.' : '');
   const [presetSaved, setPresetSaved] = React.useState(false);
   const openPreset = (p) => {
     setSelPreset(p); setPresetSaved(false);

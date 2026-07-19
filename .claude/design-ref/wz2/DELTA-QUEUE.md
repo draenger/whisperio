@@ -37,6 +37,18 @@ Cluster RECAP (plan:recap-usage)
 Cluster THEME (plan:theme-primary)
 - D12 primary/primaryInk tokens in WZTheme; GradButton → solid primary + shadow; scratchpad buttons; widget StandBy/ControlCenter/LockScreen-combo tiles; keyboard classic mic; onboarding mic. Gradient stays for decorative surfaces (recap hero, island, dock, avatars).
 
+## Parity round 1 (2026-07-19 ~23:30) — 18 raw → 13 confirmed → 11 fixed (wf_f04d4495)
+Intentional deviations (do NOT re-report):
+- F4: no "New chapter" for automatic books — auto books are recomputed live from real
+  recordings; a manually inserted chapter would be fabricated state. Custom books keep it.
+- F9 partial: StorageView ships the honest subset (3-way real usage bar, granular real
+  deletes). SKIPPED pending real infra: per-type storage-location policy, Optimize iPhone
+  storage / Free up space, Delete-from-iCloud-only, Remove-unused-models.
+- F11 adjusted: conversation speaker chips are STATIC (no fake alternating active-speaker
+  pulse — no real-time diarization signal exists; batch diarization only).
+- Wave-1 Home header bolt button removed again in favor of the design's pinned Recap streak
+  tile (F1) — recap entry point is the body tile, per PhoneHome redesign block.
+
 ## Process
 Weaker agents plan → Fable verifies/corrects plans → weaker agents implement
 (fresh-read + surgical-edit protocol, per-file ownership) → build gates

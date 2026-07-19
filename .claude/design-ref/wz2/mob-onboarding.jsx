@@ -10,10 +10,10 @@ function OnbCard({ t, on, onClick, children, style }) {
   );
 }
 
-function OnboardingScene({ t, initialStep = 0 }) {
+function OnboardingScene({ t, initialStep = 0, initialProvSheet, initialKbReady, initialTryDone }) {
   const [step, setStep] = React.useState(initialStep);
   const [privacy, setPrivacy] = React.useState('device');
-  const [provSheet, setProvSheet] = React.useState(false);
+  const [provSheet, setProvSheet] = React.useState(!!initialProvSheet);
   const [prov, setProv] = React.useState(null); // connected provider name
   const [provPick, setProvPick] = React.useState('ElevenLabs');
   const [provKey, setProvKey] = React.useState(false); // key "pasted"
@@ -24,15 +24,15 @@ function OnboardingScene({ t, initialStep = 0 }) {
     setTimeout(() => { setProvBusy(false); setProv(provPick); setPrivacy('cloud'); setProvSheet(false); }, 900);
   };
   const [langs, setLangs] = React.useState(['pl', 'en']);
-  const [kb, setKb] = React.useState({ on: false, fa: false, busy: false });
+  const [kb, setKb] = React.useState({ on: !!initialKbReady, fa: !!initialKbReady, busy: false });
   const [bt, setBt] = React.useState({ on: false, busy: false });
   const goBackTap = () => {
     if (bt.busy || bt.on) return;
     setBt({ on: false, busy: true });
     setTimeout(() => setBt({ on: true, busy: false }), 900);
   };
-  const [tryS, setTryS] = React.useState('idle'); // idle | listening | done
-  const [typed, setTyped] = React.useState('');
+  const [tryS, setTryS] = React.useState(initialTryDone ? 'done' : 'idle'); // idle | listening | done
+  const [typed, setTyped] = React.useState(initialTryDone ? ONB_NOTE : '');
   const typer = React.useRef(null);
   React.useEffect(() => () => clearInterval(typer.current), []);
 

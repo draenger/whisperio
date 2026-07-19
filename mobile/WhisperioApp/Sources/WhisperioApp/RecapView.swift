@@ -1,14 +1,28 @@
 import SwiftUI
+#if canImport(UIKit)
+import UIKit
+#elseif canImport(AppKit)
+import AppKit
+#endif
 import WhisperioKit
 
 // Weekly recap — port of the design's RecapScene, computed from the real library:
 // words spoken this week, time saved vs typing, streak, per-day chart, category split,
-// and the note of the week. Shareable as plain text.
+// and the note of the week. Shareable as a rendered image card (matching the design's
+// "recap card saved to Photos" affordance) with the text summary as caption/fallback.
 struct RecapView: View {
     @Environment(\.wz) private var t
     @EnvironmentObject private var recordings: RecordingsStore
     @EnvironmentObject private var settings: SettingsStore
     var onBack: () -> Void
+
+#if canImport(UIKit)
+    private typealias PlatformImage = UIImage
+#elseif canImport(AppKit)
+    private typealias PlatformImage = NSImage
+#endif
+
+    @State private var cardImage: PlatformImage?
 
     private static let typingWPM = 38.0
 
@@ -158,11 +172,59 @@ struct RecapView: View {
         "My week with Whisperio — \(totalWords) words spoken across \(weekItems.count) notes, ~\(minutesSaved) minutes saved vs typing. \(streaks.current)-day streak."
     }
 
+    // Renders the shareable recap card (hero + stat highlights) to a real UIImage via
+    // ImageRenderer. This is the design's "recap card" artifact — an image, not just text.
+    // The system share sheet's own "Save Image" action covers the design's "saved to Photos"
+    // copy honestly, so we don't fabricate a separate save-confirmation toast.
+    private func renderCard() {
+        let card = RecapShareCard(
+            t: t,
+            weekLabel: weekLabel,
+            totalWords: totalWords,
+            noteCount: weekItems.count,
+            minutesSaved: minutesSaved,
+            speakingWPM: speakingWPM,
+            streakCurrent: streaks.current,
+            streakBest: streaks.best
+        )
+        let renderer = ImageRenderer(content: card)
+#if canImport(UIKit)
+        renderer.scale = UIScreen.main.scale
+        cardImage = renderer.uiImage
+#elseif canImport(AppKit)
+        cardImage = renderer.nsImage
+#endif
+    }
+
+    private var cardShareImage: Image? {
+        guard let cardImage else { return nil }
+#if canImport(UIKit)
+        return Image(uiImage: cardImage)
+#elseif canImport(AppKit)
+        return Image(nsImage: cardImage)
+#else
+        return nil
+#endif
+    }
+
+    @ViewBuilder
+    private func shareButton<Label: View>(@ViewBuilder label: () -> Label) -> some View {
+        if let cardShareImage {
+            ShareLink(
+                item: cardShareImage,
+                preview: SharePreview(shareText, image: cardShareImage),
+                label: label
+            )
+        } else {
+            ShareLink(item: shareText, label: label)
+        }
+    }
+
     var body: some View {
         ScreenScaffold {
             VStack(spacing: 0) {
                 WHeader(title: "Recap", onBack: onBack) {
-                    ShareLink(item: shareText) {
+                    shareButton {
                         WIcon("share", size: 19, weight: .regular)
                             .foregroundStyle(t.muted)
                             .frame(width: 38, height: 38)
@@ -184,7 +246,7 @@ struct RecapView: View {
                         if !engineMinutes.isEmpty { usageCostCard }
                         if !categoryCounts.isEmpty { categoriesCard }
                         if let note = noteOfWeek { noteCard(note) }
-                        ShareLink(item: shareText) {
+                        shareButton {
                             HStack(spacing: 8) {
                                 WIcon("share", size: 17)
                                 Text("Share recap")
@@ -202,6 +264,7 @@ struct RecapView: View {
                 }
             }
         }
+        .task { renderCard() }
     }
 
     private var heroCard: some View {
@@ -411,6 +474,77 @@ struct RecapView: View {
                 .font(WZFont.mono(10.5)).foregroundStyle(t.faint)
         }
         .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(t.surface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(t.line, lineWidth: 1))
+    }
+}
+
+// The actual shareable artifact — a Spotify-Wrapped-style card built from the same real
+// numbers as the on-screen recap (hero + two stat highlights), rendered off-screen via
+// ImageRenderer and shared as an image instead of plain text.
+private struct RecapShareCard: View {
+    let t: WZTheme
+    let weekLabel: String
+    let totalWords: Int
+    let noteCount: Int
+    let minutesSaved: Int
+    let speakingWPM: Int
+    let streakCurrent: Int
+    let streakBest: Int
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: 0) {
+                Text(weekLabel)
+                    .font(WZFont.mono(10.5, .semibold)).tracking(1.5)
+                    .foregroundStyle(.white.opacity(0.85))
+                Text(totalWords.formatted())
+                    .font(WZFont.display(46, .bold)).tracking(-0.9)
+                    .foregroundStyle(.white)
+                    .padding(.top, 10)
+                Text("words spoken · \(noteCount) note\(noteCount == 1 ? "" : "s")")
+                    .font(WZFont.ui(14)).foregroundStyle(.white.opacity(0.92))
+                    .padding(.top, 3)
+                HStack(spacing: 8) {
+                    WIcon("bolt", size: 15)
+                    Text("~\(minutesSaved) minutes saved vs typing")
+                        .font(WZFont.ui(13, .semibold))
+                }
+                .foregroundStyle(.white)
+                .padding(.horizontal, 13).padding(.vertical, 10)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(.white.opacity(0.16), in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+                .padding(.top, 16)
+            }
+            .padding(.horizontal, 20).padding(.vertical, 22)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(t.gradient, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+
+            HStack(spacing: 12) {
+                shareStat(speakingWPM > 0 ? "\(speakingWPM) wpm" : "—", "speaking · you type ~38", "zap")
+                shareStat("\(streakCurrent) day\(streakCurrent == 1 ? "" : "s")",
+                          "streak · best is \(streakBest)", "spark")
+            }
+
+            HStack(spacing: 6) {
+                WIcon("mic", size: 13).foregroundStyle(t.muted)
+                Text("Whisperio").font(WZFont.mono(11, .semibold)).tracking(0.5).foregroundStyle(t.muted)
+            }
+            .padding(.top, 2)
+        }
+        .padding(18)
+        .frame(width: 340, alignment: .leading)
+        .background(t.bg)
+    }
+
+    private func shareStat(_ big: String, _ sub: String, _ icon: String) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            WIcon(icon, size: 16).foregroundStyle(t.accentLite)
+            Text(big).font(WZFont.display(22, .bold)).foregroundStyle(t.text).padding(.top, 6)
+            Text(sub).font(WZFont.ui(12)).foregroundStyle(t.muted)
+        }
+        .padding(15)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(t.surface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(t.line, lineWidth: 1))

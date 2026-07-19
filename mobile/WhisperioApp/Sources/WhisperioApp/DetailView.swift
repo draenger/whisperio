@@ -193,6 +193,8 @@ struct DetailView: View {
                 } else {
                     engineOption(.onDevice, "Apple — on-device", "cpu")
                     engineOption(.openAI, "OpenAI — cloud", "globe")
+                    engineOption(.groq, "Groq — cloud", "globe")
+                    engineOption(.mistral, "Mistral — cloud", "globe")
                     engineOption(.elevenLabs,
                                  isConversation ? "ElevenLabs — keeps speakers" : "ElevenLabs — cloud",
                                  "globe")
