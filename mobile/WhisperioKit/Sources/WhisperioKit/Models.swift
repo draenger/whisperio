@@ -94,6 +94,13 @@ public struct Recording: Identifiable, Codable, Sendable, Equatable {
     /// User-assigned display names per raw speaker id ("speaker_0" → "Anna"). Kept separate
     /// from `segments` so a rename is a tiny metadata write that never rewrites the transcript.
     public var speakerNames: [String: String]?
+    /// Which real capture channel produced this recording — "app" (in-app record or Scratchpad),
+    /// "mic" (Conversation), "watch" (Watch app via PhoneConnectivity), or "keyboard" (the
+    /// keyboard's bounce-to-app dictation flow). Optional so recordings persisted before this
+    /// field existed keep decoding, and so ambiguous sources (e.g. DictateIntent's Action
+    /// Button/Back Tap/Siri triggers, which can't be told apart) can honestly stay nil rather
+    /// than guess. Never fabricate a value here — see the round-2 parity ruling (G3).
+    public var source: String?
 
     /// True when this recording is a diarized conversation (has at least one speaker segment).
     public var isConversation: Bool { !(segments ?? []).isEmpty }
@@ -116,7 +123,8 @@ public struct Recording: Identifiable, Codable, Sendable, Equatable {
         renderPresetID: String? = nil,
         updatedAt: Date? = nil,
         segments: [SpeakerSegment]? = nil,
-        speakerNames: [String: String]? = nil
+        speakerNames: [String: String]? = nil,
+        source: String? = nil
     ) {
         self.id = id
         self.filename = filename
@@ -132,5 +140,6 @@ public struct Recording: Identifiable, Codable, Sendable, Equatable {
         self.updatedAt = updatedAt
         self.segments = segments
         self.speakerNames = speakerNames
+        self.source = source
     }
 }

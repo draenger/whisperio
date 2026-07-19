@@ -273,7 +273,8 @@ struct ConversationView: View {
             let rec = Recording(filename: clip.filename, duration: clip.duration,
                                 status: .completed, provider: transcriber.id,
                                 transcription: text,
-                                segments: result.segments.isEmpty ? nil : result.segments)
+                                segments: result.segments.isEmpty ? nil : result.segments,
+                                source: "mic")
             // Conversations always persist — unlike a quick dictation (pasted immediately,
             // history optional), the saved transcript IS the deliverable here.
             recordings.add(rec)

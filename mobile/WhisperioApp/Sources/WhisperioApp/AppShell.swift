@@ -68,6 +68,9 @@ struct WZPhoneView: View {
     // How the current .digestDay page was seeded by the journal composer ("ai" | "raw"), if it
     // was — flips the summary card into its woven/raw presentation. Nil for a normal day open.
     @State private var digestSeed: String?
+    // True for exactly one .digestDay entry: JournalComposerView's 'Blank page' CTA (kind == .blank),
+    // which should drop straight into the manual free-text editor per design (mob-screens.jsx:422-423).
+    @State private var digestStartInManual = false
     // Which composer mode to seed on the next "New page" open (see JournalComposeMode). No real
     // flow sets this to non-nil yet — it defaults to nil, keeping today's behavior unchanged; the
     // parameter only makes the plumbing ready for a future real trigger (Shortcut/App Intent/Home
@@ -288,7 +291,7 @@ struct WZPhoneView: View {
                      openRecap: { go(.recap) })
         case .journal:
             JournalView(onBack: { go(.home) },
-                        openDay: { digestDay = $0; digestSeed = nil; go(.digestDay) },
+                        openDay: { digestDay = $0; digestSeed = nil; digestStartInManual = false; go(.digestDay) },
                         onAdd: { journalComposerInitialMode = nil; go(.journalNew) },
                         onOpenToday: { go(.scratchpad) })
         case .journalNew:
@@ -296,12 +299,19 @@ struct WZPhoneView: View {
                                 onDone: { kind in
                                     switch kind {
                                     case .blank:
-                                        go(.scratchpad)   // write/dictate straight onto the page
+                                        // Design: 'Blank page' drops straight into today's manual
+                                        // free-text digest editor (mob-screens.jsx:422-423,688),
+                                        // not Scratchpad.
+                                        digestDay = Date()
+                                        digestSeed = nil
+                                        digestStartInManual = true
+                                        go(.digestDay)
                                     case .split:
                                         go(.journal)      // each note already lives on its own day page
                                     case .ai, .raw:
                                         digestDay = Date()
                                         digestSeed = kind.rawValue
+                                        digestStartInManual = false
                                         go(.digestDay)
                                     }
                                 },
@@ -316,11 +326,12 @@ struct WZPhoneView: View {
                            toast: showToast)
         case .digestDay:
             DigestDayView(day: digestDay,
-                          onBack: { digestSeed = nil; go(.journal) },
+                          onBack: { digestSeed = nil; digestStartInManual = false; go(.journal) },
                           openRec: { rec = $0; go(.detail) },
                           openSettings: { go(.settings) },
                           toast: showToast,
-                          seed: digestSeed)
+                          seed: digestSeed,
+                          startInManual: digestStartInManual)
         }
     }
 

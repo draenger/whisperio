@@ -325,7 +325,8 @@ struct ScratchpadView: View {
             filename = ""
         }
         let rec = Recording(filename: filename, duration: clip?.duration ?? 0,
-                            status: .completed, provider: provider, transcription: text)
+                            status: .completed, provider: provider, transcription: text,
+                            source: "app")
         if settings.settings.saveRecordings { recordings.add(rec) }
         react(.note, for: 3.2)
     }

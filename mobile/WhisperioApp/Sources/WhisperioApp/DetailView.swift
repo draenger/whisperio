@@ -69,107 +69,106 @@ struct DetailView: View {
     }
 
     var body: some View {
-        ScreenScaffold {
-            VStack(spacing: 0) {
-                WHeader(title: "Transcript", onBack: onBack) {
-                    moreMenu
-                }
-                ScrollView(showsIndicators: false) {
-                    VStack(alignment: .leading, spacing: 12) {
-                        HStack(spacing: 8) {
-                            SourceBadge(src: r.src)
-                            PrivacyBadge(mode: r.engine == "cloud" ? .cloud : .device, small: true)
-                            Spacer(minLength: 0)
-                            categoryMenu
-                        }
-                        Text("\(r.app) · \(r.when) · \(r.dur) · \(r.words) words")
-                            .font(WZFont.mono(11)).foregroundStyle(t.faint)
-
-                        if isConversation {
-                            conversationCard
-                        } else {
-                            VStack(alignment: .leading, spacing: 0) {
-                                SectionLabel(text: "Transcript").padding(.bottom, 12)
-                                Text(source?.transcription ?? r.title)
-                                    .font(WZFont.ui(17)).foregroundStyle(t.text).lineSpacing(4)
-                                    .fixedSize(horizontal: false, vertical: true)
-                                    .textSelection(.enabled)
-                            }
-                            .padding(18)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .background(t.surface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-                            .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(t.line, lineWidth: 1))
-                        }
-
-                        if retranscribing {
-                            retranscribingCard
-                        }
-                        if rewriting {
-                            processingCard
-                        } else if let render {
-                            renderCard(render)
-                        }
+        ZStack {
+            ScreenScaffold {
+                VStack(spacing: 0) {
+                    WHeader(title: "Transcript", onBack: onBack) {
+                        moreMenu
                     }
-                    .padding(.horizontal, 18).padding(.top, 8)
-                    .animation(.easeInOut(duration: 0.2), value: rewriting)
-                }
+                    ScrollView(showsIndicators: false) {
+                        VStack(alignment: .leading, spacing: 12) {
+                            HStack(spacing: 8) {
+                                SourceBadge(src: r.src)
+                                PrivacyBadge(mode: r.engine == "cloud" ? .cloud : .device, small: true)
+                                Spacer(minLength: 0)
+                                categoryMenu
+                            }
+                            Text("\(r.app) · \(r.when) · \(r.dur) · \(r.words) words")
+                                .font(WZFont.mono(11)).foregroundStyle(t.faint)
 
-                // actions
-                HStack(spacing: 9) {
-                    GhostButton(title: "Copy", icon: "copy") { copy(shareableTranscript) }
-                    shareButton(shareableTranscript)
-                    GhostButton(title: "Rewrite", icon: "spark") { showRewriteSheet = true }
+                            if isConversation {
+                                conversationCard
+                            } else {
+                                VStack(alignment: .leading, spacing: 0) {
+                                    SectionLabel(text: "Transcript").padding(.bottom, 12)
+                                    Text(source?.transcription ?? r.title)
+                                        .font(WZFont.ui(17)).foregroundStyle(t.text).lineSpacing(4)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                        .textSelection(.enabled)
+                                }
+                                .padding(18)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .background(t.surface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                                .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(t.line, lineWidth: 1))
+                            }
+
+                            if retranscribing {
+                                retranscribingCard
+                            }
+                            if rewriting {
+                                processingCard
+                            } else if let render {
+                                renderCard(render)
+                            }
+                        }
+                        .padding(.horizontal, 18).padding(.top, 8)
+                        .animation(.easeInOut(duration: 0.2), value: rewriting)
+                    }
+
+                    // actions
+                    HStack(spacing: 9) {
+                        GhostButton(title: "Copy", icon: "copy") { copy(shareableTranscript) }
+                        shareButton(shareableTranscript)
+                        GhostButton(title: "Rewrite", icon: "spark") { showRewriteSheet = true }
+                    }
+                    .padding(.horizontal, 18).padding(.top, 12).padding(.bottom, 32)
                 }
-                .padding(.horizontal, 18).padding(.top, 12).padding(.bottom, 32)
+                .onAppear {
+                    categoryId = recordings.categoryId(for: r)
+                    render = r.render
+                    renderPresetID = r.renderPresetID
+                    if initialShowRewriteSheet { showRewriteSheet = true }
+                }
             }
-            .onAppear {
-                categoryId = recordings.categoryId(for: r)
-                render = r.render
-                renderPresetID = r.renderPresetID
-                if initialShowRewriteSheet { showRewriteSheet = true }
+            .sheet(isPresented: $showRewriteSheet) {
+                RewriteSheet(presets: presets.presets,
+                             onPick: pick,
+                             onClose: { showRewriteSheet = false })
+                    .environment(\.wz, t)
+                    #if os(iOS)
+                    .presentationDetents([.medium, .large])
+                    #endif
             }
-        }
-        .sheet(isPresented: $showRewriteSheet) {
-            RewriteSheet(presets: presets.presets,
-                         onPick: pick,
-                         onClose: { showRewriteSheet = false })
-                .environment(\.wz, t)
-                #if os(iOS)
-                .presentationDetents([.medium, .large])
-                #endif
-        }
-        .sheet(isPresented: $showConsent) {
-            CloudConsentSheet(provider: .openAI,
-                              onAccept: grantConsent,
-                              onCancel: { showConsent = false })
-                .environment(\.wz, t)
-                #if os(iOS)
-                .presentationDetents([.medium, .large])
-                #endif
-        }
-        .alert("Name this speaker", isPresented: Binding(
-            get: { renameSpeaker != nil },
-            set: { if !$0 { renameSpeaker = nil } }
-        )) {
-            TextField("Name, nickname, role…", text: $renameText)
-            Button("Save") { commitRename() }
-            Button("Cancel", role: .cancel) { renameSpeaker = nil }
-        } message: {
-            Text("Shown instead of the generic label, everywhere this conversation appears.")
-        }
-        // The informed-consent moment for non-diarizing engines on a conversation: speaker
-        // detection needs one of the diarizing cloud engines, so a plain engine drops the labels.
-        .alert("Speakers need the cloud", isPresented: Binding(
-            get: { confirmPlainEngine != nil },
-            set: { if !$0 { confirmPlainEngine = nil } }
-        )) {
-            Button("Retranscribe anyway") {
-                if let engine = confirmPlainEngine { retranscribe(engine) }
-                confirmPlainEngine = nil
+            .sheet(isPresented: $showConsent) {
+                CloudConsentSheet(provider: .openAI,
+                                  onAccept: grantConsent,
+                                  onCancel: { showConsent = false })
+                    .environment(\.wz, t)
+                    #if os(iOS)
+                    .presentationDetents([.medium, .large])
+                    #endif
             }
-            Button("Cancel", role: .cancel) { confirmPlainEngine = nil }
-        } message: {
-            Text("Speaker detection needs a diarizing cloud engine (ElevenLabs, Deepgram, or AssemblyAI) — retranscribing with \(confirmPlainEngine.map(engineName) ?? "another engine") produces plain text and removes the speaker labels.")
+            // The informed-consent moment for non-diarizing engines on a conversation: speaker
+            // detection needs one of the diarizing cloud engines, so a plain engine drops the labels.
+            .alert("Speakers need the cloud", isPresented: Binding(
+                get: { confirmPlainEngine != nil },
+                set: { if !$0 { confirmPlainEngine = nil } }
+            )) {
+                Button("Retranscribe anyway", role: .destructive) {
+                    if let engine = confirmPlainEngine { retranscribe(engine) }
+                    confirmPlainEngine = nil
+                }
+                Button("Cancel", role: .cancel) { confirmPlainEngine = nil }
+            } message: {
+                Text("Speaker detection needs a diarizing cloud engine (ElevenLabs, Deepgram, or AssemblyAI) — retranscribing with \(confirmPlainEngine.map(engineName) ?? "another engine") produces plain text and removes the speaker labels.")
+            }
+
+            // "Name this speaker" — a bottom sheet (not a bare alert) so the user can see what
+            // that speaker actually said and one-tap a real name already used elsewhere, per
+            // the design (mob-screens.jsx:306-325).
+            if renameSpeaker != nil {
+                renameSheet
+            }
         }
     }
 
@@ -464,6 +463,97 @@ struct DetailView: View {
         if name.isEmpty { names.removeValue(forKey: speaker) } else { names[speaker] = name }
         recordings.setSpeakerNames(names, for: r)
         renameSpeaker = nil
+    }
+
+    // Real names already assigned to *some* speaker across every recording, so a returning
+    // name ("Mara", "Boss") is one tap away next time it comes up — plus a few generic role
+    // labels for the common case where no name has been typed anywhere yet. Never the design's
+    // sample names (those aren't real data). Deduped and excludes the current speaker's own name.
+    private var renameSuggestions: [String] {
+        let current = renameSpeaker.flatMap { speakerNames[$0] }
+        var seen = Set<String>()
+        var out: [String] = []
+        for rec in recordings.items {
+            guard let names = rec.speakerNames else { continue }
+            for name in names.values.sorted() where name != current && !seen.contains(name) {
+                seen.insert(name)
+                out.append(name)
+            }
+        }
+        for generic in ["Me", "Boss", "Client"] where !seen.contains(generic) {
+            seen.insert(generic)
+            out.append(generic)
+        }
+        return out
+    }
+
+    // "Name this speaker" as a bottom sheet: the speaker's own quoted segments (so the user
+    // can tell who "Speaker 2" actually is) plus one-tap suggestions, above the free-text
+    // field — matching mob-screens.jsx:306-325 (design used a native alert before).
+    private var renameSheet: some View {
+        let speaker = renameSpeaker ?? ""
+        let order = SpeakerSegmentBuilder.speakerOrder(segments)
+        let color = speakerColor(order.firstIndex(of: speaker) ?? 0)
+        let quotes = Array(segments.filter { $0.speaker == speaker }.prefix(3))
+        return BottomSheet(onClose: { renameSpeaker = nil }) {
+            VStack(alignment: .leading, spacing: 0) {
+                Text("Name this speaker")
+                    .font(WZFont.display(18)).foregroundStyle(t.text)
+                    .padding(.bottom, 8)
+                Text("Shown instead of the generic label, everywhere this conversation appears.")
+                    .font(WZFont.ui(13.5)).foregroundStyle(t.muted).lineSpacing(3)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.bottom, 14)
+                if !quotes.isEmpty {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("WHAT THEY SAID")
+                            .font(WZFont.mono(10, .semibold)).foregroundStyle(t.faint)
+                        ForEach(Array(quotes.enumerated()), id: \.offset) { _, seg in
+                            HStack(alignment: .top, spacing: 9) {
+                                Circle().fill(color).frame(width: 7, height: 7).padding(.top, 5)
+                                Text(seg.text)
+                                    .font(WZFont.ui(13)).foregroundStyle(t.text).lineSpacing(3)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                            .padding(.horizontal, 12).padding(.vertical, 9)
+                            .background(t.surfaceUp, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(t.lineSoft, lineWidth: 1))
+                        }
+                    }
+                    .padding(.bottom, 16)
+                }
+                TextField("Name, nickname, role…", text: $renameText)
+                    .font(WZFont.ui(15)).foregroundStyle(t.text)
+                    .padding(.horizontal, 14).padding(.vertical, 13)
+                    .background(t.surfaceUp, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(t.line, lineWidth: 1))
+                    .padding(.bottom, 10)
+                if !renameSuggestions.isEmpty {
+                    FlowLayout(spacing: 6) {
+                        ForEach(renameSuggestions, id: \.self) { name in
+                            renameSuggestionChip(name)
+                        }
+                    }
+                    .padding(.bottom, 14)
+                }
+                GradButton(title: "Save", icon: "check") { commitRename() }
+                    .padding(.bottom, 10)
+                GhostButton(title: "Cancel") { renameSpeaker = nil }
+            }
+        }
+    }
+
+    private func renameSuggestionChip(_ name: String) -> some View {
+        let selected = renameText == name
+        return Button { renameText = name } label: {
+            Text(name)
+                .font(WZFont.ui(12, .semibold))
+                .foregroundStyle(selected ? t.accentLite : t.muted)
+                .padding(.horizontal, 12).padding(.vertical, 6)
+                .background(selected ? t.accent.opacity(0.16) : t.surfaceUp, in: Capsule())
+                .overlay(Capsule().stroke(selected ? t.hair : t.line, lineWidth: 1))
+        }
+        .buttonStyle(.plain)
     }
 
     // Ask the chat LLM to infer names from the conversation itself (introductions, being

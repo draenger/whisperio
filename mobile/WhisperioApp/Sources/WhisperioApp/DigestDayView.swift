@@ -24,6 +24,9 @@ struct DigestDayView: View {
     // How the journal composer seeded this page ("ai" | "raw"), if it did — "raw" flips the
     // summary card into its on-device stacked-notes presentation. Nil for a normal day open.
     var seed: String? = nil
+    // "Blank page" entry point (JournalComposerView's .blank kind) opens straight into the
+    // manual free-text editor instead of the AI-summary card, per design (mob-screens.jsx:422-423,688).
+    var startInManual: Bool = false
 
     @State private var generating = false
     @State private var showConsent = false
@@ -74,6 +77,9 @@ struct DigestDayView: View {
                 }
             }
         }
+        .onAppear {
+            if startInManual { manual = true }
+        }
         .sheet(isPresented: $showConsent) {
             CloudConsentSheet(provider: .openAI,
                               onAccept: grantConsent,
@@ -109,6 +115,11 @@ struct DigestDayView: View {
                     .font(WZFont.ui(15.5)).foregroundStyle(t.text).lineSpacing(5)
                     .fixedSize(horizontal: false, vertical: true)
                     .textSelection(.enabled)
+                    // Copy lives here as a context menu / long-press instead of a visible button,
+                    // matching the design's single-'Regenerate' footer row (mob-screens.jsx:644).
+                    .contextMenu {
+                        Button { copy(summary) } label: { Label("Copy", systemImage: "doc.on.doc") }
+                    }
                 HStack(spacing: 8) {
                     if seed == "raw" {
                         Text("Stacked verbatim · nothing sent to the cloud")
@@ -117,7 +128,6 @@ struct DigestDayView: View {
                         Text(JournalFormat.generatedMeta(at)).font(WZFont.mono(10.5)).foregroundStyle(t.faint)
                     }
                     Spacer(minLength: 0)
-                    GhostButton(title: "Copy", icon: "copy") { copy(summary) }.fixedSize()
                     GhostButton(title: "Regenerate", icon: "sync") { generate() }.fixedSize()
                 }
             } else if manual {

@@ -49,6 +49,18 @@ Intentional deviations (do NOT re-report):
 - Wave-1 Home header bolt button removed again in favor of the design's pinned Recap streak
   tile (F1) — recap entry point is the body tile, per PhoneHome redesign block.
 
+## Parity round 2 (2026-07-20 ~00:15) — 16 raw → 16 confirmed → all fixed (wf_465d6130)
+Intentional deviations / rulings (do NOT re-report):
+- G1: Home weekly cloud-spend badge is USD-only, real ProviderPricing aggregation, hidden at
+  $0. NO USD/EUR toggle (no honest FX source).
+- G3: Recording.source tags only honestly-attributable channels (app/mic/watch/keyboard);
+  DictateIntent stays nil — Action Button / Back-Tap / Siri are indistinguishable to the app.
+- G14: recap engine hues for Deepgram (#d946ef), AssemblyAI (#ec4899), Mistral (#fb7185)
+  RULED final (postdate the mock; hue-separated).
+- G16: speaker-rename suggestion chips = real names from the library's speakerNames + generic
+  roles (Me/Boss/Client) — not the mock's sample names.
+- G6: digest summary Copy action lives in the context menu (design shows only Regenerate).
+
 ## Process
 Weaker agents plan → Fable verifies/corrects plans → weaker agents implement
 (fresh-read + surgical-edit protocol, per-file ownership) → build gates

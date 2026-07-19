@@ -31,13 +31,14 @@ struct HomeView: View {
                 VStack(spacing: 0) {
                     WHeader(title: "Whisperio") {
                         HStack(spacing: 9) {
+                            if weeklyCloudSpendUSD > 0 {
+                                weeklyCloudSpendBadge
+                            }
                             if settings.settings.syncMode == .manual {
                                 HomeSyncButton(action: syncNow)
                             } else {
                                 HeaderSyncGlyph()
                             }
-                            SquareIconButton(icon: "edit", action: openScratchpad)
-                            SquareIconButton(icon: "book", action: openJournal)
                             SquareIconButton(icon: "settings", action: openSettings)
                         }
                     }
@@ -151,7 +152,7 @@ struct HomeView: View {
                         .font(WZFont.mono(11, .semibold)).tracking(1.1).foregroundStyle(t.accentLite)
                     Text(preview)
                         .font(WZFont.ui(13.5)).foregroundStyle(t.muted)
-                        .lineLimit(1).truncationMode(.tail)
+                        .lineLimit(2).truncationMode(.tail)
                 }
                 Spacer(minLength: 0)
                 WIcon("chevR", size: 14, weight: .semibold).foregroundStyle(t.faint)
@@ -162,6 +163,75 @@ struct HomeView: View {
             .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(t.line, lineWidth: 1))
         }
         .buttonStyle(.plain)
+    }
+
+    // Weekly cloud-spend badge — the header pill from mob-screens.jsx ~93 ("$0.48" style),
+    // tap → Recap. KEEP IN SYNC with RecapView's totalCostUSD/engineMinutes/rate(for:) — this
+    // mirrors that exact aggregation (this week's cloud minutes × ProviderPricing rates for the
+    // sub-model currently configured in Settings) rather than a second, drifting cost model.
+    // No USD/EUR toggle: there is no real FX source in the app, so only USD is shown (documented
+    // deviation from the design's currency switcher). Hidden entirely at $0 — an honest empty
+    // state rather than a fabricated "$0.00".
+    private var weeklyCloudSpendBadge: some View {
+        Button(action: openRecap) {
+            Text("$" + String(format: "%.2f", weeklyCloudSpendUSD))
+                .font(WZFont.mono(10.5, .bold))
+                .foregroundStyle(t.accentLite)
+                .padding(.horizontal, 10).padding(.vertical, 5)
+                .background(t.accent.opacity(0.12), in: Capsule())
+                .overlay(Capsule().stroke(t.hair, lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Cloud spend this week, $\(String(format: "%.2f", weeklyCloudSpendUSD))")
+    }
+
+    private var weekInterval: DateInterval {
+        var calendar = Calendar.current
+        calendar.firstWeekday = 2   // matches RecapView's Mon–Sun week
+        return calendar.dateInterval(of: .weekOfYear, for: Date())
+            ?? DateInterval(start: Date().addingTimeInterval(-7 * 24 * 3600), duration: 7 * 24 * 3600)
+    }
+
+    // Minutes spoken this week, bucketed by transcribing engine — same shape as RecapView's
+    // `engineMinutes`, recomputed here since Home has no dependency on Recap.
+    private var weeklyEngineMinutes: [(provider: ProviderID, minutes: Double)] {
+        let week = weekInterval
+        let items = recordings.items.filter {
+            week.contains($0.timestamp) && $0.provider != nil && $0.duration > 0
+        }
+        var totals: [ProviderID: Double] = [:]
+        for r in items { totals[r.provider!, default: 0] += r.duration / 60 }
+        return totals.map { (provider: $0.key, minutes: $0.value) }
+    }
+
+    // Published per-minute list price for `provider`, using the sub-model currently configured
+    // in Settings — identical logic to RecapView's `rate(for:)`.
+    private func weeklyRate(for provider: ProviderID) -> Double? {
+        let s = settings.settings
+        switch provider {
+        case .onDevice:
+            return 0
+        case .openAI:
+            guard s.openAIBaseURL.trimmingCharacters(in: .whitespaces).isEmpty else { return nil }
+            return ProviderPricing.ratePerMinuteUSD(provider: .openAI, model: s.whisperModel)
+        case .elevenLabs:
+            return ProviderPricing.ratePerMinuteUSD(provider: .elevenLabs, model: "")
+        case .groq:
+            return ProviderPricing.ratePerMinuteUSD(provider: .groq, model: s.groqModel)
+        case .deepgram:
+            return ProviderPricing.ratePerMinuteUSD(provider: .deepgram, model: s.deepgramModel)
+        case .assemblyAI:
+            return ProviderPricing.ratePerMinuteUSD(provider: .assemblyAI, model: s.assemblyAIModel)
+        case .mistral:
+            return ProviderPricing.ratePerMinuteUSD(provider: .mistral, model: s.mistralModel)
+        }
+    }
+
+    private var weeklyCloudSpendUSD: Double {
+        weeklyEngineMinutes.reduce(0) { total, entry in
+            guard entry.provider != .onDevice, let rate = weeklyRate(for: entry.provider) else { return total }
+            return total + rate * entry.minutes
+        }
     }
 
     // Recap streak tile — the 76pt companion to the journal tile (mob-screens.jsx ~104-108: bolt

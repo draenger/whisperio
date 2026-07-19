@@ -165,7 +165,21 @@ struct RecapView: View {
         df.dateFormat = "MMM d"
         let weekNo = calendar.component(.weekOfYear, from: Date())
         let end = week.end.addingTimeInterval(-1)
-        return "WEEK \(weekNo) · \(df.string(from: week.start))–\(df.string(from: end))".uppercased()
+        let start = week.start
+        // Compact form for the common case (week stays inside one calendar month): print the
+        // month once and the end date as a bare day number, e.g. "JUN 16–22". Only fall back to
+        // spelling the month on both ends when the week straddles a month boundary.
+        let sameMonth = calendar.isDate(start, equalTo: end, toGranularity: .month)
+            && calendar.isDate(start, equalTo: end, toGranularity: .year)
+        let range: String
+        if sameMonth {
+            let dayFormatter = DateFormatter()
+            dayFormatter.dateFormat = "d"
+            range = "\(df.string(from: start))–\(dayFormatter.string(from: end))"
+        } else {
+            range = "\(df.string(from: start))–\(df.string(from: end))"
+        }
+        return "WEEK \(weekNo) · \(range)".uppercased()
     }
 
     private var shareText: String {
@@ -265,6 +279,11 @@ struct RecapView: View {
             }
         }
         .task { renderCard() }
+        // Keep the shareable card in sync with what's actually on screen — re-render whenever
+        // the underlying data (new/removed recordings this week) or the color scheme changes,
+        // instead of caching a single render from `.task` that can go stale.
+        .onChange(of: weekItems.count) { _, _ in renderCard() }
+        .onChange(of: t.dark) { _, _ in renderCard() }
     }
 
     private var heroCard: some View {
@@ -369,10 +388,29 @@ struct RecapView: View {
         .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(t.line, lineWidth: 1))
     }
 
+    // "Provider · sub-model" when Settings has a real, non-default sub-model configured for that
+    // provider (mirrors the exact field `rate(for:)` already prices off of); otherwise just the
+    // bare provider name. ElevenLabs has no configurable sub-model in Settings, so it always
+    // stays bare rather than fabricating a static suffix the app can't back with real config.
+    private func engineLabel(_ provider: ProviderID) -> String {
+        let s = settings.settings
+        let raw: String
+        switch provider {
+        case .openAI: raw = s.whisperModel
+        case .groq: raw = s.groqModel
+        case .deepgram: raw = s.deepgramModel
+        case .assemblyAI: raw = s.assemblyAIModel
+        case .mistral: raw = s.mistralModel
+        case .onDevice, .elevenLabs: raw = ""
+        }
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? provider.displayName : "\(provider.displayName) · \(trimmed)"
+    }
+
     private func engineRow(_ provider: ProviderID, _ minutes: Double, _ total: Double) -> some View {
         VStack(spacing: 4) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text(provider.displayName)
+                Text(engineLabel(provider))
                     .font(WZFont.ui(12.5)).foregroundStyle(t.text)
                     .lineLimit(1).truncationMode(.tail)
                 Spacer(minLength: 0)
@@ -401,8 +439,9 @@ struct RecapView: View {
         case .groq: return .hex(0x3da2f7)
         case .openAI: return .hex(0xa78bfa)
         // Deepgram/AssemblyAI/Mistral postdate the wz2 recap mock, so these 3 have no design
-        // source — picked for hue separation from Groq's blue and OpenAI's purple. Flag for
-        // design review before treating as final.
+        // source — picked for hue separation from Groq's blue and OpenAI's purple. Ruled final
+        // by design review (parity round 2, G14): accepted as-is, no further design source
+        // needed. See DELTA-QUEUE.md.
         case .deepgram: return .hex(0xd946ef)
         case .assemblyAI: return .hex(0xec4899)
         case .mistral: return .hex(0xfb7185)

@@ -29,7 +29,8 @@ final class PhoneConnectivity: NSObject, ObservableObject, WCSessionDelegate {
             case .success(let tr):
                 let text = store.cleanup(tr.text)
                 let rec = Recording(filename: clip.filename, duration: clip.duration,
-                                    status: .completed, provider: tr.provider, transcription: text)
+                                    status: .completed, provider: tr.provider, transcription: text,
+                                    source: "watch")
                 // Unlike RecordingView's transcribe()/finalizeLive(), the saveRecordings gate
                 // does NOT apply here: this transcript's only copy is the in-memory reply we're
                 // about to send over WCSession. The watch app doesn't keep its own history — if

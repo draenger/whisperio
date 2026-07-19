@@ -33,6 +33,10 @@ public final class RecordingEntity {
     public var segmentsData: Data?
     /// User-assigned speaker display names, JSON-encoded `[String: String]`.
     public var speakerNamesData: Data?
+    /// Which real capture channel produced this recording ("app"/"mic"/"watch"/"keyboard"), or
+    /// nil when the origin can't be honestly attributed. Mirrors `Recording.source` — see its
+    /// doc comment. Set once at creation and never rewritten by later mutators.
+    public var source: String?
     /// Last local mutation time — the comparison clock for the last-writer-wins merge in
     /// `RecordingSyncStore.upsert` (a stale/out-of-order write with an older time is dropped) and
     /// the tie-breaker that resolves CloudKit-produced duplicates to the newest row on read.
@@ -52,6 +56,7 @@ public final class RecordingEntity {
         renderPresetID: String? = nil,
         segmentsData: Data? = nil,
         speakerNamesData: Data? = nil,
+        source: String? = nil,
         modifiedAt: Date = Date()
     ) {
         self.id = id
@@ -67,6 +72,7 @@ public final class RecordingEntity {
         self.renderPresetID = renderPresetID
         self.segmentsData = segmentsData
         self.speakerNamesData = speakerNamesData
+        self.source = source
         self.modifiedAt = modifiedAt
     }
 }
@@ -94,6 +100,7 @@ public extension RecordingEntity {
             renderPresetID: r.renderPresetID,
             segmentsData: Self.encodeSegments(r.segments),
             speakerNamesData: Self.encodeSpeakerNames(r.speakerNames),
+            source: r.source,
             modifiedAt: modifiedAt ?? r.lastWriteAt
         )
     }
@@ -122,7 +129,8 @@ public extension RecordingEntity {
             renderPresetID: renderPresetID,
             updatedAt: (modifiedAt == timestamp) ? nil : modifiedAt,
             segments: Self.decodeSegments(segmentsData),
-            speakerNames: Self.decodeSpeakerNames(speakerNamesData)
+            speakerNames: Self.decodeSpeakerNames(speakerNamesData),
+            source: source
         )
     }
 
@@ -141,6 +149,7 @@ public extension RecordingEntity {
         renderPresetID = r.renderPresetID
         segmentsData = Self.encodeSegments(r.segments)
         speakerNamesData = Self.encodeSpeakerNames(r.speakerNames)
+        source = r.source
         self.modifiedAt = modifiedAt
     }
 

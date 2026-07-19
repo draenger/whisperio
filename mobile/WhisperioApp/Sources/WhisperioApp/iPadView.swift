@@ -62,7 +62,13 @@ struct iPadSplitView: View {
                     libraryEmptyState
                 }
             } else if liveJournal {
-                IPadLiveJournal(onExit: { withAnimation(.easeInOut(duration: 0.18)) { tab = "library" } })
+                IPadLiveJournal(onExit: { withAnimation(.easeInOut(duration: 0.18)) { tab = "library" } },
+                                openLibrary: { sourceId in
+                                    if let match = libraryRecordings.first(where: { $0.sourceId == sourceId }) {
+                                        sel = match.id
+                                    }
+                                    withAnimation(.easeInOut(duration: 0.18)) { tab = "library" }
+                                })
             } else {
                 iPadJournal()
             }
@@ -74,6 +80,13 @@ struct iPadSplitView: View {
                              onConfirm: confirmCloudEngine)
                     .transition(.opacity)
             }
+        }
+        .onAppear {
+            // Seed the sidebar's selection highlight to the row the detail pane is already
+            // showing (mob-screens.jsx:797 initializes `sel` to the first recording's id) —
+            // without this, `cur` still falls back to `libraryRecordings.first` so the detail
+            // pane is correct, but no row reads as selected until the user taps one.
+            if sel == nil { sel = libraryRecordings.first?.id }
         }
     }
 
@@ -404,7 +417,15 @@ struct iPadSplitView: View {
 private struct IPadLiveJournal: View {
     @Environment(\.wz) private var t
     var onExit: () -> Void = {}
+    // Resolves a note tap to the Library tab: parent (iPadSplitView) matches the recording's
+    // real `sourceId` against `libraryRecordings` and sets `sel`/`tab` — kept out of this view
+    // since library selection state lives one level up.
+    var openLibrary: (UUID) -> Void = { _ in }
     @State private var day: Date?
+    @State private var showSettings = false
+    @State private var settingsDark = false
+    @State private var settingsCategory: String?
+    @State private var toastMsg: String?
 
     var body: some View {
         HStack(spacing: 0) {
@@ -415,9 +436,14 @@ private struct IPadLiveJournal: View {
                 if let day {
                     DigestDayView(day: day,
                                   onBack: { self.day = nil },
-                                  openRec: { _ in },
-                                  openSettings: {},
-                                  toast: { _ in })
+                                  openRec: { demo in
+                                      if let sourceId = demo.sourceId { openLibrary(sourceId) }
+                                  },
+                                  openSettings: {
+                                      settingsDark = t.dark
+                                      showSettings = true
+                                  },
+                                  toast: showToast)
                         .id(day)
                 } else {
                     placeholder
@@ -425,6 +451,47 @@ private struct IPadLiveJournal: View {
             }
             .frame(maxWidth: .infinity)
         }
+        .overlay(alignment: .bottom) {
+            if let toastMsg {
+                toastBanner(toastMsg).padding(.bottom, 24)
+            }
+        }
+        .sheet(isPresented: $showSettings) {
+            // No dedicated "settings" route exists in the split shell (unlike AppShell's
+            // `.settings` screen), so this is a self-contained sheet over the same SettingsView
+            // the phone uses. Sub-navigation that would normally push further screens (models,
+            // preset editor, GitHub sync, digest prompts, storage, onboarding) has nowhere to
+            // land here, so those stay no-ops; the hub itself — including the "add API key" row
+            // the cloud-consent flow routes to — is fully live.
+            SettingsView(onBack: { showSettings = false }, dark: $settingsDark,
+                         openModels: {}, initialCategoryID: $settingsCategory)
+                // PresetStore isn't injected by the Mac app entry point (WhisperioMacApp.swift
+                // only provides settings/recordings/digests); it's UserDefaults-backed like
+                // SettingsStore, so a fresh instance here still reflects real persisted presets
+                // rather than diverging state.
+                .environmentObject(PresetStore())
+        }
+    }
+
+    // Mirrors AppShell's `showToast`/`toast(_:)` chip so generation failures and the
+    // cloud-consent confirmation ("Cloud journaling enabled") are no longer swallowed here.
+    private func showToast(_ m: String) {
+        withAnimation { toastMsg = m }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.7) {
+            withAnimation { toastMsg = nil }
+        }
+    }
+
+    private func toastBanner(_ m: String) -> some View {
+        HStack(spacing: 8) {
+            WIcon("check", size: 16).foregroundStyle(t.green)
+            Text(m).font(WZFont.ui(13.5, .medium)).foregroundStyle(.white)
+        }
+        .padding(.horizontal, 18).padding(.vertical, 11)
+        .background(t.dark ? t.elevated : WZTheme.rezmeTheme.elevated,
+                    in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+        .shadow(color: .black.opacity(0.4), radius: 15, y: 12)
+        .transition(.opacity.combined(with: .move(edge: .bottom)))
     }
 
     private var placeholder: some View {

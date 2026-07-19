@@ -22,8 +22,10 @@ struct StorageView: View {
     // each nil until run this visit, then holds what was actually freed.
     @State private var audioDeletedBytes: Int64?
     @State private var summariesDeletedBytes: Int64?
+    @State private var transcriptsDeletedBytes: Int64?
     @State private var confirmDeleteAudio = false
     @State private var confirmDeleteSummaries = false
+    @State private var confirmDeleteTranscripts = false
 
     private var totalBytes: Int64 { audioBytes + transcriptBytes + summaryBytes }
 
@@ -51,6 +53,7 @@ struct StorageView: View {
                         usageCard
                         autoCleanGroup
                         cleanupGroup
+                        dangerGroup
                         Text("Auto-clean runs quietly when you open Whisperio. GitHub mirrors are never touched from here.")
                             .font(WZFont.ui(13.5)).foregroundStyle(t.muted).lineSpacing(4)
                             .fixedSize(horizontal: false, vertical: true)
@@ -87,6 +90,12 @@ struct StorageView: View {
             Button("Cancel", role: .cancel) { }
         } message: {
             Text("Clears every day’s AI summary from the Journal. Recordings and transcripts stay.")
+        }
+        .alert("Delete all transcripts?", isPresented: $confirmDeleteTranscripts) {
+            Button("Delete", role: .destructive) { deleteAllTranscripts() }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("Removes the text notes; audio stays.")
         }
         .onAppear(perform: measure)
     }
@@ -184,6 +193,26 @@ struct StorageView: View {
                     onTap: summariesDeletedBytes == nil ? { confirmDeleteSummaries = true } : nil) {
                 if summariesDeletedBytes != nil { WIcon("check", size: 17).foregroundStyle(t.green) }
             }
+            SettRow(icon: "trash",
+                    label: transcriptsDeletedBytes != nil ? "Transcripts — deleted" : "Delete transcripts",
+                    sub: transcriptsDeletedBytes.map { "Freed \(Self.format($0))" }
+                        ?? "Removes the text notes; audio stays",
+                    last: true,
+                    onTap: transcriptsDeletedBytes == nil ? { confirmDeleteTranscripts = true } : nil) {
+                if transcriptsDeletedBytes != nil { WIcon("check", size: 17).foregroundStyle(t.green) }
+            }
+        }
+    }
+
+    // MARK: - Danger zone
+
+    // Separated from "Clean up now" per design: the irreversible full wipe gets its own
+    // elevated red-tinted container with a DANGER eyebrow, not just a red-tinted row.
+    private var dangerGroup: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("DANGER")
+                .font(WZFont.mono(11, .semibold)).tracking(0.8).foregroundStyle(t.red)
+                .padding(.leading, 2)
             Button(action: { if !erased { eraseOpen = true } }) {
                 HStack(spacing: 13) {
                     WIcon("trash", size: 17, weight: .regular).foregroundStyle(t.red)
@@ -198,10 +227,13 @@ struct StorageView: View {
                     Spacer(minLength: 0)
                     if erased { WIcon("check", size: 17).foregroundStyle(t.green) }
                 }
-                .padding(.vertical, 13)
+                .padding(13)
             }
             .buttonStyle(.plain)
         }
+        .padding(3)
+        .background(t.red.opacity(0.05), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(t.red.opacity(0.3), lineWidth: 1))
     }
 
     // MARK: - Actions
@@ -277,6 +309,17 @@ struct StorageView: View {
         toast("Freed \(Self.format(freed))")
     }
 
+    // Clears just the transcript/render text off every recording — the recordings themselves
+    // (audio, categories) stay, since only their sound files carry the actual content once the
+    // notes are gone. Confirmed via confirmDeleteTranscripts. Mirrors deleteAllAudio/
+    // deleteAllSummaries: the real byte accounting comes from the store, not a guess.
+    private func deleteAllTranscripts() {
+        let freed = recordings.clearAllTranscripts()
+        transcriptsDeletedBytes = freed
+        measure()
+        toast("Freed \(Self.format(freed))")
+    }
+
     private func eraseAll() {
         for r in recordings.items { recordings.delete(r) }
         digests.eraseAll()
@@ -284,6 +327,7 @@ struct StorageView: View {
         erased = true
         audioDeletedBytes = nil
         summariesDeletedBytes = nil
+        transcriptsDeletedBytes = nil
         measure()
         toast("All data erased")
     }

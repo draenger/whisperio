@@ -22,6 +22,7 @@ final class RecordingsStore: ObservableObject {
             case retranscribe = "Retranscribe"
             case migrate = "Migrate"
             case refresh = "Pull"
+            case clearTranscripts = "Clear transcripts"
         }
 
         let id = UUID()
@@ -404,6 +405,41 @@ final class RecordingsStore: ObservableObject {
         }
     }
 
+    // MARK: - Storage cleanup
+
+    /// Clear every recording's text-only fields (transcript, render, its preset, and any
+    /// diarization segments) while leaving audio files and everything else untouched — backs
+    /// the "Delete transcripts" storage cleanup row (see StorageView). Returns the real freed
+    /// byte count (raw UTF-8 size of the cleared transcript + render strings), the same
+    /// real-accounting stance `deleteAllAudio`/`deleteAllSummaries` already take — never an
+    /// estimate. No-op (returns 0) when nothing has a transcript or render to clear.
+    func clearAllTranscripts() -> Int64 {
+        let targets = items.indices.filter { items[$0].transcription != nil || items[$0].render != nil }
+        guard !targets.isEmpty else { return 0 }
+        var freed: Int64 = 0
+        for idx in targets {
+            freed += Int64((items[idx].transcription ?? "").utf8.count)
+            freed += Int64((items[idx].render ?? "").utf8.count)
+        }
+        switch backend {
+        case .sync(let store):
+            let ids = targets.map { items[$0].id }
+            queueSync(.clearTranscripts, title: "Delete transcripts",
+                      detail: "\(ids.count) recording\(ids.count == 1 ? "" : "s")", recordID: nil)
+            for id in ids { store.clearTranscript(for: id) }
+        case .json(let url):
+            for idx in targets {
+                items[idx].transcription = nil
+                items[idx].render = nil
+                items[idx].renderPresetID = nil
+                items[idx].segments = nil
+                items[idx].updatedAt = Date()   // bump LWW clock so this edit wins over stale copies
+            }
+            saveJSON(to: url)
+        }
+        return freed
+    }
+
     func requestCloudRefresh() {
         switch backend {
         case .sync(let store):
@@ -479,7 +515,7 @@ extension DemoRecording {
         self.init(
             id: demoId,
             title: title,
-            src: "app",
+            src: r.source ?? "app",
             app: "Whisperio",
             dur: DemoRecording.formatDuration(r.duration),
             when: DemoRecording.relativeWhen(r.timestamp),

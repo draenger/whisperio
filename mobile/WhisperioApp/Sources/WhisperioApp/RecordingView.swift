@@ -239,7 +239,8 @@ struct RecordingView: View {
             phase = .error; errorMsg = "Nothing was transcribed — try again and speak clearly."; return
         }
         let rec = Recording(filename: keptFilename(clip?.filename), duration: clip?.duration ?? 0,
-                            status: .completed, provider: .onDevice, transcription: text)
+                            status: .completed, provider: .onDevice, transcription: text,
+                            source: fromKeyboard ? "keyboard" : "app")
         // Save even when the clip is missing — the live transcript is the result, and losing
         // it from history just because the audio file failed to persist would be worse.
         if settings.settings.saveRecordings { recordings.add(rec) }
@@ -268,7 +269,8 @@ struct RecordingView: View {
         case .success(let tr):
             let text = settings.cleanup(tr.text)
             let rec = Recording(filename: keptFilename(clip.filename), duration: clip.duration,
-                                status: .completed, provider: tr.provider, transcription: text)
+                                status: .completed, provider: tr.provider, transcription: text,
+                                source: fromKeyboard ? "keyboard" : "app")
             if settings.settings.saveRecordings { recordings.add(rec) }
 #if canImport(UIKit)
             UIPasteboard.general.string = text   // ready to paste anywhere immediately

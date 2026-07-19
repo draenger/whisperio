@@ -42,19 +42,10 @@ struct JournalView: View {
     private var libraryView: some View {
         VStack(spacing: 0) {
             WHeader(title: "Journal", onBack: onBack)
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text("Your notes, bound into books — by week, month or topic.")
-                    .font(WZFont.mono(10.5)).foregroundStyle(t.faint)
-                Spacer(minLength: 0)
-                Button(action: onAdd) {
-                    HStack(spacing: 5) { WIcon("plus", size: 12); Text("New page") }
-                        .font(WZFont.mono(10.5, .semibold))
-                        .foregroundStyle(t.accentLite)
-                }
-                .buttonStyle(.plain)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 20).padding(.bottom, 8)
+            Text("Your notes, bound into books — by week, month or topic.")
+                .font(WZFont.mono(10.5)).foregroundStyle(t.faint)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 20).padding(.bottom, 8)
             if !shelfBooks.isEmpty {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 7) {
