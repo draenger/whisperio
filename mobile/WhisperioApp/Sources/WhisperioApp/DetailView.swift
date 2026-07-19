@@ -42,6 +42,11 @@ struct DetailView: View {
     @State private var renameText = ""
     @State private var guessingNames = false
 
+    // Retranscribe state — in-flight flag, plus the engine awaiting the "you'll lose the
+    // speaker labels" confirmation when a conversation is re-run on a non-diarizing engine.
+    @State private var retranscribing = false
+    @State private var confirmPlainEngine: ProviderID?
+
     // The backing Recording, resolved live from the store so speaker renames (and any
     // cross-device sync) show up immediately. nil for sample rows.
     private var source: Recording? {
@@ -62,7 +67,7 @@ struct DetailView: View {
         ScreenScaffold {
             VStack(spacing: 0) {
                 WHeader(title: "Transcript", onBack: onBack) {
-                    SquareIconButton(icon: "more")
+                    moreMenu
                 }
                 ScrollView(showsIndicators: false) {
                     VStack(alignment: .leading, spacing: 12) {
@@ -80,7 +85,7 @@ struct DetailView: View {
                         } else {
                             VStack(alignment: .leading, spacing: 0) {
                                 SectionLabel(text: "Transcript").padding(.bottom, 12)
-                                Text(r.title)
+                                Text(source?.transcription ?? r.title)
                                     .font(WZFont.ui(17)).foregroundStyle(t.text).lineSpacing(4)
                                     .fixedSize(horizontal: false, vertical: true)
                                     .textSelection(.enabled)
@@ -91,6 +96,9 @@ struct DetailView: View {
                             .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(t.line, lineWidth: 1))
                         }
 
+                        if retranscribing {
+                            retranscribingCard
+                        }
                         if rewriting {
                             processingCard
                         } else if let render {
@@ -143,6 +151,145 @@ struct DetailView: View {
         } message: {
             Text("Shown instead of the generic speaker label, everywhere this conversation appears.")
         }
+        // The informed-consent moment for local models on a conversation: diarization only
+        // works in the cloud (ElevenLabs Scribe), so a plain engine drops the speaker labels.
+        .alert("Speakers need the cloud", isPresented: Binding(
+            get: { confirmPlainEngine != nil },
+            set: { if !$0 { confirmPlainEngine = nil } }
+        )) {
+            Button("Retranscribe anyway") {
+                if let engine = confirmPlainEngine { retranscribe(engine) }
+                confirmPlainEngine = nil
+            }
+            Button("Cancel", role: .cancel) { confirmPlainEngine = nil }
+        } message: {
+            Text("Speaker detection only works with ElevenLabs Scribe in the cloud — it doesn’t work with local models. Retranscribing this conversation with another engine produces plain text and removes the speaker labels.")
+        }
+    }
+
+    // MARK: - Retranscribe
+
+    // The saved clip on disk, if it still exists — retranscription needs the audio.
+    private var audioURL: URL? {
+        guard let source, !source.filename.isEmpty else { return nil }
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(source.filename)
+        return FileManager.default.fileExists(atPath: url.path) ? url : nil
+    }
+
+    private var moreMenu: some View {
+        Menu {
+            Section("Retranscribe audio") {
+                if audioURL == nil {
+                    Button {} label: {
+                        Label("No audio saved for this note", systemImage: "waveform.slash")
+                    }
+                    .disabled(true)
+                } else {
+                    engineOption(.onDevice, "Apple — on-device", "cpu")
+                    engineOption(.openAI, "OpenAI — cloud", "globe")
+                    engineOption(.elevenLabs,
+                                 isConversation ? "ElevenLabs — keeps speakers" : "ElevenLabs — cloud",
+                                 "globe")
+                }
+            }
+        } label: {
+            WIcon("more", size: 19, weight: .regular)
+                .foregroundStyle(t.muted)
+                .frame(width: 38, height: 38)
+                .background(t.surfaceUp, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(t.line, lineWidth: 1))
+        }
+        .disabled(retranscribing)
+    }
+
+    private func engineOption(_ id: ProviderID, _ title: String, _ icon: String) -> some View {
+        Button { chooseEngine(id) } label: {
+            Label(settings.isEngineReady(id) ? title : "\(title) · set up in Settings",
+                  systemImage: WZIcon.symbol(icon))
+        }
+    }
+
+    private func chooseEngine(_ id: ProviderID) {
+        guard settings.isEngineReady(id) else {
+            toast(settings.settings.cloudConsentGranted
+                  ? "Add the API key in Settings → Models first"
+                  : "Cloud engines need consent — Settings → Models")
+            openSettings()
+            return
+        }
+        if isConversation && id != .elevenLabs {
+            confirmPlainEngine = id   // inform before dropping the speaker labels
+        } else {
+            retranscribe(id)
+        }
+    }
+
+    private func retranscribe(_ id: ProviderID) {
+        guard let source, let url = audioURL, !retranscribing else { return }
+        retranscribing = true
+        Task {
+            guard let data = try? Data(contentsOf: url) else {
+                retranscribing = false
+                toast("Couldn’t read the saved audio")
+                return
+            }
+            let clip = AudioClip(data: data, filename: source.filename, duration: source.duration)
+            if id == .elevenLabs, isConversation {
+                // Conversations re-run through Scribe with diarize=true so speakers survive.
+                guard let transcriber = settings.makeConversationTranscriber() else {
+                    retranscribing = false
+                    openSettings()
+                    return
+                }
+                do {
+                    let result = try await transcriber.transcribeDiarized(clip)
+                    applyRetranscription(settings.cleanup(result.text), .elevenLabs,
+                                         result.segments.isEmpty ? nil : result.segments)
+                } catch {
+                    retranscribing = false
+                    toast("Retranscription failed")
+                }
+            } else {
+                guard let chain = settings.makeSingleEngineChain(id) else {
+                    retranscribing = false
+                    openSettings()
+                    return
+                }
+                switch await chain.transcribe(clip) {
+                case .success(let tr):
+                    applyRetranscription(settings.cleanup(tr.text), tr.provider, nil)
+                case .failure:
+                    retranscribing = false
+                    toast("Retranscription failed")
+                }
+            }
+        }
+    }
+
+    private func applyRetranscription(_ text: String, _ provider: ProviderID,
+                                      _ newSegments: [SpeakerSegment]?) {
+        recordings.setTranscription(text, provider: provider, segments: newSegments, for: r)
+        retranscribing = false
+        toast("Retranscribed · \(engineName(provider))")
+    }
+
+    private func engineName(_ id: ProviderID) -> String {
+        switch id {
+        case .onDevice: return "Apple on-device"
+        case .openAI: return "OpenAI"
+        case .elevenLabs: return "ElevenLabs"
+        }
+    }
+
+    private var retranscribingCard: some View {
+        HStack(spacing: 10) {
+            ProgressView().tint(t.accent)
+            Text("Retranscribing…").font(WZFont.mono(13)).foregroundStyle(t.accentLite)
+            Spacer(minLength: 0)
+        }
+        .padding(18)
+        .background(t.surface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(t.line, lineWidth: 1))
     }
 
     // MARK: - Rewrite flow

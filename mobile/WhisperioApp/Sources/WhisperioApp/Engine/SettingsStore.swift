@@ -77,6 +77,28 @@ final class SettingsStore: ObservableObject {
         return ProviderChain(providers: order.map { provider(for: $0, s) })
     }
 
+    // One-off single-engine chain for retranscribing saved audio with an explicitly chosen
+    // engine. Same consent gate as makeChain(): cloud engines are refused (nil) until the
+    // user has granted cloud consent.
+    func makeSingleEngineChain(_ id: ProviderID) -> ProviderChain? {
+        let s = settings
+        if s.isCloud(id) && !s.cloudConsentGranted { return nil }
+        return ProviderChain(providers: [provider(for: id, s)])
+    }
+
+    /// Whether the engine could actually run right now (consent + key for cloud ones) —
+    /// drives the retranscribe menu's availability labels.
+    func isEngineReady(_ id: ProviderID) -> Bool {
+        let s = settings
+        switch id {
+        case .onDevice: return true
+        case .openAI:
+            return s.cloudConsentGranted && !s.openAIKey.trimmingCharacters(in: .whitespaces).isEmpty
+        case .elevenLabs:
+            return s.cloudConsentGranted && !s.elevenLabsKey.trimmingCharacters(in: .whitespaces).isEmpty
+        }
+    }
+
     // Build the diarizing transcriber for Conversation mode (ElevenLabs Scribe v2 with
     // diarize=true — the only configured engine that separates speakers). Gated the same way
     // makeChain() gates cloud STT: nil until the user granted cloud consent AND pasted an

@@ -429,6 +429,20 @@ public final class RecordingSyncStore: ObservableObject {
         reload()
     }
 
+    /// Replace a recording's transcript after a retranscribe: new text, the engine that
+    /// produced it, and its segments (nil clears stale diarization when a non-diarizing
+    /// engine was used). No-op if no matching row exists.
+    public func setTranscription(_ text: String, provider: ProviderID,
+                                 segments: [SpeakerSegment]?, for recordingID: UUID) {
+        guard let entity = firstEntity(id: recordingID) else { return }
+        entity.transcription = text
+        entity.providerRaw = provider.rawValue
+        entity.segmentsData = segments.flatMap { try? JSONEncoder().encode($0) }
+        entity.modifiedAt = Date()
+        save()
+        reload()
+    }
+
     /// Persist user-assigned speaker display names for a conversation recording (raw
     /// speaker id → name). No-op if no matching row exists.
     public func setSpeakerNames(_ names: [String: String], for recordingID: UUID) {

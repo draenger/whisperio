@@ -49,8 +49,8 @@ struct ConversationView: View {
         switch phase {
         case .setup:
             return "Conversations are transcribed in the cloud with speaker detection " +
-                   "(ElevenLabs Scribe). Grant cloud consent and add an ElevenLabs API key " +
-                   "in Settings to use this mode."
+                   "(ElevenLabs Scribe) — this mode doesn’t work with the on-device models. " +
+                   "Grant cloud consent and add an ElevenLabs API key in Settings to use it."
         case .listening:
             return "Recording everyone near the microphone. Pause anytime — tap stop when " +
                    "the conversation is over."

@@ -18,6 +18,7 @@ final class RecordingsStore: ObservableObject {
             case category = "Category"
             case render = "Rewrite"
             case speakers = "Speakers"
+            case retranscribe = "Retranscribe"
             case migrate = "Migrate"
             case refresh = "Pull"
         }
@@ -294,6 +295,26 @@ final class RecordingsStore: ObservableObject {
             guard let idx = items.firstIndex(where: { $0.id == sourceId }) else { return }
             items[idx].render = text
             items[idx].renderPresetID = presetID
+            items[idx].updatedAt = Date()   // bump LWW clock so this edit wins over stale copies
+            saveJSON(to: url)
+        }
+    }
+
+    /// Replace the transcript after retranscribing the saved audio with another engine.
+    /// The new engine's segments replace the old ones — nil clears stale diarization (a
+    /// non-diarizing engine produced plain text, so speaker rows would no longer match).
+    func setTranscription(_ text: String, provider: ProviderID,
+                          segments: [SpeakerSegment]?, for demo: DemoRecording) {
+        guard let sourceId = demo.sourceId else { return }
+        switch backend {
+        case .sync(let store):
+            queueSync(.retranscribe, title: demo.title, detail: provider.rawValue, recordID: sourceId)
+            store.setTranscription(text, provider: provider, segments: segments, for: sourceId)
+        case .json(let url):
+            guard let idx = items.firstIndex(where: { $0.id == sourceId }) else { return }
+            items[idx].transcription = text
+            items[idx].provider = provider
+            items[idx].segments = segments
             items[idx].updatedAt = Date()   // bump LWW clock so this edit wins over stale copies
             saveJSON(to: url)
         }
