@@ -11,7 +11,7 @@ function buildMobTheme(design, mode, rezAccent) {
       bg: rz.bg, bg2: mode === 'dark' ? '#05090f' : '#eef2f6', surface: rz.bgSecondary, surfaceUp: rz.inputBg, elevated: rz.bgTertiary,
       line: rz.border, lineSoft: mode === 'dark' ? 'rgba(255,255,255,.05)' : 'rgba(20,40,60,.05)', hair: `rgba(${rz.accentRgb},.30)`,
       text: rz.text, muted: rz.textSecondary, faint: rz.textMuted,
-      accent: rz.accent, accentLite: rz.accentLight, accentRgb: rz.accentRgb, gradient: rz.gradient, primary: rz.accent, primaryInk: rz.accentInk,
+      accent: rz.accent, accentLite: rz.accentLight, accentRgb: rz.accentRgb, gradient: rz.gradient,
       green: rz.success, red: rz.danger, amber: rz.warning || '#f59e0b', cyan: rz.accent,
     };
   }
@@ -23,7 +23,7 @@ function buildMobTheme(design, mode, rezAccent) {
     line: 'rgba(255,255,255,0.08)', lineSoft: 'rgba(255,255,255,0.05)', hair: 'rgba(167,139,250,0.22)',
     text: '#ECEBF4', muted: '#9d9bb4', faint: '#6a6880',
     accent: '#8b5cf6', accentLite: '#a78bfa', accentRgb: '139,92,246',
-    gradient: 'linear-gradient(135deg, #2dd4bf 0%, #7c8cf8 52%, #6366f1 100%)', primary: '#8b5cf6', primaryInk: '#ffffff',
+    gradient: 'linear-gradient(135deg, #2dd4bf 0%, #7c8cf8 52%, #6366f1 100%)',
     green: '#34d399', red: '#f0556b', amber: '#fbbf24', cyan: '#2dd4bf',
   } : {
     mode, design: 'original',
@@ -31,7 +31,7 @@ function buildMobTheme(design, mode, rezAccent) {
     line: 'rgba(20,18,40,0.10)', lineSoft: 'rgba(20,18,40,0.06)', hair: 'rgba(124,58,237,0.20)',
     text: '#1b1830', muted: '#5b5870', faint: '#9b98ad',
     accent: '#7c3aed', accentLite: '#8b5cf6', accentRgb: '124,58,237',
-    gradient: 'linear-gradient(135deg, #14b8a6 0%, #6d78ea 52%, #6366f1 100%)', primary: '#7c3aed', primaryInk: '#ffffff',
+    gradient: 'linear-gradient(135deg, #14b8a6 0%, #6d78ea 52%, #6366f1 100%)',
     green: '#16a34a', red: '#dc2626', amber: '#d97706', cyan: '#0d9488',
   };
 }
@@ -150,7 +150,7 @@ function SourceBadge({ src, t }) {
 }
 function GradButton({ title, icon, onClick, t, style }) {
   return (
-    <button onClick={onClick} style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8, fontFamily: FUI, fontSize: 15, fontWeight: 600, color: t.primaryInk || '#fff', padding: '13px 20px', borderRadius: 14, border: 'none', cursor: 'pointer', background: t.primary || t.accent, boxShadow: `0 6px 16px -6px ${hexA(t.accent, 0.45)}`, ...style }}>
+    <button onClick={onClick} style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8, fontFamily: FUI, fontSize: 15, fontWeight: 600, color: '#fff', padding: '13px 20px', borderRadius: 14, border: 'none', cursor: 'pointer', background: t.gradient, boxShadow: `0 8px 20px -4px ${hexA(t.accent, 0.5)}`, ...style }}>
       {icon && <MIcon k={icon} size={17} />} {title}
     </button>
   );

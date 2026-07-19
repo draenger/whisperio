@@ -213,10 +213,10 @@ struct ScratchpadView: View {
                     Waveform(color: t.accentLite, bars: 22, height: 30)
                     Spacer(minLength: 0)
                     Button(action: keepTake) {
-                        WIcon("check", size: 21).foregroundStyle(.white)
+                        WIcon("check", size: 21).foregroundStyle(t.primaryInk)
                             .frame(width: 50, height: 50)
-                            .background(t.gradient, in: Circle())
-                            .shadow(color: t.accent.opacity(0.55), radius: 9, y: 4)
+                            .background(t.primary, in: Circle())
+                            .shadow(color: t.accent.opacity(0.45), radius: 9, y: 4)
                     }
                     .buttonStyle(.plain)
                 }
@@ -231,10 +231,10 @@ struct ScratchpadView: View {
                         Text("Continue note")
                     }
                     .font(WZFont.display(16, .semibold))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(t.primaryInk)
                     .frame(maxWidth: .infinity)
                     .frame(height: 56)
-                    .background(t.gradient, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    .background(t.primary, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                     .shadow(color: t.accent.opacity(0.6), radius: 13, y: 6)
                 }
                 .buttonStyle(.plain)

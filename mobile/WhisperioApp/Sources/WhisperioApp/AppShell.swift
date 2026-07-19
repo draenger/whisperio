@@ -68,6 +68,11 @@ struct WZPhoneView: View {
     // How the current .digestDay page was seeded by the journal composer ("ai" | "raw"), if it
     // was — flips the summary card into its woven/raw presentation. Nil for a normal day open.
     @State private var digestSeed: String?
+    // Which composer mode to seed on the next "New page" open (see JournalComposeMode). No real
+    // flow sets this to non-nil yet — it defaults to nil, keeping today's behavior unchanged; the
+    // parameter only makes the plumbing ready for a future real trigger (Shortcut/App Intent/Home
+    // quick action) to set it immediately before calling go(.journalNew).
+    @State private var journalComposerInitialMode: JournalComposeMode?
     @State private var toastMsg: String?
     // True when the current dictation was launched from the keyboard (bounce-to-app flow):
     // its transcript is written to the App Group and a swipe-back explainer is shown.
@@ -279,12 +284,12 @@ struct WZPhoneView: View {
                      openConversation: { go(.conversation) },
                      openSettings: { go(.settings) },
                      openJournal: { go(.journal) },
-                     openScratchpad: { go(.scratchpad) })
+                     openScratchpad: { go(.scratchpad) },
+                     openRecap: { go(.recap) })
         case .journal:
             JournalView(onBack: { go(.home) },
                         openDay: { digestDay = $0; digestSeed = nil; go(.digestDay) },
-                        openRecap: { go(.recap) },
-                        onAdd: { go(.journalNew) })
+                        onAdd: { journalComposerInitialMode = nil; go(.journalNew) })
         case .journalNew:
             JournalComposerView(onBack: { go(.journal) },
                                 onDone: { kind in
@@ -300,9 +305,10 @@ struct WZPhoneView: View {
                                     }
                                 },
                                 openSettings: { go(.settings) },
-                                toast: showToast)
+                                toast: showToast,
+                                initialMode: journalComposerInitialMode)
         case .recap:
-            RecapView(onBack: { go(.journal) })
+            RecapView(onBack: { go(.home) })
         case .scratchpad:
             ScratchpadView(onBack: { go(.home) },
                            openSettings: { go(.settings) },

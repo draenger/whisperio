@@ -10,6 +10,7 @@ import UIKit
 // cloud keys, toggle AI cleanup. Appearance + models below.
 struct SettingsView: View {
     @Environment(\.wz) private var t
+    @Environment(\.openURL) private var openURL
     @EnvironmentObject private var settings: SettingsStore
     @EnvironmentObject private var recordings: RecordingsStore
     @EnvironmentObject private var digests: DigestStore
@@ -341,15 +342,20 @@ struct SettingsView: View {
 
     private var modelCategory: some View {
         VStack(alignment: .leading, spacing: 16) {
+            modelOrderSection
+            SettGroup(title: "On-device models") {
+                SettRow(icon: "download", label: "Manage on-device models",
+                        sub: "Download, update or remove Apple Speech + Whisper", last: true,
+                        onTap: openModels)
+            }
             HStack {
-                SectionLabel(text: "Connections")
+                SectionLabel(text: "Remote connectors")
                 Spacer(minLength: 0)
                 // The badge reflects slot 0 of the model order — the engine that transcribes.
                 PrivacyBadge(mode: settings.settings.isCloud(engine) ? .cloud : .device, small: true)
             }
             .padding(.leading, 4)
             VStack(spacing: 10) {
-                connectionRow(.onDevice, "Apple — on-device", "Free · private · offline", "cpu")
                 connectionRow(.openAI, "OpenAI", "Cloud · Whisper API", "globe")
                 connectionRow(.elevenLabs, "ElevenLabs", "Cloud · Scribe", "globe")
                 connectionRow(.groq, "Groq", "Cloud · fastest Whisper inference", "bolt")
@@ -364,16 +370,21 @@ struct SettingsView: View {
                 .font(WZFont.mono(11)).foregroundStyle(t.faint).lineSpacing(3)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.leading, 4)
-            modelOrderSection
-            SettGroup(title: "On-device models") {
-                SettRow(icon: "download", label: "Manage on-device models",
-                        sub: "Download, update or remove Apple Speech + Whisper", last: true,
-                        onTap: openModels)
-            }
             if openConnection == .openAI {
                 keyField("OpenAI API key", binding(\.openAIKey))
                 plainField("Base URL (optional, self-hosted)", "https://api.openai.com/v1", binding(\.openAIBaseURL))
                 plainField("Model (optional)", "whisper-1", binding(\.whisperModel))
+            }
+            if let open = openConnection {
+                HStack(spacing: 9) {
+                    GhostButton(title: "Manage account · \(engineDisplayName(open))", icon: "arrowUR") {
+                        openManageAccount(open)
+                    }
+                    GhostButton(title: "Usage console", icon: "globe") {
+                        openUsageConsole(open)
+                    }
+                    .fixedSize()
+                }
             }
             if openConnection == .elevenLabs { keyField("ElevenLabs API key", binding(\.elevenLabsKey)) }
             if openConnection == .groq { keyField("Groq API key", binding(\.groqKey), placeholder: "gsk_…") }
@@ -433,15 +444,7 @@ struct SettingsView: View {
     /// Display name for an engine in the model-order card. Mirrors ENGINE_NAME in
     /// mob-settings.jsx (only the ProviderIDs this app actually has).
     private func engineDisplayName(_ id: ProviderID) -> String {
-        switch id {
-        case .onDevice: return "Apple — on-device"
-        case .openAI: return "OpenAI"
-        case .elevenLabs: return "ElevenLabs"
-        case .groq: return "Groq"
-        case .deepgram: return "Deepgram"
-        case .assemblyAI: return "AssemblyAI"
-        case .mistral: return "Mistral"
-        }
+        id.displayName
     }
 
     private static let chainOrdinals = ["Primary", "Secondary", "Third", "Fourth", "Fifth", "Sixth"]
@@ -904,7 +907,7 @@ struct SettingsView: View {
 
             SettGroup(title: "GitHub mirror") {
                 SettRow(icon: "sync", label: "Sync to GitHub",
-                        sub: "Mirror transcripts, renders & daily summaries to a Git repo",
+                        sub: "Mirror transcripts, journals, renders & daily summaries to a Git repo",
                         last: true, onTap: openGitHubSync)
             }
         }
@@ -1329,6 +1332,33 @@ struct SettingsView: View {
         return key.trimmingCharacters(in: .whitespaces).isEmpty
             ? ("Add API key to connect", false)
             : ("Connected", true)
+    }
+
+    /// Real, static provider-console deep links (not per-user data) for the "Manage account" /
+    /// "Usage console" row — a July-2026 best effort; spot-check if a provider's dashboard changes.
+    private static let engineConsoleURLs: [ProviderID: (manage: URL, usage: URL)] = [
+        .openAI: (URL(string: "https://platform.openai.com/api-keys")!,
+                  URL(string: "https://platform.openai.com/usage")!),
+        .elevenLabs: (URL(string: "https://elevenlabs.io/app/settings/api-keys")!,
+                     URL(string: "https://elevenlabs.io/app/usage")!),
+        .groq: (URL(string: "https://console.groq.com/keys")!,
+               URL(string: "https://console.groq.com/dashboard/usage")!),
+        .deepgram: (URL(string: "https://console.deepgram.com/")!,
+                   URL(string: "https://console.deepgram.com/")!),
+        .assemblyAI: (URL(string: "https://www.assemblyai.com/app/account")!,
+                     URL(string: "https://www.assemblyai.com/app/usage")!),
+        .mistral: (URL(string: "https://console.mistral.ai/api-keys")!,
+                  URL(string: "https://console.mistral.ai/usage")!),
+    ]
+
+    private func openManageAccount(_ id: ProviderID) {
+        guard let urls = Self.engineConsoleURLs[id] else { return }
+        openURL(urls.manage)
+    }
+
+    private func openUsageConsole(_ id: ProviderID) {
+        guard let urls = Self.engineConsoleURLs[id] else { return }
+        openURL(urls.usage)
     }
 
     // An expandable connection accordion row: tap toggles its configuration open, the

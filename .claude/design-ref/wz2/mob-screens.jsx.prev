@@ -60,16 +60,19 @@ function RecRow({ r, t, onTap, last }) {
   );
 }
 
-/* Manual sync — compact header icon: sync arrows → spinner → cloud (synced) */
 function HomeSyncButton({ t }) {
-  const [st, setSt] = React.useState('due');
-  const sync = () => { if (st === 'syncing') return; setSt('syncing'); setTimeout(() => setSt('done'), 1600); };
-  if (st === 'done') return (
-    <button onClick={() => setSt('due')} title="iCloud sync · synced just now" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 38, height: 38, padding: 0, background: 'none', border: 'none', cursor: 'pointer', color: t.faint }}><MIcon k="cloud" size={15} /></button>
-  );
+  const [syncing, setSyncing] = React.useState(false);
+  const [last, setLast] = React.useState('Last synced 14 min. ago');
+  const sync = () => { if (syncing) return; setSyncing(true); setTimeout(() => { setSyncing(false); setLast('Last synced just now'); }, 1600); };
   return (
-    <button onClick={sync} title={st === 'syncing' ? 'Syncing…' : 'Sync now'} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 38, height: 38, padding: 0, borderRadius: 12, cursor: 'pointer', color: t.accentLite, background: hexA(t.accent, 0.12), border: `1px solid ${t.hair}` }}>
-      {st === 'syncing' ? <span style={{ width: 15, height: 15, borderRadius: '50%', border: `2px solid ${hexA(t.accent, 0.3)}`, borderTopColor: t.accentLite, animation: 'mspin .8s linear infinite' }} /> : <MIcon k="sync" size={16} />}
+    <button onClick={sync} style={{ display: 'flex', alignItems: 'center', gap: 14, width: '100%', textAlign: 'left', cursor: 'pointer', padding: '15px 18px', borderRadius: 20, border: 'none', background: t.gradient, boxShadow: `0 18px 36px -12px ${hexA(t.accent, 0.4)}` }}>
+      <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 46, height: 46, flexShrink: 0, color: '#fff' }}>
+        {syncing ? <span style={{ width: 20, height: 20, borderRadius: '50%', border: '2.5px solid rgba(255,255,255,.35)', borderTopColor: '#fff', animation: 'mspin .8s linear infinite' }} /> : <MIcon k="sync" size={22} />}
+      </span>
+      <span style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+        <span style={{ fontFamily: FUI, fontSize: 15.5, fontWeight: 600, color: '#fff' }}>{syncing ? 'Syncing…' : 'Sync now'}</span>
+        <span style={{ fontFamily: FUI, fontSize: 12, color: 'rgba(255,255,255,.78)' }}>{last}</span>
+      </span>
     </button>
   );
 }
@@ -90,12 +93,17 @@ function PhoneHome({ t, onOpenRec, onRecord, onConversation, onSettings, onJourn
   );
   return (
     <div style={{ position: 'relative', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
-      <WHeader title="Whisperio" logo t={t} right={<div style={{ display: 'flex', alignItems: 'center', gap: 9 }}><button onClick={() => setCur((c) => c === 'usd' ? 'eur' : 'usd')} title="Cloud spend this week — API dollars plus ElevenLabs credits valued as their share of your subscription. Tap to switch USD/EUR." style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontFamily: FM, fontSize: 10.5, fontWeight: 700, cursor: 'pointer', color: t.accentLite, background: hexA(t.accent, 0.12), border: `1px solid ${t.hair}`, borderRadius: 999, padding: '5px 10px' }}>{cur === 'usd' ? '$0.48' : '€0.44'}</button>{manualSync ? <HomeSyncButton t={t} /> : <span title="iCloud sync · idle" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 22, height: 22, color: t.faint }}><MIcon k="cloud" size={15} /></span>}<SquareIconButton icon="cog" t={t} onClick={onSettings} /></div>} />
+      <WHeader title="Whisperio" logo t={t} right={<div style={{ display: 'flex', alignItems: 'center', gap: 9 }}><button onClick={() => setCur((c) => c === 'usd' ? 'eur' : 'usd')} title="Cloud spend this week — API dollars plus ElevenLabs credits valued as their share of your subscription. Tap to switch USD/EUR." style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontFamily: FM, fontSize: 10.5, fontWeight: 700, cursor: 'pointer', color: t.accentLite, background: hexA(t.accent, 0.12), border: `1px solid ${t.hair}`, borderRadius: 999, padding: '5px 10px' }}>{cur === 'usd' ? '$0.48' : '€0.44'}</button><span title="iCloud sync · idle" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 22, height: 22, color: t.faint }}><MIcon k="cloud" size={15} /></span><SquareIconButton icon="cog" t={t} onClick={onSettings} /></div>} />
+      {manualSync && (
+        <div style={{ padding: '10px 16px 0' }}>
+          <HomeSyncButton t={t} />
+        </div>
+      )}
       <div style={{ padding: '4px 16px 0', display: 'flex', flexDirection: 'column', gap: 13 }}>
         {t.design === 'redesign' && (
           <div style={{ display: 'flex', gap: 9 }}>
             <button onClick={onJournal} style={{ flex: 1, minWidth: 0, textAlign: 'left', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px', borderRadius: 16, background: t.surface, border: `1px solid ${t.line}` }}>
-              <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 40, height: 40, borderRadius: 12, background: t.primary, color: t.primaryInk, flexShrink: 0 }}><MIcon k="pencil" size={17} /></span>
+              <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 40, height: 40, borderRadius: 12, background: t.gradient, color: '#fff', flexShrink: 0 }}><MIcon k="pencil" size={17} /></span>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontFamily: FM, fontSize: 10, letterSpacing: '.12em', textTransform: 'uppercase', color: t.accentLite }}>My journal</div>
                 <div style={{ fontFamily: FUI, fontSize: 13, color: t.muted, lineHeight: 1.4, marginTop: 2, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>12 days journaled · 4 notes today · last summary yesterday</div>
@@ -125,7 +133,7 @@ function PhoneHome({ t, onOpenRec, onRecord, onConversation, onSettings, onJourn
       </div>
       {t.design === 'redesign' ? (
         <div style={{ position: 'absolute', left: 0, right: 0, bottom: 0, padding: '56px 16px 26px', background: `linear-gradient(to top, ${t.bg} 40%, ${hexA(t.bg, 0.85)} 62%, transparent)`, pointerEvents: 'none', display: 'flex', gap: 9 }}>
-          <button onClick={onRecord} style={{ pointerEvents: 'auto', flex: 1, height: 56, borderRadius: 16, border: 'none', background: t.primary, color: t.primaryInk, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, fontFamily: FD, fontSize: 16, fontWeight: 600, boxShadow: `0 12px 26px -8px ${hexA(t.accent, 0.6)}` }}>
+          <button onClick={onRecord} style={{ pointerEvents: 'auto', flex: 1, height: 56, borderRadius: 16, border: '1px solid rgba(255,255,255,.22)', background: t.gradient, color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, fontFamily: FD, fontSize: 16, fontWeight: 600, boxShadow: `0 12px 26px -8px ${hexA(t.accent, 0.6)}` }}>
             <MIcon k="micFill" size={20} /> Dictate
           </button>
           <button onClick={onConversation} aria-label="Record a conversation" title="Conversation mode — separates speakers" style={{ pointerEvents: 'auto', width: 56, height: 56, borderRadius: 12, border: `1px solid ${hexA(t.accent, 0.35)}`, background: t.surface, color: t.accentLite, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
@@ -134,7 +142,7 @@ function PhoneHome({ t, onOpenRec, onRecord, onConversation, onSettings, onJourn
         </div>
       ) : (
         <div style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: 130, display: 'flex', alignItems: 'flex-end', justifyContent: 'center', paddingBottom: 34, background: `linear-gradient(to top, ${t.bg} 34%, transparent)`, pointerEvents: 'none' }}>
-          <button onClick={onRecord} aria-label="Record" style={{ pointerEvents: 'auto', display: 'flex', alignItems: 'center', justifyContent: 'center', width: 68, height: 68, borderRadius: '50%', border: 'none', background: t.primary, color: t.primaryInk, cursor: 'pointer', boxShadow: `0 0 0 6px ${t.bg}, 0 12px 26px -6px ${hexA(t.accent, 0.6)}` }}>
+          <button onClick={onRecord} aria-label="Record" style={{ pointerEvents: 'auto', display: 'flex', alignItems: 'center', justifyContent: 'center', width: 68, height: 68, borderRadius: '50%', border: 'none', background: t.gradient, color: '#fff', cursor: 'pointer', boxShadow: `0 0 0 6px ${t.bg}, 0 12px 26px -6px ${hexA(t.accent, 0.6)}` }}>
             <MIcon k="micFill" size={26} />
           </button>
         </div>
@@ -189,7 +197,7 @@ function PhoneRecording({ t, onCancel, onDone }) {
 }
 
 const SPEAKER_HUES = ['', '#f59e0b', '#a78bfa', '#f472b6', '#34d399', '#fbbf24'];
-function PhoneDetail({ t, r, onBack, openEditor, initialSheet }) {
+function PhoneDetail({ t, r, onBack, openEditor }) {
   const [rewrite, setRewrite] = React.useState(null);
   const [rewriteName, setRewriteName] = React.useState('Rewrite');
   const [rewriting, setRewriting] = React.useState(false);
@@ -198,7 +206,7 @@ function PhoneDetail({ t, r, onBack, openEditor, initialSheet }) {
   const [catId, setCatId] = React.useState(r.category);
   const [catOpen, setCatOpen] = React.useState(false);
   const [moreOpen, setMoreOpen] = React.useState(false);
-  const [sheet, setSheet] = React.useState(!!initialSheet);
+  const [sheet, setSheet] = React.useState(false);
   const [custom, setCustom] = React.useState('');
   const [names, setNames] = React.useState(r.speakerNames || {});
   const [naming, setNaming] = React.useState(false);
@@ -323,7 +331,7 @@ function PhoneDetail({ t, r, onBack, openEditor, initialSheet }) {
                 <button key={n} onClick={() => setRenameTxt(n)} style={{ fontFamily: FUI, fontSize: 12, fontWeight: 600, cursor: 'pointer', padding: '6px 12px', borderRadius: 999, background: renameTxt === n ? hexA(t.accent, 0.16) : t.surfaceUp, color: renameTxt === n ? t.accentLite : t.muted, border: `1px solid ${renameTxt === n ? t.hair : t.line}` }}>{n}</button>
               ))}
             </div>
-            <button onClick={() => { setNames((n) => { const x = { ...n }; if (renameTxt.trim()) x[renameSp] = renameTxt.trim(); else delete x[renameSp]; return x; }); setRenameSp(null); }} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, width: '100%', fontFamily: FUI, fontSize: 15, fontWeight: 600, color: t.primaryInk, padding: '13px 20px', borderRadius: 14, border: 'none', cursor: 'pointer', background: t.primary, marginBottom: 10 }}><MIcon k="check" size={16} /> Save</button>
+            <button onClick={() => { setNames((n) => { const x = { ...n }; if (renameTxt.trim()) x[renameSp] = renameTxt.trim(); else delete x[renameSp]; return x; }); setRenameSp(null); }} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, width: '100%', fontFamily: FUI, fontSize: 15, fontWeight: 600, color: '#fff', padding: '13px 20px', borderRadius: 14, border: 'none', cursor: 'pointer', background: t.gradient, marginBottom: 10 }}><MIcon k="check" size={16} /> Save</button>
             <GhostBtn title="Cancel" t={t} onClick={() => setRenameSp(null)} style={{ width: '100%' }} />
           </div>
         </div>
@@ -371,8 +379,8 @@ function PhoneDetail({ t, r, onBack, openEditor, initialSheet }) {
 
 
 /* ─── Journal composer: new page — blank, or from picked notes (AI-woven · raw stacked · one per page) ─── */
-function PhoneJournalNew({ t, onBack, onDone, initialMode = null }) {
-  const [mode, setMode] = React.useState(initialMode); // null | blank | notes
+function PhoneJournalNew({ t, onBack, onDone }) {
+  const [mode, setMode] = React.useState(null); // null | blank | notes
   const [layout, setLayout] = React.useState('ai'); // ai | raw | split
   const [picked, setPicked] = React.useState(() => new Set(M_RECS.filter((r) => r.today).map((r) => r.id)));
   const [srcF, setSrcF] = React.useState('all');
@@ -459,7 +467,7 @@ function PhoneJournalNew({ t, onBack, onDone, initialMode = null }) {
           {layout === 'ai' && <>
             <div style={{ position: 'relative', marginTop: 2 }}>
               <textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} rows={2} placeholder="Instructions for the AI (optional) — e.g. standup update, first person, casual…" style={{ width: '100%', fontFamily: FUI, fontSize: 13, color: t.text, background: t.surfaceUp, border: `1px solid ${t.line}`, borderRadius: 12, padding: '11px 46px 11px 13px', outline: 'none', resize: 'none', lineHeight: 1.5, boxSizing: 'border-box' }} />
-              <button title="Dictate the instructions" style={{ position: 'absolute', right: 9, bottom: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', width: 30, height: 30, borderRadius: '50%', border: 'none', cursor: 'pointer', background: t.primary, color: t.primaryInk }}><MIcon k="micFill" size={13} /></button>
+              <button title="Dictate the instructions" style={{ position: 'absolute', right: 9, bottom: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', width: 30, height: 30, borderRadius: '50%', border: 'none', cursor: 'pointer', background: t.gradient, color: '#fff' }}><MIcon k="micFill" size={13} /></button>
             </div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
               {['Standup update', 'Bullet points', 'Dear diary', 'Client email'].map((p) => (
@@ -518,7 +526,7 @@ function PhoneJournal({ t, onBack, onOpenDay, onToday, onAdd, onOpenRecap }) {
     if (!d.recs.length) return null;
     if (key === 'today') return (
       <button key={key} onClick={onToday} style={{ textAlign: 'left', cursor: 'pointer', padding: 14, borderRadius: 16, background: t.surface, border: `1px solid ${t.hair}`, display: 'flex', alignItems: 'center', gap: 11, width: '100%' }}>
-        <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 36, height: 36, borderRadius: 11, background: t.primary, color: t.primaryInk, flexShrink: 0 }}><MIcon k="pencil" size={16} /></span>
+        <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 36, height: 36, borderRadius: 11, background: t.gradient, color: '#fff', flexShrink: 0 }}><MIcon k="pencil" size={16} /></span>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontFamily: FM, fontSize: 9.5, letterSpacing: '.12em', textTransform: 'uppercase', color: t.accentLite }}>Today · running note</div>
           <div style={{ fontFamily: FUI, fontSize: 13, color: t.text, marginTop: 2 }}>{d.recs.length} takes so far — open to continue</div>
@@ -581,7 +589,7 @@ function PhoneJournal({ t, onBack, onOpenDay, onToday, onAdd, onOpenRecap }) {
   /* ── Library: books only ── */
   return (
     <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
-      <WHeader title="Journal" t={t} onBack={onBack} />
+      <WHeader title="Journal" t={t} onBack={onBack} right={<SquareIconButton icon="bolt" t={t} onClick={onOpenRecap} />} />
       <div style={{ padding: '0 20px 8px', fontFamily: FM, fontSize: 10.5, color: t.faint }}>Your notes, bound into books — by week, month or topic.</div>
       <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '8px 16px 30px', display: 'flex', flexDirection: 'column', gap: 18 }}>
         {[['Automatic journals', books.filter((b) => !b.custom), 'Bound for you — by week, month and topic'], ['Manual journals', books.filter((b) => b.custom), 'Your own notebooks — pages, chapters, whatever you need']].map(([gl, list, hint]) => (
@@ -647,7 +655,7 @@ function PhoneDigest({ t, dayKey, onBack, onOpenRec, initialManual, seed }) {
                 ? <>
                     <textarea value={manualTxt} onChange={(e) => setManualTxt(e.target.value)} rows={5} autoFocus placeholder="Write the day in your own words — or dictate straight into it…" style={{ width: '100%', fontFamily: FUI, fontSize: 14.5, color: t.text, background: t.surfaceUp, border: `1px solid ${t.line}`, borderRadius: 12, padding: '12px 13px', outline: 'none', resize: 'none', lineHeight: 1.55, boxSizing: 'border-box' }} />
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <button style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 40, height: 40, borderRadius: '50%', border: 'none', cursor: 'pointer', background: t.primary, color: t.primaryInk, flexShrink: 0 }}><MIcon k="micFill" size={17} /></button>
+                      <button style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 40, height: 40, borderRadius: '50%', border: 'none', cursor: 'pointer', background: t.gradient, color: '#fff', flexShrink: 0 }}><MIcon k="micFill" size={17} /></button>
                       <span style={{ flex: 1 }} />
                       <GhostBtn title="AI instead" icon="spark" t={t} onClick={() => { setManual(false); generate(); }} style={{ whiteSpace: 'nowrap' }} />
                       <GradButton title="Save" icon="check" t={t} onClick={() => manualTxt.trim() && setSummary(manualTxt.trim())} style={{ opacity: manualTxt.trim() ? 1 : 0.5 }} />
@@ -722,12 +730,7 @@ function AppleJournal({ t }) {
     <div style={{ flex: 1, minHeight: 0, display: 'flex' }}>
       {/* day index */}
       <div style={{ width: 320, flexShrink: 0, display: 'flex', flexDirection: 'column', background: t.bg2, borderRight: `1px solid ${t.line}` }}>
-        <div style={{ padding: '16px 18px 10px', display: 'flex', alignItems: 'center' }}><SectionLabel text="Journal" t={t} /><span style={{ flex: 1 }} /><span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontFamily: FM, fontSize: 10.5, fontWeight: 600, color: t.accentLite, cursor: 'pointer' }}><MIcon k="plus" size={12} /> New page</span></div>
-        <div style={{ display: 'flex', gap: 7, overflowX: 'auto', padding: '0 14px 10px' }}>
-          {[['This week', '#1cc8b4', true], ['July', '#3da2f7'], ['Work', '#4a8cf7'], ['Ideas', '#fbbf24']].map(([bn, bc, on]) => (
-            <span key={bn} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontFamily: FUI, fontSize: 11.5, fontWeight: 600, whiteSpace: 'nowrap', padding: '6px 11px', borderRadius: 999, cursor: 'pointer', background: on ? hexA(bc, 0.16) : t.surface, color: on ? bc : t.muted, border: `1px solid ${on ? hexA(bc, 0.45) : t.line}` }}><span style={{ width: 10, height: 3, borderRadius: 2, background: bc }} /> {bn}</span>
-          ))}
-        </div>
+        <div style={{ padding: '16px 18px 10px' }}><SectionLabel text="Journal" t={t} /></div>
         <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '4px 12px 16px', display: 'flex', flexDirection: 'column', gap: 12 }}>
           {days.map((d) => {
             const on = d.key === dayKey; const done = !!summ[d.key];
@@ -803,8 +806,8 @@ function AppleSplit({ t, engineBar, journal = true }) {
       {engineBar && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 16px', background: t.surface, borderBottom: `1px solid ${t.line}`, flexShrink: 0 }}>
           <MIcon k="cog" size={15} style={{ color: t.faint }} />
-          <span style={{ fontFamily: FUI, fontSize: 13, color: t.muted }}>Model order:</span>
-          <span style={{ fontFamily: FM, fontSize: 12.5, color: t.text }}>Apple on-device <span style={{ color: t.faint }}>→</span> Groq · v3 turbo <span style={{ color: t.faint }}>→</span> OpenAI · whisper-1</span>
+          <span style={{ fontFamily: FUI, fontSize: 13, color: t.muted }}>Engines:</span>
+          <span style={{ fontFamily: FM, fontSize: 12.5, color: t.text }}>On-device <span style={{ color: t.faint }}>→</span> OpenAI <span style={{ color: t.faint }}>→</span> ElevenLabs</span>
           <span style={{ flex: 1 }} /><PrivacyBadge mode="device" small t={t} />
         </div>
       )}
@@ -839,12 +842,7 @@ function AppleSplit({ t, engineBar, journal = true }) {
                   <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 32, height: 32, borderRadius: 9, background: t.surfaceUp, border: `1px solid ${t.line}`, color: t.accentLite, flexShrink: 0 }}><MIcon k={srcIconOf(r.src)} size={15} /></span>
                   <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 5 }}>
                     <div style={{ fontFamily: FUI, fontSize: 13.5, fontWeight: 500, color: t.text, lineHeight: 1.35, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{r.title}</div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontFamily: FM, fontSize: 10, color: t.faint }}>
-                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: catOf(r.category).hue, fontWeight: 600 }}><span style={{ width: 5, height: 5, borderRadius: '50%', background: catOf(r.category).hue }} /> {catOf(r.category).label}</span>
-                      <span>·</span><span>{r.when}</span><span>·</span><span>{r.dur}</span>
-                      <span style={{ flex: 1 }} />
-                      <MIcon k={r.engine === 'cloud' ? 'cloud' : 'lock'} size={10} style={{ color: r.engine === 'cloud' ? t.amber : t.green }} />
-                    </div>
+                    <div style={{ fontFamily: FM, fontSize: 10.5, color: t.faint }}>{r.app} · {r.when}</div>
                   </div>
                 </button>
               );
@@ -861,26 +859,10 @@ function AppleSplit({ t, engineBar, journal = true }) {
           </div>
           <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '32px 40px' }}>
             <div style={{ maxWidth: 640 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 7, fontFamily: FM, fontSize: 11, fontWeight: 600, letterSpacing: '.11em', color: t.accentLite, marginBottom: 14 }}><MIcon k="spark" size={13} /> {cur.segments ? 'CONVERSATION · SPEAKERS DETECTED' : 'CLEANED UP ON-DEVICE'}</div>
-              {cur.segments ? (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                  {cur.segments.map((seg, i) => {
-                    const order = [...new Set(cur.segments.map((x) => x.speaker))];
-                    const c = order.indexOf(seg.speaker) === 0 ? t.accent : '#3da2f7';
-                    const nm = (cur.speakerNames || {})[seg.speaker] || 'Speaker ' + (order.indexOf(seg.speaker) + 1);
-                    return (
-                      <div key={i} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontFamily: FM, fontSize: 11.5, fontWeight: 600, color: c }}><span style={{ width: 7, height: 7, borderRadius: '50%', background: c }} /> {nm}</span>
-                        <div style={{ fontFamily: FD, fontSize: 20, fontWeight: 500, color: t.text, lineHeight: 1.5 }}>{seg.text}</div>
-                      </div>
-                    );
-                  })}
-                </div>
-              ) : (
-                <div style={{ fontFamily: FD, fontSize: 28, fontWeight: 500, color: t.text, lineHeight: 1.5 }}>{cur.title}</div>
-              )}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 7, fontFamily: FM, fontSize: 11, fontWeight: 600, letterSpacing: '.11em', color: t.accentLite, marginBottom: 14 }}><MIcon k="spark" size={13} /> CLEANED UP ON-DEVICE</div>
+              <div style={{ fontFamily: FD, fontSize: 28, fontWeight: 500, color: t.text, lineHeight: 1.5 }}>{cur.title}</div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginTop: 30, padding: '18px 22px', background: t.surface, border: `1px solid ${t.line}`, borderRadius: 18 }}>
-                <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 46, height: 46, borderRadius: '50%', background: t.primary, color: t.primaryInk, flexShrink: 0 }}><MIcon k="bolt" size={20} /></span>
+                <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 46, height: 46, borderRadius: '50%', background: t.gradient, color: '#fff', flexShrink: 0 }}><MIcon k="bolt" size={20} /></span>
                 <div style={{ flex: 1 }}><MiniWave t={t} color={t.accent} n={64} height={32} /></div>
                 <span style={{ fontFamily: FM, fontSize: 13, color: t.faint }}>{cur.dur}</span>
               </div>
@@ -987,7 +969,7 @@ function PhoneConversation({ t, onCancel, onDone, needsSetup }) {
         {phase === 'setup' && <GradButton title="Open Settings" icon="cog" t={t} style={{ alignSelf: 'flex-start' }} />}
       </div>
       <div style={{ display: 'flex', justifyContent: 'center', paddingBottom: 2 }}>
-        {window.ListeningGhost && (phase === 'listening' || phase === 'processing') && <ListeningGhost phase={phase === 'processing' ? 'note' : 'group'} size={128} />}
+        {window.ListeningGhost && (phase === 'listening' || phase === 'processing') && <ListeningGhost phase={phase === 'processing' ? 'note' : 'group'} size={90} />}
       </div>
       <div style={{ height: 70, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 24px 8px' }}>
         {phase === 'listening' && <Waveform t={t} color={t.accent} bars={34} height={70} />}
@@ -1051,7 +1033,7 @@ function StateHome({ t, empty, banner }) {
         </div>
       )}
       <div style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: 130, display: 'flex', alignItems: 'flex-end', justifyContent: 'center', paddingBottom: 34, background: `linear-gradient(to top, ${t.bg} 34%, transparent)`, pointerEvents: 'none' }}>
-        <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 72, height: 72, borderRadius: '50%', background: t.primary, color: t.primaryInk, boxShadow: `0 12px 24px -8px ${hexA(t.accent, 0.5)}` }}><MIcon k="micFill" size={28} /></span>
+        <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 72, height: 72, borderRadius: '50%', background: t.gradient, color: '#fff', boxShadow: `0 14px 26px -6px ${hexA(t.accent, 0.7)}` }}><MIcon k="micFill" size={28} /></span>
       </div>
     </div>
   );
@@ -1082,4 +1064,4 @@ function OldDeviceView({ t }) {
   );
 }
 
-Object.assign(window, { PhoneApp, AppleSplit, AppleJournal, WatchApp, RecRow, PhoneConversation, StateBanner, StateHome, OldDeviceView, HomeSyncButton, PhoneRecording, PhoneDetail, PhoneJournal, PhoneDigest, PhoneJournalNew });
+Object.assign(window, { PhoneApp, AppleSplit, AppleJournal, WatchApp, RecRow, PhoneConversation, StateBanner, StateHome, OldDeviceView, HomeSyncButton, PhoneRecording, PhoneDetail, PhoneJournal, PhoneDigest });

@@ -17,6 +17,10 @@ import AppKit
 struct iPadSplitView: View {
     @Environment(\.wz) private var t
     @EnvironmentObject private var settings: SettingsStore
+    // Both real entry points (AppShell.swift RootView and WhisperioMacApp.swift) already inject
+    // RecordingsStore above this view, so this is safe; Gallery's `iPadHost` never sets
+    // `wzLiveJournal`, so this is only ever read behind `liveJournal` guards below.
+    @EnvironmentObject private var recordings: RecordingsStore
     // Set by the live shell (Mac/iPad entry) once the real stores are injected. When true the
     // Journal tab is store-backed (JournalView + DigestDayView); otherwise it stays on sample data.
     @Environment(\.wzLiveJournal) private var liveJournal
@@ -25,10 +29,14 @@ struct iPadSplitView: View {
     // the real iPad entry point in AppShell.swift passes false.
     var showEngineBar: Bool = true
     @State private var tab = "library"   // library | journal
-    @State private var sel = WZSample.recordings[0].id
+    @State private var sel: Int?
     @State private var showCloudConsent = false
     @State private var pendingCloudEngine: ProviderID?
-    private var cur: DemoRecording { WZSample.recordings.first { $0.id == sel } ?? WZSample.recordings[0] }
+    // Library tab's rows: the real library (mapped through the existing DemoRecording adapter)
+    // when the live shell injected a store, otherwise the design's sample rows.
+    private var libraryRecordings: [DemoRecording] { liveJournal ? recordings.items.map(DemoRecording.init) : WZSample.recordings }
+    // A live-but-empty library must show its own empty state, never fall back to WZSample rows.
+    private var cur: DemoRecording? { libraryRecordings.first { $0.id == sel } ?? libraryRecordings.first }
     private var primaryEngine: ProviderID { settings.settings.providerChain.first ?? .onDevice }
     private var cloudConsentGranted: Bool { settings.settings.cloudConsentGranted }
 
@@ -44,10 +52,14 @@ struct iPadSplitView: View {
             .padding(.horizontal, 18).padding(.vertical, 12)
             .overlay(alignment: .bottom) { Rectangle().fill(t.lineSoft).frame(height: 1) }
             if tab == "library" {
-                HStack(spacing: 0) {
-                    sidebar.frame(width: 320)
-                    Rectangle().fill(t.line).frame(width: 1)
-                    detail.frame(maxWidth: .infinity)
+                if let cur {
+                    HStack(spacing: 0) {
+                        sidebar.frame(width: 320)
+                        Rectangle().fill(t.line).frame(width: 1)
+                        detail(cur).frame(maxWidth: .infinity)
+                    }
+                } else {
+                    libraryEmptyState
                 }
             } else if liveJournal {
                 IPadLiveJournal(onExit: { withAnimation(.easeInOut(duration: 0.18)) { tab = "library" } })
@@ -79,8 +91,8 @@ struct iPadSplitView: View {
         } label: {
             HStack(spacing: 10) {
                 WIcon("settings", size: 15).foregroundStyle(t.faint)
-                Text("Engines:").font(WZFont.ui(13)).foregroundStyle(t.muted)
-                Text(engineChainText).font(WZFont.mono(12.5)).foregroundStyle(t.text)
+                Text("Model order:").font(WZFont.ui(13)).foregroundStyle(t.muted)
+                modelOrderText.font(WZFont.mono(12.5)).foregroundStyle(t.text)
                 Spacer(minLength: 0)
                 PrivacyBadge(mode: settings.settings.isCloud(primaryEngine) ? .cloud : .device, small: true)
             }
@@ -90,13 +102,49 @@ struct iPadSplitView: View {
             .contentShape(Rectangle())
         }
         .menuStyle(.borderlessButton)
-        .accessibilityLabel("Engines: \(engineChainText). Tap to change the primary transcription engine.")
+        .accessibilityLabel("Model order: \(modelOrderPlainText). Tap to change the primary transcription engine.")
     }
 
-    // Read-only "On-device → OpenAI → ElevenLabs"-style rendering of the live provider chain,
-    // reflecting the real SettingsStore data (not a hardcoded sample string).
-    private var engineChainText: String {
-        settings.settings.providerChain.map(engineLabel).joined(separator: " → ")
+    // Read-only "Apple on-device → Groq · v3 turbo → OpenAI · whisper-1"-style rendering of the
+    // live model order, reflecting the real SettingsStore data (not a hardcoded sample string).
+    // The per-fragment `.foregroundColor(t.faint)` arrows survive the outer `.foregroundStyle`,
+    // matching the existing `(Text(typed) + Text(" |").foregroundColor(t.accent))` precedent in
+    // KeyboardScene.swift.
+    private var modelOrderText: Text {
+        let order = settings.settings.modelOrder
+        guard let first = order.first else { return Text("") }
+        return order.dropFirst().reduce(Text(modelOrderSlotLabel(first))) { acc, slot in
+            acc + Text(" → ").foregroundColor(t.faint) + Text(modelOrderSlotLabel(slot))
+        }
+    }
+
+    private var modelOrderPlainText: String {
+        settings.settings.modelOrder.map(modelOrderSlotLabel).joined(separator: " → ")
+    }
+
+    /// Short "Provider · model" label for one model-order slot — same category as
+    /// SettingsView's engineModelChoices/slotModelLabel, kept file-local to stay a compact
+    /// one-line summary here rather than reaching into that file's private API surface.
+    private func modelOrderSlotLabel(_ slot: ProviderSlot) -> String {
+        guard slot.provider != .onDevice else { return "Apple on-device" }
+        let resolved = settings.settings.resolvedModel(for: slot)
+        let modelName: String
+        switch (slot.provider, resolved) {
+        case (.groq, "whisper-large-v3-turbo"): modelName = "v3 turbo"
+        case (.groq, "whisper-large-v3"): modelName = "large-v3"
+        case (.groq, "distil-whisper"): modelName = "distil-whisper"
+        case (.deepgram, "nova-3"): modelName = "Nova-3"
+        case (.deepgram, "nova-2"): modelName = "Nova-2"
+        case (.deepgram, "whisper-cloud"): modelName = "Whisper cloud"
+        case (.assemblyAI, "universal-2"): modelName = "Universal-2"
+        case (.assemblyAI, "universal-1"): modelName = "Universal-1"
+        case (.mistral, "voxtral-small"): modelName = "Voxtral Small"
+        case (.mistral, "voxtral-mini"): modelName = "Voxtral Mini"
+        case (.openAI, ""): modelName = "whisper-1"
+        case (.elevenLabs, _): modelName = "Scribe"
+        default: modelName = resolved.isEmpty ? "default" : resolved
+        }
+        return "\(engineLabel(slot.provider)) · \(modelName)"
     }
 
     private func engineLabel(_ id: ProviderID) -> String {
@@ -183,10 +231,16 @@ struct iPadSplitView: View {
                 WGhost(size: 24)
                 Text("Whisperio").font(WZFont.display(20)).foregroundStyle(t.text)
                 Spacer()
-                // Sample split-view (no live store injected) — a static iCloud glyph mirrors the
-                // sample PrivacyBadge beside it, matching the phone Home header treatment.
-                SyncStatusGlyph(isCloudBacked: true, isSyncing: false)
-                PrivacyBadge(mode: .device, small: true)
+                if liveJournal {
+                    // Live shell — the same real sync/privacy derivation HomeView/SettingsView use.
+                    SyncStatusGlyph(isCloudBacked: recordings.isCloudBacked, isSyncing: recordings.isSyncing)
+                    PrivacyBadge(mode: settings.settings.isCloud(primaryEngine) ? .cloud : .device, small: true)
+                } else {
+                    // Gallery/design-preview (no live store injected) — a static iCloud glyph
+                    // mirrors the sample PrivacyBadge beside it, matching the phone Home header.
+                    SyncStatusGlyph(isCloudBacked: true, isSyncing: false)
+                    PrivacyBadge(mode: .device, small: true)
+                }
             }
             .padding(.horizontal, 18).padding(.top, 20).padding(.bottom, 12)
             HStack(spacing: 8) {
@@ -202,7 +256,7 @@ struct iPadSplitView: View {
             .font(WZFont.mono(11, .semibold)).foregroundStyle(t.faint).padding(.horizontal, 18).padding(.bottom, 6)
             ScrollView {
                 VStack(spacing: 2) {
-                    ForEach(WZSample.recordings) { r in
+                    ForEach(libraryRecordings) { r in
                         Button { sel = r.id } label: { sidebarRow(r) }.buttonStyle(.plain)
                     }
                 }
@@ -212,9 +266,17 @@ struct iPadSplitView: View {
         .background(t.bg2)
     }
 
+    // The row's category, resolved the same way HomeView resolves it for RecRow
+    // (recordings.categoryId(for:) / WZCategories) — falls back to omitting the chip rather
+    // than inventing one for a row whose category id doesn't map to a known category.
+    private func categoryFor(_ r: DemoRecording) -> WZCategory? {
+        WZCategories.all.first { $0.id == recordings.categoryId(for: r) }
+    }
+
     private func sidebarRow(_ r: DemoRecording) -> some View {
         let on = sel == r.id
         let icon = r.src == "watch" ? "watch" : r.src == "action" ? "bolt" : r.src == "keyboard" ? "keyboard" : "mic"
+        let category = categoryFor(r)
         return HStack(alignment: .top, spacing: 11) {
             WIcon(icon, size: 15, weight: .regular).foregroundStyle(t.accentLite)
                 .frame(width: 32, height: 32)
@@ -222,7 +284,23 @@ struct iPadSplitView: View {
                 .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous).stroke(t.line, lineWidth: 1))
             VStack(alignment: .leading, spacing: 5) {
                 Text(r.title).font(WZFont.ui(13.5, .medium)).foregroundStyle(t.text).lineLimit(2).multilineTextAlignment(.leading)
-                Text("\(r.app) · \(r.when)").font(WZFont.mono(10.5)).foregroundStyle(t.faint)
+                HStack(spacing: 6) {
+                    if let category {
+                        HStack(spacing: 4) {
+                            Circle().fill(category.hue(t)).frame(width: 5, height: 5)
+                            Text(category.label).fontWeight(.semibold)
+                        }
+                        .foregroundStyle(category.hue(t))
+                        Text("·")
+                    }
+                    Text(r.when)
+                    Text("·")
+                    Text(r.dur)
+                    Spacer(minLength: 0)
+                    WIcon(r.engine == "cloud" ? "cloud" : "lock", size: 10, weight: .regular)
+                        .foregroundStyle(r.engine == "cloud" ? t.amber : t.green)
+                }
+                .font(WZFont.mono(10)).foregroundStyle(t.faint)
             }
             Spacer(minLength: 0)
         }
@@ -231,8 +309,26 @@ struct iPadSplitView: View {
         .overlay(RoundedRectangle(cornerRadius: 13, style: .continuous).stroke(on ? t.hair : .clear, lineWidth: 1))
     }
 
-    private var detail: some View {
-        VStack(alignment: .leading, spacing: 0) {
+    // Shown when the Library tab's real data source (`libraryRecordings`) is empty — a live,
+    // genuinely empty RecordingsStore, never a substitute for WZSample rows. Same shape as
+    // IPadLiveJournal.placeholder below.
+    private var libraryEmptyState: some View {
+        VStack(spacing: 12) {
+            WIcon("mic", size: 34, weight: .regular).foregroundStyle(t.faint)
+            Text("No recordings yet").font(WZFont.ui(16, .semibold)).foregroundStyle(t.text)
+            Text("Dictate on this Mac or your iPhone and it will show up here.")
+                .font(WZFont.ui(13.5)).foregroundStyle(t.muted).multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(40)
+        .background(t.bg2)
+    }
+
+    private func detail(_ cur: DemoRecording) -> some View {
+        let segments = liveSegments(for: cur)
+        let speakerNames = liveSpeakerNames(for: cur)
+        let isConvo = !segments.isEmpty
+        return VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 12) {
                 SourceBadge(src: cur.src)
                 PrivacyBadge(mode: cur.engine == "cloud" ? .cloud : .device, small: true)
@@ -246,9 +342,29 @@ struct iPadSplitView: View {
             .overlay(alignment: .bottom) { Rectangle().fill(t.lineSoft).frame(height: 1) }
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
-                    HStack(spacing: 7) { WIcon("spark", size: 13); Text("CLEANED UP ON-DEVICE") }
-                        .font(WZFont.mono(11, .semibold)).tracking(1.1).foregroundStyle(t.accentLite).padding(.bottom, 14)
-                    Text(cur.title).font(WZFont.display(28, .medium)).foregroundStyle(t.text).lineSpacing(8)
+                    HStack(spacing: 7) {
+                        WIcon("spark", size: 13)
+                        Text(isConvo ? "CONVERSATION · SPEAKERS DETECTED" : "CLEANED UP ON-DEVICE")
+                    }
+                    .font(WZFont.mono(11, .semibold)).tracking(1.1).foregroundStyle(t.accentLite).padding(.bottom, 14)
+                    if isConvo {
+                        let order = SpeakerSegmentBuilder.speakerOrder(segments)
+                        VStack(alignment: .leading, spacing: 16) {
+                            ForEach(Array(segments.enumerated()), id: \.offset) { _, seg in
+                                let color = (order.firstIndex(of: seg.speaker) ?? 0) == 0 ? t.accent : Color.hex(0x3da2f7)
+                                VStack(alignment: .leading, spacing: 4) {
+                                    HStack(spacing: 6) {
+                                        Circle().fill(color).frame(width: 7, height: 7)
+                                        Text(SpeakerSegmentBuilder.displayName(for: seg.speaker, names: speakerNames, order: order))
+                                    }
+                                    .font(WZFont.mono(11.5, .semibold)).foregroundStyle(color)
+                                    Text(seg.text).font(WZFont.display(20, .medium)).foregroundStyle(t.text).lineSpacing(5)
+                                }
+                            }
+                        }
+                    } else {
+                        Text(cur.title).font(WZFont.display(28, .medium)).foregroundStyle(t.text).lineSpacing(8)
+                    }
                     HStack(spacing: 16) {
                         Circle().fill(t.gradient).frame(width: 46, height: 46)
                             .overlay(WIcon("bolt", size: 20).foregroundStyle(.white))
@@ -264,6 +380,20 @@ struct iPadSplitView: View {
                 .padding(.horizontal, 40).padding(.vertical, 32)
             }
         }
+    }
+
+    // Real diarized segments/speaker names for a Library row, resolved from the same
+    // RecordingsStore.items the row itself came from (via `cur.sourceId`). Sample rows
+    // (`sourceId == nil`) and the Gallery/design-preview instantiation always fall through to
+    // the empty-segments/single-title path — never synthesize speakers.
+    private func liveSegments(for cur: DemoRecording) -> [SpeakerSegment] {
+        guard liveJournal, let sourceId = cur.sourceId else { return [] }
+        return recordings.items.first { $0.id == sourceId }?.segments ?? []
+    }
+
+    private func liveSpeakerNames(for cur: DemoRecording) -> [String: String] {
+        guard liveJournal, let sourceId = cur.sourceId else { return [:] }
+        return recordings.items.first { $0.id == sourceId }?.speakerNames ?? [:]
     }
 }
 

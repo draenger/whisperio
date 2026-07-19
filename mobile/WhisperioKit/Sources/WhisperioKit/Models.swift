@@ -12,6 +12,22 @@ public enum ProviderID: String, Codable, Sendable, CaseIterable {
     case mistral = "mistral"
 }
 
+/// Single source of truth for a provider's human-readable name — used by both OnboardingView's
+/// provider sheet and SettingsView's Connections rows so the two stop duplicating this map.
+public extension ProviderID {
+    var displayName: String {
+        switch self {
+        case .onDevice: return "Apple — on-device"
+        case .openAI: return "OpenAI"
+        case .elevenLabs: return "ElevenLabs"
+        case .groq: return "Groq"
+        case .deepgram: return "Deepgram"
+        case .assemblyAI: return "AssemblyAI"
+        case .mistral: return "Mistral"
+        }
+    }
+}
+
 /// A captured audio clip handed to a transcription provider.
 public struct AudioClip: Sendable, Equatable {
     public let data: Data

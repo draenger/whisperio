@@ -14,7 +14,6 @@ struct JournalView: View {
     @EnvironmentObject private var digests: DigestStore
     var onBack: () -> Void
     var openDay: (Date) -> Void
-    var openRecap: () -> Void = {}
     // New page (journal composer) — the book view's + menu, per PhoneJournal's onAdd.
     var onAdd: () -> Void = {}
 
@@ -38,13 +37,42 @@ struct JournalView: View {
 
     private var libraryView: some View {
         VStack(spacing: 0) {
-            WHeader(title: "Journal", onBack: onBack) {
-                SquareIconButton(icon: "zap", action: openRecap)
+            WHeader(title: "Journal", onBack: onBack)
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text("Your notes, bound into books — by week, month or topic.")
+                    .font(WZFont.mono(10.5)).foregroundStyle(t.faint)
+                Spacer(minLength: 0)
+                Button(action: onAdd) {
+                    HStack(spacing: 5) { WIcon("plus", size: 12); Text("New page") }
+                        .font(WZFont.mono(10.5, .semibold))
+                        .foregroundStyle(t.accentLite)
+                }
+                .buttonStyle(.plain)
             }
-            Text("Your notes, bound into books — by week, month or topic.")
-                .font(WZFont.mono(10.5)).foregroundStyle(t.faint)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 20).padding(.bottom, 8)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 20).padding(.bottom, 8)
+            if !shelfBooks.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 7) {
+                        ForEach(shelfBooks) { book in
+                            Button { openBookID = book.id } label: {
+                                HStack(spacing: 6) {
+                                    RoundedRectangle(cornerRadius: 2).fill(book.spine).frame(width: 10, height: 3)
+                                    Text(book.title)
+                                }
+                                .font(WZFont.ui(11.5, .semibold))
+                                .foregroundStyle(t.muted)
+                                .padding(.horizontal, 11).padding(.vertical, 6)
+                                .background(t.surface, in: Capsule())
+                                .overlay(Capsule().stroke(t.line, lineWidth: 1))
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .padding(.horizontal, 14)
+                }
+                .padding(.bottom, 6)
+            }
             ScrollView(showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 18) {
                     bookSection("Automatic journals",
@@ -304,9 +332,13 @@ struct JournalView: View {
         }
     }
 
+    // Both automatic and manual books together — the combined list the chip row and the
+    // current-book lookup both need.
+    private var shelfBooks: [JournalBook] { automaticBooks + manualJournalBooks }
+
     private var currentBook: JournalBook? {
         guard let openBookID else { return nil }
-        return (automaticBooks + manualJournalBooks).first { $0.id == openBookID }
+        return shelfBooks.first { $0.id == openBookID }
     }
 
     private func addBook() {

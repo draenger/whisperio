@@ -135,7 +135,7 @@ function PhoneSettings({ t, dark, setDark, onBack, initial }) {
       onTap={del[key] ? undefined : () => setDel((d) => ({ ...d, [key]: true }))} />
   );
   const [catP, setCatP] = React.useState({ auto: true, prompt: CAT_DEFAULT_PROMPT });
-  const [engine, setEngine] = React.useState(null);
+  const [engine, setEngine] = React.useState('device');
   const [consent, setConsent] = React.useState(false);
   const [consentFor, setConsentFor] = React.useState(null);
   const [keys, setKeys] = React.useState({ openai: '', base: 'https://api.openai.com/v1', model: '', eleven: '', replicate: '', groq: '', deepgram: '', assembly: '', mistral: '', selfUrl: '', selfModel: 'whisper-large-v3' });
@@ -254,6 +254,24 @@ function PhoneSettings({ t, dark, setDark, onBack, initial }) {
   const pages = {
     models: { title: 'Models', body: (
       <>
+        <div style={{ display: 'flex', alignItems: 'center', paddingLeft: 4 }}>
+          <SectionLabel text="Connections" t={t} /><span style={{ flex: 1 }} />{(chain[0] || {}).p === 'self'
+            ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, whiteSpace: 'nowrap', fontFamily: FM, fontSize: 10.5, fontWeight: 600, color: t.green, padding: '3px 9px', borderRadius: 999, background: hexA(t.green, 0.1), border: `1px solid ${hexA(t.green, 0.25)}` }}><MIcon k="server" size={11} /> your server</span>
+            : <PrivacyBadge mode={isCloud((chain[0] || {}).p) ? 'cloud' : 'device'} small t={t} />}
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {engineRow('device', 'Apple — on-device', 'Free · private · offline', 'cpu')}
+          {engineRow('openai', 'OpenAI', 'Cloud · Whisper API', 'globe')}
+          {engineRow('eleven', 'ElevenLabs', 'Cloud · Scribe', 'globe')}
+          {engineRow('replicate', 'Replicate', 'Cloud · open-source models', 'globe')}
+          {engineRow('groq', 'Groq', 'Cloud · fastest Whisper inference', 'bolt')}
+          {engineRow('deepgram', 'Deepgram', 'Cloud · Nova, streaming & diarization', 'globe')}
+          {engineRow('assembly', 'AssemblyAI', 'Cloud · Universal, speaker labels', 'globe')}
+          {engineRow('mistral', 'Mistral', 'Cloud · Voxtral, open weights', 'globe')}
+          {engineRow('self', 'Self-hosted', 'Your server · whisper.cpp / faster-whisper', 'server')}
+        </div>
+        {engine && engine !== 'self' && modelChips(engine)}
+        {footnote('Tap a provider to configure its connection and model. Which one is actually used — and in what order — is set above.')}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           <div style={{ paddingLeft: 4 }}><SectionLabel text="Model order" t={t} /></div>
           <div style={{ padding: '4px 16px', background: t.surface, border: `1px solid ${t.line}`, borderRadius: 18 }}>
@@ -298,37 +316,12 @@ function PhoneSettings({ t, dark, setDark, onBack, initial }) {
         <SettGroup title="On-device models" t={t}>
           <SettRow icon="download" label="Manage on-device models" sub="Download, update or remove Apple Speech + Whisper" last onTap={() => setSub('modelsList')} t={t} />
         </SettGroup>
-        <div style={{ display: 'flex', alignItems: 'center', paddingLeft: 4 }}>
-          <SectionLabel text="Remote connectors" t={t} /><span style={{ flex: 1 }} />{(chain[0] || {}).p === 'self'
-            ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, whiteSpace: 'nowrap', fontFamily: FM, fontSize: 10.5, fontWeight: 600, color: t.green, padding: '3px 9px', borderRadius: 999, background: hexA(t.green, 0.1), border: `1px solid ${hexA(t.green, 0.25)}` }}><MIcon k="server" size={11} /> your server</span>
-            : <PrivacyBadge mode={isCloud((chain[0] || {}).p) ? 'cloud' : 'device'} small t={t} />}
-        </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {engineRow('openai', 'OpenAI', 'Cloud · Whisper API', 'globe')}
-          {engineRow('eleven', 'ElevenLabs', 'Cloud · Scribe', 'globe')}
-          {engineRow('replicate', 'Replicate', 'Cloud · open-source models', 'globe')}
-          {engineRow('groq', 'Groq', 'Cloud · fastest Whisper inference', 'bolt')}
-          {engineRow('deepgram', 'Deepgram', 'Cloud · Nova, streaming & diarization', 'globe')}
-          {engineRow('assembly', 'AssemblyAI', 'Cloud · Universal, speaker labels', 'globe')}
-          {engineRow('mistral', 'Mistral', 'Cloud · Voxtral, open weights', 'globe')}
-          {engineRow('self', 'Self-hosted', 'Your server · whisper.cpp / faster-whisper', 'server')}
-        </div>
-        {engine && engine !== 'self' && modelChips(engine)}
-        {footnote('Tap a provider to configure its connection and model. Which one is actually used — and in what order — is set above.')}
-
-
 
         {engine === 'openai' && <>
           {field('OpenAI API key', keys.openai, (v) => setKeys((k) => ({ ...k, openai: v })), 'paste key…', true)}
           {field('Base URL (optional, self-hosted)', keys.base, (v) => setKeys((k) => ({ ...k, base: v })), 'https://api.openai.com/v1', true)}
           {field('Model (optional)', keys.model, (v) => setKeys((k) => ({ ...k, model: v })), 'whisper-1', true)}
         </>}
-        {engine && (
-          <div style={{ display: 'flex', gap: 9 }}>
-            <GhostBtn title={engine === 'self' ? 'Open server dashboard' : 'Manage account · ' + ENGINE_NAME[engine]} icon="arrowUR" t={t} style={{ flex: 1 }} />
-            {engine !== 'self' && <GhostBtn title="Usage console" icon="globe" t={t} />}
-          </div>
-        )}
         {engine === 'eleven' && field('ElevenLabs API key', keys.eleven, (v) => setKeys((k) => ({ ...k, eleven: v })), 'paste key…', true)}
         {engine === 'replicate' && field('Replicate API token', keys.replicate, (v) => setKeys((k) => ({ ...k, replicate: v })), 'r8_…', true)}
         {engine === 'groq' && field('Groq API key', keys.groq, (v) => setKeys((k) => ({ ...k, groq: v })), 'gsk_…', true)}
@@ -554,13 +547,12 @@ function PhoneSettings({ t, dark, setDark, onBack, initial }) {
     ) },
     github: { title: 'Sync to GitHub', body: (
       <>
-        {infoCard('Mirror transcripts, journals, rendered rewrites and daily summaries to a Git repository — a plain-text backup you own.', (
+        {infoCard('Mirror transcripts, rendered rewrites and daily summaries to a Git repository — a plain-text backup you own.', (
           <GradButton title="Connect GitHub" icon="arrowUR" t={t} />
         ))}
         {field('Repository', '', () => {}, 'username/whisperio-notes', true)}
         <SettGroup title="What syncs" t={t}>
           <SettRow icon="check" label="Transcripts" sub="Markdown, one file per note" t={t} />
-          <SettRow icon="check" label="Journals" sub="Days, weeks and topic books" t={t} />
           <SettRow icon="check" label="Daily summaries" sub="The Journal digests" t={t} />
           <SettRow icon="check" label="Rewrites" sub="Cleaned-up renders" last t={t} />
         </SettGroup>

@@ -91,8 +91,8 @@ struct StateHome<Banner: View>: View {
                         }
                     }
                 }
-                Circle().fill(t.gradient).frame(width: 72, height: 72)
-                    .overlay(WIcon("mic", size: 28).foregroundStyle(.white))
+                Circle().fill(t.primary).frame(width: 72, height: 72)
+                    .overlay(WIcon("mic", size: 28).foregroundStyle(t.primaryInk))
                     .shadow(color: t.accent.opacity(0.7), radius: 14, y: 16)
                     .padding(.bottom, 40)
             }

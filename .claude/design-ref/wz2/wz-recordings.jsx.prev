@@ -17,9 +17,9 @@ function fmtSize(b) {
   return `${(b / 1048576).toFixed(1)} MB`;
 }
 function statusIcon(status, theme) {
-  if (status === 'completed') return { char: '\u2713', color: theme.success };
-  if (status === 'failed') return { char: '\u2717', color: theme.danger };
-  return { char: '\u25CC', color: theme.warning || '#eab308' };
+  if (status === 'completed') return { char: '✓', color: theme.success };
+  if (status === 'failed') return { char: '✗', color: theme.danger };
+  return { char: '◌', color: theme.warning || '#eab308' };
 }
 
 function RecordingDetail({ rec, theme, s, design, onBack }) {
@@ -140,7 +140,7 @@ function RecordingsTab({ theme, s, design }) {
         <div style={{ padding: '16px 20px 20px', display: 'flex', flexDirection: 'column', gap: 8 }}>
           {recs.length === 0 ? (
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '60px 20px', textAlign: 'center' }}>
-              <span style={{ fontSize: 32, opacity: 0.3 }}>{'\u25CC'}</span>
+              <span style={{ fontSize: 32, opacity: 0.3 }}>{'◌'}</span>
               <p style={{ color: theme.textMuted, fontSize: 14, marginTop: 12 }}>No recordings yet</p>
               <p style={{ color: theme.textMuted, fontSize: 12, marginTop: 4, opacity: 0.6 }}>Recordings will appear here after you dictate</p>
             </div>

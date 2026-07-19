@@ -118,18 +118,11 @@ struct GradButton: View {
                 Text(title)
             }
             .font(WZFont.ui(15, .semibold))
-            .foregroundStyle(.white)
+            .foregroundStyle(t.primaryInk)
             .frame(maxWidth: .infinity)
             .padding(.vertical, 13).padding(.horizontal, 20)
-            .background(t.gradient, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-            // A hair-thin inner highlight along the top gives the gradient fill a lit,
-            // glassy edge; the CTA's shadow carries the theme accent so it stays in-family.
-            .overlay(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .stroke(.white.opacity(0.22), lineWidth: 1)
-                    .blendMode(.overlay)
-            )
-            .shadow(color: t.accent.opacity(0.50), radius: 12, y: 8)
+            .background(t.primary, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .shadow(color: t.accent.opacity(0.45), radius: 8, y: 6)
         }
         .buttonStyle(.plain)
     }

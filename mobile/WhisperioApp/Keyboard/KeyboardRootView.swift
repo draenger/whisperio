@@ -21,13 +21,8 @@ struct KeyboardRootView: View {
     private var dark: Bool { scheme == .dark }
     private var accent: Color { dark ? Color(hex: 0x1cc8b4) : Color(hex: 0x0f8478) }
     private var green: Color { dark ? Color(hex: 0x22c55e) : Color(hex: 0x16a34a) }
-    private var gradient: LinearGradient {
-        dark
-            ? LinearGradient(colors: [Color(hex: 0x15bca8), Color(hex: 0x3da2f7)],
-                             startPoint: .leading, endPoint: .trailing)
-            : LinearGradient(colors: [Color(hex: 0x0f9b8b), Color(hex: 0x1d7fd6)],
-                             startPoint: .leading, endPoint: .trailing)
-    }
+    // Mirrors WZTheme.primaryInk for the teal accent — the accent-filled mic button's ink.
+    private var primaryInk: Color { dark ? Color(hex: 0x02110f) : Color(hex: 0xffffff) }
     // The keyboard tray itself — bare background, keys sit directly on it (no card).
     private var background: Color { dark ? Color(hex: 0x0b141f) : Color(hex: 0xd4d2e2) }
     private var keyFill: Color { dark ? Color.white.opacity(0.13) : .white }
@@ -120,10 +115,10 @@ struct KeyboardRootView: View {
             Button(action: { model.mic() }) {
                 Image(systemName: "mic.fill")
                     .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(primaryInk)
                     .frame(width: 38, height: 38)
-                    .background(gradient, in: Circle())
-                    .shadow(color: accent.opacity(0.55), radius: 8, y: 3)
+                    .background(accent, in: Circle())
+                    .shadow(color: accent.opacity(0.4), radius: 8, y: 3)
             }
             .buttonStyle(KBPressStyle())
             .accessibilityLabel("Dictate")

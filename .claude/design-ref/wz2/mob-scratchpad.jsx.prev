@@ -101,14 +101,14 @@ function PhoneScratchpad({ t, onBack, onSettings, onHistory, onSummarize }) {
       <div style={{ position: 'absolute', left: 0, right: 0, bottom: 0, padding: '26px 16px 26px', background: `linear-gradient(to top, ${t.bg} 45%, transparent)`, pointerEvents: 'none', display: 'flex', flexDirection: 'column', gap: 10 }}>
         {gh.phase && <div style={{ display: 'flex', justifyContent: 'center' }}><ListeningGhost phase={gh.phase} size={94} /></div>}
         {stage !== 'listening' ? (
-          <button onClick={start} disabled={stage === 'processing'} style={{ pointerEvents: 'auto', width: '100%', height: 56, borderRadius: 16, border: 'none', background: t.primary, color: t.primaryInk, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, fontFamily: FD, fontSize: 16, fontWeight: 600, boxShadow: `0 12px 26px -8px ${hexA(t.accent, 0.6)}`, opacity: stage === 'processing' ? 0.6 : 1 }}>
+          <button onClick={start} disabled={stage === 'processing'} style={{ pointerEvents: 'auto', width: '100%', height: 56, borderRadius: 16, border: 'none', background: t.gradient, color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, fontFamily: FD, fontSize: 16, fontWeight: 600, boxShadow: `0 12px 26px -8px ${hexA(t.accent, 0.6)}`, opacity: stage === 'processing' ? 0.6 : 1 }}>
             <MIcon k="micFill" size={20} /> Continue note
           </button>
         ) : (
           <div style={{ pointerEvents: 'auto', display: 'flex', alignItems: 'center', gap: 12, padding: '10px 12px', borderRadius: 18, background: t.surface, border: `1px solid ${t.line}`, boxShadow: '0 14px 30px -10px rgba(0,0,0,.5)' }}>
             <button onClick={cancel} aria-label="Discard" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 42, height: 42, borderRadius: '50%', background: t.surfaceUp, border: `1px solid ${t.line}`, color: t.muted, cursor: 'pointer', flexShrink: 0 }}><MIcon k="x" size={17} /></button>
             <div style={{ flex: 1, display: 'flex', justifyContent: 'center' }}><Waveform t={t} color={t.accentLite} bars={22} height={30} /></div>
-            <button onClick={stop} aria-label="Keep" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 50, height: 50, borderRadius: '50%', border: 'none', background: t.primary, color: t.primaryInk, cursor: 'pointer', boxShadow: `0 8px 18px -6px ${hexA(t.accent, 0.45)}`, flexShrink: 0 }}><MIcon k="check" size={21} /></button>
+            <button onClick={stop} aria-label="Keep" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 50, height: 50, borderRadius: '50%', border: 'none', background: t.gradient, color: '#fff', cursor: 'pointer', boxShadow: `0 8px 18px -4px ${hexA(t.accent, 0.55)}`, flexShrink: 0 }}><MIcon k="check" size={21} /></button>
           </div>
         )}
       </div>

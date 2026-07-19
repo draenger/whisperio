@@ -11,6 +11,12 @@ struct WZTheme {
     let accent, accentLite: Color
     let gradient: LinearGradient
     let green, red, amber, cyan: Color
+    let primaryInk: Color
+
+    // `primary` is the app's action-fill color; per the design's `buildRezmeTheme` it is
+    // literally the same value as `accent` (no second source of truth), while `primaryInk`
+    // is the correct-contrast text/icon color to paint on top of that fill.
+    var primary: Color { accent }
 
     // The "redesign" identity: the Rezme teal palette is the app-wide default across the whole
     // Apple family (iPhone / iPad / Watch / Mac). The original violet aurora palette (accent
@@ -34,7 +40,8 @@ struct WZTheme {
             .init(color: .hex(0x15bca8), location: 0.0),
             .init(color: .hex(0x3da2f7), location: 1.0),
         ], startPoint: .leading, endPoint: .trailing),
-        green: .hex(0x22c55e), red: .hex(0xef4444), amber: .hex(0xf59e0b), cyan: .hex(0x1cc8b4)
+        green: .hex(0x22c55e), red: .hex(0xef4444), amber: .hex(0xf59e0b), cyan: .hex(0x1cc8b4),
+        primaryInk: .hex(0x02110f)
     )
 
     // Light companion to `rezmeTheme` — teal accent on light surfaces, so the redesign holds up
@@ -52,7 +59,8 @@ struct WZTheme {
             .init(color: .hex(0x0f9b8b), location: 0.0),
             .init(color: .hex(0x1d7fd6), location: 1.0),
         ], startPoint: .leading, endPoint: .trailing),
-        green: .hex(0x16a34a), red: .hex(0xdc2626), amber: .hex(0xd97706), cyan: .hex(0x0f8478)
+        green: .hex(0x16a34a), red: .hex(0xdc2626), amber: .hex(0xd97706), cyan: .hex(0x0f8478),
+        primaryInk: .hex(0xffffff)
     )
 }
 

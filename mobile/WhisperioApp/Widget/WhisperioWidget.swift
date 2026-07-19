@@ -17,6 +17,7 @@ import WhisperioKit
 // doesn't link the app's SwiftUI module, so the value is mirrored here rather than imported.
 private let wzAccent = Color(red: 28 / 255, green: 200 / 255, blue: 180 / 255)
 private let wzAccentLite = Color(red: 108 / 255, green: 226 / 255, blue: 209 / 255)
+private let wzAccentInk = Color(red: 2/255, green: 17/255, blue: 15/255) // #02110f — mirrors WZTheme.rezmeTheme.primaryInk
 
 struct DictateEntry: TimelineEntry { let date: Date }
 
@@ -368,13 +369,9 @@ struct StandByWidgetView: View {
                 VStack(spacing: 4) {
                     Image(systemName: "mic.fill")
                         .font(.system(size: 20, weight: .bold))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(wzAccentInk)
                         .frame(width: 56, height: 56)
-                        .background(
-                            LinearGradient(colors: [wzAccent, wzAccentLite],
-                                           startPoint: .top, endPoint: .bottom),
-                            in: Circle()
-                        )
+                        .background(wzAccent, in: Circle())
                     Text("Dictate").font(.system(size: 10)).foregroundStyle(wzAccentLite)
                 }
             }

@@ -46,36 +46,7 @@ function RecapScene({ t, onBack, bare }) {
               ))}
             </div>
           </div>
-          
-      {/* usage & cost per engine */}
-      <div style={{ padding: 16, borderRadius: 18, background: t.surface, border: `1px solid ${t.line}`, display: 'flex', flexDirection: 'column', gap: 11 }}>
-        <div style={{ display: 'flex', alignItems: 'center' }}>
-          <SectionLabel text="Usage & cost" t={t} /><span style={{ flex: 1 }} />
-          <span style={{ fontFamily: FM, fontSize: 12, color: t.text }}>110 min · <span style={{ color: t.accentLite }}>~$0.48</span></span>
-        </div>
-        {[['Apple — on-device', 74, 'Free', t.green], ['ElevenLabs · Scribe v2', 12, '≈$0.42', t.amber], ['Groq · whisper-v3 turbo', 18, '$0.02', '#3da2f7'], ['OpenAI · whisper-1', 6, '$0.04', '#a78bfa']].map(([name, min, cost, c]) => (
-          <div key={name} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-            <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
-              <span style={{ fontFamily: FUI, fontSize: 12.5, color: t.text, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</span>
-              <span style={{ fontFamily: FM, fontSize: 10.5, color: t.faint }}>{min} min</span>
-              <span style={{ fontFamily: FM, fontSize: 10.5, fontWeight: 700, color: cost === 'Free' ? t.green : t.text, width: 46, textAlign: 'right' }}>{cost}</span>
-            </div>
-            <div style={{ height: 5, borderRadius: 3, background: t.surfaceUp, overflow: 'hidden' }}>
-              <span style={{ display: 'block', width: (min / 110 * 100) + '%', height: '100%', borderRadius: 3, background: c }} />
-            </div>
-          </div>
-        ))}
-        <div style={{ fontFamily: FM, fontSize: 10, color: t.faint, lineHeight: 1.5 }}>Groq & OpenAI bill per minute in dollars. ElevenLabs used 2.1k credits — valued here as their share of your $22/mo plan. On-device is always free.</div>
-        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 9, padding: '10px 12px', borderRadius: 12, background: hexA(t.accent, t.mode === 'dark' ? 0.10 : 0.07), border: `1px solid ${hexA(t.accent, 0.28)}` }}>
-          <MIcon k="spark" size={14} style={{ color: t.accentLite, flexShrink: 0, marginTop: 1 }} />
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontFamily: FUI, fontSize: 12, fontWeight: 600, color: t.text }}>Your ElevenLabs plan looks too big</div>
-            <div style={{ fontFamily: FUI, fontSize: 11.5, color: t.muted, lineHeight: 1.45, marginTop: 2, textWrap: 'pretty' }}>2.1k of 100k credits used this month (2%). Starter at $5/mo covers this pace — you’d save ~$17/mo. If you pass ~80% of credits, we’ll suggest an upgrade instead.</div>
-          </div>
-          <button style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontFamily: FUI, fontSize: 11, fontWeight: 600, cursor: 'pointer', color: t.accentLite, background: 'none', padding: '5px 10px', borderRadius: 9, border: `1px solid ${hexA(t.accent, 0.45)}`, flexShrink: 0 }}>Review plan <MIcon k="arrowUR" size={11} /></button>
-        </div>
-      </div>
-      <div style={{ padding: 16, borderRadius: 18, background: t.surface, border: `1px solid ${t.line}`, display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div style={{ padding: 16, borderRadius: 18, background: t.surface, border: `1px solid ${t.line}`, display: 'flex', flexDirection: 'column', gap: 12 }}>
             <SectionLabel text="Where your words went" t={t} />
             {RECAP_CATS.map(([id, n]) => {
               const c = catOf(id);

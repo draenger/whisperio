@@ -1,28 +1,49 @@
-# Live design deltas queued during the parity sprint (2026-07-19)
+# wz2 delta queue — live design chase ledger
+Updated: 2026-07-19 ~21:00 (post-compaction sweep; ALL design files re-pulled and diffed)
 
-Deltas detected by the main session's design refresh loop AFTER the workflow implement fleet started.
-Apply in the post-workflow delta round unless the area agent already picked them up.
+Desktop (wz-*) — NO changes (wz-recordings diff is unicode-escape cosmetics only).
+New vendored refs: mob-single.jsx (Screens gallery / device entry), mob-home-options.jsx
+(6 home concepts — canvas exploration, NOT app scope; Home stays option 1 "Library").
+.prev files hold the previous pulls for exact diffs.
 
-## mob-screens.jsx (updated on disk; prev at mob-screens.prev.jsx)
-- NEW screen `PhoneJournalNew` — Journal composer: new page, blank or from picked notes.
-  Modes: blank | from notes; layouts: AI-woven | raw stacked | one per page; filter chips
-  (source: All/In-app/Keyboard; day: all/today/earlier), select-all, optional prompt, busy state.
-  → being implemented by a dedicated agent (JournalComposerView.swift + AppShell route + JournalView + button).
-- `PhoneDigest` gained a `seed` param (compose digest from picked notes).
+## OPEN deltas (mobile) — planning fleets running (wf_de8b8fea, wf_b8e4992d)
 
-## mob-settings.jsx (updated on disk)
-- SETT_CATS system sub: "Appearance and installed models" → "Appearance and app info".
-- `Manage models` row moved OUT of System into the Models category: new group
-  "On-device models" with row (icon download, label "Manage models",
-  sub "Download, update or remove Apple Speech + Whisper") → opens the models list page.
-  SETT_PARENT.modelsList = 'models' (was 'system').
-- Transcription page: the single "Mic behavior" group is split into FOUR groups:
-  1. "Live" — Live transcription toggle (last=true)
-  2. "Interruptions & silence" — When interrupted segmented + Auto-stop after silence stepper (last=true)
-  3. "Engine behavior" — Apple online speech, Cleanup, Fallback engines (last=true)
-  4. "History" — Save recordings (last=true)
-  Copy unchanged, only regrouping + group titles.
+Cluster HOME (plan:home)
+- D1 home-sync-compact: HomeSyncButton → compact header icon (due/syncing/done states), moves into WHeader right stack; body row removed.
+- D2a solid-primary Home: 40x40 group tile, Record pill (border none), 72x72 record circle → solid t.primary.
+- D3 recrow-meta: meta row = category dot+name (hue) · when · dur · spacer · engine icon (cloud amber / lock green). Needs real category/duration/engine fields on Recording.
 
-## Status
-- [x] Settings deltas applied to SettingsView.swift / ModelsView wiring
-- [x] PhoneDigest seed verified in DigestDayView (Journal composer agent — seed param + raw-mode card)
+Cluster JOURNAL (plan:journal)
+- D4 journal-books-chips: books chip row under Journal section label (real books from DigestStore, active state).
+- D4b journal header bolt/recap button removed.
+- D6b PhoneJournalNew initialMode prop (gallery affordance — verify if app needs a route param).
+- D2b solid-primary: JournalNew 36x36 tile.
+
+Cluster CONVERSATION (plan:conversation)
+- D5 conversation-segments: speaker-labeled segments (accent/#3da2f7, speakerNames, "Speaker N") w/ fallback to single title. Real diarization from AssemblyAI/Deepgram/ElevenLabs; storage in Recording model if missing.
+- D6a PhoneDetail initialSheet prop (gallery affordance — verify).
+- D7 "Engines:" → "Model order:" summary row, value from real Settings.modelOrder.
+
+Cluster SETTINGS (plan:settings)
+- D8 remote-connectors: "Connections" → "Remote connectors" BELOW model-order; device row removed from list; engine selection starts nil; expanded engine gains "Manage account · X" / "Usage console" / "Open server dashboard" buttons (real console URLs).
+- D9 git-backup: copy += "journals"; new SettRow Journals "Days, weeks and topic books".
+
+Cluster ONBOARDING (plan:onboarding)
+- D10 onboarding v2: 9 steps (0-8), 8-seg progress; step1 = 2 selectable privacy cards + REAL provider-connect sheet (ElevenLabs/OpenAI/Deepgram, key verify via API, Keychain, Settings update); NEW step4 Back-Tap (honest detectability), step5 "Good to know" card, NEW step6 triggers grid, NEW step7 features list, step8 badge reflects choice; welcome badge removed.
+
+Cluster RECAP (plan:recap-usage)
+- D11 recap usage&cost card: per-engine minutes (real aggregation) + static public rate table costs; SKIP fabricated plan-advisor block.
+
+Cluster THEME (plan:theme-primary)
+- D12 primary/primaryInk tokens in WZTheme; GradButton → solid primary + shadow; scratchpad buttons; widget StandBy/ControlCenter/LockScreen-combo tiles; keyboard classic mic; onboarding mic. Gradient stays for decorative surfaces (recap hero, island, dock, avatars).
+
+## Process
+Weaker agents plan → Fable verifies/corrects plans → weaker agents implement
+(fresh-read + surgical-edit protocol, per-file ownership) → build gates
+(iPhone/Keyboard/Widget/Watch sim builds, Kit swift test) → Fable verifies parity
+until dry → commit+push.
+
+## DONE (previous waves)
+See SYNC-NOTES.md — settings hub, engines (Groq/Deepgram/AssemblyAI/Mistral),
+model-order slots, journal books, RecRow variant D, JournalComposer, onboarding v1,
+widgets on snapshot data, watch, iPad split, desktop e1/titlebar/overlay/COMMAND.

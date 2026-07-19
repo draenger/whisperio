@@ -85,9 +85,9 @@ struct KeyboardScene: View {
                 Spacer()
                 Button(action: tapMic) {
                     HStack(spacing: 7) { WIcon("mic", size: 16); Text("Dictate") }
-                        .font(WZFont.ui(13, .semibold)).foregroundStyle(.white)
+                        .font(WZFont.ui(13, .semibold)).foregroundStyle(t.primaryInk)
                         .padding(.horizontal, 14).frame(height: 34)
-                        .background(t.gradient, in: Capsule())
+                        .background(t.primary, in: Capsule())
                 }
                 .buttonStyle(.plain)
             }
@@ -172,9 +172,9 @@ struct KeyboardScene: View {
                 Waveform(color: t.accent, bars: 32, height: 64)
                 Button(action: finish) {
                     HStack(spacing: 9) { WIcon("check", size: 18); Text("Insert & return to Messages") }
-                        .font(WZFont.ui(15, .semibold)).foregroundStyle(.white)
+                        .font(WZFont.ui(15, .semibold)).foregroundStyle(t.primaryInk)
                         .padding(.horizontal, 26).padding(.vertical, 14)
-                        .background(t.gradient, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                        .background(t.primary, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                 }
                 .buttonStyle(.plain).padding(.top, 14).padding(.bottom, 40)
             }

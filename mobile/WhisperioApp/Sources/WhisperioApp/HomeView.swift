@@ -19,6 +19,7 @@ struct HomeView: View {
     var openSettings: () -> Void
     var openJournal: () -> Void = {}
     var openScratchpad: () -> Void = {}
+    var openRecap: () -> Void = {}
 
     // nil → the "All" filter (show every category).
     @State private var selectedCategory: String? = nil
@@ -30,19 +31,16 @@ struct HomeView: View {
                 VStack(spacing: 0) {
                     WHeader(title: "Whisperio") {
                         HStack(spacing: 9) {
-                            HeaderSyncGlyph()
+                            if settings.settings.syncMode == .manual {
+                                HomeSyncButton(action: syncNow)
+                            } else {
+                                HeaderSyncGlyph()
+                            }
                             SquareIconButton(icon: "edit", action: openScratchpad)
                             SquareIconButton(icon: "book", action: openJournal)
+                            SquareIconButton(icon: "bolt", action: openRecap)
                             SquareIconButton(icon: "settings", action: openSettings)
                         }
-                    }
-                    // In every other mode the header's small iCloud glyph is the whole affordance
-                    // (unchanged); in `.manual` nothing nudges automatically, so the user asked
-                    // for a button that's actually easy to hit — bigger, on the main screen, with
-                    // its own progress state and a last-synced timestamp underneath.
-                    if settings.settings.syncMode == .manual {
-                        HomeSyncButton(action: syncNow)
-                            .padding(.horizontal, 16).padding(.top, 10)
                     }
                     // search + filters
                     VStack(spacing: 13) {
@@ -138,8 +136,8 @@ struct HomeView: View {
         return Button(action: openJournal) {
             HStack(spacing: 13) {
                 ZStack {
-                    RoundedRectangle(cornerRadius: 12, style: .continuous).fill(t.gradient)
-                    WIcon("book", size: 18, weight: .semibold).foregroundStyle(.white)
+                    RoundedRectangle(cornerRadius: 12, style: .continuous).fill(t.primary)
+                    WIcon("book", size: 18, weight: .semibold).foregroundStyle(t.primaryInk)
                 }
                 .frame(width: 40, height: 40)
                 VStack(alignment: .leading, spacing: 4) {
@@ -248,15 +246,10 @@ struct HomeView: View {
                         WIcon("mic", size: 20, weight: .bold)
                         Text("Dictate").font(WZFont.display(16, .semibold))
                     }
-                    .foregroundStyle(.white)
+                    .foregroundStyle(t.primaryInk)
                     .frame(maxWidth: .infinity)
                     .frame(height: 56)
-                    .background(t.gradient, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 16, style: .continuous)
-                            .stroke(.white.opacity(0.22), lineWidth: 1)
-                            .blendMode(.overlay)
-                    )
+                    .background(t.primary, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                     .shadow(color: t.accent.opacity(0.45), radius: 20, y: 14)
                 }
                 .buttonStyle(.plain)
@@ -443,54 +436,62 @@ struct RecRow: View {
     }
 }
 
-// The manual-sync-mode call to action on Home: deliberately larger and easier to hit than the
-// header's discreet iCloud glyph — the user asked for this literally ("ten guzik sie powieksza
-// zeby bylo latwiej go kliknac na glownej stronce"), since in `.manual` mode nothing else ever
-// nudges CloudKit. Shows the same in-flight state `isSyncing` already publishes (an animated
-// spinner swaps in for the icon) and a relative "last synced" timestamp underneath so a tap has
-// visible feedback beyond the spinner alone.
+// The manual-sync-mode header affordance: a compact tri-state icon button (due/syncing/done)
+// that lives inline in the header's icon row instead of a full-width row below it. `syncing`
+// mirrors the real `isSyncing` flags already published by the stores; `done` is local UI state
+// (`justCompleted`) that flips on the syncing→idle transition and dismisses back to `due` on tap
+// — the same shape as the design's `setSt('done')`/`setSt('due')`, without ever presenting the
+// dismissal itself as a data field.
 struct HomeSyncButton: View {
     @Environment(\.wz) private var t
     @EnvironmentObject private var recordings: RecordingsStore
     @EnvironmentObject private var digests: DigestStore
     var action: () -> Void
 
+    @State private var justCompleted = false
+
     private var isSyncing: Bool { recordings.isSyncing || digests.isSyncing }
 
     var body: some View {
-        Button(action: action) {
-            HStack(spacing: 14) {
-                ZStack {
-                    if isSyncing {
-                        ProgressView().tint(.white)
-                    } else {
-                        WIcon("sync", size: 22, weight: .bold).foregroundStyle(.white)
-                    }
-                }
-                .frame(width: 46, height: 46)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(isSyncing ? "Syncing…" : "Sync now")
-                        .font(WZFont.ui(15.5, .semibold)).foregroundStyle(.white)
-                    Text(lastSyncedLabel)
-                        .font(WZFont.ui(12)).foregroundStyle(.white.opacity(0.78))
-                }
-                Spacer(minLength: 0)
+        Button {
+            if isSyncing {
+                return
+            } else if justCompleted {
+                justCompleted = false
+            } else {
+                action()
             }
-            .padding(.horizontal, 18).padding(.vertical, 15)
-            .background(t.gradient, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-            .shadow(color: t.accent.opacity(0.4), radius: 18, y: 10)
+        } label: {
+            ZStack {
+                if !isSyncing && !justCompleted {
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(t.accent.opacity(0.12))
+                        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(t.hair, lineWidth: 1))
+                }
+                if isSyncing {
+                    ProgressView().controlSize(.mini).tint(t.accentLite)
+                } else if justCompleted {
+                    WIcon("cloud", size: 15, weight: .regular).foregroundStyle(t.faint)
+                } else {
+                    WIcon("sync", size: 16, weight: .regular).foregroundStyle(t.accentLite)
+                }
+            }
+            .frame(width: 38, height: 38)
         }
         .buttonStyle(.plain)
         .animation(.easeInOut(duration: 0.2), value: isSyncing)
-        .accessibilityLabel(isSyncing ? "Syncing" : "Sync now")
-        .accessibilityHint(lastSyncedLabel)
+        .onChange(of: isSyncing) { was, now in
+            if was && !now { justCompleted = true }
+        }
+        .accessibilityLabel(isSyncing ? "Syncing" : (justCompleted ? "Synced" : "Sync now"))
+        .accessibilityHint("iCloud sync · \(lastSyncedLabel)")
     }
 
     private var lastSyncedLabel: String {
         let latest = [recordings.lastImportAt, digests.lastImportAt].compactMap { $0 }.max()
-        guard let latest else { return "Not synced yet on this device" }
+        guard let latest else { return "not synced yet on this device" }
         let f = RelativeDateTimeFormatter()
         f.unitsStyle = .abbreviated
-        return "Last synced \(f.localizedString(for: latest, relativeTo: Date()))"
+        return "synced \(f.localizedString(for: latest, relativeTo: Date()))"
     }
 }

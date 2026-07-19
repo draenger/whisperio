@@ -22,6 +22,11 @@ struct DetailView: View {
     var openSettings: () -> Void = {}
     // Route a Template Builder result into the preset editor (prefilled create-new flow).
     var openPresetEditor: (RewritePreset) -> Void = { _ in }
+    // Mirrors PhoneDetail's `initialSheet` prop (mob-screens.jsx) — opens the Rewrite sheet
+    // immediately on appear. No vendored JSX caller passes it true either; kept for structural
+    // parity so a future real trigger (if one is ever added) has somewhere to plug in. AppShell's
+    // single call site leaves this at its default, so today's behavior is unchanged.
+    var initialShowRewriteSheet: Bool = false
 
     // The recording's category, resolved live from the store so a reassignment here shows up
     // on Home too. Seeded from the store on appear (falls back to the recording's own tag).
@@ -121,6 +126,7 @@ struct DetailView: View {
                 categoryId = recordings.categoryId(for: r)
                 render = r.render
                 renderPresetID = r.renderPresetID
+                if initialShowRewriteSheet { showRewriteSheet = true }
             }
         }
         .sheet(isPresented: $showRewriteSheet) {

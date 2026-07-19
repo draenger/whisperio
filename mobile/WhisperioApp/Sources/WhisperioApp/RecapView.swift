@@ -7,6 +7,7 @@ import WhisperioKit
 struct RecapView: View {
     @Environment(\.wz) private var t
     @EnvironmentObject private var recordings: RecordingsStore
+    @EnvironmentObject private var settings: SettingsStore
     var onBack: () -> Void
 
     private static let typingWPM = 38.0
@@ -40,6 +41,60 @@ struct RecapView: View {
     private var minutesSaved: Int {
         let typingMinutes = Double(totalWords) / Self.typingWPM
         return max(0, Int((typingMinutes - totalMinutesSpoken).rounded()))
+    }
+
+    // MARK: - Usage & cost
+
+    // Recordings persisted before engine-tracking shipped decode with `provider == nil`; we
+    // exclude them rather than guessing which engine produced them, per the no-mock-data policy.
+    private var engineWeekItems: [Recording] { weekItems.filter { $0.provider != nil && $0.duration > 0 } }
+
+    // Minutes spoken this week, bucketed by the engine that actually transcribed them,
+    // sorted by usage descending (deliberate choice — see plan open_questions).
+    private var engineMinutes: [(provider: ProviderID, minutes: Double)] {
+        var totals: [ProviderID: Double] = [:]
+        for r in engineWeekItems { totals[r.provider!, default: 0] += r.duration / 60 }
+        return totals.map { (provider: $0.key, minutes: $0.value) }.sorted { $0.minutes > $1.minutes }
+    }
+
+    private var totalEngineMinutes: Double { engineMinutes.reduce(0) { $0 + $1.minutes } }
+
+    // Published per-minute list price for `provider`, using the sub-model currently configured
+    // in Settings (Recording doesn't persist which sub-model transcribed a given clip, so this
+    // is the closest real proxy available — documented approximation, not fabrication).
+    private func rate(for provider: ProviderID) -> Double? {
+        let s = settings.settings
+        switch provider {
+        case .onDevice:
+            return 0
+        case .openAI:
+            // A non-default base URL means a self-hosted/custom endpoint — no published rate applies.
+            guard s.openAIBaseURL.trimmingCharacters(in: .whitespaces).isEmpty else { return nil }
+            return ProviderPricing.ratePerMinuteUSD(provider: .openAI, model: s.whisperModel)
+        case .elevenLabs:
+            return ProviderPricing.ratePerMinuteUSD(provider: .elevenLabs, model: "")
+        case .groq:
+            return ProviderPricing.ratePerMinuteUSD(provider: .groq, model: s.groqModel)
+        case .deepgram:
+            return ProviderPricing.ratePerMinuteUSD(provider: .deepgram, model: s.deepgramModel)
+        case .assemblyAI:
+            return ProviderPricing.ratePerMinuteUSD(provider: .assemblyAI, model: s.assemblyAIModel)
+        case .mistral:
+            return ProviderPricing.ratePerMinuteUSD(provider: .mistral, model: s.mistralModel)
+        }
+    }
+
+    private var totalCostUSD: Double {
+        engineMinutes.reduce(0) { total, entry in
+            guard entry.provider != .onDevice, let rate = rate(for: entry.provider) else { return total }
+            return total + rate * entry.minutes
+        }
+    }
+
+    // True when a cloud engine used this week has no known rate (custom/self-hosted model),
+    // so the header total is a lower bound, not an exhaustive sum — the footnote flags this.
+    private var hasUnknownRate: Bool {
+        engineMinutes.contains { $0.provider != .onDevice && rate(for: $0.provider) == nil }
     }
 
     // (weekday letter, words) for Mon…Sun of the current week.
@@ -126,6 +181,7 @@ struct RecapView: View {
                                      "streak · best is \(streaks.best)", "spark")
                         }
                         chartCard
+                        if !engineMinutes.isEmpty { usageCostCard }
                         if !categoryCounts.isEmpty { categoriesCard }
                         if let note = noteOfWeek { noteCard(note) }
                         ShareLink(item: shareText) {
@@ -134,11 +190,11 @@ struct RecapView: View {
                                 Text("Share recap")
                             }
                             .font(WZFont.ui(15, .semibold))
-                            .foregroundStyle(.white)
+                            .foregroundStyle(t.primaryInk)
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 13).padding(.horizontal, 20)
-                            .background(t.gradient, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                            .shadow(color: t.accent.opacity(0.5), radius: 12, y: 8)
+                            .background(t.primary, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                            .shadow(color: t.accent.opacity(0.45), radius: 8, y: 6)
                         }
                         .buttonStyle(.plain)
                     }
@@ -222,6 +278,93 @@ struct RecapView: View {
         .padding(16)
         .background(t.surface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(t.line, lineWidth: 1))
+    }
+
+    // The design's "Your ElevenLabs plan looks too big" credit-usage advisor block is
+    // deliberately omitted here — Whisperio has no ElevenLabs (or any provider's) account/plan/
+    // credit integration to compute it from honestly. Faking those credit numbers would be
+    // exactly the fabricated-usage case the no-mock-data policy forbids, so this is a scoped
+    // skip, not an oversight.
+    private var usageCostCard: some View {
+        let total = totalEngineMinutes
+        return VStack(alignment: .leading, spacing: 11) {
+            HStack {
+                SectionLabel(text: "Usage & cost")
+                Spacer(minLength: 0)
+                (Text("\(Int(total.rounded())) min · ").foregroundColor(t.faint)
+                    + Text(totalCostLabel).foregroundColor(t.accentLite))
+                    .font(WZFont.mono(12))
+            }
+            ForEach(Array(engineMinutes.enumerated()), id: \.offset) { _, entry in
+                engineRow(entry.provider, entry.minutes, total)
+            }
+            Text(usageFootnote)
+                .font(WZFont.mono(10)).foregroundStyle(t.faint)
+        }
+        .padding(16)
+        .background(t.surface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(t.line, lineWidth: 1))
+    }
+
+    private func engineRow(_ provider: ProviderID, _ minutes: Double, _ total: Double) -> some View {
+        VStack(spacing: 4) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text(provider.displayName)
+                    .font(WZFont.ui(12.5)).foregroundStyle(t.text)
+                    .lineLimit(1).truncationMode(.tail)
+                Spacer(minLength: 0)
+                Text("\(Int(minutes.rounded())) min")
+                    .font(WZFont.mono(10.5)).foregroundStyle(t.faint)
+                Text(engineCostLabel(provider, minutes))
+                    .font(WZFont.mono(10.5, .bold))
+                    .foregroundStyle(engineCostLabel(provider, minutes) == "Free" ? t.green
+                        : engineCostLabel(provider, minutes) == "—" ? t.faint : t.text)
+                    .frame(width: 46, alignment: .trailing)
+            }
+            GeometryReader { geo in
+                RoundedRectangle(cornerRadius: 3, style: .continuous)
+                    .fill(engineColor(provider))
+                    .frame(width: total > 0 ? geo.size.width * CGFloat(minutes / total) : 0)
+            }
+            .frame(height: 5)
+            .background(t.surfaceUp, in: RoundedRectangle(cornerRadius: 3, style: .continuous))
+        }
+    }
+
+    private func engineColor(_ id: ProviderID) -> Color {
+        switch id {
+        case .onDevice: return t.green
+        case .elevenLabs: return t.amber
+        case .groq: return .hex(0x3da2f7)
+        case .openAI: return .hex(0xa78bfa)
+        // Deepgram/AssemblyAI/Mistral postdate the wz2 recap mock, so these 3 have no design
+        // source — picked for hue separation from Groq's blue and OpenAI's purple. Flag for
+        // design review before treating as final.
+        case .deepgram: return .hex(0xd946ef)
+        case .assemblyAI: return .hex(0xec4899)
+        case .mistral: return .hex(0xfb7185)
+        }
+    }
+
+    private func engineCostLabel(_ provider: ProviderID, _ minutes: Double) -> String {
+        if provider == .onDevice { return "Free" }
+        guard let rate = rate(for: provider) else { return "—" }
+        let cost = rate * minutes
+        if cost > 0 && cost < 0.01 { return "<$0.01" }
+        return "$" + String(format: "%.2f", cost)
+    }
+
+    private var totalCostLabel: String {
+        totalCostUSD > 0 ? "~$" + String(format: "%.2f", totalCostUSD) : "Free"
+    }
+
+    private var usageFootnote: String {
+        var text = "Cloud engines are billed per audio minute at each provider's published rate. " +
+            "On-device transcription is always free."
+        if hasUnknownRate {
+            text += " A custom or self-hosted model's cost isn't included in the total above."
+        }
+        return text
     }
 
     private var categoriesCard: some View {

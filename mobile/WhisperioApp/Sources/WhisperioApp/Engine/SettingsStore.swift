@@ -206,6 +206,34 @@ final class SettingsStore: ObservableObject {
     }
 }
 
+// Real key verification before anything is persisted — used by onboarding's provider sheet.
+// Unlike SettingsView's Connections rows (which treat "key text is non-empty" as "Connected"),
+// this actually calls the provider's API before writing anything.
+extension SettingsStore {
+    /// Verify `key` against `id`'s API and, only on success, persist it as the primary provider.
+    /// Nothing is written on failure — the caller surfaces the validator's error instead.
+    func connectProvider(_ id: ProviderID, key: String) async -> Result<Void, ProviderKeyValidationError> {
+        let trimmed = key.trimmingCharacters(in: .whitespacesAndNewlines)
+        let result = await ProviderKeyValidator.validate(id, key: trimmed)
+        guard case .success = result else { return result }
+
+        var s = settings
+        switch id {
+        case .onDevice: break
+        case .openAI: s.openAIKey = trimmed
+        case .elevenLabs: s.elevenLabsKey = trimmed
+        case .groq: s.groqKey = trimmed
+        case .deepgram: s.deepgramKey = trimmed
+        case .assemblyAI: s.assemblyAIKey = trimmed
+        case .mistral: s.mistralKey = trimmed
+        }
+        s.cloudConsentGranted = true
+        s.setPrimaryProvider(id)
+        settings = s
+        return result
+    }
+}
+
 // Runs a rewrite preset against a transcript through the shared chat client. `isConfigured`
 // mirrors the client's gate (cloud consent granted + OpenAI key present) so a caller can guard
 // and route to consent/Settings instead of firing an unconfigured request. Temperature is pinned

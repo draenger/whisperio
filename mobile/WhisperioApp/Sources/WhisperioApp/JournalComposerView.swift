@@ -9,6 +9,11 @@ import WhisperioKit
 // notes (busy spinner while weaving); raw/split complete immediately, on-device.
 enum JournalComposeKind: String { case blank, ai, raw, split }
 
+// Which composer mode to seed on open (mirrors PhoneJournalNew's `initialMode` prop). nil leaves
+// both mode cards showing so the user picks — today's only real call site (AppShell's "+ New
+// page") always passes nil; a non-nil value is currently only exercised by the design gallery.
+enum JournalComposeMode { case blank, notes }
+
 struct JournalComposerView: View {
     @Environment(\.wz) private var t
     @EnvironmentObject private var recordings: RecordingsStore
@@ -20,10 +25,9 @@ struct JournalComposerView: View {
     var openSettings: () -> Void = {}
     var toast: (String) -> Void = { _ in }
 
-    private enum Mode { case blank, notes }
     private enum PageLayout: String { case ai, raw, split }
 
-    @State private var mode: Mode?
+    @State private var mode: JournalComposeMode?
     @State private var layout: PageLayout = .ai
     @State private var picked: Set<UUID> = []
     @State private var seeded = false
@@ -34,6 +38,18 @@ struct JournalComposerView: View {
     @State private var showConsent = false
 
     private static let promptPresets = ["Standup update", "Bullet points", "Dear diary", "Client email"]
+
+    init(onBack: @escaping () -> Void,
+         onDone: @escaping (JournalComposeKind) -> Void,
+         openSettings: @escaping () -> Void = {},
+         toast: @escaping (String) -> Void = { _ in },
+         initialMode: JournalComposeMode? = nil) {
+        self.onBack = onBack
+        self.onDone = onDone
+        self.openSettings = openSettings
+        self.toast = toast
+        _mode = State(initialValue: initialMode)
+    }
 
     // Completed notes with real text — the pickable pool before filters.
     private var allNotes: [Recording] {
@@ -217,9 +233,9 @@ struct JournalComposerView: View {
                 .padding(.leading, 13).padding(.trailing, 46).padding(.vertical, 11)
                 .background(t.surfaceUp, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(t.line, lineWidth: 1))
-            Circle().fill(t.gradient)
+            Circle().fill(t.primary)
                 .frame(width: 30, height: 30)
-                .overlay(WIcon("mic", size: 13).foregroundStyle(.white))
+                .overlay(WIcon("mic", size: 13).foregroundStyle(t.primaryInk))
                 .padding(.trailing, 9).padding(.bottom, 10)
         }
         .padding(.top, 2)
@@ -246,7 +262,7 @@ struct JournalComposerView: View {
 
     // MARK: - Cards & chips
 
-    private func bigCard(_ id: Mode, icon: String, title: String, sub: String) -> some View {
+    private func bigCard(_ id: JournalComposeMode, icon: String, title: String, sub: String) -> some View {
         let on = mode == id
         return Button { withAnimation(.easeInOut(duration: 0.2)) { mode = id } } label: {
             HStack(spacing: 13) {
@@ -316,17 +332,15 @@ struct JournalComposerView: View {
             go(c.kind)
         } label: {
             HStack(spacing: 8) {
-                if busy { ProgressView().tint(.white) }
+                if busy { ProgressView().tint(t.primaryInk) }
                 else if let icon = c.icon { WIcon(icon, size: 17) }
                 Text(c.label)
             }
             .font(WZFont.ui(15, .semibold))
-            .foregroundStyle(.white)
+            .foregroundStyle(t.primaryInk)
             .frame(maxWidth: .infinity)
             .padding(.vertical, 13).padding(.horizontal, 20)
-            .background(t.gradient, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .stroke(.white.opacity(0.22), lineWidth: 1).blendMode(.overlay))
+            .background(t.primary, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
             .shadow(color: t.accent.opacity(0.50), radius: 12, y: 8)
         }
         .buttonStyle(.plain)
