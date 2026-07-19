@@ -69,25 +69,23 @@ final class SettingsStore: ObservableObject {
         }
     }
 
-    // Build the live provider chain. The primary engine first; if fallback is on, the user's
-    // ordered fallback chain follows (the primary is skipped if it also appears in the chain;
-    // unconfigured engines are skipped by ProviderChain).
+    // Build the live provider chain from the ordered model slots. Slot 0 (the primary)
+    // always runs; the rest follow in order only when "Fallback engines" is on. Each slot
+    // instantiates its provider with the slot's model — falling back to the per-engine
+    // selected model when the slot doesn't pin one (unconfigured engines are skipped by
+    // ProviderChain).
     func makeChain() -> ProviderChain {
         let s = settings
-        let primary = s.providerChain.first ?? .onDevice
-        var order: [ProviderID] = [primary]
-        if s.fallbackEnabled {
-            for id in s.fallbackChain where id != primary && !order.contains(id) {
-                order.append(id)
-            }
-        }
+        var slots = s.modelOrder
+        if slots.isEmpty { slots = [ProviderSlot(provider: .onDevice)] }
+        if !s.fallbackEnabled { slots = [slots[0]] }
         // Cloud engines stay disabled until the user has granted explicit consent — even
         // as a fallback. On-device (Apple Speech) never needs consent.
         if !s.cloudConsentGranted {
-            order.removeAll { s.isCloud($0) }
-            if order.isEmpty { order = [.onDevice] }
+            slots.removeAll { s.isCloud($0.provider) }
+            if slots.isEmpty { slots = [ProviderSlot(provider: .onDevice)] }
         }
-        return ProviderChain(providers: order.map { provider(for: $0, s) })
+        return ProviderChain(providers: slots.map { provider(for: $0, s) })
     }
 
     // One-off single-engine chain for retranscribing saved audio with an explicitly chosen
@@ -166,29 +164,38 @@ final class SettingsStore: ObservableObject {
                             transport: GitHubURLSessionTransport(token: token))
     }
 
+    // A single-engine build (retranscribe menu, single-engine chains) runs with the
+    // engine's per-engine selected model — same as a modelless slot.
     private func provider(for id: ProviderID, _ s: WhisperioSettings) -> any TranscriptionProvider {
-        switch id {
+        provider(for: ProviderSlot(provider: id), s)
+    }
+
+    // Instantiate a slot's provider honoring the slot's model: the slot's pinned model wins;
+    // an empty one resolves to the per-engine selected model (see resolvedModel(for:)).
+    private func provider(for slot: ProviderSlot, _ s: WhisperioSettings) -> any TranscriptionProvider {
+        let model = s.resolvedModel(for: slot)
+        switch slot.provider {
         case .onDevice:
             return AppleSpeechProvider(language: s.language, vocabulary: s.vocabularyTerms,
                                        requireOnDevice: !s.appleAllowOnline)
         case .openAI:
             return OpenAIProvider(apiKey: s.openAIKey, baseURL: s.openAIBaseURL,
-                                  model: s.whisperModel, language: s.language,
+                                  model: model, language: s.language,
                                   prompt: s.customVocabulary)
         case .elevenLabs:
             return ElevenLabsProvider(apiKey: s.elevenLabsKey,
                                       languageCode: s.language, keyterms: s.vocabularyTerms)
         case .groq:
-            return GroqProvider(apiKey: s.groqKey, model: s.groqModel,
+            return GroqProvider(apiKey: s.groqKey, model: model,
                                 language: s.language, prompt: s.customVocabulary)
         case .deepgram:
-            return DeepgramProvider(apiKey: s.deepgramKey, model: s.deepgramModel,
+            return DeepgramProvider(apiKey: s.deepgramKey, model: model,
                                     language: s.language)
         case .assemblyAI:
-            return AssemblyAIProvider(apiKey: s.assemblyAIKey, model: s.assemblyAIModel,
+            return AssemblyAIProvider(apiKey: s.assemblyAIKey, model: model,
                                       language: s.language)
         case .mistral:
-            return MistralProvider(apiKey: s.mistralKey, model: s.mistralModel,
+            return MistralProvider(apiKey: s.mistralKey, model: model,
                                    language: s.language)
         }
     }

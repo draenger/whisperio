@@ -39,13 +39,46 @@ public enum SyncMode: String, Codable, Sendable, CaseIterable {
     case manual
 }
 
+/// One slot in the ordered transcription model chain: which provider runs and with which
+/// model id. `model` may be empty — it then resolves to that engine's per-engine selected
+/// model (see `WhisperioSettings.resolvedModel(for:)`), so a slot without an explicit model
+/// keeps following the engine's configured default. The same provider can appear in several
+/// slots with different models.
+public struct ProviderSlot: Codable, Sendable, Equatable, Hashable {
+    public var provider: ProviderID
+    public var model: String
+
+    public init(provider: ProviderID, model: String = "") {
+        self.provider = provider
+        self.model = model
+    }
+
+    // Tolerant decoding — a slot persisted without a model keeps decoding; `model` falls
+    // back to empty ("follow the engine's selected model").
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        provider = try c.decode(ProviderID.self, forKey: .provider)
+        model = try c.decodeIfPresent(String.self, forKey: .model) ?? ""
+    }
+}
+
 /// Automatic stop timeout after silence. Off by default so Whisperio behaves like a normal
 /// dictation app unless the user opts into auto-release.
 /// User settings, mirroring the desktop `AppSettings` shape (so config can be shared/synced
 /// later). No secrets are baked in — all keys default to empty and are entered at runtime.
 public struct WhisperioSettings: Codable, Sendable, Equatable {
-    /// Engine priority order. Default puts privacy/offline first, cloud last.
-    public var providerChain: [ProviderID]
+    /// The ordered (provider, model) slots — the "Model order" card in Settings. Slot 0 is
+    /// the primary engine that transcribes; later slots are walked in order on failure when
+    /// `fallbackEnabled` is on. Replaces the legacy `providerChain` (primary) +
+    /// `fallbackChain` (ordered fallbacks) pair — both remain available as computed
+    /// compatibility accessors, and legacy blobs are migrated on decode.
+    public var modelOrder: [ProviderSlot]
+
+    /// The classic implicit engine order — privacy/offline first, cloud last. Used both as
+    /// the default slot order and as the migration fallback for legacy blobs that never
+    /// persisted a chain, preserving the pre-slot "try all the others" behavior.
+    public static let classicOrder: [ProviderID] = [.onDevice, .openAI, .elevenLabs,
+                                                    .groq, .deepgram, .assemblyAI, .mistral]
 
     // Cloud (BYO key) — empty until the user opts in and pastes a key at runtime.
     public var openAIKey: String
@@ -74,13 +107,7 @@ public struct WhisperioSettings: Codable, Sendable, Equatable {
 
     // Behavior.
     public var cleanupEnabled: Bool      // tidy punctuation/casing/spacing after transcription
-    public var fallbackEnabled: Bool     // try the other configured engines if the primary fails
-    /// Ordered fallback engines tried after the primary when `fallbackEnabled` is on and the
-    /// primary fails. The primary is skipped if it also appears here, so switching primaries
-    /// never rewrites the stored chain. Defaults to every engine in the classic implicit order
-    /// — preserving the pre-chain "try all the others" behavior for existing users. An empty
-    /// chain means no fallback even with the toggle on.
-    public var fallbackChain: [ProviderID]
+    public var fallbackEnabled: Bool     // walk the model order past slot 0 if the primary fails
     public var saveRecordings: Bool
     /// Stream on-device partial results so text appears live as you speak. On-device only
     /// (and free) — when off, or when a cloud engine is primary, dictation transcribes once
@@ -144,7 +171,9 @@ public struct WhisperioSettings: Codable, Sendable, Equatable {
     public var keepAudioRecordings: Bool
 
     public init(
+        modelOrder: [ProviderSlot]? = nil,
         providerChain: [ProviderID] = [.onDevice],
+        fallbackChain: [ProviderID] = WhisperioSettings.classicOrder,
         openAIKey: String = "",
         openAIBaseURL: String = "",
         whisperModel: String = "",
@@ -162,8 +191,6 @@ public struct WhisperioSettings: Codable, Sendable, Equatable {
         customVocabulary: String = "",
         cleanupEnabled: Bool = false,
         fallbackEnabled: Bool = false,
-        fallbackChain: [ProviderID] = [.onDevice, .openAI, .elevenLabs,
-                                       .groq, .deepgram, .assemblyAI, .mistral],
         saveRecordings: Bool = true,
         liveTranscriptionEnabled: Bool = true,
         appleAllowOnline: Bool = false,
@@ -184,7 +211,14 @@ public struct WhisperioSettings: Codable, Sendable, Equatable {
         autoDeleteAfterDays: Int = 7,
         keepAudioRecordings: Bool = true
     ) {
-        self.providerChain = providerChain
+        // An explicit non-empty slot list wins; otherwise synthesize the equivalent slots
+        // from the legacy primary + fallback pair (also how fresh defaults are built).
+        if let modelOrder, !modelOrder.isEmpty {
+            self.modelOrder = modelOrder
+        } else {
+            self.modelOrder = Self.migratedOrder(primary: providerChain.first ?? .onDevice,
+                                                 fallback: fallbackChain)
+        }
         self.openAIKey = openAIKey
         self.openAIBaseURL = openAIBaseURL
         self.whisperModel = whisperModel
@@ -202,7 +236,6 @@ public struct WhisperioSettings: Codable, Sendable, Equatable {
         self.customVocabulary = customVocabulary
         self.cleanupEnabled = cleanupEnabled
         self.fallbackEnabled = fallbackEnabled
-        self.fallbackChain = fallbackChain
         self.saveRecordings = saveRecordings
         self.liveTranscriptionEnabled = liveTranscriptionEnabled
         self.appleAllowOnline = appleAllowOnline
@@ -224,12 +257,41 @@ public struct WhisperioSettings: Codable, Sendable, Equatable {
         self.keepAudioRecordings = keepAudioRecordings
     }
 
+    /// Legacy persisted keys from before `modelOrder` existed — read only, never written.
+    private enum LegacyKeys: String, CodingKey { case providerChain, fallbackChain }
+
+    /// The legacy primary + ordered fallback pair folded into equivalent slots: the primary
+    /// first, then each fallback engine once (the primary is skipped if it reappears). Slots
+    /// carry an empty model so they keep following each engine's per-engine selected model —
+    /// exactly what the legacy chain did at transcription time.
+    private static func migratedOrder(primary: ProviderID,
+                                      fallback: [ProviderID]) -> [ProviderSlot] {
+        var order = [ProviderSlot(provider: primary)]
+        for id in fallback where !order.contains(where: { $0.provider == id }) {
+            order.append(ProviderSlot(provider: id))
+        }
+        return order
+    }
+
     // Tolerant decoding — missing keys (older persisted settings, or future-added fields)
     // fall back to defaults instead of throwing, so a stored API key is never lost.
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         let d = WhisperioSettings()
-        providerChain = try c.decodeIfPresent([ProviderID].self, forKey: .providerChain) ?? d.providerChain
+        // Slot order: prefer the new shape; otherwise migrate the legacy primary+fallback
+        // pair into equivalent slots. `try?` throughout so an unknown engine raw value (a
+        // future build's provider) falls back instead of throwing the whole blob away.
+        if let slots = (try? c.decodeIfPresent([ProviderSlot].self, forKey: .modelOrder)) ?? nil,
+           !slots.isEmpty {
+            modelOrder = slots
+        } else {
+            let legacy = try decoder.container(keyedBy: LegacyKeys.self)
+            let primary = ((try? legacy.decodeIfPresent([ProviderID].self, forKey: .providerChain)) ?? nil)?
+                .first ?? .onDevice
+            let fallback = (try? legacy.decodeIfPresent([ProviderID].self, forKey: .fallbackChain)) ?? nil
+                ?? Self.classicOrder
+            modelOrder = Self.migratedOrder(primary: primary, fallback: fallback)
+        }
         openAIKey = try c.decodeIfPresent(String.self, forKey: .openAIKey) ?? d.openAIKey
         openAIBaseURL = try c.decodeIfPresent(String.self, forKey: .openAIBaseURL) ?? d.openAIBaseURL
         whisperModel = try c.decodeIfPresent(String.self, forKey: .whisperModel) ?? d.whisperModel
@@ -247,9 +309,6 @@ public struct WhisperioSettings: Codable, Sendable, Equatable {
         customVocabulary = try c.decodeIfPresent(String.self, forKey: .customVocabulary) ?? d.customVocabulary
         cleanupEnabled = try c.decodeIfPresent(Bool.self, forKey: .cleanupEnabled) ?? d.cleanupEnabled
         fallbackEnabled = try c.decodeIfPresent(Bool.self, forKey: .fallbackEnabled) ?? d.fallbackEnabled
-        // `try?` so an unknown engine raw value (a future build's provider) falls back to the
-        // default chain instead of throwing away the whole settings blob.
-        fallbackChain = (try? c.decodeIfPresent([ProviderID].self, forKey: .fallbackChain)) ?? d.fallbackChain
         saveRecordings = try c.decodeIfPresent(Bool.self, forKey: .saveRecordings) ?? d.saveRecordings
         liveTranscriptionEnabled = try c.decodeIfPresent(Bool.self, forKey: .liveTranscriptionEnabled) ?? d.liveTranscriptionEnabled
         appleAllowOnline = try c.decodeIfPresent(Bool.self, forKey: .appleAllowOnline) ?? d.appleAllowOnline
@@ -280,6 +339,54 @@ public struct WhisperioSettings: Codable, Sendable, Equatable {
 
     /// Whether the given engine requires (and currently has) cloud consent to run.
     public func isCloud(_ id: ProviderID) -> Bool { id != .onDevice }
+
+    // MARK: - Model order accessors
+
+    /// The engine that actually transcribes — slot 0 of the model order.
+    public var primaryProvider: ProviderID { modelOrder.first?.provider ?? .onDevice }
+
+    /// Compatibility view of the slot order as a plain provider list (slot 0 = primary).
+    /// Setting it keeps the semantics old call sites relied on (`s.providerChain = [id]`
+    /// picked the engine): the first element becomes the primary via `setPrimaryProvider`.
+    public var providerChain: [ProviderID] {
+        get { modelOrder.map(\.provider) }
+        set { setPrimaryProvider(newValue.first ?? .onDevice) }
+    }
+
+    /// Compatibility view of the ordered fallbacks — every slot's provider after slot 0.
+    public var fallbackChain: [ProviderID] { Array(modelOrder.dropFirst().map(\.provider)) }
+
+    /// Make `id` the primary engine (slot 0). Reuses the first existing slot for that
+    /// provider — moving it to the front keeps its pinned model — or inserts a fresh slot
+    /// that follows the engine's selected model. Never drops the rest of the order.
+    public mutating func setPrimaryProvider(_ id: ProviderID) {
+        if let i = modelOrder.firstIndex(where: { $0.provider == id }) {
+            let slot = modelOrder.remove(at: i)
+            modelOrder.insert(slot, at: 0)
+        } else {
+            modelOrder.insert(ProviderSlot(provider: id), at: 0)
+        }
+    }
+
+    /// The per-engine "selected model" — the default a modelless slot follows for this
+    /// provider. Engines without a model setting (on-device, ElevenLabs) return empty.
+    public func selectedModel(for id: ProviderID) -> String {
+        switch id {
+        case .onDevice: return ""
+        case .openAI: return whisperModel
+        case .elevenLabs: return ""
+        case .groq: return groqModel
+        case .deepgram: return deepgramModel
+        case .assemblyAI: return assemblyAIModel
+        case .mistral: return mistralModel
+        }
+    }
+
+    /// The model a slot actually runs with: its own model when pinned, otherwise the
+    /// engine's per-engine selected model. The slot wins at transcription time.
+    public func resolvedModel(for slot: ProviderSlot) -> String {
+        slot.model.isEmpty ? selectedModel(for: slot.provider) : slot.model
+    }
 
     /// Vocabulary parsed into trimmed, non-empty terms.
     public var vocabularyTerms: [String] {

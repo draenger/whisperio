@@ -30,9 +30,16 @@ struct SettingsView: View {
     // models list), so back lands on the parent category (Models) instead of the hub.
     @Binding var initialCategoryID: String?
 
+    // Two-step "Add provider + model" picker state on the Model order card.
+    private enum ChainAddStep: Equatable {
+        case provider               // step 1 — picking the provider
+        case model(ProviderID)      // step 2 — picking that provider's model
+    }
+
     @State private var consentProvider: ProviderID?   // non-nil → consent sheet is up
     @State private var showTriggerGuides = false      // presents the trigger onboarding hub
-    @State private var chainAddOpen = false           // "Add fallback" row expanded to chips
+    @State private var chainAdd: ChainAddStep? = nil  // "Add provider + model" flow state
+    @State private var openConnection: ProviderID?    // expanded connection accordion (none = all collapsed)
     @State private var showRestoreConfirm = false     // confirm before restoring seed templates
     @State private var selectedCategory: SettingsCategory? = nil
     @State private var cloudAccountStatusText = "Checking iCloud status…"
@@ -335,39 +342,44 @@ struct SettingsView: View {
     private var modelCategory: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack {
-                SectionLabel(text: "Transcription engine")
+                SectionLabel(text: "Connections")
                 Spacer(minLength: 0)
+                // The badge reflects slot 0 of the model order — the engine that transcribes.
                 PrivacyBadge(mode: settings.settings.isCloud(engine) ? .cloud : .device, small: true)
             }
             .padding(.leading, 4)
             VStack(spacing: 10) {
-                engineRow(.onDevice, "Apple — on-device", "Free · private · offline", "cpu")
-                engineRow(.openAI, "OpenAI", "Cloud · Whisper API", "globe")
-                engineRow(.elevenLabs, "ElevenLabs", "Cloud · Scribe", "globe")
-                engineRow(.groq, "Groq", "Cloud · fastest Whisper inference", "bolt")
-                engineRow(.deepgram, "Deepgram", "Cloud · Nova, streaming & diarization", "globe")
-                engineRow(.assemblyAI, "AssemblyAI", "Cloud · Universal, speaker labels", "globe")
-                engineRow(.mistral, "Mistral", "Cloud · Voxtral, open weights", "globe")
+                connectionRow(.onDevice, "Apple — on-device", "Free · private · offline", "cpu")
+                connectionRow(.openAI, "OpenAI", "Cloud · Whisper API", "globe")
+                connectionRow(.elevenLabs, "ElevenLabs", "Cloud · Scribe", "globe")
+                connectionRow(.groq, "Groq", "Cloud · fastest Whisper inference", "bolt")
+                connectionRow(.deepgram, "Deepgram", "Cloud · Nova, streaming & diarization", "globe")
+                connectionRow(.assemblyAI, "AssemblyAI", "Cloud · Universal, speaker labels", "globe")
+                connectionRow(.mistral, "Mistral", "Cloud · Voxtral, open weights", "globe")
             }
-            if let choices = Self.engineModelChoices[engine] {
-                modelPicker(choices, engineModelBinding(engine))
+            if let open = openConnection, let choices = Self.engineModelChoices[open] {
+                modelPicker(choices, engineModelBinding(open))
             }
+            Text("Tap a provider to configure its connection and model. Which one is actually used — and in what order — is set above.")
+                .font(WZFont.mono(11)).foregroundStyle(t.faint).lineSpacing(3)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.leading, 4)
+            modelOrderSection
             SettGroup(title: "On-device models") {
                 SettRow(icon: "download", label: "Manage on-device models",
                         sub: "Download, update or remove Apple Speech + Whisper", last: true,
                         onTap: openModels)
             }
-            fallbackChainSection
-            if engine == .openAI {
+            if openConnection == .openAI {
                 keyField("OpenAI API key", binding(\.openAIKey))
                 plainField("Base URL (optional, self-hosted)", "https://api.openai.com/v1", binding(\.openAIBaseURL))
                 plainField("Model (optional)", "whisper-1", binding(\.whisperModel))
             }
-            if engine == .elevenLabs { keyField("ElevenLabs API key", binding(\.elevenLabsKey)) }
-            if engine == .groq { keyField("Groq API key", binding(\.groqKey), placeholder: "gsk_…") }
-            if engine == .deepgram { keyField("Deepgram API key", binding(\.deepgramKey)) }
-            if engine == .assemblyAI { keyField("AssemblyAI API key", binding(\.assemblyAIKey)) }
-            if engine == .mistral { keyField("Mistral API key", binding(\.mistralKey)) }
+            if openConnection == .elevenLabs { keyField("ElevenLabs API key", binding(\.elevenLabsKey)) }
+            if openConnection == .groq { keyField("Groq API key", binding(\.groqKey), placeholder: "gsk_…") }
+            if openConnection == .deepgram { keyField("Deepgram API key", binding(\.deepgramKey)) }
+            if openConnection == .assemblyAI { keyField("AssemblyAI API key", binding(\.assemblyAIKey)) }
+            if openConnection == .mistral { keyField("Mistral API key", binding(\.mistralKey)) }
         }
     }
 
@@ -416,9 +428,9 @@ struct SettingsView: View {
         .padding(.top, 2)
     }
 
-    // MARK: - Fallback chain (Models page)
+    // MARK: - Model order (Models page)
 
-    /// Display name for an engine in the fallback-chain card. Mirrors ENGINE_NAME in
+    /// Display name for an engine in the model-order card. Mirrors ENGINE_NAME in
     /// mob-settings.jsx (only the ProviderIDs this app actually has).
     private func engineDisplayName(_ id: ProviderID) -> String {
         switch id {
@@ -432,69 +444,89 @@ struct SettingsView: View {
         }
     }
 
-    private static let chainOrdinals = ["Secondary", "Third", "Fourth", "Fifth", "Sixth"]
+    private static let chainOrdinals = ["Primary", "Secondary", "Third", "Fourth", "Fifth", "Sixth"]
 
-    /// The chain as shown: the stored order minus the current primary — switching primaries
-    /// never rewrites the stored chain, the primary is just skipped (same as makeChain()).
-    private var chainEntries: [ProviderID] {
-        settings.settings.fallbackChain.filter { $0 != engine }
-    }
+    private var modelOrder: [ProviderSlot] { settings.settings.modelOrder }
 
-    /// Engines not yet in the chain (and not the primary) — offered by "Add fallback".
-    private var chainFreeEngines: [ProviderID] {
-        let entries = chainEntries
-        return ProviderID.allCases.filter { $0 != engine && !entries.contains($0) }
-    }
-
-    private func setChain(_ chain: [ProviderID]) {
+    private func setModelOrder(_ order: [ProviderSlot]) {
         var s = settings.settings
-        s.fallbackChain = chain
+        s.modelOrder = order
         settings.settings = s
     }
 
-    private func moveChainEntry(at index: Int, by delta: Int) {
-        var entries = chainEntries
+    private func moveSlot(at index: Int, by delta: Int) {
+        var order = modelOrder
         let j = index + delta
-        guard entries.indices.contains(index), entries.indices.contains(j) else { return }
-        entries.swapAt(index, j)
-        setChain(entries)
+        guard order.indices.contains(index), order.indices.contains(j) else { return }
+        order.swapAt(index, j)
+        setModelOrder(order)
     }
 
-    private var fallbackChainSection: some View {
+    private func removeSlot(at index: Int) {
+        var order = modelOrder
+        guard order.count > 1, order.indices.contains(index) else { return }
+        order.remove(at: index)
+        setModelOrder(order)
+    }
+
+    /// Whether an equivalent (provider, model) slot is already in the order — compared on
+    /// *resolved* models, so a modelless slot blocks re-adding the engine's selected model.
+    private func slotExists(_ id: ProviderID, _ model: String) -> Bool {
+        let s = settings.settings
+        let resolved = s.resolvedModel(for: ProviderSlot(provider: id, model: model))
+        return s.modelOrder.contains { $0.provider == id && s.resolvedModel(for: $0) == resolved }
+    }
+
+    private func appendSlot(_ id: ProviderID, _ model: String) {
+        guard !slotExists(id, model) else { return }
+        setModelOrder(modelOrder + [ProviderSlot(provider: id, model: model)])
+    }
+
+    /// Display label for the model a slot runs with. Resolves the slot against the
+    /// per-engine selection, prefers the chip display name, and names the built-in default
+    /// for engines without a model setting.
+    private func slotModelLabel(_ slot: ProviderSlot) -> String {
+        let resolved = settings.settings.resolvedModel(for: slot)
+        if resolved.isEmpty {
+            switch slot.provider {
+            case .onDevice: return "Apple Speech"
+            case .openAI: return "whisper-1"
+            case .elevenLabs: return "Scribe"
+            default: return "default"
+            }
+        }
+        if let name = Self.engineModelChoices[slot.provider]?.first(where: { $0.id == resolved })?.name {
+            return name
+        }
+        return resolved
+    }
+
+    /// Step-2 choices for "Add provider + model". Engines without a model list offer their
+    /// current selected/default model as the one chip (the slot then keeps following the
+    /// engine's setting) — mirrors the JSX self-hosted branch.
+    private func addModelChoices(_ id: ProviderID) -> [(id: String, name: String)] {
+        Self.engineModelChoices[id] ?? [(id: "", name: slotModelLabel(ProviderSlot(provider: id)))]
+    }
+
+    private var modelOrderSection: some View {
         VStack(alignment: .leading, spacing: 8) {
-            SectionLabel(text: "Fallback chain").padding(.leading, 4)
+            SectionLabel(text: "Model order").padding(.leading, 4)
             VStack(spacing: 0) {
-                // Primary row — always index 1, follows the engine picked above.
-                HStack(spacing: 13) {
-                    Text("1")
-                        .font(WZFont.mono(11, .bold)).foregroundStyle(t.accentLite)
-                        .frame(width: 24, height: 24)
-                        .background(t.accent.opacity(0.16), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                    Text(engineDisplayName(engine))
-                        .font(WZFont.ui(14, .semibold)).foregroundStyle(t.text)
-                    Spacer(minLength: 0)
-                    Text("PRIMARY")
-                        .font(WZFont.mono(10, .bold)).kerning(0.8)
-                        .foregroundStyle(t.accentLite)
-                }
-                .padding(.vertical, 11)
-                .overlay(alignment: .bottom) { Rectangle().fill(t.lineSoft).frame(height: 1) }
-
-                let entries = chainEntries
-                ForEach(Array(entries.enumerated()), id: \.element) { index, id in
-                    chainRow(id, index: index, count: entries.count)
+                let order = modelOrder
+                ForEach(Array(order.enumerated()), id: \.offset) { index, slot in
+                    modelOrderRow(slot, index: index, count: order.count)
                 }
 
-                if chainAddOpen {
-                    chainAddChips
-                }
+                chainAddContent
 
                 Button {
-                    withAnimation(.easeInOut(duration: 0.15)) { chainAddOpen.toggle() }
+                    withAnimation(.easeInOut(duration: 0.15)) {
+                        chainAdd = chainAdd == nil ? .provider : nil
+                    }
                 } label: {
                     HStack(spacing: 10) {
                         WIcon("plus", size: 15).foregroundStyle(t.accentLite)
-                        Text(chainAddOpen ? "Close" : "Add fallback")
+                        Text(chainAdd == nil ? "Add provider + model" : "Cancel")
                             .font(WZFont.ui(13.5, .semibold)).foregroundStyle(t.accentLite)
                         Spacer(minLength: 0)
                     }
@@ -505,30 +537,40 @@ struct SettingsView: View {
             .padding(.horizontal, 16).padding(.vertical, 4)
             .background(t.surface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(t.line, lineWidth: 1))
-            Text("If the primary engine fails, Whisperio tries the chain in order. Runs only when “Fallback engines” is on in Transcription.")
+            Text("Provider + model per slot — the same provider can appear more than once with different models. Whisperio uses #1 and walks down on failure (with “Fallback engines” on).")
                 .font(WZFont.mono(11)).foregroundStyle(t.faint).lineSpacing(3)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.leading, 4)
         }
     }
 
-    // One ordered fallback row — index chip, name + ordinal sublabel, up/down/remove controls.
-    private func chainRow(_ id: ProviderID, index: Int, count: Int) -> some View {
-        HStack(spacing: 13) {
-            Text("\(index + 2)")
-                .font(WZFont.mono(11, .bold)).foregroundStyle(t.muted)
+    // One ordered slot row — index chip, "Provider · model" + ordinal sublabel,
+    // up/down/remove controls. Slot 0 is the primary (accent chip, semibold).
+    private func modelOrderRow(_ slot: ProviderSlot, index: Int, count: Int) -> some View {
+        let primary = index == 0
+        return HStack(spacing: 13) {
+            Text("\(index + 1)")
+                .font(WZFont.mono(11, .bold))
+                .foregroundStyle(primary ? t.accentLite : t.muted)
                 .frame(width: 24, height: 24)
-                .background(t.surfaceUp, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .background(primary ? t.accent.opacity(0.16) : t.surfaceUp,
+                            in: RoundedRectangle(cornerRadius: 8, style: .continuous))
             VStack(alignment: .leading, spacing: 1) {
-                Text(engineDisplayName(id)).font(WZFont.ui(14)).foregroundStyle(t.text)
+                HStack(alignment: .firstTextBaseline, spacing: 4) {
+                    Text(engineDisplayName(slot.provider))
+                        .font(WZFont.ui(14, primary ? .semibold : .regular)).foregroundStyle(t.text)
+                    Text("· \(slotModelLabel(slot))")
+                        .font(WZFont.mono(12)).foregroundStyle(t.accentLite)
+                        .lineLimit(1)
+                }
                 Text((index < Self.chainOrdinals.count ? Self.chainOrdinals[index] : "Then").uppercased())
                     .font(WZFont.mono(9, .bold)).kerning(0.7).foregroundStyle(t.faint)
             }
             Spacer(minLength: 0)
-            chainArrowButton(up: true, disabled: index == 0) { moveChainEntry(at: index, by: -1) }
-            chainArrowButton(up: false, disabled: index == count - 1) { moveChainEntry(at: index, by: 1) }
+            chainArrowButton(up: true, disabled: index == 0) { moveSlot(at: index, by: -1) }
+            chainArrowButton(up: false, disabled: index == count - 1) { moveSlot(at: index, by: 1) }
             Button {
-                setChain(chainEntries.filter { $0 != id })
+                removeSlot(at: index)
             } label: {
                 WIcon("x", size: 12).foregroundStyle(t.muted)
                     .frame(width: 26, height: 26)
@@ -536,6 +578,8 @@ struct SettingsView: View {
                     .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(t.line, lineWidth: 1))
             }
             .buttonStyle(.plain)
+            .disabled(count == 1)
+            .opacity(count == 1 ? 0.4 : 1)
         }
         .padding(.vertical, 9)
         .overlay(alignment: .bottom) { Rectangle().fill(t.lineSoft).frame(height: 1) }
@@ -554,22 +598,18 @@ struct SettingsView: View {
         .disabled(disabled)
     }
 
-    // Expanded "Add fallback" content — wrap chips of the engines still free, or the
-    // everything-is-in note when there's nothing left to add.
-    private var chainAddChips: some View {
-        Group {
-            if chainFreeEngines.isEmpty {
-                HStack {
-                    Text("Every engine is already in the chain.")
-                        .font(WZFont.mono(11)).foregroundStyle(t.faint)
-                    Spacer(minLength: 0)
-                }
-            } else {
+    // Expanded "Add provider + model" content — step 1 offers every provider as wrap-chips,
+    // step 2 that provider's models (combos already in the order are disabled).
+    @ViewBuilder private var chainAddContent: some View {
+        switch chainAdd {
+        case .provider:
+            VStack(alignment: .leading, spacing: 7) {
+                Text("1 · Provider".uppercased())
+                    .font(WZFont.mono(10)).kerning(1).foregroundStyle(t.faint)
                 FlowLayout(spacing: 7) {
-                    ForEach(chainFreeEngines, id: \.self) { id in
+                    ForEach(ProviderID.allCases, id: \.self) { id in
                         Button {
-                            setChain(chainEntries + [id])
-                            chainAddOpen = false
+                            withAnimation(.easeInOut(duration: 0.15)) { chainAdd = .model(id) }
                         } label: {
                             Text(engineDisplayName(id))
                                 .font(WZFont.ui(12, .semibold)).foregroundStyle(t.muted)
@@ -581,9 +621,38 @@ struct SettingsView: View {
                     }
                 }
             }
+            .padding(.vertical, 11)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .overlay(alignment: .bottom) { Rectangle().fill(t.lineSoft).frame(height: 1) }
+        case .model(let provider):
+            VStack(alignment: .leading, spacing: 7) {
+                Text("2 · Model — \(engineDisplayName(provider))".uppercased())
+                    .font(WZFont.mono(10)).kerning(1).foregroundStyle(t.faint)
+                FlowLayout(spacing: 7) {
+                    ForEach(addModelChoices(provider), id: \.id) { choice in
+                        let taken = slotExists(provider, choice.id)
+                        Button {
+                            appendSlot(provider, choice.id)
+                            withAnimation(.easeInOut(duration: 0.15)) { chainAdd = nil }
+                        } label: {
+                            Text(taken ? "\(choice.name) ✓" : choice.name)
+                                .font(WZFont.mono(11.5, .semibold)).foregroundStyle(t.muted)
+                                .padding(.horizontal, 12).padding(.vertical, 6)
+                                .background(t.surfaceUp, in: Capsule())
+                                .overlay(Capsule().stroke(t.line, lineWidth: 1))
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(taken)
+                        .opacity(taken ? 0.4 : 1)
+                    }
+                }
+            }
+            .padding(.vertical, 11)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .overlay(alignment: .bottom) { Rectangle().fill(t.lineSoft).frame(height: 1) }
+        case nil:
+            EmptyView()
         }
-        .padding(.vertical, 11)
-        .overlay(alignment: .bottom) { Rectangle().fill(t.lineSoft).frame(height: 1) }
     }
 
     private var transcriptionCategory: some View {
@@ -656,6 +725,13 @@ struct SettingsView: View {
                 SettRow(icon: "cloud", label: "Fallback engines",
                         sub: "If the chosen engine fails, try the others", last: true) {
                     WToggle(on: boolBinding(\.fallbackEnabled))
+                }
+            }
+            SettGroup(title: "Apple engine") {
+                SettRow(icon: "globe", label: "Apple online speech",
+                        sub: "Use Apple’s servers when the on-device model isn’t available · audio leaves the device",
+                        last: true) {
+                    WToggle(on: boolBinding(\.appleAllowOnline))
                 }
             }
             SettGroup(title: "History") {
@@ -1216,35 +1292,54 @@ struct SettingsView: View {
         }
     }
 
-    /// Cloud providers require explicit, persisted consent before they can be selected.
-    private func selectEngine(_ id: ProviderID) {
-        if settings.settings.isCloud(id) && !settings.settings.cloudConsentGranted {
-            consentProvider = id   // ask first; only switch on accept
+    /// Tap a connection row: the open one collapses, another expands. Cloud providers still
+    /// require explicit, persisted consent before their configuration opens.
+    private func toggleConnection(_ id: ProviderID) {
+        if openConnection == id {
+            withAnimation(.easeInOut(duration: 0.2)) { openConnection = nil }
+        } else if settings.settings.isCloud(id) && !settings.settings.cloudConsentGranted {
+            consentProvider = id   // ask first; only expand on accept
         } else {
-            applyEngine(id)
+            withAnimation(.easeInOut(duration: 0.2)) { openConnection = id }
         }
     }
 
-    private func applyEngine(_ id: ProviderID) {
-        var s = settings.settings
-        s.providerChain = [id]
-        settings.settings = s
-    }
-
+    /// Consent accepted — persist it and open the provider's configuration. Which engine
+    /// actually transcribes is picked in the Model order card, not here.
     private func grantCloud(_ id: ProviderID) {
         var s = settings.settings
         s.cloudConsentGranted = true
-        s.providerChain = [id]
         settings.settings = s
         consentProvider = nil
+        withAnimation(.easeInOut(duration: 0.2)) { openConnection = id }
     }
 
-    private func engineRow(_ id: ProviderID, _ title: String, _ sub: String, _ icon: String) -> some View {
-        let on = engine == id
+    /// Per-row connection status line — exact strings from connStatus in mob-settings.jsx.
+    private func connectionStatus(_ id: ProviderID) -> (text: String, ready: Bool) {
+        let key: String
+        switch id {
+        case .onDevice: return ("Built-in · ready", true)
+        case .openAI: key = settings.settings.openAIKey
+        case .elevenLabs: key = settings.settings.elevenLabsKey
+        case .groq: key = settings.settings.groqKey
+        case .deepgram: key = settings.settings.deepgramKey
+        case .assemblyAI: key = settings.settings.assemblyAIKey
+        case .mistral: key = settings.settings.mistralKey
+        }
+        return key.trimmingCharacters(in: .whitespaces).isEmpty
+            ? ("Add API key to connect", false)
+            : ("Connected", true)
+    }
+
+    // An expandable connection accordion row: tap toggles its configuration open, the
+    // chevron rotates, and the status line reports the connection state.
+    private func connectionRow(_ id: ProviderID, _ title: String, _ sub: String, _ icon: String) -> some View {
+        let on = openConnection == id
         let cloud = settings.settings.isCloud(id)
         let needsConsent = cloud && !settings.settings.cloudConsentGranted
+        let status = connectionStatus(id)
         return Button {
-            selectEngine(id)
+            toggleConnection(id)
         } label: {
             HStack(spacing: 13) {
                 WIcon(icon, size: 17).foregroundStyle(on ? t.accent : t.muted)
@@ -1253,18 +1348,22 @@ struct SettingsView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(title).font(WZFont.ui(14.5, .semibold)).foregroundStyle(t.text)
                     Text(sub).font(WZFont.mono(11)).foregroundStyle(t.faint)
+                    Text(status.text)
+                        .font(WZFont.mono(10, .semibold))
+                        .foregroundStyle(status.ready ? t.green : t.amber)
                 }
                 Spacer(minLength: 0)
                 if needsConsent {
                     WIcon("lock", size: 13).foregroundStyle(t.amber)
                 }
-                WIcon(on ? "check" : "", size: 18).foregroundStyle(t.accent)
+                WIcon("chevD", size: 15).foregroundStyle(t.faint)
+                    .rotationEffect(.degrees(on ? 180 : 0))
             }
             .padding(13)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(t.surface, in: RoundedRectangle(cornerRadius: 15, style: .continuous))
+            .background(on ? t.surfaceUp : t.surface, in: RoundedRectangle(cornerRadius: 15, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 15, style: .continuous)
-                .stroke(on ? t.accent : t.line, lineWidth: on ? 2 : 1))
+                .stroke(t.line, lineWidth: 1))
         }
         .buttonStyle(.plain)
     }

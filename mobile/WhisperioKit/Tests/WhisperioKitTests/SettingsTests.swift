@@ -5,7 +5,10 @@ import Foundation
 @Suite struct SettingsTests {
     @Test func defaultsPutOnDeviceFirstAndNoSecrets() {
         let s = WhisperioSettings()
-        #expect(s.providerChain == [.onDevice])
+        #expect(s.primaryProvider == .onDevice)
+        // The default order is the classic implicit chain, one modelless slot per engine.
+        #expect(s.modelOrder.map(\.provider) == WhisperioSettings.classicOrder)
+        #expect(s.modelOrder.allSatisfy { $0.model.isEmpty })
         #expect(s.openAIKey.isEmpty)
         #expect(s.elevenLabsKey.isEmpty)
     }
@@ -21,6 +24,85 @@ import Foundation
         let data = try JSONEncoder().encode(original)
         let decoded = try JSONDecoder().decode(WhisperioSettings.self, from: data)
         #expect(decoded == original)
+    }
+
+    // MARK: - Model order (provider + model slots)
+
+    @Test func modelOrderRoundTripsWithPinnedModels() throws {
+        let original = WhisperioSettings(modelOrder: [
+            ProviderSlot(provider: .onDevice),
+            ProviderSlot(provider: .groq, model: "whisper-large-v3-turbo"),
+            ProviderSlot(provider: .groq, model: "whisper-large-v3"),
+            ProviderSlot(provider: .openAI, model: "whisper-1"),
+        ])
+        let data = try JSONEncoder().encode(original)
+        let decoded = try JSONDecoder().decode(WhisperioSettings.self, from: data)
+        #expect(decoded == original)
+        #expect(decoded.modelOrder.count == 4)
+        #expect(decoded.primaryProvider == .onDevice)
+        // The same provider may hold several slots with different models.
+        #expect(decoded.modelOrder.filter { $0.provider == .groq }.count == 2)
+    }
+
+    // A pre-slot blob (primary providerChain + ordered fallbackChain) migrates into the
+    // equivalent slots: primary first, then each fallback engine once, primary deduped.
+    @Test func legacyChainMigratesIntoEquivalentSlots() throws {
+        let legacy = Data("""
+        {"providerChain": ["groq"], "fallbackChain": ["ondevice", "groq", "openai"]}
+        """.utf8)
+        let decoded = try JSONDecoder().decode(WhisperioSettings.self, from: legacy)
+        #expect(decoded.modelOrder.map(\.provider) == [.groq, .onDevice, .openAI])
+        #expect(decoded.primaryProvider == .groq)
+        // Migrated slots stay modelless so they keep following the per-engine selection.
+        #expect(decoded.modelOrder.allSatisfy { $0.model.isEmpty })
+    }
+
+    // A legacy blob without any chain keys falls back to the classic order.
+    @Test func legacyBlobWithoutChainsFallsBackToClassicOrder() throws {
+        let legacy = Data(#"{"openAIKey": "x"}"#.utf8)
+        let decoded = try JSONDecoder().decode(WhisperioSettings.self, from: legacy)
+        #expect(decoded.modelOrder.map(\.provider) == WhisperioSettings.classicOrder)
+    }
+
+    // A slot's pinned model wins at transcription time; a modelless slot resolves to the
+    // engine's per-engine selected model.
+    @Test func resolvedModelPrefersTheSlotThenTheEngineSelection() {
+        let s = WhisperioSettings(groqModel: "whisper-large-v3-turbo")
+        #expect(s.resolvedModel(for: ProviderSlot(provider: .groq, model: "distil-whisper")) == "distil-whisper")
+        #expect(s.resolvedModel(for: ProviderSlot(provider: .groq)) == "whisper-large-v3-turbo")
+        #expect(s.resolvedModel(for: ProviderSlot(provider: .onDevice)).isEmpty)
+    }
+
+    // The compatibility setter (`providerChain = [id]`) keeps its old "pick the engine"
+    // meaning: the engine's existing slot moves to the front, keeping the rest of the order.
+    @Test func providerChainSetterMovesExistingSlotToFront() {
+        var s = WhisperioSettings(modelOrder: [
+            ProviderSlot(provider: .onDevice),
+            ProviderSlot(provider: .groq, model: "whisper-large-v3"),
+            ProviderSlot(provider: .openAI),
+        ])
+        s.providerChain = [.groq]
+        #expect(s.modelOrder.map(\.provider) == [.groq, .onDevice, .openAI])
+        // The moved slot keeps its pinned model.
+        #expect(s.modelOrder[0].model == "whisper-large-v3")
+        #expect(s.fallbackChain == [.onDevice, .openAI])
+
+        // Picking an engine that has no slot inserts a fresh modelless one at the front.
+        s.providerChain = [.mistral]
+        #expect(s.modelOrder.map(\.provider) == [.mistral, .groq, .onDevice, .openAI])
+        #expect(s.modelOrder[0].model.isEmpty)
+    }
+
+    // An unknown provider raw value inside modelOrder (a future build's engine) must not
+    // throw the whole blob away — the order falls back via legacy keys/defaults.
+    @Test func unknownProviderInModelOrderFallsBack() throws {
+        let json = Data("""
+        {"modelOrder": [{"provider": "some-future-engine", "model": "x"}],
+         "providerChain": ["ondevice"], "openAIKey": "k"}
+        """.utf8)
+        let decoded = try JSONDecoder().decode(WhisperioSettings.self, from: json)
+        #expect(decoded.primaryProvider == .onDevice)
+        #expect(decoded.openAIKey == "k")
     }
 
     @Test func vocabularyTermsAreTrimmedAndCompacted() {
