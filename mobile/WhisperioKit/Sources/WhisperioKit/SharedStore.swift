@@ -250,6 +250,9 @@ public enum SharedStore {
     public struct WidgetSnapshot: Codable, Sendable, Equatable {
         /// Most recent recordings, newest first, capped by the writer (~5) for the "Recent" widget.
         public var recentRecordings: [WidgetRecentRecording]
+        /// Total library size for the "Recent" widget's trailing "N notes" label. Optional so
+        /// snapshots written before this field existed keep decoding — nil hides the label.
+        public var totalRecordings: Int?
         /// Words spoken today (calendar day), for the "This week" widget's headline number.
         public var todayWordCount: Int
         /// Word counts for the trailing 7 days, oldest first (index 6 = today) — the bar chart.
@@ -272,6 +275,7 @@ public enum SharedStore {
 
         public init(
             recentRecordings: [WidgetRecentRecording] = [],
+            totalRecordings: Int? = nil,
             todayWordCount: Int = 0,
             weeklyWordCounts: [Int] = Array(repeating: 0, count: 7),
             currentStreak: Int = 0,
@@ -282,6 +286,7 @@ public enum SharedStore {
             updatedAt: Date = Date()
         ) {
             self.recentRecordings = recentRecordings
+            self.totalRecordings = totalRecordings
             self.todayWordCount = todayWordCount
             self.weeklyWordCounts = weeklyWordCounts
             self.currentStreak = currentStreak

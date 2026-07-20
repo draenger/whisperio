@@ -112,6 +112,11 @@ WidgetSnapshot.digestIsCloud; composer prompt-mic wired to real dictation; share
 DemoRecording.srcIcon (backtap→"command" RULED — both Swift call sites already used it;
 the mock's "more" glyph is not adopted).
 
+## Parity round 10 (2026-07-20) — 3 raw → 3 confirmed → all fixed (d0856d8)
+digestIsCloud provenance: nil-summary clears the claim, intermediate writes leave it
+untouched, only real summarize claims cloud. Shared PulsingDot on scratchpad's live take.
+Note-of-week caption = "Captured from <channel> · <weekday>" from real Recording.source.
+
 ## Process
 Weaker agents plan → Fable verifies/corrects plans → weaker agents implement
 (fresh-read + surgical-edit protocol, per-file ownership) → build gates

@@ -161,7 +161,7 @@ struct WeekStatsWidgetView: View {
                         .font(.system(size: 10.5, weight: .semibold))
                         .foregroundStyle(.secondary)
                 }
-                Text("\(snapshot.todayWordCount)")
+                Text("\(snapshot.weeklyWordCounts.reduce(0, +))")
                     .font(.system(size: 30, weight: .bold, design: .rounded))
                 Text("words · \(snapshot.currentStreak)-day streak")
                     .font(.system(size: 12))
@@ -219,6 +219,11 @@ struct RecentWidgetView: View {
             HStack(spacing: 6) {
                 Image(systemName: "book.closed").font(.system(size: 14))
                 Text("Recent").font(.system(size: 13, weight: .semibold))
+                Spacer()
+                // Trailing total per the design ("N notes") — hidden for pre-field snapshots.
+                if let total = snapshot?.totalRecordings {
+                    Text("\(total) note\(total == 1 ? "" : "s")").font(.system(size: 10.5))
+                }
             }
             .foregroundStyle(.secondary)
 

@@ -446,7 +446,9 @@ struct DetailView: View {
     private func speakerColor(_ index: Int) -> Color {
         let palette: [Color] = [t.accent, .hex(0xf59e0b), .hex(0xa78bfa),
                                 .hex(0xf472b6), .hex(0x34d399), .hex(0xfbbf24)]
-        return palette[index % palette.count]
+        // Past the 6-hue palette the design falls back to a distinct neutral (t.cyan) —
+        // wrapping via modulo would render a 7th speaker in speaker 1's exact accent.
+        return index < palette.count ? palette[index] : t.cyan
     }
 
     private func commitRename() {
