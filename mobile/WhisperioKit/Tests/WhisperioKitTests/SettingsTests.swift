@@ -322,4 +322,49 @@ import Foundation
         let decoded = try JSONDecoder().decode(WhisperioSettings.self, from: json)
         #expect(decoded.digestSourceMode == .all)
     }
+
+    // MARK: - preferredLanguages (R4 — onboarding step 2 persistence)
+
+    @Test func preferredLanguagesDefaultsEmpty() {
+        let s = WhisperioSettings()
+        #expect(s.preferredLanguages.isEmpty)
+    }
+
+    @Test func preferredLanguagesRoundTrips() throws {
+        let original = WhisperioSettings(language: "pl", preferredLanguages: ["pl", "en", "de"])
+        let data = try JSONEncoder().encode(original)
+        let decoded = try JSONDecoder().decode(WhisperioSettings.self, from: data)
+        #expect(decoded.preferredLanguages == ["pl", "en", "de"])
+        #expect(decoded.language == "pl")
+    }
+
+    // A blob persisted before preferredLanguages existed (missing key entirely) still decodes,
+    // falling back to empty — same tolerant-decode contract as every other field.
+    @Test func preferredLanguagesMissingKeyFallsBackToEmpty() throws {
+        let legacy = Data(#"{"openAIKey": "x"}"#.utf8)
+        let decoded = try JSONDecoder().decode(WhisperioSettings.self, from: legacy)
+        #expect(decoded.preferredLanguages.isEmpty)
+    }
+
+    // MARK: - oldDeviceNoticeShown (R3 — "Engine & privacy" screen shown-once flag)
+
+    @Test func oldDeviceNoticeShownDefaultsFalse() {
+        let s = WhisperioSettings()
+        #expect(s.oldDeviceNoticeShown == false)
+    }
+
+    @Test func oldDeviceNoticeShownRoundTrips() throws {
+        let original = WhisperioSettings(oldDeviceNoticeShown: true)
+        let data = try JSONEncoder().encode(original)
+        let decoded = try JSONDecoder().decode(WhisperioSettings.self, from: data)
+        #expect(decoded.oldDeviceNoticeShown == true)
+    }
+
+    // A blob persisted before oldDeviceNoticeShown existed (missing key entirely) still decodes,
+    // falling back to false — same tolerant-decode contract as every other field.
+    @Test func oldDeviceNoticeShownMissingKeyFallsBackToFalse() throws {
+        let legacy = Data(#"{"openAIKey": "x"}"#.utf8)
+        let decoded = try JSONDecoder().decode(WhisperioSettings.self, from: legacy)
+        #expect(decoded.oldDeviceNoticeShown == false)
+    }
 }

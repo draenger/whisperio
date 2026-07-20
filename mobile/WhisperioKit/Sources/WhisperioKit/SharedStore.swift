@@ -35,6 +35,7 @@ public enum SharedStore {
         static let rewriteResultAt   = "kbd.rewriteResultAt"
         static let widgetSnapshot    = "widget.snapshot.v1"
         static let engineOnDevice    = "engine.isOnDevice"         // app writes; keyboard reads for its privacy chip
+        static let liveActivityStopRequested = "liveactivity.stopRequested"
     }
 
     // MARK: - Engine privacy flag (app → keyboard)
@@ -170,6 +171,24 @@ public enum SharedStore {
     public static var recordingStartedAt: Date? {
         guard let ts = defaults?.double(forKey: Key.recordingStartedAt), ts > 0 else { return nil }
         return Date(timeIntervalSince1970: ts)
+    }
+
+    // MARK: - Live Activity stop request (Dynamic Island Stop button → app)
+
+    /// The Live Activity's Stop button runs a `LiveActivityIntent`, which iOS executes in the
+    /// app's own process — but that process may be suspended in the background with no live
+    /// `NotificationCenter` observer pumping, so the durable flag here is what actually gets
+    /// picked up: `RecordingView` polls it on its existing per-second tick (the same cadence it
+    /// already uses for the auto-stop timeout) and stops exactly like the in-app Stop button.
+    public static func requestLiveActivityStop() {
+        defaults?.set(true, forKey: Key.liveActivityStopRequested)
+    }
+
+    /// Read-and-clear so a stale `true` can never re-trigger a stop on a later recording.
+    public static func consumeLiveActivityStopRequest() -> Bool {
+        guard let d = defaults, d.bool(forKey: Key.liveActivityStopRequested) else { return false }
+        d.removeObject(forKey: Key.liveActivityStopRequested)
+        return true
     }
 
     // MARK: - Keyboard rewrite handoff

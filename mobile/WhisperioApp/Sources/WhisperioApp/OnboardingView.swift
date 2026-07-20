@@ -61,6 +61,13 @@ struct OnboardingView: View {
             }
             .animation(.easeInOut(duration: 0.32), value: step)
         }
+        .onAppear {
+            // R4: reflect a previously-confirmed selection (e.g. replaying onboarding from
+            // Settings) instead of always resetting to the design's fresh-install seed.
+            if !settings.settings.preferredLanguages.isEmpty {
+                langs = settings.settings.preferredLanguages
+            }
+        }
         .onDisappear { typeTask?.cancel(); settingsTask?.cancel() }
         .sheet(isPresented: $showProviderSheet) {
             ProviderConnectSheet(pick: $providerPick, keyInput: $providerKeyInput,
@@ -712,10 +719,15 @@ struct OnboardingView: View {
     }
 
     private func finish() {
-        // Language auto-detect is the promise of step 2 — keep the store on "auto" so
-        // dictation detects among the confirmed keyboards, matching the design copy.
+        // R4: persist the confirmed language selection from step 2, and make it actually
+        // drive recognition — engines only understand a single locale (`language`), so the
+        // first confirmed language becomes the primary. This is honest about the current
+        // single-locale plumbing: it is not multi-language auto-detection, but the user's
+        // choice now genuinely affects which language the engine listens for (previously the
+        // selection was discarded and the store was hardcoded to "auto" regardless of chips).
         var s = settings.settings
-        s.language = "auto"
+        s.preferredLanguages = langs
+        if let first = langs.first { s.language = first }
         settings.settings = s
         // Mirrors SetupView.swift's legacy completion flag so RootView's first-run gate
         // flips over to the real app the moment onboarding finishes — replaying onboarding

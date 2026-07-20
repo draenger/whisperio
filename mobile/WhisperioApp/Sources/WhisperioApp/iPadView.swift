@@ -37,6 +37,12 @@ struct iPadSplitView: View {
     @State private var sel: Int?
     @State private var showCloudConsent = false
     @State private var pendingCloudEngine: ProviderID?
+    // Weekly Recap (F4/R5): unlike the phone shell, the split view has no push-navigation stack
+    // to route a `.recap` screen onto, so it mounts as a dimmed detail panel over the split —
+    // same overlay idiom `showCloudConsent`/ConsentSheet already use below. Gated to the live
+    // shell only (Gallery's design-preview iPadHost never injects RecordingsStore, and Recap
+    // needs the real store).
+    @State private var showRecap = false
     // Library tab's rows: the real library (mapped through the existing DemoRecording adapter)
     // when the live shell injected a store, otherwise the design's sample rows.
     private var libraryRecordings: [DemoRecording] { liveJournal ? recordings.items.map(DemoRecording.init) : WZSample.recordings }
@@ -53,6 +59,7 @@ struct iPadSplitView: View {
             HStack {
                 segmented
                 Spacer(minLength: 0)
+                if liveJournal { recapTrigger }
             }
             .padding(.horizontal, 16).padding(.vertical, 8)
             .overlay(alignment: .bottom) { Rectangle().fill(t.lineSoft).frame(height: 1) }
@@ -86,6 +93,11 @@ struct iPadSplitView: View {
                     .transition(.opacity)
             }
         }
+        .overlay {
+            if showRecap {
+                recapPanel.transition(.opacity)
+            }
+        }
         .onAppear {
             // Seed the sidebar's selection highlight to the row the detail pane is already
             // showing (mob-screens.jsx:797 initializes `sel` to the first recording's id) —
@@ -97,6 +109,78 @@ struct iPadSplitView: View {
         // theme — Settings' Dark-mode toggle flips splitDark and the whole shell re-themes.
         .environment(\.wz, t)
         .preferredColorScheme(splitDark ? .dark : .light)
+    }
+
+    // The split shell's only entry point to Recap (F4/R5) — a compact streak pill peer to the
+    // segmented Library/Journal control, visible in both tabs. Mirrors HomeView's
+    // `recapStreakTile` styling (bolt glyph + streak) at a size that fits this thin toolbar row
+    // instead of that tile's tall vertical card.
+    private var recapTrigger: some View {
+        Button(action: { withAnimation(.easeInOut(duration: 0.18)) { showRecap = true } }) {
+            HStack(spacing: 6) {
+                WIcon("bolt", size: 13, weight: .regular).foregroundStyle(t.accentLite)
+                Text(recapStreak > 0 ? "\(recapStreak)d streak" : "Recap")
+                    .font(WZFont.ui(12, .semibold))
+            }
+            .foregroundStyle(t.text)
+            .padding(.horizontal, 11).padding(.vertical, 7)
+            .background(t.surfaceUp, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous).stroke(t.line, lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(recapStreak > 0 ? "Weekly recap, \(recapStreak) day streak" : "Weekly recap")
+    }
+
+    // Days-with-a-note streak ending today (or yesterday) — same definition as
+    // HomeView.currentStreak / RecapView.streaks.current, computed independently here since
+    // this view has no dependency on either of those files.
+    private var recapStreak: Int {
+        let cal = Calendar.current
+        let days = Set(recordings.items.map { cal.startOfDay(for: $0.timestamp) })
+        guard !days.isEmpty else { return 0 }
+        var probe = cal.startOfDay(for: Date())
+        if !days.contains(probe) {
+            guard let yesterday = cal.date(byAdding: .day, value: -1, to: probe) else { return 0 }
+            probe = yesterday
+        }
+        var current = 0
+        while days.contains(probe) {
+            current += 1
+            guard let prev = cal.date(byAdding: .day, value: -1, to: probe) else { break }
+            probe = prev
+        }
+        return current
+    }
+
+    // Recap mounted as a dimmed detail panel over the split (design has no iPad/Mac mount point
+    // to mirror — mob-recap.jsx's RecapScene is phone-only — so this follows the same
+    // dimmed-overlay + tap-outside-to-dismiss idiom `ConsentSheet` already uses in this file).
+    // RecapView is `bare` here (no ScreenScaffold/WHeader of its own — see RecapView.swift), so
+    // this panel supplies its own "Recap" title and close control instead.
+    private var recapPanel: some View {
+        ZStack {
+            Color.hex(0x06050c).opacity(0.55).ignoresSafeArea()
+                .onTapGesture { withAnimation { showRecap = false } }
+            VStack(spacing: 0) {
+                HStack {
+                    Text("Recap").font(WZFont.display(18, .semibold)).foregroundStyle(t.text)
+                    Spacer(minLength: 0)
+                    Button(action: { withAnimation { showRecap = false } }) {
+                        WIcon("x", size: 13, weight: .bold)
+                            .foregroundStyle(t.muted)
+                            .frame(width: 30, height: 30)
+                            .background(t.surfaceUp, in: Circle())
+                    }
+                    .buttonStyle(.plain)
+                }
+                .padding(.horizontal, 18).padding(.top, 16).padding(.bottom, 8)
+                RecapView(onBack: { withAnimation { showRecap = false } }, bare: true)
+            }
+            .frame(maxWidth: 560, maxHeight: 760)
+            .background(t.bg, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).stroke(t.line, lineWidth: 1))
+            .padding(40)
+        }
     }
 
     // Compact, read-only engine status strip (mob-screens.jsx AppleSplit `engineBar`): a thin
@@ -169,18 +253,19 @@ struct iPadSplitView: View {
         return "\(engineLabel(slot.provider)) · \(modelName)"
     }
 
+    // Model-order-chain label. F6/R7: source names from `ProviderID.displayName` (Kit's single
+    // source of truth — see Models.swift) instead of a hand-duplicated switch, so a provider
+    // added there (this file previously predated groq/deepgram/assemblyAI/mistral) can never
+    // regress to showing its raw id here. `onDevice`/`localWhisper`/`replicate`/`selfHosted`
+    // keep this strip's own slightly longer, chain-context copy (`displayName` is tuned for
+    // Settings' Connections rows instead).
     private func engineLabel(_ id: ProviderID) -> String {
         switch id {
         case .onDevice: return "On-device"
         case .localWhisper: return "Whisper · on-device"
-        case .openAI: return "OpenAI"
-        case .elevenLabs: return "ElevenLabs"
-        case .groq: return "Groq"
-        case .deepgram: return "Deepgram"
-        case .assemblyAI: return "AssemblyAI"
-        case .mistral: return "Mistral"
         case .replicate: return "Replicate · cloud"
         case .selfHosted: return "Self-hosted · your server"
+        default: return id.displayName
         }
     }
 

@@ -15,6 +15,13 @@ struct RecapView: View {
     @EnvironmentObject private var recordings: RecordingsStore
     @EnvironmentObject private var settings: SettingsStore
     var onBack: () -> Void
+    // Design's `bare` prop (mob-recap.jsx RecapScene, line 7/109): drops this view's own
+    // ScreenScaffold + WHeader chrome so it can be embedded inside another shell's framing
+    // instead of always drawing its own full-screen header — used by iPadSplitView to mount
+    // Recap inside a detail panel that supplies its own title/close affordance (iPadView.swift).
+    // Defaults to false so the existing phone call site (AppShell.swift's `.recap` case) is
+    // unchanged.
+    var bare: Bool = false
 
 #if canImport(UIKit)
     private typealias PlatformImage = UIImage
@@ -253,8 +260,27 @@ struct RecapView: View {
     }
 
     var body: some View {
-        ScreenScaffold {
-            VStack(spacing: 0) {
+        Group {
+            if bare {
+                content
+            } else {
+                ScreenScaffold { content }
+            }
+        }
+        .task { renderCard() }
+        // Keep the shareable card in sync with what's actually on screen — re-render whenever
+        // the underlying data (new/removed recordings this week) or the color scheme changes,
+        // instead of caching a single render from `.task` that can go stale.
+        .onChange(of: weekItems.count) { _, _ in renderCard() }
+        .onChange(of: t.dark) { _, _ in renderCard() }
+    }
+
+    // The design's body (mob-recap.jsx): header + scrolling stat cards. When `bare`, the
+    // caller supplies its own title/close chrome (e.g. iPadSplitView's detail panel), so this
+    // view's own WHeader — which duplicates that with a title + back chevron — is skipped too.
+    private var content: some View {
+        VStack(spacing: 0) {
+            if !bare {
                 WHeader(title: "Recap", onBack: onBack) {
                     shareButton {
                         WIcon("share", size: 17, weight: .regular)
@@ -265,43 +291,37 @@ struct RecapView: View {
                     }
                     .buttonStyle(.plain)
                 }
-                ScrollView(showsIndicators: false) {
-                    VStack(alignment: .leading, spacing: 14) {
-                        heroCard
-                        HStack(spacing: 12) {
-                            statCard(speakingWPM > 0 ? "\(speakingWPM) wpm" : "—",
-                                     "speaking · you type ~38", "zap")
-                            statCard("\(streaks.current) day\(streaks.current == 1 ? "" : "s")",
-                                     "streak · best is \(streaks.best)", "spark")
-                        }
-                        chartCard
-                        if !engineMinutes.isEmpty { usageCostCard }
-                        if !categoryCounts.isEmpty { categoriesCard }
-                        if let note = noteOfWeek { noteCard(note) }
-                        shareButton {
-                            HStack(spacing: 8) {
-                                WIcon("share", size: 17)
-                                Text("Share recap")
-                            }
-                            .font(WZFont.ui(15, .semibold))
-                            .foregroundStyle(t.primaryInk)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 13).padding(.horizontal, 20)
-                            .background(t.primary, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                            .shadow(color: t.accent.opacity(0.45), radius: 8, y: 6)
-                        }
-                        .buttonStyle(.plain)
+            }
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 14) {
+                    heroCard
+                    HStack(spacing: 12) {
+                        statCard(speakingWPM > 0 ? "\(speakingWPM) wpm" : "—",
+                                 "speaking · you type ~38", "zap")
+                        statCard("\(streaks.current) day\(streaks.current == 1 ? "" : "s")",
+                                 "streak · best is \(streaks.best)", "spark")
                     }
-                    .padding(.horizontal, 16).padding(.top, 6).padding(.bottom, 30)
+                    chartCard
+                    if !engineMinutes.isEmpty { usageCostCard }
+                    if !categoryCounts.isEmpty { categoriesCard }
+                    if let note = noteOfWeek { noteCard(note) }
+                    shareButton {
+                        HStack(spacing: 8) {
+                            WIcon("share", size: 17)
+                            Text("Share recap")
+                        }
+                        .font(WZFont.ui(15, .semibold))
+                        .foregroundStyle(t.primaryInk)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 13).padding(.horizontal, 20)
+                        .background(t.primary, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                        .shadow(color: t.accent.opacity(0.45), radius: 8, y: 6)
+                    }
+                    .buttonStyle(.plain)
                 }
+                .padding(.horizontal, 16).padding(.top, 6).padding(.bottom, 30)
             }
         }
-        .task { renderCard() }
-        // Keep the shareable card in sync with what's actually on screen — re-render whenever
-        // the underlying data (new/removed recordings this week) or the color scheme changes,
-        // instead of caching a single render from `.task` that can go stale.
-        .onChange(of: weekItems.count) { _, _ in renderCard() }
-        .onChange(of: t.dark) { _, _ in renderCard() }
     }
 
     private var heroCard: some View {

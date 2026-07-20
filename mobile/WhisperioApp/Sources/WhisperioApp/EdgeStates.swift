@@ -128,14 +128,26 @@ struct CloudErrorStateView: View {
     }
 }
 
-// Older / non-Apple-Intelligence device → cloud fallback (a settings screen).
+// Older / non-Apple-Intelligence device → cloud fallback (a settings screen). The toggle is
+// wired to the real `cloudConsentGranted` gate (SettingsStore.makeChain()'s actual consent
+// check) — not a local decorative @State — so switching it on here is what makes recording
+// on this device actually work; this IS "the cloud-consent path" R3 asks the screen to offer.
 struct OldDeviceView: View {
     @Environment(\.wz) private var t
-    @State private var cloud = true
+    @EnvironmentObject private var settings: SettingsStore
+    var onBack: () -> Void = {}
+
+    private var cloudBinding: Binding<Bool> {
+        Binding(
+            get: { settings.settings.cloudConsentGranted },
+            set: { settings.settings.cloudConsentGranted = $0 }
+        )
+    }
+
     var body: some View {
         ScreenScaffold {
             VStack(spacing: 0) {
-                WHeader(title: "Engine & privacy", onBack: {})
+                WHeader(title: "Engine & privacy", onBack: onBack)
                 ScrollView(showsIndicators: false) {
                     VStack(alignment: .leading, spacing: 16) {
                         StateBanner(tone: .warn, icon: "cpu", title: "This iPhone transcribes in the cloud",
@@ -143,7 +155,7 @@ struct OldDeviceView: View {
                         VStack(spacing: 0) {
                             row(icon: "cloud", iconColor: t.amber, title: "Cloud transcription",
                                 sub: "OpenAI / ElevenLabs · required on this device", last: false) {
-                                WToggle(on: $cloud)
+                                WToggle(on: cloudBinding)
                             }
                             row(icon: "lock", iconColor: t.faint, title: "On-device engine",
                                 sub: "Not available on this iPhone", last: true, dimmed: true) {

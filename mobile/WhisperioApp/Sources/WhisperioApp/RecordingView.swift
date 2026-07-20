@@ -1,12 +1,27 @@
 import SwiftUI
 import Combine
 import AVFoundation
+import Speech
 import WhisperioKit
 #if canImport(UIKit)
 import UIKit
 #elseif canImport(AppKit)
 import AppKit
 #endif
+
+// Thread-safe capture box for ProviderChain's `@Sendable` onFallback closure — records the
+// first (failed, next) pair a session's chain reported, if any. Filtered down to "cloud →
+// on-device" at the call site via `WhisperioSettings.isCloud(_:)` (the same helper ScratchpadView
+// uses for its own copy of this banner), since a cloud→cloud retry isn't the "your note is saved
+// on-device" story the design's banner tells.
+private final class RecordingFallbackBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private(set) var pair: (from: ProviderID, to: ProviderID)?
+    func recordFirst(_ from: ProviderID, _ to: ProviderID) {
+        lock.lock(); defer { lock.unlock() }
+        if pair == nil { pair = (from, to) }
+    }
+}
 
 // Live recording — real mic capture, then transcription through the configured
 // provider chain (Apple on-device / OpenAI / ElevenLabs).
@@ -38,6 +53,10 @@ struct RecordingView: View {
     @State private var resumeAfterInterruption = false
     @State private var interruptionDidEnd = false
     @State private var lastActivityAt: Date?
+    // R3: "Engine & privacy" one-time notice on devices that can't do on-device Apple Speech.
+    @State private var showOldDeviceNotice = false
+    // R2: cloud→on-device fallback reassurance banner (mob-single.jsx:250).
+    @State private var fallbackBanner: (from: ProviderID, to: ProviderID)? = nil
 
     private enum Phase { case starting, listening, processing, error }
     private let tick = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
@@ -59,6 +78,23 @@ struct RecordingView: View {
         case .localWhisper: return "Whisper · on-device"
         default: return "Apple Speech · on-device"
         }
+    }
+
+    // R6: whether THIS session's primary engine is on-device — feeds the Live Activity's
+    // honest engine tag (never hardcoded "on-device" regardless of the real chain).
+    private var primaryIsOnDevice: Bool {
+        let primary = settings.settings.providerChain.first ?? .onDevice
+        return primary == .onDevice || primary == .localWhisper
+    }
+
+    // R3: real capability gate — SFSpeechRecognizer(locale:) missing or unable to run on-device
+    // means this iPhone cannot do on-device Apple Speech at all, matching AppleSpeechProvider's
+    // own check. Never fabricated from a model-name allowlist.
+    private var deviceLacksOnDeviceSpeech: Bool {
+        let lang = settings.settings.language
+        let locale = (lang.isEmpty || lang == "auto") ? Locale.current : Locale(identifier: lang)
+        guard let recognizer = SFSpeechRecognizer(locale: locale) else { return true }
+        return !recognizer.supportsOnDeviceRecognition
     }
 
     private var ghostPhase: ListeningGhost.Phase {
@@ -138,12 +174,28 @@ struct RecordingView: View {
                 }
                 .padding(.top, 14).padding(.bottom, 42)
             }
+            // R2: cloud→on-device fallback reassurance — same StateBanner component + exact
+            // copy as EdgeStates.swift's CloudErrorStateView (mob-single.jsx:250), shown here
+            // (not the gallery-only Home mock) since this is the real transcription path.
+            .overlay(alignment: .top) {
+                if fallbackBanner != nil {
+                    StateBanner(tone: .warn, icon: "cloud", title: "Couldn’t reach the cloud",
+                                sub: "Transcribed on-device instead — your note is saved.")
+                        .padding(.horizontal, 16).padding(.top, 8)
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                }
+            }
+            .animation(.easeOut(duration: 0.2), value: fallbackBanner != nil)
         }
         .onReceive(tick) { _ in
             guard phase == .listening else { return }
             secs += 1
             noteActivityIfNeeded()
             checkAutoStopIfNeeded()
+            // R6: the Live Activity's Stop button can't reach this view directly, so it leaves
+            // a durable request in the shared App Group; this existing per-second tick is what
+            // actually picks it up and stops exactly like the in-app Stop button.
+            if SharedStore.consumeLiveActivityStopRequest() { stop() }
         }
         .onReceive(NotificationCenter.default.publisher(for: .whisperioStopDictation)) { _ in
             stop()   // triple-tap / "stop" shortcut ends recording + transcribes
@@ -155,6 +207,8 @@ struct RecordingView: View {
                 done = true
                 phase = .error
                 errorMsg = message
+                SharedStore.setRecordingActive(false)
+                LiveActivityController.shared.end()
             }
         }
         #if canImport(UIKit)
@@ -162,7 +216,20 @@ struct RecordingView: View {
             handleInterruption(note)
         }
         #endif
-        .task { await begin() }
+        .task {
+            // R3: show the "Engine & privacy" notice once, the first time Recording opens on a
+            // device that can't do on-device Apple Speech at all — never blocks recording itself,
+            // it just defers begin() until the user has seen/dismissed it.
+            if !settings.settings.oldDeviceNoticeShown, deviceLacksOnDeviceSpeech {
+                settings.settings.oldDeviceNoticeShown = true
+                showOldDeviceNotice = true
+            } else {
+                await begin()
+            }
+        }
+        .sheet(isPresented: $showOldDeviceNotice, onDismiss: { Task { await begin() } }) {
+            OldDeviceView(onBack: { showOldDeviceNotice = false })
+        }
     }
 
     private var hint: String {
@@ -209,6 +276,9 @@ struct RecordingView: View {
                 try recorder.start()
             }
             SharedStore.setRecordingActive(true)
+            // R6: real ActivityKit Live Activity — Lock Screen + Dynamic Island — for this
+            // capture session. Honest no-op when Live Activities are unsupported/disabled.
+            LiveActivityController.shared.start(isOnDevice: primaryIsOnDevice)
             phase = .listening
         } catch {
             SharedStore.setRecordingActive(false)
@@ -224,6 +294,10 @@ struct RecordingView: View {
         guard phase == .listening, !done else { return }
         done = shouldDismiss
         phase = .processing
+        // Capture is ending right now on every path below (live finish or file stop) — end the
+        // Live Activity here rather than after transcription, matching the design's "pressing
+        // Stop instantly collapses the pill" behavior instead of lingering through processing.
+        LiveActivityController.shared.end()
         if startedLive {
             Task {
                 // finish() waits briefly for the recognizer to flush the tail of the last
@@ -268,9 +342,13 @@ struct RecordingView: View {
 
     private func transcribe(_ clip: AudioClip?, shouldDismiss: Bool) async {
         guard let clip else {
+            SharedStore.setRecordingActive(false)
             phase = .error; errorMsg = "Nothing was recorded."; return
         }
-        let result = await settings.makeChain().transcribe(clip)
+        // R2: capture the chain's first real fallback (if any) so a cloud→on-device handoff can
+        // show the design's reassurance banner afterward.
+        let fallbackBox = RecordingFallbackBox()
+        let result = await settings.makeChain(onFallback: { from, to in fallbackBox.recordFirst(from, to) }).transcribe(clip)
         switch result {
         case .success(let tr):
             let text = settings.cleanup(tr.text)
@@ -288,7 +366,19 @@ struct RecordingView: View {
             // Bounce-to-app from the keyboard: stash the transcript in the shared App Group
             // so the keyboard can insert it via textDocumentProxy when the user swipes back.
             if fromKeyboard { SharedStore.setPendingTranscript(text) }
+            let fellBackFromCloud = (fallbackBox.pair.map { settings.settings.isCloud($0.from) } ?? false)
+                && (tr.provider == .onDevice || tr.provider == .localWhisper)
+            if fellBackFromCloud, let pair = fallbackBox.pair {
+                fallbackBanner = (pair.from, tr.provider)
+                phase = .starting   // clears the "Transcribing…" spinner while the banner shows
+            }
             if shouldDismiss {
+                if fellBackFromCloud {
+                    // Hold the screen briefly so the reassurance banner is actually seen before
+                    // dismissing — no Retry action wired (would need the original clip retained
+                    // past cleanup; logged as a deviation rather than a fake button).
+                    try? await Task.sleep(nanoseconds: 2_600_000_000)
+                }
                 onDone(rec)
             } else {
                 phase = .starting
@@ -324,6 +414,7 @@ struct RecordingView: View {
         done = true
         if startedLive { live.cancel() } else { recorder.cancel() }
         SharedStore.setRecordingActive(false)
+        LiveActivityController.shared.end()
         onCancel()
     }
 

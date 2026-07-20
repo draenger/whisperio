@@ -26,6 +26,11 @@ struct ScratchpadView: View {
     @State private var secs = 0
     @State private var ghostPhase: ListeningGhost.Phase?
     @State private var ghostReactUntil: Date = .distantPast
+    // Cloud→on-device fallback acknowledgment (R2/F2): set from ProviderChain's real
+    // onFallback hook, never simulated. Cleared on tap or after a few seconds, mirroring the
+    // ghost reaction's own auto-clear via ghostReactUntil.
+    @State private var cloudFallback: (from: ProviderID, to: ProviderID)?
+    @State private var cloudFallbackExpiresAt: Date = .distantPast
 
     private let tick = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
@@ -73,6 +78,14 @@ struct ScratchpadView: View {
                         }
                     }
                     noteHeader
+                    if cloudFallback != nil {
+                        StateBanner(tone: .warn, icon: "cloud", title: "Couldn’t reach the cloud",
+                                    sub: "Transcribed on-device instead — your note is saved.")
+                            .padding(.horizontal, 16).padding(.bottom, 10)
+                            .contentShape(Rectangle())
+                            .onTapGesture { self.cloudFallback = nil }
+                            .transition(.opacity)
+                    }
                     ScrollViewReader { proxy in
                         ScrollView(showsIndicators: false) {
                             noteCard
@@ -114,6 +127,7 @@ struct ScratchpadView: View {
             if stage == .listening { secs += 1 }
             // Let a finished reaction (note/wtf) fall back to hidden.
             if stage == .idle, ghostPhase != nil, Date() > ghostReactUntil { ghostPhase = nil }
+            if cloudFallback != nil, Date() > cloudFallbackExpiresAt { cloudFallback = nil }
         }
         .onDisappear {
             if stage == .listening { cancelTake() }
@@ -303,9 +317,20 @@ struct ScratchpadView: View {
                     react(.wtf, for: 2.6)
                     return
                 }
-                let result = await settings.makeChain().transcribe(clip)
+                let box = FallbackBox()
+                let result = await settings.makeChain(onFallback: { box.pair = ($0, $1) }).transcribe(clip)
                 switch result {
-                case .success(let tr): finishTake(raw: tr.text, clip: clip, provider: tr.provider)
+                case .success(let tr):
+                    // Real fallback only: box.pair is set exactly when ProviderChain actually
+                    // tried a later provider after an earlier one failed. Only acknowledge it
+                    // when a cloud engine handed off to on-device/local — a cloud→cloud retry
+                    // isn't the "your note is saved on-device" story this banner tells.
+                    if let pair = box.pair, settings.settings.isCloud(pair.0),
+                       (pair.1 == .onDevice || pair.1 == .localWhisper) {
+                        cloudFallback = (from: pair.0, to: pair.1)
+                        cloudFallbackExpiresAt = Date().addingTimeInterval(6)
+                    }
+                    finishTake(raw: tr.text, clip: clip, provider: tr.provider)
                 case .failure:
                     SharedStore.setRecordingActive(false)
                     stage = .idle
@@ -351,4 +376,12 @@ struct ScratchpadView: View {
         ghostPhase = phase
         ghostReactUntil = Date().addingTimeInterval(seconds)
     }
+}
+
+// Captures the (failed, next) pair ProviderChain's real onFallback hook reports, without
+// smuggling a mutable var into a @Sendable closure — mirrors WhisperioKit's own
+// ProviderChainTests.Box pattern. Read back on the same Task right after `await transcribe(_:)`
+// returns, so there's no actual concurrent access despite the @unchecked Sendable.
+private final class FallbackBox: @unchecked Sendable {
+    var pair: (ProviderID, ProviderID)?
 }

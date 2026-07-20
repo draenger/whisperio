@@ -81,7 +81,7 @@ final class SettingsStore: ObservableObject {
     // instantiates its provider with the slot's model — falling back to the per-engine
     // selected model when the slot doesn't pin one (unconfigured engines are skipped by
     // ProviderChain).
-    func makeChain() -> ProviderChain {
+    func makeChain(onFallback: (@Sendable (ProviderID, ProviderID) -> Void)? = nil) -> ProviderChain {
         let s = settings
         var slots = s.modelOrder
         if slots.isEmpty { slots = [ProviderSlot(provider: .onDevice)] }
@@ -92,7 +92,7 @@ final class SettingsStore: ObservableObject {
             slots.removeAll { s.isCloud($0.provider) }
             if slots.isEmpty { slots = [ProviderSlot(provider: .onDevice)] }
         }
-        return ProviderChain(providers: slots.map { provider(for: $0, s) })
+        return ProviderChain(providers: slots.map { provider(for: $0, s) }, onFallback: onFallback)
     }
 
     // One-off single-engine chain for retranscribing saved audio with an explicitly chosen

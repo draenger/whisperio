@@ -10,6 +10,7 @@
 		1A0000000000000000000012 /* WhisperioKit in Frameworks */ = {isa = PBXBuildFile; productRef = 1A0000000000000000000011 /* WhisperioKit */; };
 		1A000000000000000000002C /* WhisperioWidget.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 1A0000000000000000000022 /* WhisperioWidget.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		1A000000000000000000002E /* DictateIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A000000000000000000002D /* DictateIntent.swift */; };
+		1A0000000000000000000051 /* LiveActivityStopIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A0000000000000000000050 /* LiveActivityStopIntent.swift */; };
 		1A0000000000000000000040 /* WhisperioWatch Watch App.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = 65DB73B02FE4974400C0E269 /* WhisperioWatch Watch App.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		1B0000000000000000000012 /* WhisperioKit in Frameworks */ = {isa = PBXBuildFile; productRef = 1B0000000000000000000011 /* WhisperioKit */; };
 		1B000000000000000000002C /* WhisperioKeyboard.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 1B0000000000000000000022 /* WhisperioKeyboard.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
@@ -73,6 +74,7 @@
 		1A0000000000000000000003 /* WhisperioApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = WhisperioApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		1A0000000000000000000022 /* WhisperioWidget.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = WhisperioWidget.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		1A000000000000000000002D /* DictateIntent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = DictateIntent.swift; path = Sources/WhisperioApp/DictateIntent.swift; sourceTree = SOURCE_ROOT; };
+		1A0000000000000000000050 /* LiveActivityStopIntent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = LiveActivityStopIntent.swift; path = Sources/WhisperioApp/LiveActivityStopIntent.swift; sourceTree = SOURCE_ROOT; };
 		1B0000000000000000000022 /* WhisperioKeyboard.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = WhisperioKeyboard.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		1C0000000000000000000003 /* WhisperioMac.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = WhisperioMac.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		65DB73B02FE4974400C0E269 /* WhisperioWatch Watch App.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "WhisperioWatch Watch App.app"; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -224,6 +226,7 @@
 			isa = PBXGroup;
 			children = (
 				1A000000000000000000002D /* DictateIntent.swift */,
+				1A0000000000000000000050 /* LiveActivityStopIntent.swift */,
 			);
 			name = "Recovered References";
 			sourceTree = "<group>";
@@ -458,6 +461,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				1A000000000000000000002E /* DictateIntent.swift in Sources */,
+				1A0000000000000000000051 /* LiveActivityStopIntent.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

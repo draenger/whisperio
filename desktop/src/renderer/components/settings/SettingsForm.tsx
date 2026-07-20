@@ -195,7 +195,11 @@ const CHAIN_LABELS: Record<string, string> = {
   openai: 'OpenAI',
   elevenlabs: 'ElevenLabs',
   selfhosted: 'On-Device',
-  replicate: 'Replicate'
+  replicate: 'Replicate',
+  groq: 'Groq',
+  deepgram: 'Deepgram',
+  assemblyai: 'AssemblyAI',
+  mistral: 'Mistral'
 }
 
 function MicroLabel({ children, theme }: { children: ReactNode; theme: Theme }): ReactElement {
@@ -1098,7 +1102,9 @@ function GeneralTab({
       <div style={s.card}>
         <SectionHeader title="Startup" s={s} theme={theme} />
         <ToggleRow
-          label="Launch at Windows startup"
+          label={navigator.platform.toLowerCase().includes('mac')
+            ? 'Launch at login'
+            : 'Launch at Windows startup'}
           description="Automatically start Whisperio when you log in"
           checked={launchAtStartup}
           onChange={setLaunchAtStartup}

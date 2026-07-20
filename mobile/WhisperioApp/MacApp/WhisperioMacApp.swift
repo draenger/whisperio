@@ -60,6 +60,13 @@ struct WhisperioMacApp: App {
                 }
         }
         .defaultSize(width: 1100, height: 760)
+
+        // Native macOS Settings window (⌘,) — F7/R8: the app previously had no "Launch at
+        // login" control anywhere (grepped; none existed), so this is a new, real surface for
+        // it rather than a relabel of an existing stub.
+        Settings {
+            MacGeneralSettingsView()
+        }
     }
 
 #if DEBUG

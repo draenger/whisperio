@@ -423,5 +423,8 @@ struct WhisperioWidgetBundle: WidgetBundle {
         if #available(iOS 18.0, *) {
             DictateControl()
         }
+        if #available(iOS 16.2, *) {
+            WhisperioLiveActivityWidget()
+        }
     }
 }

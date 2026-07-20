@@ -171,6 +171,12 @@ public struct WhisperioSettings: Codable, Sendable, Equatable {
 
     // Transcription tuning.
     public var language: String          // "auto" or an ISO code
+    /// The user's confirmed languages from onboarding step 2 (ordered; first is primary),
+    /// e.g. seeded from the device's enabled keyboards. Persisted for Settings/onboarding to
+    /// reflect back to the user; `language` (above) is what engines actually consume — set to
+    /// the first entry here when the user confirms their selection. Empty means "never set"
+    /// (e.g. pre-onboarding-v2 installs), not "no languages".
+    public var preferredLanguages: [String]
     public var customVocabulary: String  // comma-separated terms
 
     // Behavior.
@@ -252,6 +258,12 @@ public struct WhisperioSettings: Codable, Sendable, Equatable {
     /// When off, the audio file is discarded right after transcription — only text is kept.
     public var keepAudioRecordings: Bool
 
+    /// R3: whether the "Engine & privacy" (OldDeviceView) screen has already been shown once
+    /// for this device. Set the first time Recording is opened on a device where
+    /// `SFSpeechRecognizer` cannot do on-device recognition, so the notice is honest (only
+    /// shown on devices that actually lack the capability) and only shown once.
+    public var oldDeviceNoticeShown: Bool
+
     public init(
         modelOrder: [ProviderSlot]? = nil,
         providerChain: [ProviderID] = [.onDevice],
@@ -277,6 +289,7 @@ public struct WhisperioSettings: Codable, Sendable, Equatable {
         localWhisperModel: String = "openai_whisper-base",
         chatModel: String = "gpt-4o-mini",
         language: String = "auto",
+        preferredLanguages: [String] = [],
         customVocabulary: String = "",
         cleanupEnabled: Bool = false,
         fallbackEnabled: Bool = false,
@@ -301,7 +314,8 @@ public struct WhisperioSettings: Codable, Sendable, Equatable {
         syncIntervalMinutes: Int = 15,
         autoDeleteEnabled: Bool = false,
         autoDeleteAfterDays: Int = 7,
-        keepAudioRecordings: Bool = true
+        keepAudioRecordings: Bool = true,
+        oldDeviceNoticeShown: Bool = false
     ) {
         // An explicit non-empty slot list wins; otherwise synthesize the equivalent slots
         // from the legacy primary + fallback pair (also how fresh defaults are built).
@@ -332,6 +346,7 @@ public struct WhisperioSettings: Codable, Sendable, Equatable {
         self.localWhisperModel = localWhisperModel
         self.chatModel = chatModel
         self.language = language
+        self.preferredLanguages = preferredLanguages
         self.customVocabulary = customVocabulary
         self.cleanupEnabled = cleanupEnabled
         self.fallbackEnabled = fallbackEnabled
@@ -357,6 +372,7 @@ public struct WhisperioSettings: Codable, Sendable, Equatable {
         self.autoDeleteEnabled = autoDeleteEnabled
         self.autoDeleteAfterDays = autoDeleteAfterDays
         self.keepAudioRecordings = keepAudioRecordings
+        self.oldDeviceNoticeShown = oldDeviceNoticeShown
     }
 
     /// Legacy persisted keys from before `modelOrder` existed — read only, never written.
@@ -415,6 +431,7 @@ public struct WhisperioSettings: Codable, Sendable, Equatable {
         localWhisperModel = try c.decodeIfPresent(String.self, forKey: .localWhisperModel) ?? d.localWhisperModel
         chatModel = try c.decodeIfPresent(String.self, forKey: .chatModel) ?? d.chatModel
         language = try c.decodeIfPresent(String.self, forKey: .language) ?? d.language
+        preferredLanguages = try c.decodeIfPresent([String].self, forKey: .preferredLanguages) ?? d.preferredLanguages
         customVocabulary = try c.decodeIfPresent(String.self, forKey: .customVocabulary) ?? d.customVocabulary
         cleanupEnabled = try c.decodeIfPresent(Bool.self, forKey: .cleanupEnabled) ?? d.cleanupEnabled
         fallbackEnabled = try c.decodeIfPresent(Bool.self, forKey: .fallbackEnabled) ?? d.fallbackEnabled
@@ -449,6 +466,7 @@ public struct WhisperioSettings: Codable, Sendable, Equatable {
         let decodedDays = try c.decodeIfPresent(Int.self, forKey: .autoDeleteAfterDays) ?? d.autoDeleteAfterDays
         autoDeleteAfterDays = decodedDays > 0 ? decodedDays : d.autoDeleteAfterDays
         keepAudioRecordings = try c.decodeIfPresent(Bool.self, forKey: .keepAudioRecordings) ?? d.keepAudioRecordings
+        oldDeviceNoticeShown = try c.decodeIfPresent(Bool.self, forKey: .oldDeviceNoticeShown) ?? d.oldDeviceNoticeShown
     }
 
     /// Whether the given engine requires (and currently has) cloud consent to run. Both

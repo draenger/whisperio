@@ -13,6 +13,7 @@ struct HomeView: View {
     @EnvironmentObject private var recordings: RecordingsStore
     @EnvironmentObject private var digests: DigestStore
     @EnvironmentObject private var settings: SettingsStore
+    @ObservedObject private var connectivity = Connectivity.shared
     var openRec: (DemoRecording) -> Void
     var openRecording: () -> Void
     var openConversation: () -> Void = {}
@@ -76,6 +77,15 @@ struct HomeView: View {
                         .padding(.horizontal, 13).padding(.vertical, 11)
                         .background(t.surfaceUp, in: RoundedRectangle(cornerRadius: 13, style: .continuous))
                         .overlay(RoundedRectangle(cornerRadius: 13, style: .continuous).stroke(t.line, lineWidth: 1))
+
+                        // Real reachability only — StateBanner/tone .ok "You're offline — and
+                        // that's fine" (mob-single.jsx "Offline · feature" scene) shows iff
+                        // Connectivity's NWPathMonitor actually reports the path unsatisfied,
+                        // and persists for as long as that's true (no dismiss in the design).
+                        if !connectivity.isOnline {
+                            StateBanner(tone: .ok, icon: "lock", title: "You’re offline — and that’s fine",
+                                        sub: "On-device engine running at full speed. Nothing is waiting to upload.")
+                        }
 
                         ScrollView(.horizontal, showsIndicators: false) {
                             HStack(spacing: 7) {

@@ -33,5 +33,7 @@
 		<string>remote-notification</string>
 		<string>audio</string>
 	</array>
+	<key>NSSupportsLiveActivities</key>
+	<true/>
 </dict>
 </plist>

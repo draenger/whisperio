@@ -68,7 +68,7 @@ struct GalleryView: View {
                     entry("Empty · first run") { AnyView(EmptyStateView()) },
                     entry("Offline · a feature") { AnyView(OfflineStateView()) },
                     entry("Cloud unreachable → on-device") { AnyView(CloudErrorStateView()) },
-                    entry("Older iPhone → Cloud") { AnyView(OldDeviceView()) }
+                    entry("Older iPhone → Cloud") { AnyView(OldDeviceView().environmentObject(settings)) }
                 ])
                 section("Reference", [
                     entry("Component & style kit") { AnyView(StyleKitView()) }
