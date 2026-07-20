@@ -3,14 +3,14 @@
    TriggerScene.swift, DynamicIslandScene.swift, WhisperioWidget.swift. Each fills a phone screen. */
 
 /* ─── Custom keyboard — honest "bounce to app" ─── */
-function KeyboardSceneClassic({ t }) {
+function KeyboardSceneClassic({ t, initialStage }) {
   const target = 'Running ten late — grab us a table by the window if you can.';
-  const [stage, setStage] = React.useState('idle'); // idle | explain | recording | done
+  const [stage, setStage] = React.useState(initialStage === 'explain' ? 'explain' : 'idle'); // idle | explain | recording | done
   const [seen, setSeen] = React.useState(false);
   const [typed, setTyped] = React.useState('');
-  const [inserted, setInserted] = React.useState('');
+  const [inserted, setInserted] = React.useState(initialStage === 'done' || initialStage === 'rewrite' ? target : '');
   const [toast, setToast] = React.useState(false);
-  const [rwOpen, setRwOpen] = React.useState(false);
+  const [rwOpen, setRwOpen] = React.useState(initialStage === 'rewrite');
   const [rewriting, setRewriting] = React.useState(false);
   const typer = React.useRef(null);
   const applyRw = (name) => {
@@ -26,6 +26,7 @@ function KeyboardSceneClassic({ t }) {
   const tapMic = () => { if (seen) startRec(); else setStage('explain'); };
   const finish = () => { clearInterval(typer.current); setInserted(target); setStage('idle'); setToast(true); setTimeout(() => setToast(false), 2200); };
   React.useEffect(() => () => clearInterval(typer.current), []);
+  React.useEffect(() => { if (initialStage === 'recording') startRec(); }, []);
 
   const dim = t.mode === 'dark';
   const keyBg = dim ? 'rgba(255,255,255,0.13)' : '#fff';
@@ -123,11 +124,11 @@ function KeyboardSceneClassic({ t }) {
 }
 
 /* ─── Triggers — Action Button · Lock Screen · Back-Tap → clipboard ─── */
-function TriggerScene({ t }) {
+function TriggerScene({ t, initialStage }) {
   const target = 'Pick up the dry cleaning and book a table for four on Friday.';
-  const [stage, setStage] = React.useState('idle'); // idle | listening | done
+  const [stage, setStage] = React.useState(initialStage || 'idle'); // idle | listening | done
   const [via, setVia] = React.useState('action');
-  const [typed, setTyped] = React.useState('');
+  const [typed, setTyped] = React.useState(initialStage === 'listening' ? target.slice(0, 38) : '');
   const typer = React.useRef(null);
   const viaLabel = { action: 'Action Button', backtap: 'Back-Tap', lock: 'Lock Screen' }[via];
   const viaIcon = { action: 'bolt', backtap: 'more', lock: 'lock' }[via];
@@ -193,8 +194,8 @@ function TriggerScene({ t }) {
 }
 
 /* ─── Dynamic Island / Live Activity ─── */
-function DynamicIslandScene({ t }) {
-  const [rec, setRec] = React.useState(true);
+function DynamicIslandScene({ t, initialRec = true }) {
+  const [rec, setRec] = React.useState(initialRec);
   const [secs, setSecs] = React.useState(7);
   React.useEffect(() => { if (!rec) return; const iv = setInterval(() => setSecs((s) => s + 1), 1000); return () => clearInterval(iv); }, [rec]);
   const apps = ['Messages', 'Mail', 'Notes', 'Safari', 'Calendar', 'Maps', 'Photos', 'Music'];

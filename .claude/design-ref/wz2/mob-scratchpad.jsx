@@ -12,9 +12,9 @@ const SCRATCH_LINES = [
   'Note to self: the wave animation should pause when the tray is hidden.',
 ];
 
-function PhoneScratchpad({ t, onBack, onSettings, onHistory, onSummarize }) {
+function PhoneScratchpad({ t, onBack, onSettings, onHistory, onSummarize, initialStage }) {
   const [entries, setEntries] = React.useState(SCRATCH_SEED);
-  const [stage, setStage] = React.useState('idle'); // idle | listening | processing
+  const [stage, setStage] = React.useState(initialStage || 'idle'); // idle | listening | processing
   const [prov, setProv] = React.useState('');
   const [secs, setSecs] = React.useState(0);
   const lineIdx = React.useRef(0);

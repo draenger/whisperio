@@ -3,16 +3,16 @@
    shift/backspace, send — plus inline dictation with provisional text. No style presets —
    Whisperio types what you say, cleaned up on-device. Classic bounce version stays a Tweak. */
 
-function KeyboardScenePro({ t, initialStage }) {
+function KeyboardScenePro({ t }) {
   const target = 'Running ten late — grab us a table by the window if you can.';
   const [stage, setStage] = React.useState('idle'); // idle | listening
   const [msgs, setMsgs] = React.useState([{ txt: 'Heading over now?', me: false }, { txt: 'Almost — finishing one thing', me: true }]);
-  const [field, setField] = React.useState(initialStage === 'rewrite' ? target : '');
+  const [field, setField] = React.useState('');
   const [prov, setProv] = React.useState(''); // provisional dictation text
   const [shift, setShift] = React.useState(true);
   const [secs, setSecs] = React.useState(0);
   const [toast, setToast] = React.useState('');
-  const [rw, setRw] = React.useState(initialStage === 'rewrite');
+  const [rw, setRw] = React.useState(false);
   const typer = React.useRef(null); const clk = React.useRef(null); const threadRef = React.useRef(null);
   const stopT = () => { clearInterval(typer.current); clearInterval(clk.current); };
   React.useEffect(() => () => stopT(), []);
@@ -34,7 +34,6 @@ function KeyboardScenePro({ t, initialStage }) {
   const cancel = () => { stopT(); setProv(''); setStage('idle'); };
   const confirm = () => { stopT(); setField((f) => (f ? f + ' ' : '') + prov); setProv(''); setStage('idle'); flash('Inserted · on-device'); };
   const flash = (txt) => { setToast(txt); setTimeout(() => setToast(''), 2200); };
-  React.useEffect(() => { if (initialStage === 'listening') start(); }, []);
   const rwText = (id, f) => {
     const s = f.trim();
     if (id === 'bullets') return '• ' + s.split(/[,.]| — /).map((x) => x.trim()).filter(Boolean).join('\n• ');
