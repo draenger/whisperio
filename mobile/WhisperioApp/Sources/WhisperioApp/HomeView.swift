@@ -600,7 +600,7 @@ struct HomeSyncButton: View {
             }
         } label: {
             ZStack {
-                if !isSyncing && !justCompleted {
+                if !justCompleted {
                     RoundedRectangle(cornerRadius: 12, style: .continuous)
                         .fill(t.accent.opacity(0.12))
                         .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(t.hair, lineWidth: 1))

@@ -46,8 +46,8 @@ struct DictateWidgetView: View {
                 }
             case .accessoryRectangular:
                 HStack(spacing: 6) {
-                    Image(systemName: "mic.fill").font(.system(size: 16, weight: .bold))
-                    Text("Dictate").font(.system(size: 15, weight: .semibold))
+                    Image(systemName: "mic.fill").font(.system(size: 15, weight: .bold))
+                    Text("Dictate").font(.system(size: 14, weight: .semibold))
                 }
             default:
                 VStack(spacing: 8) {
@@ -278,7 +278,7 @@ struct TodayDigestWidgetView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 7) {
-                Image(systemName: "sparkle").font(.system(size: 13)).foregroundStyle(wzAccentLite)
+                Image(systemName: "sparkle").font(.system(size: 14)).foregroundStyle(wzAccentLite)
                 Text("Today's digest").font(.system(size: 10.5, weight: .semibold))
                 Spacer()
                 // Honest privacy glyph: cloud when the summary came from the AI model, lock
@@ -374,7 +374,7 @@ struct StandByWidgetView: View {
         HStack(spacing: 16) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(Date(), style: .time)
-                    .font(.system(size: 44, weight: .bold, design: .rounded))
+                    .font(.system(size: 44, weight: .semibold, design: .rounded))
                     .minimumScaleFactor(0.6)
                 Text(Date(), style: .date)
                     .font(.system(size: 12))

@@ -225,12 +225,12 @@ struct TriggerGuidesView: View {
                     .frame(width: 34, height: 34)
                     .background(t.surfaceUp, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(g.name).font(WZFont.ui(14.5, .semibold)).foregroundStyle(t.text)
+                    Text(g.name).font(WZFont.ui(14.5, .medium)).foregroundStyle(t.text)
                     Text(g.blurb).font(WZFont.ui(12)).foregroundStyle(t.muted).lineSpacing(1)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer(minLength: 0)
-                WIcon("chevR", size: 16, weight: .regular).foregroundStyle(t.faint)
+                WIcon("chevR", size: 17, weight: .regular).foregroundStyle(t.faint)
             }
             .padding(.vertical, 13)
             .frame(maxWidth: .infinity, alignment: .leading)

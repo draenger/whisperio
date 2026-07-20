@@ -276,7 +276,7 @@ struct KeyboardRootView: View {
     @ViewBuilder private var row3LeftKey: some View {
         switch plane {
         case .letters:
-            specialKey(icon: model.shifted ? "shift.fill" : "shift", flex: 1.5, width: 40) { model.toggleShift() }
+            specialKey(icon: model.shifted ? "shift.fill" : "shift", flex: 1.5, width: 40, iconSize: 18) { model.toggleShift() }
         case .numbers:
             specialKey(text: "#+=", flex: 1.5) { plane = .symbols }
         case .symbols:
@@ -349,12 +349,13 @@ struct KeyboardRootView: View {
     private func specialKey(icon: String? = nil, text: String? = nil, flex: CGFloat,
                             height: CGFloat = 40, width: CGFloat? = nil,
                             textFont: Font = .system(size: 13.5, weight: .medium),
+                            iconSize: CGFloat = 16,
                             action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Group {
                 if let icon {
                     Image(systemName: icon)
-                        .font(.system(size: 16, weight: .regular))
+                        .font(.system(size: iconSize, weight: .regular))
                 } else if let text {
                     Text(text)
                         .font(textFont)

@@ -437,7 +437,7 @@ struct OnboardingView: View {
                     Text("We’ll take you straight there and back.")
                         .font(WZFont.ui(12.5)).foregroundStyle(t.faint)
                         .multilineTextAlignment(.center).lineSpacing(3)
-                        .padding(.top, 2)
+                        .padding(.horizontal, 8).padding(.top, 2)
                 }
             }
             .padding(.horizontal, 22).padding(.vertical, 14)

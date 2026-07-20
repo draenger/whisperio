@@ -210,9 +210,15 @@ struct ScratchpadView: View {
                             .overlay(Circle().stroke(t.line, lineWidth: 1))
                     }
                     .buttonStyle(.plain)
-                    Spacer(minLength: 0)
-                    Waveform(color: t.accentLite, bars: 22, height: 30)
-                    Spacer(minLength: 0)
+                    // Single centered child (design's flex:1 wrapper) — as three separate
+                    // HStack children the two Spacers doubled the 12pt gap budget and shifted
+                    // the waveform ~12pt off-center.
+                    HStack(spacing: 0) {
+                        Spacer(minLength: 0)
+                        Waveform(color: t.accentLite, bars: 22, height: 30)
+                        Spacer(minLength: 0)
+                    }
+                    .frame(maxWidth: .infinity)
                     Button(action: keepTake) {
                         WIcon("check", size: 21).foregroundStyle(t.primaryInk)
                             .frame(width: 50, height: 50)

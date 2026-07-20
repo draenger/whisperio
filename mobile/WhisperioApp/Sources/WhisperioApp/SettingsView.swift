@@ -1113,7 +1113,9 @@ struct SettingsView: View {
     private var developerCategory: some View {
         VStack(alignment: .leading, spacing: 16) {
             SettGroup(title: "Diagnostics") {
-                VStack(alignment: .leading, spacing: 10) {
+                // Uniform 12pt column gap (design gap:12) — the header row is a peer of the
+                // rows/refresh/events blocks, not a tighter-spaced sibling.
+                VStack(alignment: .leading, spacing: 12) {
                     HStack(alignment: .center) {
                         VStack(alignment: .leading, spacing: 3) {
                             Text("CloudKit status").font(WZFont.ui(13, .semibold)).foregroundStyle(t.text)
@@ -1213,7 +1215,7 @@ struct SettingsView: View {
                         }
                     }
                 }
-                .padding(.vertical, 12)
+                .padding(.vertical, 13)
             }
         }
     }
