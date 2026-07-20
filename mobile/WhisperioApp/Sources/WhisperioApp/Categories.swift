@@ -91,7 +91,7 @@ struct CategoryFilterChip: View {
                 if let category { WIcon(category.icon, size: 12) }
                 Text(category?.label ?? "All")
             }
-            .font(WZFont.mono(12.5, .semibold))
+            .font(WZFont.ui(12.5, .semibold))
             // Design's tinted-chip language (like CategoryTag below), not a solid brand
             // pill: translucent hue fill, hue-colored text, tinted 1px ring when selected.
             .foregroundStyle(selected ? (category != nil ? hue : t.accentLite) : t.muted)

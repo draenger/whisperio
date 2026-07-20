@@ -971,7 +971,9 @@ struct SettingsView: View {
                 GhostButton(title: "Restore default templates", icon: "sync") {
                     showRestoreConfirm = true
                 }
-                .fixedSize()
+                // No .fixedSize(): the design's parent here is a COLUMN flex container,
+                // where align-items:stretch makes the ghost button span the full card
+                // width (unlike the row-flex hug cases the earlier dimensional pass fixed).
                 .padding(.top, 2)
                 .opacity(hasOpenAIKey ? 1 : 0.5)
                 .allowsHitTesting(hasOpenAIKey)
