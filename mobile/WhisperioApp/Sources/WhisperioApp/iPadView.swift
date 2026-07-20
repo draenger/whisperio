@@ -505,6 +505,9 @@ private struct IPadLiveJournal: View {
             ScratchpadView(onBack: { showScratchpad = false },
                            onHistory: { showScratchpad = false },
                            openSettings: { settingsDark = t.dark; showSettings = true },
+                           // Dismiss the sheet before opening today's digest so DigestDayView is
+                           // actually visible — same idiom as the composer sheet's onDone above.
+                           summarizeDay: { showScratchpad = false; dayStartInManual = false; daySeed = nil; day = Date() },
                            toast: showToast)
         }
     }

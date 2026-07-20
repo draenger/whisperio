@@ -324,6 +324,7 @@ struct WZPhoneView: View {
             ScratchpadView(onBack: { go(.journal) },
                            onHistory: { go(.journal) },
                            openSettings: { go(.settings) },
+                           summarizeDay: { digestDay = Date(); digestSeed = nil; digestStartInManual = false; go(.digestDay) },
                            toast: showToast)
         case .digestDay:
             DigestDayView(day: digestDay,

@@ -72,6 +72,16 @@ Confirmed → fixed in round-3 fix wave:
 - iPad/Mac IPadLiveJournal embedded JournalView without onAdd/onOpenToday, leaving the
   per-book "New page", empty-chapter CTA, and today running-note card as dead no-ops.
 
+## Parity round 4 (2026-07-20) — 5 raw → 5 confirmed → all fixed (wf_a5c6407d)
+Rulings recorded (do NOT re-report):
+- H3: Scratchpad back/history both route to Journal (iPhone go(.journal); iPad = sheet dismiss,
+  Journal is beneath).
+- H4 appOnly filter = source ∈ {"app","mic"} or nil(legacy); Watch/keyboard excluded — the
+  Settings footnote copy was ADJUSTED from the mock's literal text to match this real behavior.
+  "Pick per day" = real per-day source-toggle sheet before generation (skipped when the day has
+  a single source).
+- H5: iPad daySeed mirrors AppShell digestSeed (ai/raw), cleared on openDay/onBack.
+
 ## Process
 Weaker agents plan → Fable verifies/corrects plans → weaker agents implement
 (fresh-read + surgical-edit protocol, per-file ownership) → build gates
