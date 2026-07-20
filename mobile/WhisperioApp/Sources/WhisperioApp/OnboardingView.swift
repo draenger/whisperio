@@ -875,8 +875,10 @@ private struct ProviderConnectSheet: View {
         .background(t.surfaceUp, in: RoundedRectangle(cornerRadius: 15, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 15, style: .continuous)
+                // Always dashed (design: `1px dashed` in both states) — only the color
+                // flips to green once a key is present.
                 .stroke(hasKey ? t.green : t.line,
-                        style: StrokeStyle(lineWidth: 1, dash: hasKey ? [] : [4, 3]))
+                        style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
         )
     }
 
