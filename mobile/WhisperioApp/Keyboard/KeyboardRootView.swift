@@ -286,7 +286,8 @@ struct KeyboardRootView: View {
 
     private var row4: some View {
         HStack(spacing: 5) {
-            specialKey(text: plane == .letters ? "123" : "ABC", flex: 1.45, height: 42, width: 64) {
+            specialKey(text: plane == .letters ? "123" : "ABC", flex: 1.45, height: 42, width: 64,
+                       textFont: .system(size: 13, weight: .regular)) {
                 plane = plane == .letters ? .numbers : .letters
             }
             Button(action: { model.space() }) {
@@ -346,7 +347,9 @@ struct KeyboardRootView: View {
     }
 
     private func specialKey(icon: String? = nil, text: String? = nil, flex: CGFloat,
-                            height: CGFloat = 40, width: CGFloat? = nil, action: @escaping () -> Void) -> some View {
+                            height: CGFloat = 40, width: CGFloat? = nil,
+                            textFont: Font = .system(size: 13.5, weight: .medium),
+                            action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Group {
                 if let icon {
@@ -354,7 +357,7 @@ struct KeyboardRootView: View {
                         .font(.system(size: 16, weight: .regular))
                 } else if let text {
                     Text(text)
-                        .font(.system(size: 13.5, weight: .medium))
+                        .font(textFont)
                 }
             }
             .foregroundStyle(keyText)

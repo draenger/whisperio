@@ -674,7 +674,7 @@ private struct iPadJournal: View {
     private var dayIndex: some View {
         VStack(alignment: .leading, spacing: 0) {
             SectionLabel(text: "Journal")
-                .padding(.horizontal, 18).padding(.top, 20).padding(.bottom, 12)
+                .padding(.horizontal, 18).padding(.top, 16).padding(.bottom, 10)
             ScrollView {
                 VStack(spacing: 10) {
                     ForEach(days, id: \.id) { day in
@@ -701,14 +701,14 @@ private struct iPadJournal: View {
                 ForEach(categories(day.recs)) { CategoryTag(category: $0) }
             }
             if ready {
-                HStack(spacing: 6) {
-                    WIcon("check", size: 12).foregroundStyle(t.green)
-                    Text("Summary ready").font(WZFont.mono(10.5, .semibold)).foregroundStyle(t.green)
+                HStack(spacing: 7) {
+                    WIcon("check", size: 13).foregroundStyle(t.green)
+                    Text("Summary ready").font(WZFont.mono(11, .semibold)).foregroundStyle(t.green)
                 }
             } else {
-                HStack(spacing: 6) {
-                    WIcon("spark", size: 12).foregroundStyle(t.accentLite)
-                    Text("Generate summary").font(WZFont.mono(10.5, .semibold)).foregroundStyle(t.accentLite)
+                HStack(spacing: 7) {
+                    WIcon("spark", size: 13).foregroundStyle(t.accentLite)
+                    Text("Generate summary").font(WZFont.mono(11, .semibold)).foregroundStyle(t.accentLite)
                 }
             }
         }
@@ -749,7 +749,7 @@ private struct iPadJournal: View {
                 }
             } else if ready {
                 Text(demoSummary)
-                    .font(WZFont.ui(15)).foregroundStyle(t.text).lineSpacing(4)
+                    .font(WZFont.ui(15.5)).foregroundStyle(t.text).lineSpacing(4)
                     .fixedSize(horizontal: false, vertical: true)
                 HStack {
                     Spacer(minLength: 0)
@@ -758,7 +758,7 @@ private struct iPadJournal: View {
                 }
             } else {
                 Text("Group this day’s notes by category and write a short digest with AI.")
-                    .font(WZFont.ui(13.5)).foregroundStyle(t.muted).lineSpacing(3)
+                    .font(WZFont.ui(14)).foregroundStyle(t.muted).lineSpacing(3)
                     .fixedSize(horizontal: false, vertical: true)
                 GradButton(title: "Generate summary", icon: "spark") { generate() }.fixedSize()
             }

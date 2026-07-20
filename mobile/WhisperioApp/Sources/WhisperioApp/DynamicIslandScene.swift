@@ -60,7 +60,7 @@ struct DynamicIslandScene: View {
                             Text("Recording").font(WZFont.display(13.5)).foregroundStyle(.white)
                             Text("on-device").font(WZFont.mono(11)).foregroundStyle(.white.opacity(0.6))
                         }
-                        Waveform(color: t.accentLite, bars: 20, height: 20)
+                        Waveform(color: t.accentLite, bars: 20, height: 18)
                     }
                     Text(String(format: "0:%02d", secs % 60)).font(WZFont.mono(14)).foregroundStyle(.white).monospacedDigit()
                     Button { withAnimation { rec = false } } label: {
@@ -83,7 +83,7 @@ struct DynamicIslandScene: View {
                     .padding(.horizontal, 16).frame(height: 37)
                     .background(.black, in: Capsule())
                 }
-                .buttonStyle(.plain).padding(.top, 11)
+                .buttonStyle(.plain).padding(.top, 8)
             }
         }
     }

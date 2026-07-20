@@ -21,7 +21,7 @@ struct WatchRootView: View {
             VStack(spacing: 10) {
                 HStack(spacing: 5) {
                     WatchGhostIcon(size: 14)
-                    Text("Whisperio").font(.headline)
+                    Text("Whisperio").font(.system(size: 13, weight: .semibold))
                 }
 
                 Button(action: conn.toggle) {

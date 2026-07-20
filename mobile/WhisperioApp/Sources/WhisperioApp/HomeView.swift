@@ -90,7 +90,7 @@ struct HomeView: View {
                             }
                         }
                     }
-                    .padding(.horizontal, 16).padding(.top, 4).padding(.bottom, 6)
+                    .padding(.horizontal, 16).padding(.top, 4)
 
                     if recordings.items.isEmpty {
                         emptyState

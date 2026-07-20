@@ -804,7 +804,7 @@ struct SettingsView: View {
                         .font(WZFont.mono(11)).foregroundStyle(t.faint)
                         .fixedSize(horizontal: false, vertical: true)
                 }
-                .padding(.vertical, 12)
+                .padding(.vertical, 13)
                 .overlay(alignment: .bottom) { Rectangle().fill(t.lineSoft).frame(height: 1) }
                 VStack(alignment: .leading, spacing: 9) {
                     HStack(alignment: .top, spacing: 13) {
@@ -819,13 +819,35 @@ struct SettingsView: View {
                         }
                     }
                     HStack(spacing: 12) {
-                        Stepper(value: autoStopSecondsBinding, in: 0...120, step: 5) {
-                            Text(autoStopSecondsBinding.wrappedValue == 0
-                                 ? "Off"
-                                 : "\(Int(autoStopSecondsBinding.wrappedValue)) seconds")
-                                .font(WZFont.ui(13.5, .semibold))
-                                .foregroundStyle(t.text)
+                        Text(autoStopSecondsBinding.wrappedValue == 0
+                             ? "Off"
+                             : "\(Int(autoStopSecondsBinding.wrappedValue)) seconds")
+                            .font(WZFont.ui(13.5, .semibold))
+                            .foregroundStyle(t.text)
+                            .frame(minWidth: 84, alignment: .leading)
+                        HStack(spacing: 0) {
+                            Button {
+                                autoStopSecondsBinding.wrappedValue = max(0, autoStopSecondsBinding.wrappedValue - 5)
+                            } label: {
+                                Text("−")
+                                    .font(.system(size: 16, weight: .semibold))
+                                    .foregroundStyle(autoStopSecondsBinding.wrappedValue == 0 ? t.faint : t.text)
+                                    .frame(width: 34, height: 30)
+                            }
+                            .disabled(autoStopSecondsBinding.wrappedValue == 0)
+                            Button {
+                                autoStopSecondsBinding.wrappedValue = min(120, autoStopSecondsBinding.wrappedValue + 5)
+                            } label: {
+                                Text("+")
+                                    .font(.system(size: 16, weight: .semibold))
+                                    .foregroundStyle(autoStopSecondsBinding.wrappedValue == 120 ? t.faint : t.text)
+                                    .frame(width: 34, height: 30)
+                            }
+                            .disabled(autoStopSecondsBinding.wrappedValue == 120)
                         }
+                        .background(t.surfaceUp)
+                        .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous).stroke(t.line, lineWidth: 1))
                         Spacer(minLength: 0)
                     }
                     Text(autoStopSecondsBinding.wrappedValue == 0
@@ -834,7 +856,7 @@ struct SettingsView: View {
                         .font(WZFont.mono(11)).foregroundStyle(t.faint)
                         .fixedSize(horizontal: false, vertical: true)
                 }
-                .padding(.vertical, 12)
+                .padding(.vertical, 13)
             }
             SettGroup(title: "Engine behavior") {
                 SettRow(icon: "spark", label: "Cleanup",
@@ -1541,12 +1563,14 @@ struct SettingsView: View {
                 WIcon(icon, size: 17).foregroundStyle(on ? t.accent : t.muted)
                     .frame(width: 38, height: 38)
                     .background(t.surfaceUp, in: RoundedRectangle(cornerRadius: 11, style: .continuous))
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: 0) {
                     Text(title).font(WZFont.ui(14.5, .semibold)).foregroundStyle(t.text)
                     Text(sub).font(WZFont.mono(11)).foregroundStyle(t.faint)
+                        .padding(.top, 1)
                     Text(status.text)
                         .font(WZFont.mono(10, .semibold))
                         .foregroundStyle(status.ready ? t.green : t.amber)
+                        .padding(.top, 2)
                 }
                 Spacer(minLength: 0)
                 if needsConsent {

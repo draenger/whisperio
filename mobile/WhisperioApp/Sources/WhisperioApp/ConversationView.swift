@@ -89,14 +89,16 @@ struct ConversationView: View {
                         // Static "diarization is on" cue — mirrors the design's spChip row but
                         // without the alternating active-speaker pulse, since there's no real
                         // per-speaker signal during capture (only batch diarization after stop).
-                        HStack(spacing: 8) {
-                            speakerChip("Speaker 1", color: t.accent)
-                            speakerChip("Speaker 2", color: .hex(0x3da2f7))
-                            Text("2 voices").font(WZFont.mono(10.5)).foregroundStyle(t.faint)
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack(spacing: 8) {
+                                speakerChip("Speaker 1", color: t.accent)
+                                speakerChip("Speaker 2", color: .hex(0x3da2f7))
+                                Text("2 voices").font(WZFont.mono(10.5)).foregroundStyle(t.faint)
+                            }
+                            Text("Names are matched after you stop — rename or “Name with AI” in the transcript.")
+                                .font(WZFont.mono(10.5)).foregroundStyle(t.faint)
+                                .frame(maxWidth: .infinity, alignment: .leading)
                         }
-                        Text("Names are matched after you stop — rename or “Name with AI” in the transcript.")
-                            .font(WZFont.mono(10.5)).foregroundStyle(t.faint)
-                            .frame(maxWidth: .infinity, alignment: .leading)
                     }
                     if phase == .setup {
                         GradButton(title: "Open Settings", icon: "settings", action: resolveSetup)

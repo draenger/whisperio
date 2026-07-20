@@ -104,28 +104,33 @@ struct StorageView: View {
 
     private var usageCard: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                SectionLabel(text: "On this iPhone")
-                Spacer(minLength: 0)
-                Text(Self.format(totalBytes)).font(WZFont.mono(12.5)).foregroundStyle(t.text)
-            }
-            GeometryReader { geo in
-                HStack(spacing: 0) {
-                    if totalBytes > 0 {
-                        Rectangle().fill(t.accent)
-                            .frame(width: geo.size.width * CGFloat(audioBytes) / CGFloat(totalBytes))
-                        Rectangle().fill(Color.hex(0x3da2f7))
-                            .frame(width: geo.size.width * CGFloat(transcriptBytes) / CGFloat(totalBytes))
-                        Rectangle().fill(t.green)
-                    } else {
-                        Rectangle().fill(t.surfaceUp)
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    Text("ON THIS IPHONE")
+                        .font(WZFont.mono(10.5, .semibold))
+                        .tracking(1.05)
+                        .foregroundStyle(t.faint)
+                    Spacer(minLength: 0)
+                    Text(Self.format(totalBytes)).font(WZFont.mono(11.5)).foregroundStyle(t.text)
+                }
+                GeometryReader { geo in
+                    HStack(spacing: 0) {
+                        if totalBytes > 0 {
+                            Rectangle().fill(t.accent)
+                                .frame(width: geo.size.width * CGFloat(audioBytes) / CGFloat(totalBytes))
+                            Rectangle().fill(Color.hex(0x3da2f7))
+                                .frame(width: geo.size.width * CGFloat(transcriptBytes) / CGFloat(totalBytes))
+                            Rectangle().fill(t.green)
+                        } else {
+                            Rectangle().fill(t.surfaceUp)
+                        }
                     }
                 }
+                .frame(height: 9)
+                .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
+                .background(t.surfaceUp, in: RoundedRectangle(cornerRadius: 5, style: .continuous))
+                .animation(.easeOut(duration: 0.4), value: totalBytes)
             }
-            .frame(height: 9)
-            .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
-            .background(t.surfaceUp, in: RoundedRectangle(cornerRadius: 5, style: .continuous))
-            .animation(.easeOut(duration: 0.4), value: totalBytes)
             HStack(spacing: 14) {
                 legend("Audio", audioBytes, t.accent)
                 legend("Transcripts", transcriptBytes, Color.hex(0x3da2f7))
