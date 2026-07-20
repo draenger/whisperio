@@ -45,7 +45,7 @@ struct WatchRootView: View {
                         WatchSpinner()
                     }
                     Text(conn.status)
-                        .font(.caption2)
+                        .font(.system(size: 11))
                         .foregroundStyle(Color(white: 1.0, opacity: 0.55))
                         .multilineTextAlignment(.center)
                 }

@@ -544,7 +544,7 @@ struct DetailView: View {
                 if !quotes.isEmpty {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("WHAT THEY SAID")
-                            .font(WZFont.mono(10)).foregroundStyle(t.faint)
+                            .font(WZFont.mono(10)).tracking(1.2).foregroundStyle(t.faint)
                         ForEach(Array(quotes.enumerated()), id: \.offset) { _, seg in
                             HStack(alignment: .top, spacing: 9) {
                                 Circle().fill(color).frame(width: 7, height: 7).padding(.top, 5)
