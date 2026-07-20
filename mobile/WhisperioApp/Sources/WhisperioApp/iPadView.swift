@@ -422,14 +422,22 @@ private struct IPadLiveJournal: View {
     // since library selection state lives one level up.
     var openLibrary: (UUID) -> Void = { _ in }
     @State private var day: Date?
+    @State private var dayStartInManual = false
     @State private var showSettings = false
+    @State private var showComposer = false
+    @State private var showScratchpad = false
     @State private var settingsDark = false
     @State private var settingsCategory: String?
     @State private var toastMsg: String?
 
     var body: some View {
         HStack(spacing: 0) {
-            JournalView(onBack: onExit, openDay: { day = $0 })
+            // onAdd/onOpenToday are presented as sheets over the split (there's no push route
+            // here) so the book "+" menu, the empty-chapter CTA, and the today running-note
+            // card aren't dead ends on iPad/Mac the way the phone reaches .journalNew/.scratchpad.
+            JournalView(onBack: onExit, openDay: { dayStartInManual = false; day = $0 },
+                        onAdd: { showComposer = true },
+                        onOpenToday: { showScratchpad = true })
                 .frame(width: 320)
             Rectangle().fill(t.line).frame(width: 1)
             Group {
@@ -443,7 +451,8 @@ private struct IPadLiveJournal: View {
                                       settingsDark = t.dark
                                       showSettings = true
                                   },
-                                  toast: showToast)
+                                  toast: showToast,
+                                  startInManual: dayStartInManual)
                         .id(day)
                 } else {
                     placeholder
@@ -470,6 +479,27 @@ private struct IPadLiveJournal: View {
                 // SettingsStore, so a fresh instance here still reflects real persisted presets
                 // rather than diverging state.
                 .environmentObject(PresetStore())
+        }
+        .sheet(isPresented: $showComposer) {
+            // "New page" composer over the split. onDone routes exactly like the phone
+            // (AppShell .journalNew): blank → today's manual digest editor, ai/raw → today's
+            // seeded digest, split → just back to the book index.
+            JournalComposerView(onBack: { showComposer = false },
+                                onDone: { kind in
+                                    showComposer = false
+                                    switch kind {
+                                    case .blank: dayStartInManual = true; day = Date()
+                                    case .ai, .raw: dayStartInManual = false; day = Date()
+                                    case .split: break
+                                    }
+                                },
+                                openSettings: { settingsDark = t.dark; showSettings = true },
+                                toast: showToast)
+        }
+        .sheet(isPresented: $showScratchpad) {
+            ScratchpadView(onBack: { showScratchpad = false },
+                           openSettings: { settingsDark = t.dark; showSettings = true },
+                           toast: showToast)
         }
     }
 

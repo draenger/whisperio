@@ -61,6 +61,17 @@ Intentional deviations / rulings (do NOT re-report):
   roles (Me/Boss/Client) — not the mock's sample names.
 - G6: digest summary Copy action lives in the context menu (design shows only Regenerate).
 
+## Parity round 3 (2026-07-20) — dryness check (infra-flaky; finished via direct + subagent verify)
+Refuted (honest-platform-constraint, do NOT re-report):
+- Keyboard rewrite gated on `lastInserted != nil` (not any typed text): the real keyboard
+  extension can only delete-and-replace text IT inserted (known char count); iOS gives no
+  reliable "current sentence" selection over arbitrary typed text (documentContextBeforeInput
+  is truncated). The JS mock's `field` variable is omniscient in a way no extension is.
+  Same class as "keyboard can't paste silently."
+Confirmed → fixed in round-3 fix wave:
+- iPad/Mac IPadLiveJournal embedded JournalView without onAdd/onOpenToday, leaving the
+  per-book "New page", empty-chapter CTA, and today running-note card as dead no-ops.
+
 ## Process
 Weaker agents plan → Fable verifies/corrects plans → weaker agents implement
 (fresh-read + surgical-edit protocol, per-file ownership) → build gates
