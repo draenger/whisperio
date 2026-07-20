@@ -1,11 +1,11 @@
-# Repo→mock sync notes (from draenger/whisperio@main, 2026-07-20 — post wz2 delta waves + 3 parity rounds)
+# Repo→mock sync notes (from draenger/whisperio@main, 2026-07-20 — post wz2 delta waves + 14 parity rounds, DRY)
 
-## wz2 delta status (current shipped state, main @ a4adff2)
-Two delta implementation waves + three adversarially-verified parity rounds landed the wz2
+## wz2 delta status (current shipped state, main @ 077eb28+)
+Two delta implementation waves + fourteen adversarially-verified parity rounds landed the wz2
 redesign 1:1 across all surfaces. Net: solid-primary theme (gradient reserved for decorative
 surfaces), 9-step onboarding as the real first-run flow, live iPad/Mac library + journal,
 multi-engine diarization, real GitHub journal-book mirroring, recap usage&cost, real capture-
-channel source tagging. Parity harvest: round 1 = 13 fixes, round 2 = 16, round 3 = 1 (dry).
+channel source tagging. Parity harvest (14 rounds, adversarially confirmed): 13→16→1→5→1→2→3→7→4→3→3→2→1→0 — DRY at round 14; 60 gaps closed total.
 Ruled deviations are in DELTA-QUEUE.md (App Group / CloudKit-production remain the only
 portal-gated open items). Sections below reflect the CURRENT code, not the pre-delta repo.
 

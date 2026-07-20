@@ -1,12 +1,12 @@
 # wz2 delta queue — live design chase ledger
-Updated: 2026-07-19 ~21:00 (post-compaction sweep; ALL design files re-pulled and diffed)
+Updated: 2026-07-20 — LOOP CLOSED (round 14 dry). All D1-D12 deltas shipped; history below.
 
 Desktop (wz-*) — NO changes (wz-recordings diff is unicode-escape cosmetics only).
 New vendored refs: mob-single.jsx (Screens gallery / device entry), mob-home-options.jsx
 (6 home concepts — canvas exploration, NOT app scope; Home stays option 1 "Library").
 .prev files hold the previous pulls for exact diffs.
 
-## OPEN deltas (mobile) — planning fleets running (wf_de8b8fea, wf_b8e4992d)
+## Deltas D1-D12 (all SHIPPED via waves 1-2 + parity rounds)
 
 Cluster HOME (plan:home)
 - D1 home-sync-compact: HomeSyncButton → compact header icon (due/syncing/done states), moves into WHeader right stack; body row removed.
@@ -124,6 +124,14 @@ Recent widget trailing count via optional WidgetSnapshot.totalRecordings.
 ## Parity round 12 (2026-07-20) — 2 raw → 2 confirmed → both fixed (328ad86)
 totalRecordings WRITE landed for real this time (r11's replace-anchor miss); Scratchpad
 header curly apostrophe. Both were completions of prior rounds' own edits.
+
+## Parity round 13 (2026-07-20) — 1 raw → 1 confirmed → fixed (077eb28)
+Widget snapshot refresh centralized on items.didSet (covers delete/edits/CloudKit arrivals,
+not just add). Three of four clusters returned EMPTY.
+
+## Parity round 14 (2026-07-20) — 0 raw → 0 confirmed. DRY. Loop closed.
+Final trajectory: 13 → 16 → 1 → 5 → 1 → 2 → 3 → 7 → 4 → 3 → 3 → 2 → 1 → 0 (60 gaps fixed
+across 13 fix rounds; every fix adversarially confirmed, gated, and pushed to main).
 
 ## Process
 Weaker agents plan → Fable verifies/corrects plans → weaker agents implement
