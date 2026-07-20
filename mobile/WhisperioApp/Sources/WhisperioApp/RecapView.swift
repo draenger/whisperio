@@ -81,6 +81,8 @@ struct RecapView: View {
         switch provider {
         case .onDevice:
             return 0
+        case .localWhisper:
+            return 0   // Free, on-device — same treatment as .onDevice.
         case .openAI:
             // A non-default base URL means a self-hosted/custom endpoint — no published rate applies.
             guard s.openAIBaseURL.trimmingCharacters(in: .whitespaces).isEmpty else { return nil }
@@ -413,6 +415,10 @@ struct RecapView: View {
         case .deepgram: raw = s.deepgramModel
         case .assemblyAI: raw = s.assemblyAIModel
         case .mistral: raw = s.mistralModel
+        // WhisperKit's variant ids are "openai_whisper-<tiny|base|small>" — the suffix after
+        // the last hyphen is the honest short name (derived from the real configured model,
+        // not a fabricated string).
+        case .localWhisper: raw = s.localWhisperModel.split(separator: "-").last.map(String.init) ?? ""
         case .onDevice, .elevenLabs: raw = ""
         }
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -447,6 +453,9 @@ struct RecapView: View {
     private func engineColor(_ id: ProviderID) -> Color {
         switch id {
         case .onDevice: return t.green
+        // Lime — hue-separated from Apple Speech's green so two on-device/Free engines never
+        // read as one bar in the per-engine legend (whisperkit-rulings.md ruling 5).
+        case .localWhisper: return .hex(0x84cc16)
         case .elevenLabs: return t.amber
         case .groq: return .hex(0x3da2f7)
         case .openAI: return .hex(0xa78bfa)
@@ -461,7 +470,7 @@ struct RecapView: View {
     }
 
     private func engineCostLabel(_ provider: ProviderID, _ minutes: Double) -> String {
-        if provider == .onDevice { return "Free" }
+        if provider == .onDevice || provider == .localWhisper { return "Free" }
         guard let rate = rate(for: provider) else { return "—" }
         let cost = rate * minutes
         if cost > 0 && cost < 0.01 { return "<$0.01" }

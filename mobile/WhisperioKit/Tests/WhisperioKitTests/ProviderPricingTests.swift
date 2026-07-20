@@ -7,6 +7,12 @@ import Testing
         #expect(ProviderPricing.ratePerMinuteUSD(provider: .onDevice, model: "anything") == nil)
     }
 
+    @Test func localWhisperIsAlwaysNil() {
+        // On-device WhisperKit is free, same as .onDevice — never "unknown model", never a rate.
+        #expect(ProviderPricing.ratePerMinuteUSD(provider: .localWhisper, model: "") == nil)
+        #expect(ProviderPricing.ratePerMinuteUSD(provider: .localWhisper, model: "openai_whisper-base") == nil)
+    }
+
     @Test func openAIDefaults() {
         #expect(ProviderPricing.ratePerMinuteUSD(provider: .openAI, model: "") == 0.006)
         #expect(ProviderPricing.ratePerMinuteUSD(provider: .openAI, model: "whisper-1") == 0.006)

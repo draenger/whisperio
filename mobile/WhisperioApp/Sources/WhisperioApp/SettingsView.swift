@@ -370,7 +370,7 @@ struct SettingsView: View {
             modelOrderSection
             SettGroup(title: "On-device models") {
                 SettRow(icon: "download", label: "Manage on-device models",
-                        sub: "Apple Speech and cloud engine picker", last: true,
+                        sub: "Download, update or remove Apple Speech + Whisper", last: true,
                         onTap: openModels)
             }
             HStack {
@@ -428,6 +428,13 @@ struct SettingsView: View {
         .deepgram: [("nova-3", "Nova-3"), ("nova-2", "Nova-2"), ("whisper-cloud", "Whisper cloud")],
         .assemblyAI: [("universal-2", "Universal-2"), ("universal-1", "Universal-1")],
         .mistral: [("voxtral-small", "Voxtral Small"), ("voxtral-mini", "Voxtral Mini")],
+        // Local Whisper is a legitimate "Add provider + model" slot (a downloaded-or-not
+        // variant can be queued as a fallback — ProviderChain skips it honestly via
+        // isConfigured until the model is actually on disk). Ids are WhisperKit's own
+        // variant names so a picked chip maps straight onto `LocalWhisperModel`.
+        .localWhisper: [("openai_whisper-tiny", "Whisper tiny"),
+                        ("openai_whisper-base", "Whisper base"),
+                        ("openai_whisper-small", "Whisper small")],
     ]
 
     private func engineModelBinding(_ id: ProviderID) -> Binding<String> {
@@ -436,6 +443,7 @@ struct SettingsView: View {
         case .deepgram: return binding(\.deepgramModel)
         case .assemblyAI: return binding(\.assemblyAIModel)
         case .mistral: return binding(\.mistralModel)
+        case .localWhisper: return binding(\.localWhisperModel)
         default: return binding(\.whisperModel)   // unreached — only chip engines call this
         }
     }
@@ -1373,6 +1381,11 @@ struct SettingsView: View {
         let key: String
         switch id {
         case .onDevice: return ("Built-in · ready", true)
+        // Never reaches the "Remote connectors" row loop (on-device, no key) — this arm only
+        // keeps the switch exhaustive. Real state, not a placeholder: downloaded iff the
+        // configured variant's model folder is actually on disk.
+        case .localWhisper:
+            return settings.isEngineReady(.localWhisper) ? ("Downloaded", true) : ("Not downloaded", false)
         case .openAI: key = settings.settings.openAIKey
         case .elevenLabs: key = settings.settings.elevenLabsKey
         case .groq: key = settings.settings.groqKey
@@ -1568,6 +1581,7 @@ struct CloudConsentSheet: View {
     private var name: String {
         switch provider {
         case .onDevice: return "Apple"   // never reaches the consent sheet
+        case .localWhisper: return "Whisper"   // never reaches the consent sheet (on-device, same as .onDevice)
         case .openAI: return "OpenAI"
         case .elevenLabs: return "ElevenLabs"
         case .groq: return "Groq"

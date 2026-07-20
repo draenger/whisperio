@@ -10,11 +10,15 @@ public enum ProviderPricing {
     /// string means "Whisperio's default model for that provider"). Returns `nil` when the model
     /// string isn't recognized (e.g. a custom/self-hosted model) — callers must not assume a
     /// rate when this returns `nil`. `.onDevice` always returns `nil`; callers must special-case
-    /// on-device as "Free", not "unknown".
+    /// on-device as "Free", not "unknown". `.localWhisper` (on-device WhisperKit) is the same
+    /// case — a second free/on-device engine, not an "unknown model" gap.
     public static func ratePerMinuteUSD(provider: ProviderID, model: String) -> Double? {
         let m = model.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         switch provider {
         case .onDevice:
+            return nil
+
+        case .localWhisper:
             return nil
 
         case .openAI:

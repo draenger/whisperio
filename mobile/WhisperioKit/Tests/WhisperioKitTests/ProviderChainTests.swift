@@ -75,6 +75,18 @@ private let clip = AudioClip(data: Data(), filename: "a.wav", duration: 1)
         #expect(result == .failure(.noProvidersConfigured))
     }
 
+    @Test func localWhisperParticipatesInFallback() async {
+        // .localWhisper is just another provider to the chain — an unconfigured on-device Apple
+        // Speech slot (e.g. no dictation language installed) falls through to a downloaded
+        // local Whisper model exactly like it would fall through to any cloud engine.
+        let chain = ProviderChain(providers: [
+            MockProvider(id: .onDevice, isConfigured: false, outcome: .success("never")),
+            MockProvider(id: .localWhisper, isConfigured: true, outcome: .success("local whisper"))
+        ])
+        let result = await chain.transcribe(clip)
+        #expect(result == .success(Transcript(text: "local whisper", provider: .localWhisper)))
+    }
+
     @Test func fallbackCallbackFiresWithFailedAndNext() async {
         final class Box: @unchecked Sendable { var pairs: [(ProviderID, ProviderID)] = [] }
         let box = Box()

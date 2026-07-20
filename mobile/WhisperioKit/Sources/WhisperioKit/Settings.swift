@@ -114,6 +114,10 @@ public struct WhisperioSettings: Codable, Sendable, Equatable {
     /// Mistral — Voxtral open-weights transcription.
     public var mistralKey: String
     public var mistralModel: String
+    /// On-device Whisper (WhisperKit/CoreML) — which local model variant a modelless
+    /// `.localWhisper` slot follows. One of `LocalWhisperModel`'s raw values (e.g.
+    /// "openai_whisper-base"). Not a secret — no Keychain scrubbing needed, unlike the cloud keys.
+    public var localWhisperModel: String
     /// Chat model for the text-LLM (rewrite render presets + journaling summary) — one
     /// configurable value both flows share, ported from the desktop's 'gpt-4o-mini' default.
     public var chatModel: String
@@ -208,6 +212,7 @@ public struct WhisperioSettings: Codable, Sendable, Equatable {
         assemblyAIModel: String = "universal-2",
         mistralKey: String = "",
         mistralModel: String = "voxtral-small",
+        localWhisperModel: String = "openai_whisper-base",
         chatModel: String = "gpt-4o-mini",
         language: String = "auto",
         customVocabulary: String = "",
@@ -254,6 +259,7 @@ public struct WhisperioSettings: Codable, Sendable, Equatable {
         self.assemblyAIModel = assemblyAIModel
         self.mistralKey = mistralKey
         self.mistralModel = mistralModel
+        self.localWhisperModel = localWhisperModel
         self.chatModel = chatModel
         self.language = language
         self.customVocabulary = customVocabulary
@@ -328,6 +334,7 @@ public struct WhisperioSettings: Codable, Sendable, Equatable {
         assemblyAIModel = try c.decodeIfPresent(String.self, forKey: .assemblyAIModel) ?? d.assemblyAIModel
         mistralKey = try c.decodeIfPresent(String.self, forKey: .mistralKey) ?? d.mistralKey
         mistralModel = try c.decodeIfPresent(String.self, forKey: .mistralModel) ?? d.mistralModel
+        localWhisperModel = try c.decodeIfPresent(String.self, forKey: .localWhisperModel) ?? d.localWhisperModel
         chatModel = try c.decodeIfPresent(String.self, forKey: .chatModel) ?? d.chatModel
         language = try c.decodeIfPresent(String.self, forKey: .language) ?? d.language
         customVocabulary = try c.decodeIfPresent(String.self, forKey: .customVocabulary) ?? d.customVocabulary
@@ -364,8 +371,10 @@ public struct WhisperioSettings: Codable, Sendable, Equatable {
         keepAudioRecordings = try c.decodeIfPresent(Bool.self, forKey: .keepAudioRecordings) ?? d.keepAudioRecordings
     }
 
-    /// Whether the given engine requires (and currently has) cloud consent to run.
-    public func isCloud(_ id: ProviderID) -> Bool { id != .onDevice }
+    /// Whether the given engine requires (and currently has) cloud consent to run. Both
+    /// `.onDevice` (Apple Speech) and `.localWhisper` (WhisperKit CoreML) are on-device engines —
+    /// audio never leaves the device for either — so neither ever triggers the cloud-consent gate.
+    public func isCloud(_ id: ProviderID) -> Bool { id != .onDevice && id != .localWhisper }
 
     // MARK: - Model order accessors
 
@@ -400,6 +409,7 @@ public struct WhisperioSettings: Codable, Sendable, Equatable {
     public func selectedModel(for id: ProviderID) -> String {
         switch id {
         case .onDevice: return ""
+        case .localWhisper: return localWhisperModel
         case .openAI: return whisperModel
         case .elevenLabs: return ""
         case .groq: return groqModel

@@ -50,7 +50,10 @@ final class SettingsStore: ObservableObject {
         // Keep the keyboard extension's privacy chip honest: it can't read the engine chain
         // itself, so the app records whether the primary engine is on-device via the shared
         // App Group on every settings write (a no-op until the group container exists).
-        SharedStore.setEngineOnDevice((settings.providerChain.first ?? .onDevice) == .onDevice)
+        // Both on-device engines (Apple Speech and local WhisperKit) count — audio never
+        // leaves the device for either.
+        let primary = settings.providerChain.first ?? .onDevice
+        SharedStore.setEngineOnDevice(primary == .onDevice || primary == .localWhisper)
         // Secrets go to the Keychain only; everything else is persisted to UserDefaults with
         // the key fields blanked so no API secret is ever written in plaintext.
         Keychain.set(settings.openAIKey, for: .openAIKey)
@@ -107,6 +110,12 @@ final class SettingsStore: ObservableObject {
         let s = settings
         switch id {
         case .onDevice: return true
+        case .localWhisper:
+            // Real download-state gate — no key/consent to check, but a not-downloaded model
+            // must fail the chain honestly rather than report a blanket "ready" like .onDevice.
+            return LocalWhisperModelStore.isDownloaded(
+                LocalWhisperModel(rawValue: s.localWhisperModel) ?? .base
+            )
         case .openAI:
             return s.cloudConsentGranted && !s.openAIKey.trimmingCharacters(in: .whitespaces).isEmpty
         case .elevenLabs:
@@ -222,6 +231,8 @@ final class SettingsStore: ObservableObject {
         case .onDevice:
             return AppleSpeechProvider(language: s.language, vocabulary: s.vocabularyTerms,
                                        requireOnDevice: !s.appleAllowOnline)
+        case .localWhisper:
+            return LocalWhisperProvider(modelRawValue: model)
         case .openAI:
             return OpenAIProvider(apiKey: s.openAIKey, baseURL: s.openAIBaseURL,
                                   model: model, language: s.language,
@@ -264,6 +275,9 @@ extension SettingsStore {
         var s = settings
         switch id {
         case .onDevice: break
+        // No API key for a local model — model selection happens only via ModelsView's
+        // Get/Use flow, never this onboarding key-paste path.
+        case .localWhisper: break
         case .openAI: s.openAIKey = trimmed
         case .elevenLabs: s.elevenLabsKey = trimmed
         case .groq: s.groqKey = trimmed

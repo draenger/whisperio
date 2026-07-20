@@ -19,8 +19,8 @@ public enum ProviderKeyValidationError: Error, Sendable, Equatable {
 /// provider is implemented here so Settings (or a future step) can adopt the same validator.
 public enum ProviderKeyValidator {
     public static func validate(_ id: ProviderID, key: String) async -> Result<Void, ProviderKeyValidationError> {
-        // On-device needs no key and no network — always valid.
-        guard id != .onDevice else { return .success(()) }
+        // On-device engines need no key and no network — always valid.
+        guard id != .onDevice, id != .localWhisper else { return .success(()) }
 
         guard let request = request(for: id, key: key) else {
             return .failure(.unexpected(0))
@@ -43,6 +43,8 @@ public enum ProviderKeyValidator {
         var req: URLRequest
         switch id {
         case .onDevice:
+            return nil
+        case .localWhisper:
             return nil
         case .openAI:
             guard let url = URL(string: "https://api.openai.com/v1/models") else { return nil }

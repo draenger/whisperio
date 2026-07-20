@@ -526,7 +526,9 @@ extension DemoRecording {
             dur: DemoRecording.formatDuration(r.duration),
             when: DemoRecording.relativeWhen(r.timestamp),
             words: (r.transcription ?? "").split(whereSeparator: { $0 == " " || $0 == "\n" }).count,
-            engine: r.provider == .onDevice ? "on-device" : "cloud",
+            // Both on-device engines (Apple Speech and local WhisperKit) show the same green
+            // "on-device" lock — only an actual cloud engine shows the amber "cloud" tag.
+            engine: (r.provider == .onDevice || r.provider == .localWhisper) ? "on-device" : "cloud",
             category: r.category ?? WZCategories.work.id,
             sourceId: r.id,
             render: r.render,

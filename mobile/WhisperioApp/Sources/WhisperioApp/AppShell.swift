@@ -424,6 +424,9 @@ struct WhisperioApp: App {
     @StateObject private var presets = PresetStore()
     @StateObject private var digests = DigestStore()
     @StateObject private var digestPrompts = DigestPromptStore()
+    // On-device Whisper (WhisperKit) download/model state — one process-wide singleton so
+    // ModelsView and the transcription chain always see the same real on-disk state.
+    @StateObject private var localWhisperModels = LocalWhisperModelManager.shared
     @State private var incomingURL: URL?
 
     var body: some Scene {
@@ -434,6 +437,7 @@ struct WhisperioApp: App {
                 .environmentObject(presets)
                 .environmentObject(digests)
                 .environmentObject(digestPrompts)
+                .environmentObject(localWhisperModels)
                 .onAppear {
                     // Both the store assignment and activation now happen in
                     // WhisperioAppDelegate.application(_:didFinishLaunchingWithOptions:), which

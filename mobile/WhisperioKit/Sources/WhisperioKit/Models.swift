@@ -4,6 +4,10 @@ import Foundation
 /// future shared/synced config stays compatible. `onDevice` is mobile-only (tier 1).
 public enum ProviderID: String, Codable, Sendable, CaseIterable {
     case onDevice = "ondevice"
+    /// On-device Whisper via WhisperKit (CoreML) — a second, opt-in offline engine alongside
+    /// Apple Speech. Requires an explicit model download (see the app's Manage-models screen)
+    /// before it's configured; unlike `.onDevice`, this is never in the default fallback chain.
+    case localWhisper = "localwhisper"
     case openAI = "openai"
     case elevenLabs = "elevenlabs"
     case groq = "groq"
@@ -18,6 +22,7 @@ public extension ProviderID {
     var displayName: String {
         switch self {
         case .onDevice: return "Apple — on-device"
+        case .localWhisper: return "Whisper (on-device)"
         case .openAI: return "OpenAI"
         case .elevenLabs: return "ElevenLabs"
         case .groq: return "Groq"

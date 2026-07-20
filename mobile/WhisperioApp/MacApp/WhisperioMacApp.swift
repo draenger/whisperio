@@ -27,6 +27,9 @@ struct WhisperioMacApp: App {
     @StateObject private var settings = SettingsStore()
     @StateObject private var recordings = RecordingsStore()
     @StateObject private var digests = DigestStore()
+    // On-device Whisper (WhisperKit) download/model state — same singleton the iOS entry
+    // point injects, so Mac's ModelsView sees the real, shared on-disk state too.
+    @StateObject private var localWhisperModels = LocalWhisperModelManager.shared
 
     var body: some Scene {
         WindowGroup("Whisperio") {
@@ -38,6 +41,7 @@ struct WhisperioMacApp: App {
                 .environmentObject(settings)
                 .environmentObject(recordings)
                 .environmentObject(digests)
+                .environmentObject(localWhisperModels)
                 .frame(minWidth: 820, minHeight: 560)
                 .task {
                     // Register for remote (silent) push so NSPersistentCloudKitContainer gets an

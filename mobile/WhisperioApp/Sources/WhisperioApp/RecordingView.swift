@@ -52,6 +52,9 @@ struct RecordingView: View {
         case .deepgram: return "Deepgram · cloud"
         case .assemblyAI: return "AssemblyAI · cloud"
         case .mistral: return "Mistral · cloud"
+        // Explicit arm — the `default` below would otherwise mislabel local-Whisper
+        // dictations as Apple Speech now that `.localWhisper` can be primary.
+        case .localWhisper: return "Whisper · on-device"
         default: return "Apple Speech · on-device"
         }
     }

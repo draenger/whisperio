@@ -13,6 +13,20 @@ import Foundation
         #expect(s.elevenLabsKey.isEmpty)
     }
 
+    @Test func localWhisperIsOnDeviceButOptInOnly() {
+        let s = WhisperioSettings()
+        // On-device classification: never cloud-gated, same as Apple Speech.
+        #expect(s.isCloud(.localWhisper) == false)
+        // Deliberately NOT in the default fallback chain — a local Whisper model requires an
+        // explicit user download before it's usable, so it must never silently become a default
+        // fallback candidate for every existing/new user. It's opt-in via the Model-order UI
+        // once a model is actually downloaded.
+        #expect(!WhisperioSettings.classicOrder.contains(.localWhisper))
+        #expect(!s.modelOrder.map(\.provider).contains(.localWhisper))
+        // A modelless .localWhisper slot resolves to the configured local model default.
+        #expect(s.selectedModel(for: .localWhisper) == "openai_whisper-base")
+    }
+
     @Test func codableRoundTrips() throws {
         let original = WhisperioSettings(
             providerChain: [.onDevice, .openAI],

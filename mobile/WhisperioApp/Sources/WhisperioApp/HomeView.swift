@@ -215,6 +215,8 @@ struct HomeView: View {
         switch provider {
         case .onDevice:
             return 0
+        case .localWhisper:
+            return 0   // Free, on-device — same treatment as .onDevice.
         case .openAI:
             guard s.openAIBaseURL.trimmingCharacters(in: .whitespaces).isEmpty else { return nil }
             return ProviderPricing.ratePerMinuteUSD(provider: .openAI, model: s.whisperModel)

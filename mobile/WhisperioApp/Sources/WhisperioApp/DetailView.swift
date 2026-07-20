@@ -297,6 +297,7 @@ struct DetailView: View {
     private func engineName(_ id: ProviderID) -> String {
         switch id {
         case .onDevice: return "Apple on-device"
+        case .localWhisper: return "Whisper · on-device"
         case .openAI: return "OpenAI"
         case .elevenLabs: return "ElevenLabs"
         case .groq: return "Groq"
