@@ -82,6 +82,10 @@ Rulings recorded (do NOT re-report):
   a single source).
 - H5: iPad daySeed mirrors AppShell digestSeed (ai/raw), cleared on openDay/onBack.
 
+## Parity round 5 (2026-07-20) — 3 raw → 1 unique gap → fixed directly (0c88696)
+Scratchpad "Summarize the day now" wired at both call sites (iPhone → today's digest;
+iPad dismisses the sheet first). settings-all cluster clean.
+
 ## Process
 Weaker agents plan → Fable verifies/corrects plans → weaker agents implement
 (fresh-read + surgical-edit protocol, per-file ownership) → build gates

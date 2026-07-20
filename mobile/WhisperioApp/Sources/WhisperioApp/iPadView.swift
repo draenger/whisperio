@@ -421,6 +421,16 @@ private struct IPadLiveJournal: View {
     // real `sourceId` against `libraryRecordings` and sets `sel`/`tab` — kept out of this view
     // since library selection state lives one level up.
     var openLibrary: (UUID) -> Void = { _ in }
+    // Which deep settings page the settings sheet is showing instead of the hub (content swap,
+    // not a nested sheet — see the .sheet below). Nil = the SettingsView hub itself.
+    private enum SettingsSub {
+        case models, keyboard, onboarding, github, digestPrompts, storage
+        case preset(RewritePreset)
+    }
+    private static func newPreset() -> RewritePreset {
+        RewritePreset(id: UUID().uuidString, name: "", prompt: "", icon: "spark")
+    }
+    @State private var settingsSub: SettingsSub?
     @State private var day: Date?
     @State private var dayStartInManual = false
     @State private var daySeed: String? = nil
@@ -470,17 +480,62 @@ private struct IPadLiveJournal: View {
         .sheet(isPresented: $showSettings) {
             // No dedicated "settings" route exists in the split shell (unlike AppShell's
             // `.settings` screen), so this is a self-contained sheet over the same SettingsView
-            // the phone uses. Sub-navigation that would normally push further screens (models,
-            // preset editor, GitHub sync, digest prompts, storage, onboarding) has nowhere to
-            // land here, so those stay no-ops; the hub itself — including the "add API key" row
-            // the cloud-consent flow routes to — is fully live.
-            SettingsView(onBack: { showSettings = false }, dark: $settingsDark,
-                         openModels: {}, initialCategoryID: $settingsCategory)
-                // PresetStore isn't injected by the Mac app entry point (WhisperioMacApp.swift
-                // only provides settings/recordings/digests); it's UserDefaults-backed like
-                // SettingsStore, so a fresh instance here still reflects real persisted presets
-                // rather than diverging state.
-                .environmentObject(PresetStore())
+            // the phone uses. Deep pages that AppShell reaches as separate screens (models,
+            // preset editor, GitHub sync, digest prompts, storage, keyboard setup, onboarding)
+            // swap the sheet's CONTENT instead of stacking nested sheets — one sheet, back
+            // returns to the hub — so none of those rows are dead ends here. The toast banner
+            // is mirrored inside the sheet: a toast fired from Settings (or a deep page) would
+            // otherwise render on the split view underneath and never be seen.
+            ZStack {
+                Group {
+                    switch settingsSub {
+                    case .none:
+                        SettingsView(onBack: { showSettings = false }, dark: $settingsDark,
+                                     openModels: { settingsSub = .models },
+                                     openKeyboardSetup: { settingsSub = .keyboard },
+                                     openOnboarding: { settingsSub = .onboarding },
+                                     openPresetEditor: { settingsSub = .preset($0 ?? Self.newPreset()) },
+                                     openGitHubSync: { settingsSub = .github },
+                                     openDigestPrompts: { settingsSub = .digestPrompts },
+                                     openStorage: { settingsSub = .storage },
+                                     toast: showToast,
+                                     initialCategoryID: $settingsCategory)
+                    case .models:
+                        ModelsView(onBack: { settingsSub = nil })
+                    case .keyboard:
+                        // Unreachable on macOS: the hub row that sets .keyboard is iOS-only
+                        // (see SettingsView's "Dictate from anywhere" group) and the setup
+                        // view itself isn't in the Mac target.
+                        #if os(iOS)
+                        KeyboardSetupView(onBack: { settingsSub = nil })
+                        #else
+                        EmptyView()
+                        #endif
+                    case .onboarding:
+                        OnboardingView { settingsSub = nil }
+                    case .github:
+                        GitHubSyncView(onBack: { settingsSub = nil }, toast: showToast)
+                    case .digestPrompts:
+                        DigestPromptEditorView(onBack: { settingsSub = nil }, toast: showToast)
+                    case .storage:
+                        StorageView(onBack: { settingsSub = nil }, toast: showToast)
+                    case .preset(let p):
+                        PresetEditorView(preset: p, onBack: { settingsSub = nil }, toast: showToast)
+                    }
+                }
+                if let toastMsg {
+                    toastBanner(toastMsg)
+                        .frame(maxHeight: .infinity, alignment: .bottom)
+                        .padding(.bottom, 24)
+                }
+            }
+            // PresetStore isn't injected by the Mac app entry point (WhisperioMacApp.swift
+            // only provides settings/recordings/digests); it's UserDefaults-backed like
+            // SettingsStore, so a fresh instance here still reflects real persisted presets
+            // rather than diverging state. Applied to the whole Group so the preset editor
+            // shares it with the hub.
+            .environmentObject(PresetStore())
+            .onDisappear { settingsSub = nil }
         }
         .sheet(isPresented: $showComposer) {
             // "New page" composer over the split. onDone routes exactly like the phone

@@ -1240,12 +1240,22 @@ struct SettingsView: View {
             }
             #endif
             SettGroup(title: "Dictate from anywhere") {
+                // The custom keyboard is an iOS extension — there is nothing to install on
+                // macOS, so its row only exists where the setup flow does (and the triggers
+                // row takes the last-row divider treatment there instead).
+                #if os(iOS)
                 SettRow(icon: "zap", label: "Set up dictation triggers",
                         sub: "Action Button, Back Tap, keyboard, widgets & more — step by step",
                         onTap: { showTriggerGuides = true })
                 SettRow(icon: "keyboard", label: "Whisperio keyboard",
                         sub: "Dictate from any app — install & setup", last: true,
                         onTap: openKeyboardSetup)
+                #else
+                SettRow(icon: "zap", label: "Set up dictation triggers",
+                        sub: "Action Button, Back Tap, keyboard, widgets & more — step by step",
+                        last: true,
+                        onTap: { showTriggerGuides = true })
+                #endif
             }
 
             SettGroup(title: "Appearance") {
