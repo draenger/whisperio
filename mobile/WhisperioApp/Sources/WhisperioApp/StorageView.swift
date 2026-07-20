@@ -240,12 +240,9 @@ struct StorageView: View {
 
     // Audio clips are written to tmp as whisperio-<uuid>.m4a; text lives in the Documents
     // JSON stores (recordings/journal) or the SwiftData store backing CloudKit sync.
-    private static var audioDir: URL { FileManager.default.temporaryDirectory }
-
     private func audioFiles() -> [URL] {
-        (try? FileManager.default.contentsOfDirectory(at: Self.audioDir,
-                                                      includingPropertiesForKeys: [.fileSizeKey]))?
-            .filter { $0.lastPathComponent.hasPrefix("whisperio-") && $0.pathExtension == "m4a" } ?? []
+        // Durable Audio folder + any tmp clips not yet adopted — the same set AudioStore serves.
+        AudioStore.allFiles()
     }
 
     private static func size(of url: URL) -> Int64 {

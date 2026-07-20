@@ -270,7 +270,15 @@ struct ConversationView: View {
         do {
             let result = try await transcriber.transcribeDiarized(clip)
             let text = settings.cleanup(result.text)
-            let rec = Recording(filename: clip.filename, duration: clip.duration,
+            // Same audio-retention rule as RecordingView: keep = adopt into the durable
+            // Audio folder (tmp gets purged by iOS), off = discard the clip file.
+            let keptName: String
+            if settings.settings.keepAudioRecordings {
+                AudioStore.persist(clip.filename); keptName = clip.filename
+            } else {
+                AudioStore.delete(clip.filename); keptName = ""
+            }
+            let rec = Recording(filename: keptName, duration: clip.duration,
                                 status: .completed, provider: transcriber.id,
                                 transcription: text,
                                 segments: result.segments.isEmpty ? nil : result.segments,

@@ -303,9 +303,13 @@ struct RecordingView: View {
     // transcription and persist the recording as text-only.
     private func keptFilename(_ filename: String?) -> String {
         guard let filename, !filename.isEmpty else { return "" }
-        guard !settings.settings.keepAudioRecordings else { return filename }
-        try? FileManager.default.removeItem(
-            at: FileManager.default.temporaryDirectory.appendingPathComponent(filename))
+        guard !settings.settings.keepAudioRecordings else {
+            // Move the clip out of tmp into the durable Audio folder — tmp is purged by iOS
+            // at will, which is what used to eat kept recordings.
+            AudioStore.persist(filename)
+            return filename
+        }
+        AudioStore.delete(filename)
         return ""
     }
 

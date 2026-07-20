@@ -1,4 +1,5 @@
 import SwiftUI
+import AVFoundation
 import WhisperioKit
 #if canImport(UIKit)
 import UIKit
@@ -51,6 +52,7 @@ struct DetailView: View {
     // speaker labels" confirmation when a conversation is re-run on a non-diarizing engine.
     @State private var retranscribing = false
     @State private var confirmPlainEngine: ProviderID?
+    @StateObject private var playback = PlaybackController()
 
     // The backing Recording, resolved live from the store so speaker renames (and any
     // cross-device sync) show up immediately. nil for sample rows.
@@ -85,6 +87,12 @@ struct DetailView: View {
                             }
                             Text("\(r.app) · \(r.when) · \(r.dur) · \(r.words) words")
                                 .font(WZFont.mono(11)).foregroundStyle(t.faint)
+
+                            // Real audio playback for kept clips — shown only when the file
+                            // actually exists (AudioStore); no player chrome for text-only rows.
+                            if let audioURL {
+                                playerCard(audioURL)
+                            }
 
                             if isConversation {
                                 conversationCard
@@ -170,8 +178,8 @@ struct DetailView: View {
     // The saved clip on disk, if it still exists — retranscription needs the audio.
     private var audioURL: URL? {
         guard let source, !source.filename.isEmpty else { return nil }
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent(source.filename)
-        return FileManager.default.fileExists(atPath: url.path) ? url : nil
+        // Durable-first (Documents/Audio), with a self-healing tmp fallback — see AudioStore.
+        return AudioStore.url(for: source.filename)
     }
 
     private var moreMenu: some View {
@@ -809,5 +817,101 @@ private struct RewriteSheet: View {
         // Transient preset — stable "custom" id (not persisted), never a seed, never meta, so it
         // flows through the normal rewrite path.
         onPick(RewritePreset(id: "custom", name: "Custom", prompt: prompt, icon: "spark"))
+    }
+}
+
+
+// MARK: - Audio playback
+
+// Minimal real player over the kept clip: play/pause circle, live progress, elapsed/total.
+// AVAudioPlayer + a 0.25s tick; the session flips to .playback only while playing.
+@MainActor
+final class PlaybackController: NSObject, ObservableObject, AVAudioPlayerDelegate {
+    @Published var isPlaying = false
+    @Published var progress: Double = 0   // 0…1
+    @Published var current: TimeInterval = 0
+    @Published var duration: TimeInterval = 0
+    private var player: AVAudioPlayer?
+    private var timer: Timer?
+
+    func toggle(url: URL) {
+        if isPlaying { pause(); return }
+        if player?.url != url {
+            player = try? AVAudioPlayer(contentsOf: url)
+            player?.delegate = self
+            duration = player?.duration ?? 0
+        }
+#if canImport(UIKit)
+        try? AVAudioSession.sharedInstance().setCategory(.playback)
+        try? AVAudioSession.sharedInstance().setActive(true)
+#endif
+        player?.play()
+        isPlaying = true
+        timer?.invalidate()
+        timer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
+            Task { @MainActor [weak self] in self?.tick() }
+        }
+    }
+
+    private func tick() {
+        guard let player else { return }
+        current = player.currentTime
+        duration = player.duration
+        progress = duration > 0 ? current / duration : 0
+    }
+
+    func pause() {
+        player?.pause()
+        isPlaying = false
+        timer?.invalidate()
+    }
+
+    func stopAndReset() {
+        pause()
+        player = nil
+        progress = 0; current = 0; duration = 0
+    }
+
+    nonisolated func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
+        Task { @MainActor in
+            self.isPlaying = false
+            self.progress = 1
+            self.current = self.duration
+            self.timer?.invalidate()
+        }
+    }
+}
+
+extension DetailView {
+    private static func clock(_ t: TimeInterval) -> String {
+        String(format: "%d:%02d", Int(t) / 60, Int(t) % 60)
+    }
+
+    func playerCard(_ url: URL) -> some View {
+        HStack(spacing: 12) {
+            Button { playback.toggle(url: url) } label: {
+                WIcon(playback.isPlaying ? "pause" : "play", size: 15, weight: .semibold)
+                    .foregroundStyle(t.primaryInk)
+                    .frame(width: 38, height: 38)
+                    .background(t.primary, in: Circle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(playback.isPlaying ? "Pause" : "Play recording")
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    Capsule().fill(t.surfaceUp).frame(height: 4)
+                    Capsule().fill(t.accent)
+                        .frame(width: max(0, geo.size.width * playback.progress), height: 4)
+                }
+                .frame(maxHeight: .infinity)
+            }
+            .frame(height: 38)
+            Text("\(Self.clock(playback.current)) / \(Self.clock(playback.duration > 0 ? playback.duration : (source?.duration ?? 0)))")
+                .font(WZFont.mono(11)).foregroundStyle(t.faint).monospacedDigit()
+        }
+        .padding(.horizontal, 14).padding(.vertical, 10)
+        .background(t.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(t.line, lineWidth: 1))
+        .onDisappear { playback.stopAndReset() }
     }
 }

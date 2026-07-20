@@ -48,11 +48,12 @@ struct HomeView: View {
                     // tile is this row's only entry point to Recap now that the header's bolt
                     // glyph is gone.
                     VStack(spacing: 13) {
+                        // Equal heights like the JSX flex row: the stretch frames live INSIDE
+                        // each card (before its background) — an outer frame on the Button
+                        // grows an invisible box while the visible card keeps natural height.
                         HStack(spacing: 9) {
                             todaysDigestCard
-                                .frame(maxHeight: .infinity)
                             recapStreakTile
-                                .frame(maxHeight: .infinity)
                         }
                         .fixedSize(horizontal: false, vertical: true)
                         HStack(spacing: 9) {
@@ -161,7 +162,7 @@ struct HomeView: View {
                 WIcon("chevR", size: 14, weight: .semibold).foregroundStyle(t.faint)
             }
             .padding(14)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
             .background(t.surface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(t.line, lineWidth: 1))
         }
@@ -254,6 +255,7 @@ struct HomeView: View {
                     .font(WZFont.mono(8.5, .semibold)).tracking(1.0).foregroundStyle(t.faint)
             }
             .frame(width: 76)
+            .frame(maxHeight: .infinity)
             .padding(.vertical, 12)
             .background(t.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(t.line, lineWidth: 1))

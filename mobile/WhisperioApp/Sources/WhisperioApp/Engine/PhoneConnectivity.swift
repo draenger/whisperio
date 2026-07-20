@@ -26,14 +26,22 @@ final class PhoneConnectivity: NSObject, ObservableObject, WCSessionDelegate {
         // Watch dictation out of Recap's Usage & cost / minutes-saved aggregations (which
         // filter on duration > 0). AVAudioPlayer reads the local temp file synchronously.
         let duration = (try? AVAudioPlayer(contentsOf: fileURL))?.duration ?? 0
-        let clip = AudioClip(data: data, filename: "watch.m4a", duration: duration)
+        // Unique per-dictation filename — a constant "watch.m4a" would make every Watch
+        // recording claim the same (mutually overwritten) audio file.
+        let clip = AudioClip(data: data, filename: "whisperio-watch-\(UUID().uuidString).m4a", duration: duration)
         Task {
             let store = SettingsStore()
             let result = await store.makeChain().transcribe(clip)
             switch result {
             case .success(let tr):
                 let text = store.cleanup(tr.text)
-                let rec = Recording(filename: clip.filename, duration: clip.duration,
+                // Honor the audio-retention rule: keep = write the received clip into the
+                // durable Audio folder so Detail can play/retranscribe it; off = text-only.
+                let keepAudio = store.settings.keepAudioRecordings
+                if keepAudio {
+                    try? clip.data.write(to: AudioStore.folder.appendingPathComponent(clip.filename))
+                }
+                let rec = Recording(filename: keepAudio ? clip.filename : "", duration: clip.duration,
                                     status: .completed, provider: tr.provider, transcription: text,
                                     source: "watch")
                 // Unlike RecordingView's transcribe()/finalizeLive(), the saveRecordings gate

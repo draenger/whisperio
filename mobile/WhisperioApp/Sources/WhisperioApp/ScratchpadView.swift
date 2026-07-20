@@ -321,9 +321,11 @@ struct ScratchpadView: View {
         }
         var filename = clip?.filename ?? ""
         if !settings.settings.keepAudioRecordings, !filename.isEmpty {
-            try? FileManager.default.removeItem(
-                at: FileManager.default.temporaryDirectory.appendingPathComponent(filename))
+            AudioStore.delete(filename)
             filename = ""
+        } else if !filename.isEmpty {
+            // Adopt the clip into durable storage — tmp gets purged by iOS.
+            AudioStore.persist(filename)
         }
         let rec = Recording(filename: filename, duration: clip?.duration ?? 0,
                             status: .completed, provider: provider, transcription: text,
