@@ -24,6 +24,23 @@ public enum AudioInterruptionBehavior: String, Codable, Sendable, CaseIterable {
 /// reflected in the UI, and (b) when the app proactively asks CloudKit to check for more. See
 /// `SyncGating` for the pure decision functions, and the Settings copy in `SettingsView` for the
 /// exact wording shown to the user.
+/// Which capture sources feed the daily Journal digest. Keyboard dictations are usually chat
+/// replies the user may not want summarized alongside real notes, so this is a real, meaningful
+/// choice — not every source belongs in every day's summary. Every source still keeps its own
+/// tag on the recording itself; this only decides what `DigestStore.generate` bundles into the
+/// AI/manual summary for a day. See mob-settings.jsx:173,415-424 for the design and copy.
+public enum DigestSourceMode: String, Codable, Sendable, CaseIterable {
+    /// Everything — in-app, keyboard, Action Button and Watch — lands in the daily digest.
+    case all
+    /// Only in-app dictations count (source `"app"`/`"mic"`, or nil — recordings persisted
+    /// before the `source` field existed, which were all in-app back then). Keyboard/Watch/
+    /// Action-Button/Back-Tap notes stay out of the digest but remain in the library.
+    case appOnly
+    /// Nothing is auto-included — each day the user ticks which of that day's real sources the
+    /// summary should cover (`DigestDayView`'s Generate flow presents the picker).
+    case manual
+}
+
 public enum SyncMode: String, Codable, Sendable, CaseIterable {
     /// Default — today's shipped behavior. CloudKit import events publish straight into the UI
     /// as they land, and the app also nudges (re-checks) every time it comes to the foreground.
@@ -131,6 +148,11 @@ public struct WhisperioSettings: Codable, Sendable, Equatable {
     /// it stays gated behind the same cloud consent + key as rewrite.
     public var autoDailyDigest: Bool
 
+    /// Which capture sources `DigestStore.generate` bundles into a day's digest. Defaults to
+    /// `.all` — today's shipped behavior (every completed note counts) — so existing users see
+    /// no change until they opt into filtering keyboard/Watch notes out.
+    public var digestSourceMode: DigestSourceMode
+
     // GitHub sync — mirror transcripts/renders/daily syntheses into a Git repo as Markdown.
     // Off by default; the personal access token itself lives in the Keychain (see
     // `Keychain.Item.githubToken`), never in this blob, so it stays out of plaintext backups.
@@ -198,6 +220,7 @@ public struct WhisperioSettings: Codable, Sendable, Equatable {
         audioAutoStopTimeoutSeconds: Double = 0,
         cloudConsentGranted: Bool = false,
         autoDailyDigest: Bool = false,
+        digestSourceMode: DigestSourceMode = .all,
         githubSyncEnabled: Bool = false,
         githubOwner: String = "",
         githubRepo: String = "",
@@ -243,6 +266,7 @@ public struct WhisperioSettings: Codable, Sendable, Equatable {
         self.audioAutoStopTimeoutSeconds = audioAutoStopTimeoutSeconds
         self.cloudConsentGranted = cloudConsentGranted
         self.autoDailyDigest = autoDailyDigest
+        self.digestSourceMode = digestSourceMode
         self.githubSyncEnabled = githubSyncEnabled
         self.githubOwner = githubOwner
         self.githubRepo = githubRepo
@@ -316,6 +340,9 @@ public struct WhisperioSettings: Codable, Sendable, Equatable {
         audioAutoStopTimeoutSeconds = try c.decodeIfPresent(Double.self, forKey: .audioAutoStopTimeoutSeconds) ?? d.audioAutoStopTimeoutSeconds
         cloudConsentGranted = try c.decodeIfPresent(Bool.self, forKey: .cloudConsentGranted) ?? d.cloudConsentGranted
         autoDailyDigest = try c.decodeIfPresent(Bool.self, forKey: .autoDailyDigest) ?? d.autoDailyDigest
+        // Same unknown-raw-value tolerance as syncMode below: `try?` swallows both "missing" and
+        // "unrecognized" (a future build's mode) instead of throwing the whole blob away.
+        digestSourceMode = (try? c.decodeIfPresent(DigestSourceMode.self, forKey: .digestSourceMode)) ?? d.digestSourceMode
         githubSyncEnabled = try c.decodeIfPresent(Bool.self, forKey: .githubSyncEnabled) ?? d.githubSyncEnabled
         githubOwner = try c.decodeIfPresent(String.self, forKey: .githubOwner) ?? d.githubOwner
         githubRepo = try c.decodeIfPresent(String.self, forKey: .githubRepo) ?? d.githubRepo

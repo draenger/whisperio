@@ -321,7 +321,8 @@ struct WZPhoneView: View {
         case .recap:
             RecapView(onBack: { go(.home) })
         case .scratchpad:
-            ScratchpadView(onBack: { go(.home) },
+            ScratchpadView(onBack: { go(.journal) },
+                           onHistory: { go(.journal) },
                            openSettings: { go(.settings) },
                            toast: showToast)
         case .digestDay:

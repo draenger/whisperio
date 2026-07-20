@@ -54,4 +54,18 @@ public enum DigestGrouping {
     public static func uncategorized(_ recordings: [Recording]) -> [Recording] {
         recordings.filter { $0.category == nil }
     }
+
+    // MARK: - Digest source filter (H4)
+
+    /// Whether `source` counts as "in-app" for `DigestSourceMode.appOnly`: the real in-app
+    /// dictation channels (`"app"` — in-app record or Scratchpad; `"mic"` — Conversation) plus
+    /// nil (recordings persisted before the `source` field existed were all in-app back then, and
+    /// `DemoRecording` already treats nil the same way — `r.source ?? "app"`). Keyboard, Watch,
+    /// Action Button and Back-Tap notes are excluded — they stay in the library, just out of the
+    /// auto-summarized digest. `.all` never calls this (nothing is filtered); `.manual` uses an
+    /// explicit per-day picked set instead (`DigestStore.generate`'s `allowedSources`).
+    public static func isAppSource(_ source: String?) -> Bool {
+        guard let source else { return true }
+        return source == "app" || source == "mic"
+    }
 }

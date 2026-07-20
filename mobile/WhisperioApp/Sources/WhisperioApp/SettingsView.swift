@@ -109,6 +109,31 @@ struct SettingsView: View {
                 })
     }
 
+    private var digestSourceModeBinding: Binding<String> {
+        Binding(get: { settings.settings.digestSourceMode.rawValue },
+                set: { raw in
+                    var s = settings.settings
+                    s.digestSourceMode = DigestSourceMode(rawValue: raw) ?? .all
+                    settings.settings = s
+                })
+    }
+
+    // Mirrors mob-settings.jsx:424's per-mode footnote. The `.appOnly` wording is adjusted from
+    // the design's literal copy ("mic, Action Button, Watch") to match what the filter actually
+    // does (`DigestGrouping.isAppSource`: source ∈ {"app","mic"} or nil — Watch notes are real,
+    // distinguishable data and are excluded same as Keyboard) rather than promise a behavior the
+    // app doesn't deliver.
+    private var digestSourceModeFootnote: String {
+        switch settings.settings.digestSourceMode {
+        case .all:
+            return "Everything — in-app, keyboard, Action Button and Watch — lands in the daily digest."
+        case .appOnly:
+            return "Only dictations made straight in Whisperio are summarized. Keyboard and Watch notes stay in the library, filterable in the Journal."
+        case .manual:
+            return "Nothing is auto-included — each day you tick which notes the summary should cover."
+        }
+    }
+
     private var autoStopSecondsBinding: Binding<Double> {
         Binding(get: { settings.settings.audioAutoStopTimeoutSeconds },
                 set: { settings.settings.audioAutoStopTimeoutSeconds = max(0, $0) })
@@ -824,6 +849,28 @@ struct SettingsView: View {
                             : "Groups & summarizes each day’s notes · turn on cloud transcription first") {
                     WToggle(on: boolBinding(\.autoDailyDigest))
                 }
+                VStack(alignment: .leading, spacing: 9) {
+                    HStack(alignment: .top, spacing: 13) {
+                        WIcon("keyboard", size: 17, weight: .regular).foregroundStyle(t.accentLite)
+                            .frame(width: 34, height: 34)
+                            .background(t.surfaceUp, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("What goes into the digest").font(WZFont.ui(14.5, .medium)).foregroundStyle(t.text)
+                            Text("Keyboard dictations are usually chat replies — you may not want them summarized next to your real notes. Every source keeps its own tag, so this only affects the Journal.")
+                                .font(WZFont.ui(12)).foregroundStyle(t.muted).lineSpacing(3)
+                        }
+                    }
+                    Segmented(value: digestSourceModeBinding, options: [
+                        (id: DigestSourceMode.all.rawValue, label: "All sources"),
+                        (id: DigestSourceMode.appOnly.rawValue, label: "In-app only"),
+                        (id: DigestSourceMode.manual.rawValue, label: "Pick per day")
+                    ])
+                    Text(digestSourceModeFootnote)
+                        .font(WZFont.mono(11)).foregroundStyle(t.faint).lineSpacing(3)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(.vertical, 13)
+                .overlay(alignment: .bottom) { Rectangle().fill(t.lineSoft).frame(height: 1) }
                 SettRow(icon: "command", label: "Categorization prompts",
                         sub: "Edit how the AI sorts & summarizes your day", last: true,
                         onTap: openDigestPrompts)

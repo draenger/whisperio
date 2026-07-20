@@ -15,6 +15,7 @@ struct ScratchpadView: View {
     @StateObject private var recorder = AudioRecorder()
     @StateObject private var live = LiveDictation()
     var onBack: () -> Void
+    var onHistory: () -> Void = {}
     var openSettings: () -> Void = {}
     var summarizeDay: () -> Void = {}
     var toast: (String) -> Void = { _ in }
@@ -65,9 +66,9 @@ struct ScratchpadView: View {
         ScreenScaffold {
             ZStack(alignment: .bottom) {
                 VStack(spacing: 0) {
-                    WHeader(title: "Whisperio") {
+                    WHeader(title: "Today's note", onBack: onBack) {
                         HStack(spacing: 9) {
-                            SquareIconButton(icon: "clock", action: onBack)
+                            SquareIconButton(icon: "book", action: onHistory)
                             SquareIconButton(icon: "settings", action: openSettings)
                         }
                     }

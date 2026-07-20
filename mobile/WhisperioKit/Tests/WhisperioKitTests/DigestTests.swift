@@ -106,6 +106,23 @@ struct DigestTests {
         #expect(out.first?.category == nil)
     }
 
+    // MARK: - Digest source filter (H4 — "What goes into the digest")
+
+    @Test func isAppSourceIncludesAppMicAndNil() {
+        #expect(DigestGrouping.isAppSource("app"))
+        #expect(DigestGrouping.isAppSource("mic"))
+        // Legacy data predating the `source` field — historically in-app, same as
+        // DemoRecording's `r.source ?? "app"` display convention.
+        #expect(DigestGrouping.isAppSource(nil))
+    }
+
+    @Test func isAppSourceExcludesKeyboardWatchAndTriggerSources() {
+        #expect(!DigestGrouping.isAppSource("keyboard"))
+        #expect(!DigestGrouping.isAppSource("watch"))
+        #expect(!DigestGrouping.isAppSource("action"))
+        #expect(!DigestGrouping.isAppSource("backtap"))
+    }
+
     // MARK: - Prompt builders produce stable expected substrings
 
     @Test func classificationPromptContainsIdsAndCategories() {

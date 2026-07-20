@@ -163,4 +163,38 @@ import Foundation
         let decoded = try JSONDecoder().decode(WhisperioSettings.self, from: json)
         #expect(decoded.syncIntervalMinutes == 15)
     }
+
+    // MARK: - DigestSourceMode ("What goes into the digest")
+
+    @Test func digestSourceModeDefaultsToAll() {
+        let s = WhisperioSettings()
+        #expect(s.digestSourceMode == .all)
+    }
+
+    @Test func digestSourceModeCodableRoundTrips() throws {
+        for mode in DigestSourceMode.allCases {
+            let original = WhisperioSettings(digestSourceMode: mode)
+            let data = try JSONEncoder().encode(original)
+            let decoded = try JSONDecoder().decode(WhisperioSettings.self, from: data)
+            #expect(decoded.digestSourceMode == mode)
+        }
+    }
+
+    // A blob persisted before digestSourceMode existed (missing key entirely) still decodes,
+    // falling back to `.all` — same tolerant-decode contract as every other field.
+    @Test func digestSourceModeMissingKeyFallsBackToAll() throws {
+        let legacy = try JSONEncoder().encode(["providerChain": ["ondevice"]])
+        let decoded = try JSONDecoder().decode(WhisperioSettings.self, from: legacy)
+        #expect(decoded.digestSourceMode == .all)
+    }
+
+    // An unrecognized raw string (e.g. a future build's mode) must not throw the whole settings
+    // blob out — it falls back to `.all`, same as syncMode's unknown-value tolerance.
+    @Test func digestSourceModeUnknownRawValueFallsBackToAll() throws {
+        let json = """
+        {"providerChain": ["ondevice"], "digestSourceMode": "some-future-mode"}
+        """.data(using: .utf8)!
+        let decoded = try JSONDecoder().decode(WhisperioSettings.self, from: json)
+        #expect(decoded.digestSourceMode == .all)
+    }
 }

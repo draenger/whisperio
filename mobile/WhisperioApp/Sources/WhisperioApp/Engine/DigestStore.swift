@@ -108,6 +108,18 @@ final class DigestStore: ObservableObject {
         return s.storageMode
     }
 
+    /// The user's persisted "What goes into the digest" choice, decoded the same way
+    /// `persistedStorageMode()` reads storage mode. Lets `backfillIfNeeded` — the unattended
+    /// foreground backfill, which has no UI to ask per-day questions — honor the live setting
+    /// without WhisperioApp threading it through its one call site (AppShell's foreground hook).
+    private static func persistedDigestSourceMode() -> DigestSourceMode {
+        guard let data = UserDefaults.standard.data(forKey: RecordingSyncStore.settingsDefaultsKey),
+              let s = try? JSONDecoder().decode(WhisperioSettings.self, from: data) else {
+            return .all
+        }
+        return s.digestSourceMode
+    }
+
     private func updateICloudResumeAvailability() {
         iCloudResumeAvailable = RecordingSync.iCloudResumeMismatch(
             storageMode: Self.persistedStorageMode(),
@@ -224,24 +236,49 @@ final class DigestStore: ObservableObject {
     /// uncategorized — never mis-filed); the grouped digest is cached before the summary call so a
     /// summary failure still persists the day's structure. Throws only on the summary call so the
     /// caller can surface it. Assumes `client.isConfigured` — callers gate on cloud consent + key.
+    ///
+    /// - Parameters:
+    ///   - sourceMode: which capture sources count for this day (Settings → Journaling → "What
+    ///     goes into the digest"). `.all` includes every completed note (unchanged default
+    ///     behavior); `.appOnly` drops keyboard/Watch/trigger-sourced notes via
+    ///     `DigestGrouping.isAppSource`; `.manual` filters by `allowedSources` instead.
+    ///   - allowedSources: only consulted when `sourceMode == .manual` — the exact raw `source`
+    ///     values (nil included) the caller picked for this day, e.g. from `DigestDayView`'s
+    ///     source-picker sheet. `nil` (the default) means "no restriction" — every source counts,
+    ///     which is also the correct behavior for a day with only one real source (ruling: skip
+    ///     the picker sheet when there's nothing to choose between).
     func generate(
         for day: Date,
         recordings: RecordingsStore,
         categories: [WZCategory],
         using client: ChatLLM,
         model: String,
-        promptConfig: DigestPromptConfig = .default
+        promptConfig: DigestPromptConfig = .default,
+        sourceMode: DigestSourceMode = .all,
+        allowedSources: Set<String?>? = nil
     ) async throws {
         let calendar = Calendar.current
         let dayKey = DigestGrouping.dayKey(for: day, calendar: calendar)
         let order = categories.map(\.id)
 
-        // Only completed recordings with real text take part in the digest.
+        func matchesSourceMode(_ source: String?) -> Bool {
+            switch sourceMode {
+            case .all: return true
+            case .appOnly: return DigestGrouping.isAppSource(source)
+            case .manual:
+                guard let allowedSources else { return true }
+                return allowedSources.contains(source)
+            }
+        }
+
+        // Only completed recordings with real text — whose capture source is allowed under
+        // `sourceMode` — take part in the digest.
         func dayRecordings() -> [Recording] {
             recordings.items.filter {
                 $0.status == .completed
                     && !($0.transcription ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                     && DigestGrouping.dayKey(for: $0.timestamp, calendar: calendar) == dayKey
+                    && matchesSourceMode($0.source)
             }
         }
 
@@ -292,6 +329,14 @@ final class DigestStore: ObservableObject {
     /// Auto-journaling backfill: once per calendar day, summarize the last `window` prior days that
     /// have notes but no summary yet. No-op when the client isn't configured. Best-effort — a failed
     /// day is skipped and retried on the next day's run.
+    ///
+    /// Reads the user's "What goes into the digest" choice straight from persisted settings
+    /// (`persistedDigestSourceMode()`, mirroring `persistedStorageMode()`) rather than taking it as
+    /// a parameter — this is a background hook with a single, settings-agnostic call site
+    /// (AppShell's foreground `runAutoJournaling`), so reading live is both simpler and always
+    /// current. `.manual` mode has no per-day picker to ask in the background — per the design's
+    /// own copy ("Nothing is auto-included — each day you tick..."), backfill honestly stays a
+    /// no-op rather than guessing which sources the user would have picked.
     func backfillIfNeeded(
         recordings: RecordingsStore,
         categories: [WZCategory],
@@ -301,6 +346,8 @@ final class DigestStore: ObservableObject {
         window: Int = 7
     ) async {
         guard client.isConfigured else { return }
+        let sourceMode = Self.persistedDigestSourceMode()
+        guard sourceMode != .manual else { return }
         let calendar = Calendar.current
         let todayKey = DigestGrouping.dayKey(for: Date(), calendar: calendar)
         // Once/day: bail if we already ran today.
@@ -320,7 +367,7 @@ final class DigestStore: ObservableObject {
             guard hasNotes else { continue }
             try? await generate(for: day, recordings: recordings,
                                 categories: categories, using: client, model: model,
-                                promptConfig: promptConfig)
+                                promptConfig: promptConfig, sourceMode: sourceMode)
         }
     }
 

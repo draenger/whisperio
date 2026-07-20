@@ -148,26 +148,19 @@ struct DetailView: View {
                     .presentationDetents([.medium, .large])
                     #endif
             }
-            // The informed-consent moment for non-diarizing engines on a conversation: speaker
-            // detection needs one of the diarizing cloud engines, so a plain engine drops the labels.
-            .alert("Speakers need the cloud", isPresented: Binding(
-                get: { confirmPlainEngine != nil },
-                set: { if !$0 { confirmPlainEngine = nil } }
-            )) {
-                Button("Retranscribe anyway", role: .destructive) {
-                    if let engine = confirmPlainEngine { retranscribe(engine) }
-                    confirmPlainEngine = nil
-                }
-                Button("Cancel", role: .cancel) { confirmPlainEngine = nil }
-            } message: {
-                Text("Speaker detection needs a diarizing cloud engine (ElevenLabs, Deepgram, or AssemblyAI) — retranscribing with \(confirmPlainEngine.map(engineName) ?? "another engine") produces plain text and removes the speaker labels.")
-            }
-
             // "Name this speaker" — a bottom sheet (not a bare alert) so the user can see what
             // that speaker actually said and one-tap a real name already used elsewhere, per
             // the design (mob-screens.jsx:306-325).
             if renameSpeaker != nil {
                 renameSheet
+            }
+
+            // The informed-consent moment for non-diarizing engines on a conversation: speaker
+            // detection needs one of the diarizing cloud engines, so a plain engine drops the
+            // labels. A bottom sheet (not a bare alert), matching renameSheet's structure and
+            // StorageView's EraseSheet destructive-action pattern — per mob-screens.jsx:331-339.
+            if confirmPlainEngine != nil {
+                confirmPlainEngineSheet
             }
         }
     }
@@ -539,6 +532,37 @@ struct DetailView: View {
                 GradButton(title: "Save", icon: "check") { commitRename() }
                     .padding(.bottom, 10)
                 GhostButton(title: "Cancel") { renameSpeaker = nil }
+            }
+        }
+    }
+
+    // "Speakers need the cloud" — a bottom sheet mirroring renameSheet's structure and the
+    // solid-red destructive button from StorageView's EraseSheet, per mob-screens.jsx:331-339.
+    private var confirmPlainEngineSheet: some View {
+        BottomSheet(onClose: { confirmPlainEngine = nil }) {
+            VStack(alignment: .leading, spacing: 0) {
+                Text("Speakers need the cloud")
+                    .font(WZFont.display(20)).foregroundStyle(t.text)
+                    .padding(.bottom, 10)
+                Text("Speaker detection needs a diarizing cloud engine (ElevenLabs, Deepgram, or AssemblyAI) — retranscribing with \(confirmPlainEngine.map(engineName) ?? "another engine") produces plain text and removes the speaker labels.")
+                    .font(WZFont.ui(14)).foregroundStyle(t.muted).lineSpacing(4)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.bottom, 20)
+                Button {
+                    if let engine = confirmPlainEngine { retranscribe(engine) }
+                    confirmPlainEngine = nil
+                } label: {
+                    Text("Retranscribe anyway")
+                        .font(WZFont.ui(15, .semibold))
+                        .foregroundStyle(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 13)
+                        .background(t.red, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                }
+                .buttonStyle(.plain)
+                .padding(.bottom, 10)
+
+                GhostButton(title: "Cancel") { confirmPlainEngine = nil }
             }
         }
     }

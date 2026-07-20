@@ -423,6 +423,7 @@ private struct IPadLiveJournal: View {
     var openLibrary: (UUID) -> Void = { _ in }
     @State private var day: Date?
     @State private var dayStartInManual = false
+    @State private var daySeed: String? = nil
     @State private var showSettings = false
     @State private var showComposer = false
     @State private var showScratchpad = false
@@ -435,7 +436,7 @@ private struct IPadLiveJournal: View {
             // onAdd/onOpenToday are presented as sheets over the split (there's no push route
             // here) so the book "+" menu, the empty-chapter CTA, and the today running-note
             // card aren't dead ends on iPad/Mac the way the phone reaches .journalNew/.scratchpad.
-            JournalView(onBack: onExit, openDay: { dayStartInManual = false; day = $0 },
+            JournalView(onBack: onExit, openDay: { dayStartInManual = false; daySeed = nil; day = $0 },
                         onAdd: { showComposer = true },
                         onOpenToday: { showScratchpad = true })
                 .frame(width: 320)
@@ -443,7 +444,7 @@ private struct IPadLiveJournal: View {
             Group {
                 if let day {
                     DigestDayView(day: day,
-                                  onBack: { self.day = nil },
+                                  onBack: { self.day = nil; dayStartInManual = false; daySeed = nil },
                                   openRec: { demo in
                                       if let sourceId = demo.sourceId { openLibrary(sourceId) }
                                   },
@@ -452,6 +453,7 @@ private struct IPadLiveJournal: View {
                                       showSettings = true
                                   },
                                   toast: showToast,
+                                  seed: daySeed,
                                   startInManual: dayStartInManual)
                         .id(day)
                 } else {
@@ -488,8 +490,11 @@ private struct IPadLiveJournal: View {
                                 onDone: { kind in
                                     showComposer = false
                                     switch kind {
-                                    case .blank: dayStartInManual = true; day = Date()
-                                    case .ai, .raw: dayStartInManual = false; day = Date()
+                                    case .blank: dayStartInManual = true; daySeed = nil; day = Date()
+                                    case .ai, .raw:
+                                        dayStartInManual = false
+                                        daySeed = kind.rawValue
+                                        day = Date()
                                     case .split: break
                                     }
                                 },
@@ -498,6 +503,7 @@ private struct IPadLiveJournal: View {
         }
         .sheet(isPresented: $showScratchpad) {
             ScratchpadView(onBack: { showScratchpad = false },
+                           onHistory: { showScratchpad = false },
                            openSettings: { settingsDark = t.dark; showSettings = true },
                            toast: showToast)
         }
