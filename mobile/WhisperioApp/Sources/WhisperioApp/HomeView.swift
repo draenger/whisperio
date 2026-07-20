@@ -50,8 +50,11 @@ struct HomeView: View {
                     VStack(spacing: 13) {
                         HStack(spacing: 9) {
                             todaysDigestCard
+                                .frame(maxHeight: .infinity)
                             recapStreakTile
+                                .frame(maxHeight: .infinity)
                         }
+                        .fixedSize(horizontal: false, vertical: true)
                         HStack(spacing: 9) {
                             WIcon("search", size: 17, weight: .regular).foregroundStyle(t.faint)
                             TextField("Search transcripts", text: $searchText)
@@ -382,9 +385,9 @@ struct HomeView: View {
                     WIcon("people", size: 19, weight: .bold)
                         .foregroundStyle(t.accentLite)
                         .frame(width: 56, height: 56)
-                        .background(t.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                        .background(t.surface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                         .overlay(
-                            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
                                 .stroke(t.accent.opacity(0.35), lineWidth: 1)
                         )
                 }

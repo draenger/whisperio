@@ -98,7 +98,7 @@ struct RecordingView: View {
 
                 // The design's ListeningGhost: leans in and nods while you talk, scribbles
                 // on its notepad while transcribing, startles ("?!") on an error.
-                ListeningGhost(phase: ghostPhase, size: 96)
+                ListeningGhost(phase: ghostPhase, size: 128)
                     .padding(.bottom, 2)
 
                 Group {
@@ -121,7 +121,7 @@ struct RecordingView: View {
                         WIcon("stop", size: 30).foregroundStyle(.white)
                             .frame(width: 84, height: 84)
                             .background(phase == .listening ? t.red : t.elevated, in: Circle())
-                            .overlay(Circle().stroke(t.red.opacity(phase == .listening ? 0.16 : 0), lineWidth: 8))
+                            .overlay(Circle().strokeBorder(t.red.opacity(phase == .listening ? 0.16 : 0), lineWidth: 8))
                     }
                     .buttonStyle(.plain).disabled(phase != .listening)
                     // Fixed three-slot row per design (mob-screens.jsx:182-186) — the first X

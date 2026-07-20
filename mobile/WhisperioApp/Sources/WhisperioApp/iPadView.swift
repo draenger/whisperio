@@ -51,10 +51,10 @@ struct iPadSplitView: View {
                 engineBar
             }
             HStack {
-                segmented.frame(width: 260)
+                segmented
                 Spacer(minLength: 0)
             }
-            .padding(.horizontal, 18).padding(.vertical, 12)
+            .padding(.horizontal, 16).padding(.vertical, 8)
             .overlay(alignment: .bottom) { Rectangle().fill(t.lineSoft).frame(height: 1) }
             if tab == "library" {
                 if let cur {
@@ -240,8 +240,7 @@ struct iPadSplitView: View {
             }
             .font(WZFont.ui(13, .semibold))
             .foregroundStyle(on ? .white : t.muted)
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 8)
+            .padding(.vertical, 6).padding(.horizontal, 13)
             .background(on ? t.accent : .clear, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
         }
         .buttonStyle(.plain)

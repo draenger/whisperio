@@ -30,9 +30,9 @@ struct WHeader<Right: View>: View {
                 Button(action: onBack) {
                     WIcon("chevL", size: 18, weight: .bold)
                         .foregroundStyle(t.text)
-                        .frame(width: 36, height: 36)
-                        .background(t.surfaceUp, in: RoundedRectangle(cornerRadius: 11, style: .continuous))
-                        .overlay(RoundedRectangle(cornerRadius: 11, style: .continuous).stroke(t.line, lineWidth: 1))
+                        .frame(width: 38, height: 38)
+                        .background(t.surfaceUp, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(t.line, lineWidth: 1))
                 }
                 .buttonStyle(.plain)
             } else {
@@ -41,15 +41,15 @@ struct WHeader<Right: View>: View {
                 WGhost(size: 40, tapFun: true)
             }
             Text(title)
-                .font(WZFont.display(onBack == nil ? 24 : 17))
+                .font(WZFont.display(24))
                 .foregroundStyle(t.text)
                 .frame(maxWidth: .infinity, alignment: .leading)
             right
         }
         .frame(minHeight: 36)
-        .padding(.horizontal, onBack == nil ? 18 : 16)
-        .padding(.top, onBack == nil ? 4 : 6)
-        .padding(.bottom, onBack == nil ? 6 : 8)
+        .padding(.horizontal, 16)
+        .padding(.top, 8)
+        .padding(.bottom, 12)
     }
 }
 

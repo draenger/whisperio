@@ -433,7 +433,15 @@ struct JournalView: View {
                     }
                 }
             } else {
-                GhostButton(title: "Generate summary", icon: "spark") { openDay(day.date) }
+                Button { openDay(day.date) } label: {
+                    HStack(spacing: 6) {
+                        WIcon("spark", size: 13)
+                        Text("Generate summary").font(WZFont.mono(11, .semibold))
+                        WIcon("chevR", size: 13)
+                    }
+                    .foregroundStyle(t.accentLite)
+                }
+                .buttonStyle(.plain)
             }
         }
         .padding(16)

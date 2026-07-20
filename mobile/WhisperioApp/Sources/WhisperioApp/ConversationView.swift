@@ -109,7 +109,7 @@ struct ConversationView: View {
                 // The design's ListeningGhost keeps the conversation company while it records
                 // and scribbles while the diarizer works (mock shows it only in these phases).
                 if phase == .listening || phase == .processing {
-                    ListeningGhost(phase: phase == .processing ? .note : .listening, size: 90)
+                    ListeningGhost(phase: phase == .processing ? .note : .listening, size: 128)
                         .padding(.bottom, 2)
                 }
 
@@ -138,7 +138,7 @@ struct ConversationView: View {
                         WIcon("stop", size: 30).foregroundStyle(.white)
                             .frame(width: 84, height: 84)
                             .background(isCapturing ? t.red : t.elevated, in: Circle())
-                            .overlay(Circle().stroke(t.red.opacity(isCapturing ? 0.16 : 0), lineWidth: 8))
+                            .overlay(Circle().strokeBorder(t.red.opacity(isCapturing ? 0.16 : 0), lineWidth: 8))
                     }
                     .buttonStyle(.plain).disabled(!isCapturing)
                     if phase == .listening || phase == .paused {

@@ -559,6 +559,7 @@ struct DetailView: View {
                         .foregroundStyle(.white)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 13)
+                        .padding(.horizontal, 20)
                         .background(t.red, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
                 }
                 .buttonStyle(.plain)

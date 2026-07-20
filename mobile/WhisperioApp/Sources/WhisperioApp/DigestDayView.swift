@@ -166,8 +166,8 @@ struct DigestDayView: View {
                     .font(WZFont.ui(13.5)).foregroundStyle(t.muted).lineSpacing(3)
                     .fixedSize(horizontal: false, vertical: true)
                 HStack(spacing: 9) {
-                    GradButton(title: "Generate summary", icon: "spark") { generate() }
-                    GhostButton(title: "Start from scratch", icon: "pencil") { manual = true }
+                    GradButton(title: "Generate summary", icon: "spark") { generate() }.fixedSize()
+                    GhostButton(title: "Start from scratch", icon: "pencil") { manual = true }.fixedSize()
                 }
             }
         }

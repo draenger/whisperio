@@ -183,6 +183,7 @@ struct Segmented: View {
                         .foregroundStyle(on ? .white : t.muted)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 8)
+                        .padding(.horizontal, 6)
                         .background(on ? t.accent : .clear, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
                 }
                 .buttonStyle(.plain)

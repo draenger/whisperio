@@ -74,13 +74,13 @@ struct CategoryTag: View {
 
     var body: some View {
         let c = category.hue(t)
-        HStack(spacing: 5) {
-            WIcon(category.icon, size: 10.5)
+        HStack(spacing: 4) {
+            WIcon(category.icon, size: 9.5)
             Text(category.label)
         }
-        .font(WZFont.mono(10, .semibold))
+        .font(WZFont.mono(9.5, .semibold))
         .foregroundStyle(c)
-        .padding(.horizontal, 8).padding(.vertical, 3)
+        .padding(.horizontal, 7).padding(.vertical, 2)
         .background(c.opacity(t.dark ? 0.14 : 0.10), in: Capsule())
         .overlay(Capsule().stroke(c.opacity(t.dark ? 0.28 : 0.24), lineWidth: 1))
     }

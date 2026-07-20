@@ -837,6 +837,7 @@ struct SettingsView: View {
                 GhostButton(title: "Restore default templates", icon: "sync") {
                     showRestoreConfirm = true
                 }
+                .fixedSize()
                 .padding(.top, 2)
                 .opacity(hasOpenAIKey ? 1 : 0.5)
                 .allowsHitTesting(hasOpenAIKey)
