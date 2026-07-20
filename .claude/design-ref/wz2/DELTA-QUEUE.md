@@ -92,6 +92,13 @@ GitHub sync / storage / onboarding) now swap the sheet content with an in-sheet 
 banner; keyboard-setup row is iOS-only (iOS extension — nothing to install on macOS,
 RULED). settings sub-state resets on sheet dismiss.
 
+## Parity round 7 (2026-07-20) — 4 raw → 3 unique gaps → fixed directly (0ce3cfc)
+Split-shell dark mode is real+persisted (@AppStorage wz.split.dark drives \.wz env +
+preferredColorScheme; Mac hardcoded theme removed); deep-page back restores parent category
+(models/system/sync); Library reading-pane Copy wired to the real clipboard. The reading
+pane's "Insert" button remains display-only (desktop insert concept — no target field
+exists in this shell; RULED, do not re-report).
+
 ## Process
 Weaker agents plan → Fable verifies/corrects plans → weaker agents implement
 (fresh-read + surgical-edit protocol, per-file ownership) → build gates

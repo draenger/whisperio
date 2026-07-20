@@ -271,7 +271,8 @@ struct WZPhoneView: View {
             // Back lands on the sync ("Data synchronisation") page — the GitHub deep page's parent.
             GitHubSyncView(onBack: { settingsLandingCategory = "sync"; go(.settings) }, toast: showToast)
         case .digestPromptEditor:
-            DigestPromptEditorView(onBack: { go(.settings) }, toast: showToast)
+            // Back lands on the Content page — the categorization-prompts deep page's parent.
+            DigestPromptEditorView(onBack: { settingsLandingCategory = "content"; go(.settings) }, toast: showToast)
         case .keyboardReturn:
             KeyboardReturnView(text: returnText, onClose: { go(.home) })
         case .keyboardRewrite:
@@ -372,6 +373,9 @@ struct WZPhoneView: View {
     private func openEditor(_ preset: RewritePreset, from origin: WZScreen) {
         editorPreset = preset
         editorReturn = origin
+        // The template editor's Settings parent is the Content category (design SETT_PARENT) —
+        // seed the landing page now so backing out of the editor restores it.
+        if origin == .settings { settingsLandingCategory = "content" }
         go(.presetEditor)
     }
 

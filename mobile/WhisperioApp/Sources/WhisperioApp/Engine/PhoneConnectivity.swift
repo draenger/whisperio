@@ -1,4 +1,5 @@
 import Foundation
+import AVFoundation
 import WatchConnectivity
 import WhisperioKit
 
@@ -21,7 +22,11 @@ final class PhoneConnectivity: NSObject, ObservableObject, WCSessionDelegate {
 
     private func handle(fileURL: URL) {
         guard let data = try? Data(contentsOf: fileURL) else { return }
-        let clip = AudioClip(data: data, filename: "watch.m4a", duration: 0)
+        // Real clip length from the received m4a — a hardcoded 0 would silently drop every
+        // Watch dictation out of Recap's Usage & cost / minutes-saved aggregations (which
+        // filter on duration > 0). AVAudioPlayer reads the local temp file synchronously.
+        let duration = (try? AVAudioPlayer(contentsOf: fileURL))?.duration ?? 0
+        let clip = AudioClip(data: data, filename: "watch.m4a", duration: duration)
         Task {
             let store = SettingsStore()
             let result = await store.makeChain().transcribe(clip)

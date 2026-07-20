@@ -124,11 +124,10 @@ struct RecordingView: View {
                             .overlay(Circle().stroke(t.red.opacity(phase == .listening ? 0.16 : 0), lineWidth: 8))
                     }
                     .buttonStyle(.plain).disabled(phase != .listening)
-                    if phase == .error {
-                        circleButton(icon: "x", action: onCancel)
-                    } else {
-                        Color.clear.frame(width: 56, height: 56)
-                    }
+                    // Fixed three-slot row per design (mob-screens.jsx:182-186) — the first X
+                    // already cancels in every phase, so the error phase keeps the spacer
+                    // instead of growing a second identical X.
+                    Color.clear.frame(width: 56, height: 56)
                 }
                 .padding(.top, 14).padding(.bottom, 42)
             }

@@ -110,7 +110,7 @@ struct KeyboardRootView: View {
                 rewriteMenu
             }
 
-            onDeviceChip
+            engineChip
 
             Button(action: { model.mic() }) {
                 Image(systemName: "mic.fill")
@@ -126,18 +126,36 @@ struct KeyboardRootView: View {
         .padding(.horizontal, 4)
     }
 
-    private var onDeviceChip: some View {
+    // Privacy chip that only claims what the app has actually recorded: the main app writes
+    // the primary engine's on-device/cloud state to the shared App Group on every settings
+    // save (SharedStore.setEngineOnDevice). Green "on-device" when true, amber "cloud" when
+    // false, and NO chip when the flag is unreadable (fresh install, or the App Group not yet
+    // provisioned) — an unconditional on-device promise here would be false for cloud chains.
+    @ViewBuilder private var engineChip: some View {
+        switch SharedStore.engineOnDevice() {
+        case .some(true):
+            privacyCapsule(icon: "lock.fill", label: "on-device", color: green)
+        case .some(false):
+            privacyCapsule(icon: "cloud.fill", label: "cloud", color: amberChip)
+        case .none:
+            EmptyView()
+        }
+    }
+
+    private var amberChip: Color { Color(red: 0.96, green: 0.62, blue: 0.04) }
+
+    private func privacyCapsule(icon: String, label: String, color: Color) -> some View {
         HStack(spacing: 5) {
-            Image(systemName: "lock.fill")
+            Image(systemName: icon)
                 .font(.system(size: 9.5, weight: .semibold))
-            Text("on-device")
+            Text(label)
                 .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
         }
-        .foregroundStyle(green)
+        .foregroundStyle(color)
         .padding(.horizontal, 11)
         .padding(.vertical, 5)
-        .background(green.opacity(dark ? 0.12 : 0.09), in: Capsule())
-        .overlay(Capsule().stroke(green.opacity(0.28), lineWidth: 1))
+        .background(color.opacity(dark ? 0.12 : 0.09), in: Capsule())
+        .overlay(Capsule().stroke(color.opacity(0.28), lineWidth: 1))
     }
 
     private var rewriteMenu: some View {

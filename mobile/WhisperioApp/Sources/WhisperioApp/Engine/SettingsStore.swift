@@ -47,6 +47,10 @@ final class SettingsStore: ObservableObject {
     }
 
     private func save() {
+        // Keep the keyboard extension's privacy chip honest: it can't read the engine chain
+        // itself, so the app records whether the primary engine is on-device via the shared
+        // App Group on every settings write (a no-op until the group container exists).
+        SharedStore.setEngineOnDevice((settings.providerChain.first ?? .onDevice) == .onDevice)
         // Secrets go to the Keychain only; everything else is persisted to UserDefaults with
         // the key fields blanked so no API secret is ever written in plaintext.
         Keychain.set(settings.openAIKey, for: .openAIKey)

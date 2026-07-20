@@ -351,7 +351,13 @@ struct iPadSplitView: View {
         VStack(spacing: 12) {
             WIcon("mic", size: 34, weight: .regular).foregroundStyle(t.faint)
             Text("No recordings yet").font(WZFont.ui(16, .semibold)).foregroundStyle(t.text)
-            Text("Dictate on this Mac or your iPhone and it will show up here.")
+            Text({
+                #if os(macOS)
+                return "Dictate on this Mac or your iPhone and it will show up here."
+                #else
+                return "Dictate on this iPad or your iPhone and it will show up here."
+                #endif
+            }())
                 .font(WZFont.ui(13.5)).foregroundStyle(t.muted).multilineTextAlignment(.center)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -370,7 +376,13 @@ struct iPadSplitView: View {
                 Text("\(cur.app) · \(cur.when) · \(cur.dur) · \(cur.words) words")
                     .font(WZFont.mono(12)).foregroundStyle(t.faint)
                 Spacer()
-                GhostButton(title: "Copy", icon: "copy") { copyTranscript(cur.title) }.fixedSize()
+                // Conversations copy the speaker-labeled rendering the pane is showing, not the
+                // flat transcription — same branch as DetailView's shareableTranscript.
+                GhostButton(title: "Copy", icon: "copy") {
+                    copyTranscript(isConvo
+                        ? SpeakerSegmentBuilder.transcriptText(segments: segments, names: speakerNames)
+                        : cur.title)
+                }.fixedSize()
                 GradButton(title: "Insert", icon: "arrowUR").fixedSize()
             }
             .padding(.horizontal, 32).padding(.vertical, 18)
@@ -537,11 +549,11 @@ private struct IPadLiveJournal: View {
                     case .github:
                         GitHubSyncView(onBack: { settingsCategory = "sync"; settingsSub = nil }, toast: showToast)
                     case .digestPrompts:
-                        DigestPromptEditorView(onBack: { settingsSub = nil }, toast: showToast)
+                        DigestPromptEditorView(onBack: { settingsCategory = "content"; settingsSub = nil }, toast: showToast)
                     case .storage:
                         StorageView(onBack: { settingsSub = nil }, toast: showToast)
                     case .preset(let p):
-                        PresetEditorView(preset: p, onBack: { settingsSub = nil }, toast: showToast)
+                        PresetEditorView(preset: p, onBack: { settingsCategory = "content"; settingsSub = nil }, toast: showToast)
                     }
                 }
                 if let toastMsg {

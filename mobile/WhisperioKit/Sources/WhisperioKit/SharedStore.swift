@@ -34,6 +34,23 @@ public enum SharedStore {
         static let rewriteResult     = "kbd.rewriteResult"
         static let rewriteResultAt   = "kbd.rewriteResultAt"
         static let widgetSnapshot    = "widget.snapshot.v1"
+        static let engineOnDevice    = "engine.isOnDevice"         // app writes; keyboard reads for its privacy chip
+    }
+
+    // MARK: - Engine privacy flag (app → keyboard)
+
+    /// The app records whether the PRIMARY transcription engine is on-device whenever settings
+    /// are saved, so the keyboard extension's privacy chip can tell the truth instead of
+    /// promising "on-device" unconditionally. Reads return nil when the flag has never been
+    /// written (or the App Group container isn't available) — callers must treat nil as
+    /// "unknown" and make no claim.
+    public static func setEngineOnDevice(_ onDevice: Bool) {
+        defaults?.set(onDevice, forKey: Key.engineOnDevice)
+    }
+
+    public static func engineOnDevice() -> Bool? {
+        guard let d = defaults, d.object(forKey: Key.engineOnDevice) != nil else { return nil }
+        return d.bool(forKey: Key.engineOnDevice)
     }
 
     // MARK: - Transcript handoff (app → keyboard)

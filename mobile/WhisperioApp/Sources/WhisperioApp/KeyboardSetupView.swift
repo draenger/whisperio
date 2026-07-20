@@ -12,6 +12,12 @@ import UIKit
 struct KeyboardSetupView: View {
     @Environment(\.wz) private var t
     @Environment(\.scenePhase) private var scenePhase
+    @EnvironmentObject private var settings: SettingsStore
+    // This screen runs in the main app, so unlike the keyboard extension it can read the real
+    // engine chain directly — the copy below claims on-device only when the primary engine is.
+    private var engineIsOnDevice: Bool {
+        (settings.settings.providerChain.first ?? .onDevice) == .onDevice
+    }
     var onBack: () -> Void
 
     @State private var keyboardSeen = SharedStore.keyboardEverLoaded
@@ -49,7 +55,9 @@ struct KeyboardSetupView: View {
                             SectionLabel(text: "How the mic works").padding(.leading, 4)
                             VStack(alignment: .leading, spacing: 10) {
                                 explainerRow("keyboard", "Tap the mic on the keyboard")
-                                explainerRow("mic", "Whisperio opens and records on-device")
+                                explainerRow("mic", engineIsOnDevice
+                                    ? "Whisperio opens and records on-device"
+                                    : "Whisperio opens and records — transcribed by your cloud engine")
                                 explainerRow("arrowUR", "Swipe back — the text is inserted for you")
                             }
                             .padding(16)
@@ -76,7 +84,9 @@ struct KeyboardSetupView: View {
                 .background(t.gradient, in: RoundedRectangle(cornerRadius: 15, style: .continuous))
             VStack(alignment: .leading, spacing: 3) {
                 Text("Dictate from any app").font(WZFont.display(18)).foregroundStyle(t.text)
-                Text("A mic key on your keyboard, powered by on-device transcription.")
+                Text(engineIsOnDevice
+                    ? "A mic key on your keyboard, powered by on-device transcription."
+                    : "A mic key on your keyboard — dictations use your configured cloud engine.")
                     .font(WZFont.ui(13)).foregroundStyle(t.muted).lineSpacing(2)
             }
         }
