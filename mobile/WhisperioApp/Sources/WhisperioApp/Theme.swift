@@ -74,7 +74,9 @@ struct WZTheme {
 // so a bad name degrades gracefully rather than crashing.
 enum WZFont {
     static func display(_ size: CGFloat, _ weight: Font.Weight = .semibold) -> Font {
-        .custom(["SpaceGrotesk-Regular", "SpaceGrotesk-Medium", "SpaceGrotesk-Bold"][bucket(weight)], size: size)
+        // Four real cuts: the design's FD titles are weight 600 (SemiBold) — mapping semibold
+        // onto Bold(700) made every header render heavier/wider than the mock.
+        .custom(["SpaceGrotesk-Regular", "SpaceGrotesk-Medium", "SpaceGrotesk-SemiBold", "SpaceGrotesk-Bold"][displayBucket(weight)], size: size)
     }
     static func ui(_ size: CGFloat, _ weight: Font.Weight = .regular) -> Font {
         .custom(["IBMPlexSans", "IBMPlexSans-Medm", "IBMPlexSans-SmBld"][bucket(weight)], size: size)
@@ -87,6 +89,15 @@ enum WZFont {
     private static func bucket(_ w: Font.Weight) -> Int {
         if w == .medium { return 1 }
         if w == .semibold || w == .bold || w == .heavy || w == .black { return 2 }
+        return 0
+    }
+
+    // Display face only — Space Grotesk ships four cuts here, so true Bold survives while
+    // semibold stops being upgraded to it.
+    private static func displayBucket(_ w: Font.Weight) -> Int {
+        if w == .medium { return 1 }
+        if w == .semibold { return 2 }
+        if w == .bold || w == .heavy || w == .black { return 3 }
         return 0
     }
 }

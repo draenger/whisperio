@@ -13,6 +13,15 @@ import WhisperioKit
 // `WZTheme` / `\.wz` environment). Default window ~1100x760 so the split view breathes.
 @main
 struct WhisperioMacApp: App {
+    init() {
+        // macOS has no UIAppFonts — the generated Info.plist never registers the bundled
+        // Space Grotesk / IBM Plex / JetBrains Mono files, so every WZFont .custom(...) was
+        // silently falling back to the system font (wrong metrics → mis-sized buttons and
+        // titles across the whole Mac app). Register them explicitly at launch.
+        for url in Bundle.main.urls(forResourcesWithExtension: "ttf", subdirectory: nil) ?? [] {
+            CTFontManagerRegisterFontsForURL(url as CFURL, .process, nil)
+        }
+    }
     // Real, persisted stores so the Journal tab is live (store-backed digests over real notes),
     // not sample data. `wzLiveJournal` flips iPadSplitView's Journal onto JournalView/DigestDayView.
     @StateObject private var settings = SettingsStore()
