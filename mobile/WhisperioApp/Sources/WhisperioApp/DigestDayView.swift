@@ -93,7 +93,7 @@ struct DigestDayView: View {
                                 groupSection(group)
                             }
                         }
-                        .padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 40)
+                        .padding(.horizontal, 16).padding(.top, 8).padding(.bottom, 30)
                         .animation(.easeInOut(duration: 0.2), value: generating)
                     }
                 }
@@ -136,7 +136,7 @@ struct DigestDayView: View {
             if generating {
                 HStack(spacing: 11) {
                     ProgressView().tint(t.accent)
-                    Text("Summarizing your day…").font(WZFont.ui(14, .medium)).foregroundStyle(t.muted)
+                    Text("Summarizing your day…").font(WZFont.ui(14)).foregroundStyle(t.muted)
                     Spacer(minLength: 0)
                 }
             } else if let summary = cached?.summary, !summary.isEmpty {

@@ -797,7 +797,8 @@ private struct RewriteSheet: View {
                             SettRow(icon: p.icon, label: p.name,
                                     sub: p.isMeta ? "Build a new template from your voice" : nil,
                                     last: idx == presets.count - 1,
-                                    onTap: { onPick(p) })
+                                    onTap: { onPick(p) },
+                                    iconSize: 16, chevronSize: 16)
                         }
                     }
                     .padding(.horizontal, 16)

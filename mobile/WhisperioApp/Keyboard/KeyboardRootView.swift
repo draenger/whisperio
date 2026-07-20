@@ -286,7 +286,7 @@ struct KeyboardRootView: View {
 
     private var row4: some View {
         HStack(spacing: 5) {
-            specialKey(text: plane == .letters ? "123" : "ABC", flex: 1.45, height: 42) {
+            specialKey(text: plane == .letters ? "123" : "ABC", flex: 1.45, height: 42, width: 64) {
                 plane = plane == .letters ? .numbers : .letters
             }
             Button(action: { model.space() }) {

@@ -257,7 +257,7 @@ struct RecapView: View {
             VStack(spacing: 0) {
                 WHeader(title: "Recap", onBack: onBack) {
                     shareButton {
-                        WIcon("share", size: 19, weight: .regular)
+                        WIcon("share", size: 17, weight: .regular)
                             .foregroundStyle(t.muted)
                             .frame(width: 38, height: 38)
                             .background(t.surfaceUp, in: RoundedRectangle(cornerRadius: 12, style: .continuous))

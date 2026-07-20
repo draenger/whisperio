@@ -209,10 +209,10 @@ struct StorageView: View {
     // Separated from "Clean up now" per design: the irreversible full wipe gets its own
     // elevated red-tinted container with a DANGER eyebrow, not just a red-tinted row.
     private var dangerGroup: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 8) {
             Text("DANGER")
-                .font(WZFont.mono(11, .semibold)).tracking(0.8).foregroundStyle(t.red)
-                .padding(.leading, 2)
+                .font(WZFont.mono(10.5, .semibold)).tracking(0.8).foregroundStyle(t.red)
+                .padding(.leading, 4)
             Button(action: { if !erased { eraseOpen = true } }) {
                 HStack(spacing: 13) {
                     WIcon("trash", size: 17, weight: .regular).foregroundStyle(t.red)
@@ -227,13 +227,12 @@ struct StorageView: View {
                     Spacer(minLength: 0)
                     if erased { WIcon("check", size: 17).foregroundStyle(t.green) }
                 }
-                .padding(13)
+                .padding(.horizontal, 16).padding(.vertical, 13)
             }
             .buttonStyle(.plain)
+            .background(t.red.opacity(0.05), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(t.red.opacity(0.3), lineWidth: 1))
         }
-        .padding(3)
-        .background(t.red.opacity(0.05), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(t.red.opacity(0.3), lineWidth: 1))
     }
 
     // MARK: - Actions

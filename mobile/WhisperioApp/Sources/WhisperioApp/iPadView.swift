@@ -284,7 +284,7 @@ struct iPadSplitView: View {
                         Button { sel = r.id } label: { sidebarRow(r) }.buttonStyle(.plain)
                     }
                 }
-                .padding(.horizontal, 10).padding(.top, 8)
+                .padding(.horizontal, 10).padding(.top, 8).padding(.bottom, 8)
             }
         }
         .background(t.bg2)

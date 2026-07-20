@@ -222,8 +222,8 @@ struct TriggerGuidesView: View {
                 Image(systemName: g.symbol)
                     .font(.system(size: 17, weight: .semibold))
                     .foregroundStyle(t.accentLite)
-                    .frame(width: 38, height: 38)
-                    .background(t.surfaceUp, in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+                    .frame(width: 34, height: 34)
+                    .background(t.surfaceUp, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                 VStack(alignment: .leading, spacing: 2) {
                     Text(g.name).font(WZFont.ui(14.5, .semibold)).foregroundStyle(t.text)
                     Text(g.blurb).font(WZFont.ui(12)).foregroundStyle(t.muted).lineSpacing(1)
@@ -278,6 +278,7 @@ private struct TriggerGuideDetail: View {
 
                         if guide.openSettings {
                             GradButton(title: "Open Settings", icon: "settings") { openSettings() }
+                                .fixedSize()
                         }
 
                         honestNote

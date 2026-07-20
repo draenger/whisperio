@@ -40,9 +40,9 @@ struct DictateWidgetView: View {
             case .accessoryCircular:
                 ZStack {
                     Circle()
-                        .strokeBorder(.white.opacity(0.4), lineWidth: 1.5)
+                        .strokeBorder(.white.opacity(0.4), lineWidth: 2)
                         .frame(width: 34, height: 34)
-                    Image(systemName: "mic.fill").font(.system(size: 22, weight: .bold))
+                    Image(systemName: "mic.fill").font(.system(size: 15, weight: .bold))
                 }
             case .accessoryRectangular:
                 HStack(spacing: 6) {
@@ -155,7 +155,7 @@ struct WeekStatsWidgetView: View {
         VStack(alignment: .leading, spacing: 8) {
             if let snapshot {
                 HStack(spacing: 4) {
-                    Image(systemName: "sparkle").font(.system(size: 10.5, weight: .semibold))
+                    Image(systemName: "sparkle").font(.system(size: 15, weight: .semibold))
                         .foregroundStyle(wzAccentLite)
                     Text("THIS WEEK")
                         .font(.system(size: 10.5, weight: .semibold))
@@ -216,9 +216,9 @@ struct RecentWidgetView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 6) {
+            HStack(spacing: 7) {
                 Image(systemName: "book.closed").font(.system(size: 14))
-                Text("Recent").font(.system(size: 13, weight: .semibold))
+                Text("Recent").font(.system(size: 10.5, weight: .semibold))
                 Spacer()
                 // Trailing total per the design ("N notes") — hidden for pre-field snapshots.
                 if let total = snapshot?.totalRecordings {
@@ -277,9 +277,9 @@ struct TodayDigestWidgetView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 6) {
+            HStack(spacing: 7) {
                 Image(systemName: "sparkle").font(.system(size: 13)).foregroundStyle(wzAccentLite)
-                Text("Today's digest").font(.system(size: 13, weight: .semibold))
+                Text("Today's digest").font(.system(size: 10.5, weight: .semibold))
                 Spacer()
                 // Honest privacy glyph: cloud when the summary came from the AI model, lock
                 // when it was assembled on-device (raw stack / manual), nothing when the
@@ -371,7 +371,7 @@ struct LockScreenDigestWidget: Widget {
 // live even from a static timeline) — no fabricated data.
 struct StandByWidgetView: View {
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 16) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(Date(), style: .time)
                     .font(.system(size: 44, weight: .bold, design: .rounded))
@@ -382,9 +382,9 @@ struct StandByWidgetView: View {
             }
             Spacer()
             Button(intent: DictateIntent()) {
-                VStack(spacing: 4) {
+                VStack(spacing: 6) {
                     Image(systemName: "mic.fill")
-                        .font(.system(size: 20, weight: .bold))
+                        .font(.system(size: 24, weight: .bold))
                         .foregroundStyle(wzAccentInk)
                         .frame(width: 56, height: 56)
                         .background(wzAccent, in: Circle())
@@ -393,7 +393,7 @@ struct StandByWidgetView: View {
             }
             .buttonStyle(.plain)
         }
-        .padding(.horizontal, 4)
+        .padding(20)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .containerBackground(.black, for: .widget)
     }

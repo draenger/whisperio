@@ -106,7 +106,7 @@ struct HomeView: View {
                                     if !today.isEmpty { brainGroup("Today", today) }
                                     if !earlier.isEmpty { brainGroup("Earlier", earlier) }
                                 }
-                                .padding(.horizontal, 16).padding(.top, 18).padding(.bottom, 150)
+                                .padding(.horizontal, 16).padding(.top, 16).padding(.bottom, 150)
                             }
                             // Rows fade out under the filter chips instead of clipping hard
                             // against them — the top-edge mirror of the dictate bar's fade.
@@ -403,7 +403,7 @@ struct HomeView: View {
                 .accessibilityLabel("Record a conversation")
             }
             .padding(.horizontal, 16)
-            .padding(.bottom, 18)
+            .padding(.bottom, 26)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
     }

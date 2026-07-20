@@ -537,7 +537,7 @@ struct SettingsView: View {
                              _ selection: Binding<String>) -> some View {
         VStack(alignment: .leading, spacing: 7) {
             SectionLabel(text: "Model").padding(.leading, 4)
-            HStack(spacing: 7) {
+            FlowLayout(spacing: 7) {
                 ForEach(choices, id: \.id) { choice in
                     let on = selection.wrappedValue == choice.id
                     Button { selection.wrappedValue = choice.id } label: {
@@ -550,7 +550,6 @@ struct SettingsView: View {
                     }
                     .buttonStyle(.plain)
                 }
-                Spacer(minLength: 0)
             }
         }
         .padding(.top, 2)
@@ -1085,7 +1084,7 @@ struct SettingsView: View {
             }
             Spacer(minLength: 0)
         }
-        .padding(.vertical, 10)
+        .padding(.top, 2).padding(.bottom, 13)
         .overlay(alignment: .bottom) { Rectangle().fill(t.lineSoft).frame(height: 1) }
     }
 
@@ -1640,12 +1639,14 @@ struct SettRow<Right: View>: View {
     var sub: String? = nil
     var last = false
     var onTap: (() -> Void)? = nil
+    var iconSize: CGFloat = 17
+    var chevronSize: CGFloat = 17
     @ViewBuilder var right: Right
 
     var body: some View {
         let row = HStack(spacing: 13) {
             Image(systemName: settSymbol(icon))
-                .font(.system(size: 17, weight: .regular)).foregroundStyle(t.accentLite)
+                .font(.system(size: iconSize, weight: .regular)).foregroundStyle(t.accentLite)
                 .frame(width: 34, height: 34)
                 .background(t.surfaceUp, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
             VStack(alignment: .leading, spacing: 1) {
@@ -1655,7 +1656,7 @@ struct SettRow<Right: View>: View {
             Spacer(minLength: 0)
             right
             if onTap != nil, Right.self == EmptyView.self {
-                WIcon("chevR", size: 17, weight: .regular).foregroundStyle(t.faint)
+                WIcon("chevR", size: chevronSize, weight: .regular).foregroundStyle(t.faint)
             }
         }
         .padding(.vertical, 13)
@@ -1672,8 +1673,9 @@ struct SettRow<Right: View>: View {
 }
 
 extension SettRow where Right == EmptyView {
-    init(icon: String, label: String, sub: String? = nil, last: Bool = false, onTap: (() -> Void)? = nil) {
-        self.init(icon: icon, label: label, sub: sub, last: last, onTap: onTap) { EmptyView() }
+    init(icon: String, label: String, sub: String? = nil, last: Bool = false, onTap: (() -> Void)? = nil,
+         iconSize: CGFloat = 17, chevronSize: CGFloat = 17) {
+        self.init(icon: icon, label: label, sub: sub, last: last, onTap: onTap, iconSize: iconSize, chevronSize: chevronSize) { EmptyView() }
     }
 }
 

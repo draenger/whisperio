@@ -129,7 +129,7 @@ struct OnboardingView: View {
         GradButton(title: label, action: action)
             .opacity(disabled ? 0.4 : 1)
             .disabled(disabled)
-            .padding(.horizontal, 22).padding(.top, 14).padding(.bottom, 12)
+            .padding(.horizontal, 22).padding(.top, 14).padding(.bottom, 30)
     }
 
     @ViewBuilder private var footer: some View {

@@ -220,7 +220,7 @@ struct ModelsView: View {
         case .downloading(let fraction):
             HStack(spacing: 8) {
                 Text("\(Int((fraction * 100).rounded()))%")
-                    .font(WZFont.mono(11, .semibold)).foregroundStyle(t.accentLite)
+                    .font(WZFont.mono(11)).foregroundStyle(t.accentLite)
                 Button { models.cancel(variant) } label: {
                     WIcon("x", size: 11).foregroundStyle(t.muted)
                         .frame(width: 22, height: 22)

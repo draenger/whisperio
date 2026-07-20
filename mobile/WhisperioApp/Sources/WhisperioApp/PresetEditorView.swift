@@ -94,14 +94,14 @@ struct PresetEditorView: View {
                 .font(WZFont.mono(13))
                 .scrollContentBackground(.hidden)
                 .frame(minHeight: 180, maxHeight: 320)
-                .padding(.horizontal, 9).padding(.vertical, 6)
+                .padding(.horizontal, 13).padding(.vertical, 11)
                 .background(t.surfaceUp, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(t.line, lineWidth: 1))
                 .overlay(alignment: .topLeading) {
                     if prompt.isEmpty {
                         Text("How Whisperio should rewrite a transcript…")
                             .font(WZFont.mono(13)).foregroundStyle(t.faint)
-                            .padding(.horizontal, 9 + 5).padding(.vertical, 6 + 8)
+                            .padding(.horizontal, 13 + 5).padding(.vertical, 11 + 8)
                             .allowsHitTesting(false)
                     }
                 }

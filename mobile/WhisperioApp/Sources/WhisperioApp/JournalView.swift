@@ -404,37 +404,30 @@ struct JournalView: View {
     private func genericDayCard(_ day: JournalDay) -> some View {
         let cats = categories(in: day.recs)
         let ready = digests.digest(for: day.key)?.summary?.isEmpty == false
-        return VStack(alignment: .leading, spacing: 12) {
-            Button { openDay(day.date) } label: {
-                VStack(alignment: .leading, spacing: 10) {
-                    HStack {
-                        SectionLabel(text: JournalFormat.dayTitle(day.date))
-                        Spacer(minLength: 0)
-                        Text("\(day.recs.count) note\(day.recs.count == 1 ? "" : "s")")
-                            .font(WZFont.mono(11)).foregroundStyle(t.faint)
+        return Button { openDay(day.date) } label: {
+            VStack(alignment: .leading, spacing: 9) {
+                HStack {
+                    SectionLabel(text: JournalFormat.dayTitle(day.date))
+                    Spacer(minLength: 0)
+                    Text("\(day.recs.count) note\(day.recs.count == 1 ? "" : "s")")
+                        .font(WZFont.mono(10.5)).foregroundStyle(t.faint)
+                }
+                if !cats.isEmpty {
+                    FlowLayout(spacing: 6) {
+                        ForEach(cats) { CategoryTag(category: $0) }
                     }
-                    if !cats.isEmpty {
-                        FlowLayout(spacing: 6) {
-                            ForEach(cats) { CategoryTag(category: $0) }
+                }
+
+                if ready {
+                    HStack(spacing: 7) {
+                        WIcon("check", size: 13).foregroundStyle(t.green)
+                        Text("Summary ready").font(WZFont.mono(11, .semibold)).foregroundStyle(t.green)
+                        Spacer(minLength: 0)
+                        if let at = digests.digest(for: day.key)?.summaryGeneratedAt {
+                            Text(JournalFormat.generatedMeta(at)).font(WZFont.mono(10.5)).foregroundStyle(t.faint)
                         }
                     }
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-
-            if ready {
-                HStack(spacing: 7) {
-                    WIcon("check", size: 13).foregroundStyle(t.green)
-                    Text("Summary ready").font(WZFont.mono(11, .semibold)).foregroundStyle(t.green)
-                    Spacer(minLength: 0)
-                    if let at = digests.digest(for: day.key)?.summaryGeneratedAt {
-                        Text(JournalFormat.generatedMeta(at)).font(WZFont.mono(10.5)).foregroundStyle(t.faint)
-                    }
-                }
-            } else {
-                Button { openDay(day.date) } label: {
+                } else {
                     HStack(spacing: 6) {
                         WIcon("spark", size: 13)
                         Text("Generate summary").font(WZFont.mono(11, .semibold))
@@ -442,12 +435,14 @@ struct JournalView: View {
                     }
                     .foregroundStyle(t.accentLite)
                 }
-                .buttonStyle(.plain)
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
         }
-        .padding(16)
-        .background(t.surface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(t.line, lineWidth: 1))
+        .buttonStyle(.plain)
+        .padding(14)
+        .background(t.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(t.line, lineWidth: 1))
     }
 
     // The known categories present among a day's notes, in the canonical display order.

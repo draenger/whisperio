@@ -33,6 +33,7 @@ struct KeyboardSetupView: View {
                         hero
 
                         GradButton(title: "Add keyboard in Settings", icon: "keyboard") { openSettings() }
+                            .fixedSize()
 
                         VStack(alignment: .leading, spacing: 9) {
                             SectionLabel(text: "Setup").padding(.leading, 4)
