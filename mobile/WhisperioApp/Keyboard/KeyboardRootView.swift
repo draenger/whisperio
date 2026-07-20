@@ -59,6 +59,10 @@ struct KeyboardRootView: View {
             .padding(.horizontal, 4)
             .padding(.top, 7)
             .padding(.bottom, 8)
+            // Anchor the rows to the bottom of the fixed-height panel (return key flush,
+            // like a system keyboard) — the ZStack's default .center left ~26pt dead bands
+            // above the brand bar and below the return row.
+            .frame(maxHeight: .infinity, alignment: .bottom)
 
             if showRewriteMenu {
                 // Tap-outside-to-dismiss catcher, then the anchored card itself.

@@ -92,10 +92,12 @@ struct CategoryFilterChip: View {
                 Text(category?.label ?? "All")
             }
             .font(WZFont.mono(12.5, .semibold))
-            .foregroundStyle(selected ? .white : t.muted)
+            // Design's tinted-chip language (like CategoryTag below), not a solid brand
+            // pill: translucent hue fill, hue-colored text, tinted 1px ring when selected.
+            .foregroundStyle(selected ? (category != nil ? hue : t.accentLite) : t.muted)
             .padding(.horizontal, 12).padding(.vertical, 6)
-            .background(selected ? hue : t.surfaceUp, in: Capsule())
-            .overlay(Capsule().stroke(selected ? .clear : t.line, lineWidth: 1))
+            .background(selected ? hue.opacity(t.dark ? 0.16 : 0.11) : t.surfaceUp, in: Capsule())
+            .overlay(Capsule().stroke(selected ? hue.opacity(0.4) : t.line, lineWidth: 1))
         }
         .buttonStyle(.plain)
     }
