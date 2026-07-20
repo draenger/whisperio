@@ -179,7 +179,7 @@ struct ScratchpadView: View {
     private var liveRow: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 8) {
-                Circle().fill(t.red).frame(width: 7, height: 7)
+                PulsingDot(color: t.red)
                 Text("now").font(WZFont.mono(10.5, .semibold)).foregroundStyle(t.red)
                 Rectangle().fill(t.lineSoft).frame(height: 1)
                 Text(clock).font(WZFont.mono(10.5)).foregroundStyle(t.faint).monospacedDigit()

@@ -323,7 +323,7 @@ final class DigestStore: ObservableObject {
             model: model, promptConfig: promptConfig)
         upsert(DailyDigest(id: dayKey, date: day,
                            recordingIDs: dayRecs.map(\.id), groups: groups,
-                           summary: summary, summaryGeneratedAt: Date()))
+                           summary: summary, summaryGeneratedAt: Date()), viaCloud: true)
     }
 
     /// Auto-journaling backfill: once per calendar day, summarize the last `window` prior days that
@@ -393,7 +393,9 @@ final class DigestStore: ObservableObject {
 
     // MARK: - Upsert (routes to whichever backend is live)
 
-    private func upsert(_ digest: DailyDigest, viaCloud: Bool = true) {
+    /// `viaCloud` nil = an intermediate/structural write that must NOT change the snapshot's
+    /// provenance claim (e.g. generate()'s pre-summary grouping cache).
+    private func upsert(_ digest: DailyDigest, viaCloud: Bool? = nil) {
         switch backend {
         case .sync(let store):
             store.upsert(digest)
@@ -410,14 +412,20 @@ final class DigestStore: ObservableObject {
     /// straight off the digest DigestDayView already renders, not a fabricated blurb. Only
     /// today's digest matters to the "Today's digest" widget, so a write for any other day is a
     /// no-op here. Leaves the recordings fields `RecordingsStore` owns untouched.
-    private func refreshWidgetSnapshotIfToday(_ digest: DailyDigest, viaCloud: Bool) {
+    private func refreshWidgetSnapshotIfToday(_ digest: DailyDigest, viaCloud: Bool?) {
         let todayKey = DigestGrouping.dayKey(for: Date(), calendar: Calendar.current)
         guard digest.id == todayKey else { return }
         SharedStore.updateWidgetSnapshot { snapshot in
             snapshot.digestText = digest.summary
             snapshot.digestNoteCount = digest.recordingIDs.count
             snapshot.digestCategoryCount = digest.groups.count
-            snapshot.digestIsCloud = viaCloud
+            // Honest provenance: a cleared summary carries no claim at all; an intermediate
+            // write (viaCloud nil) leaves whatever true claim is already recorded.
+            if digest.summary == nil {
+                snapshot.digestIsCloud = nil
+            } else if let viaCloud {
+                snapshot.digestIsCloud = viaCloud
+            }
         }
         WidgetCenter.shared.reloadAllTimelines()
     }

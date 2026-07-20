@@ -106,6 +106,12 @@ split Copy uses speaker-labeled text for conversations; SETT_PARENT sweep comple
 (content ← categorization prompts + template editor); error phase keeps 3-slot row;
 platform-aware empty-state copy.
 
+## Parity round 9 (2026-07-20) — 4 raw → 4 confirmed → all fixed (405ab7e)
+KeyboardReturnView translated to English; widget digest glyph = tri-state truth via
+WidgetSnapshot.digestIsCloud; composer prompt-mic wired to real dictation; shared
+DemoRecording.srcIcon (backtap→"command" RULED — both Swift call sites already used it;
+the mock's "more" glyph is not adopted).
+
 ## Process
 Weaker agents plan → Fable verifies/corrects plans → weaker agents implement
 (fresh-read + surgical-edit protocol, per-file ownership) → build gates

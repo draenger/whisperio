@@ -156,6 +156,18 @@ struct RecapView: View {
             .sorted { $0.1 > $1.1 }
     }
 
+    /// Capture-channel label for the note-of-week caption ("Captured from Watch · Tuesday"
+    /// per mob-recap.jsx) — same channel taxonomy as DemoRecording.srcIcon, honest fallback
+    /// to "In-app" for legacy/nil sources.
+    private func srcLabel(_ note: Recording) -> String {
+        switch note.source {
+        case "watch": return "Watch"; case "keyboard": return "Keyboard"
+        case "action": return "Action Button"; case "backtap": return "Back-Tap"
+        case "mic": return "Conversation"
+        default: return "In-app"
+        }
+    }
+
     private var noteOfWeek: Recording? {
         weekItems.max { wordCount($0) < wordCount($1) }
     }
@@ -509,7 +521,7 @@ struct RecapView: View {
             Text("“\(preview)”")
                 .font(WZFont.display(16.5, .medium)).foregroundStyle(t.text).lineSpacing(5)
                 .fixedSize(horizontal: false, vertical: true)
-            Text("\(wordCount(note)) words · \(df.string(from: note.timestamp))")
+            Text("Captured from \(srcLabel(note)) · \(df.string(from: note.timestamp))")
                 .font(WZFont.mono(10.5)).foregroundStyle(t.faint)
         }
         .padding(16)

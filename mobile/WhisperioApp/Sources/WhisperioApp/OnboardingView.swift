@@ -727,7 +727,9 @@ struct OnboardingView: View {
 }
 
 // MARK: - Pulsing recording dot (design's `mpulse`)
-private struct PulsingDot: View {
+// Shared "live" indicator (design's mpulse keyframe) — used by onboarding's listening row and
+// Scratchpad's in-flight take.
+struct PulsingDot: View {
     let color: Color
     @State private var pulse = false
     var body: some View {
