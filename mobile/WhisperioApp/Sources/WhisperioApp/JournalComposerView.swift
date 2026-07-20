@@ -358,7 +358,9 @@ struct JournalComposerView: View {
             HStack(spacing: 8) {
                 if busy { ProgressView().tint(t.primaryInk) }
                 else if let icon = c.icon { WIcon(icon, size: 17) }
-                Text(c.label)
+                // Same scale-down guard as the shared GradButton — this label embeds a
+                // live note count ("Weave 12 notes with AI") and is the longest CTA around.
+                Text(c.label).lineLimit(1).minimumScaleFactor(0.75)
             }
             .font(WZFont.ui(15, .semibold))
             .foregroundStyle(t.primaryInk)
