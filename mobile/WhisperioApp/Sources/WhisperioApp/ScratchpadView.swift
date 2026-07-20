@@ -66,7 +66,7 @@ struct ScratchpadView: View {
         ScreenScaffold {
             ZStack(alignment: .bottom) {
                 VStack(spacing: 0) {
-                    WHeader(title: "Today's note", onBack: onBack) {
+                    WHeader(title: "Today’s note", onBack: onBack) {
                         HStack(spacing: 9) {
                             SquareIconButton(icon: "book", action: onHistory)
                             SquareIconButton(icon: "settings", action: openSettings)

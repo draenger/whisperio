@@ -117,6 +117,10 @@ digestIsCloud provenance: nil-summary clears the claim, intermediate writes leav
 untouched, only real summarize claims cloud. Shared PulsingDot on scratchpad's live take.
 Note-of-week caption = "Captured from <channel> · <weekday>" from real Recording.source.
 
+## Parity round 11 (2026-07-20) — 3 raw → 3 confirmed → all fixed (0c1333f)
+Speaker 7+ fallback = t.cyan (no modulo wrap); This-week widget headline = real week sum;
+Recent widget trailing count via optional WidgetSnapshot.totalRecordings.
+
 ## Process
 Weaker agents plan → Fable verifies/corrects plans → weaker agents implement
 (fresh-read + surgical-edit protocol, per-file ownership) → build gates

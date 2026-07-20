@@ -291,6 +291,7 @@ final class RecordingsStore: ObservableObject {
 
         SharedStore.updateWidgetSnapshot { snapshot in
             snapshot.recentRecordings = Array(recentRecordings)
+            snapshot.totalRecordings = items.count
             snapshot.todayWordCount = todayWordCount
             snapshot.weeklyWordCounts = weeklyWordCounts
             snapshot.currentStreak = currentStreak
