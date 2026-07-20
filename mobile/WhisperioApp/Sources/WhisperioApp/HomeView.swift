@@ -421,14 +421,15 @@ struct RecRow: View {
     var onTap: () -> Void
     var onDelete: (() -> Void)? = nil
     @State private var copied = false
-    // Horizontal slide of the row content: 0 (closed) … openOffset (delete revealed).
-    @State private var dx: CGFloat = 0
-    // dx captured when a horizontal drag claims the gesture; nil while not dragging.
-    @State private var dragBase: CGFloat? = nil
-    // Set when a gesture's first eligible movement was NOT decisively horizontal: the row
-    // refuses that gesture for its whole lifetime so vertical list scrolling can never be
-    // grabbed halfway through by horizontal wobble.
-    @State private var dragRefused = false
+    // Resting slide of the row content: 0 (closed) or openOffset (delete revealed).
+    @State private var committed: CGFloat = 0
+    // Live drag delta. @GestureState so the system resets it even when the ScrollView wins
+    // the pan and CANCELS this gesture (no onEnded) — plain @State left the row stuck
+    // mid-slide and its stale bookkeeping was what froze vertical scrolling over open rows.
+    @GestureState private var slide: CGFloat = 0
+    // Rendered offset — always derived, never stored, so a cancelled gesture cannot leave
+    // the row in a state the next pan has to fight.
+    private var dx: CGFloat { min(0, max(openOffset, committed + slide)) }
 
     private let openOffset: CGFloat = -88
     private let snap = Animation.timingCurve(0.2, 0.8, 0.3, 1, duration: 0.22)
@@ -437,6 +438,7 @@ struct RecRow: View {
     var body: some View {
         rowContent
             .offset(x: dx)
+            .animation(slide == 0 ? snap : nil, value: dx)
             // Stationary layer behind the sliding content — exposed as the row moves left.
             .background(alignment: .trailing) { deleteAction }
     }
@@ -472,7 +474,12 @@ struct RecRow: View {
         // double-tap has failed — the native equivalent of the mock's 270ms disambiguation.
         .onTapGesture(count: 2) { handleDoubleTap() }
         .onTapGesture { handleSingleTap() }
-        .simultaneousGesture(swipe)
+        // Plain .gesture (NOT simultaneous): the ScrollView's pan and this drag are then
+        // arbitrated exclusively by the system — every vertical pan goes to the list (also
+        // over a swiped-open row), and this gesture only ever receives decisively
+        // horizontal movement. simultaneousGesture ran both at once, which is what made
+        // rows wiggle during scrolls and scrolling die over an open row.
+        .gesture(swipe)
         .contextMenu {
             Button(action: copyTranscript) { Label("Copy", systemImage: "doc.on.doc") }
             if let onDelete {
@@ -523,40 +530,31 @@ struct RecRow: View {
     // on release it snaps open past the halfway point, closed otherwise (mirrors the mock).
     private var swipe: some Gesture {
         DragGesture(minimumDistance: 15)
-            .onChanged { g in
-                guard onDelete != nil, !dragRefused else { return }
-                let base: CGFloat
-                if let dragBase {
-                    base = dragBase
-                } else {
-                    // Claim only a decisively horizontal start (1.5× dominance). Anything
-                    // else is a scroll: refuse once and stay refused for this gesture —
-                    // re-evaluating every change let diagonal scrolls slide rows sideways
-                    // mid-pan, which is what broke list scrolling.
-                    guard abs(g.translation.width) > abs(g.translation.height) * 1.5 else {
-                        dragRefused = true
-                        return
-                    }
-                    base = dx
-                    dragBase = base
-                }
-                dx = min(0, max(openOffset, base + g.translation.width))
+            .updating($slide) { g, state, _ in
+                guard onDelete != nil else { return }
+                // Track only once the movement is decisively horizontal (or the row was
+                // already mid-slide this gesture). Vertical pans that reach here (rare —
+                // the ScrollView normally claims them first) simply never engage.
+                guard state != 0 || abs(g.translation.width) > abs(g.translation.height) * 1.5
+                else { return }
+                state = g.translation.width
             }
-            .onEnded { _ in
-                dragRefused = false
-                guard dragBase != nil else { return }
-                dragBase = nil
-                withAnimation(snap) { dx = dx < openOffset / 2 ? openOffset : 0 }
+            .onEnded { g in
+                guard onDelete != nil,
+                      abs(g.translation.width) > abs(g.translation.height) * 1.5 || committed != 0
+                else { return }
+                let end = min(0, max(openOffset, committed + g.translation.width))
+                withAnimation(snap) { committed = end < openOffset / 2 ? openOffset : 0 }
             }
     }
 
     private func handleSingleTap() {
-        if dx != 0 { withAnimation(snap) { dx = 0 }; return }
+        if committed != 0 { withAnimation(snap) { committed = 0 }; return }
         onTap()
     }
 
     private func handleDoubleTap() {
-        if dx != 0 { withAnimation(snap) { dx = 0 }; return }
+        if committed != 0 { withAnimation(snap) { committed = 0 }; return }
         copyTranscript()
     }
 
