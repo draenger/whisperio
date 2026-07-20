@@ -121,6 +121,10 @@ Note-of-week caption = "Captured from <channel> · <weekday>" from real Recordin
 Speaker 7+ fallback = t.cyan (no modulo wrap); This-week widget headline = real week sum;
 Recent widget trailing count via optional WidgetSnapshot.totalRecordings.
 
+## Parity round 12 (2026-07-20) — 2 raw → 2 confirmed → both fixed (328ad86)
+totalRecordings WRITE landed for real this time (r11's replace-anchor miss); Scratchpad
+header curly apostrophe. Both were completions of prior rounds' own edits.
+
 ## Process
 Weaker agents plan → Fable verifies/corrects plans → weaker agents implement
 (fresh-read + surgical-edit protocol, per-file ownership) → build gates

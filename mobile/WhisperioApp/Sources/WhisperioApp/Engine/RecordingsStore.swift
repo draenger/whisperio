@@ -33,7 +33,13 @@ final class RecordingsStore: ObservableObject {
         let recordID: UUID?
     }
 
-    @Published private(set) var items: [Recording] = []
+    // Every mutation path — add, delete, category/render/transcription edits, and remote
+    // CloudKit arrivals mirrored by the syncStore sink — flows through this property, so the
+    // widget snapshot refreshes here exactly once per change instead of being hand-wired into
+    // individual mutators (which left the Recent/This-week widgets stale after deletes/sync).
+    @Published private(set) var items: [Recording] = [] {
+        didSet { refreshWidgetSnapshot() }
+    }
 
     // True while the CloudKit-backed store is actively importing/exporting. Forwarded from the
     // synced store's own `isSyncing`; always false for the JSON backend.
@@ -232,7 +238,6 @@ final class RecordingsStore: ObservableObject {
             upsertJSON(r)
             saveJSON(to: url)
         }
-        refreshWidgetSnapshot()
     }
 
     // MARK: - Widget snapshot (recordings-owned fields)
@@ -240,7 +245,7 @@ final class RecordingsStore: ObservableObject {
     /// Exports the recordings-owned slice of the WidgetKit snapshot (recent list, today's word
     /// count, 7-day word counts, streak) — real numbers straight off `items`, the same math
     /// `RecapView` already does for its own UI. Leaves the digest fields `DigestStore` owns
-    /// untouched. Called after every save so the Home/Lock Screen widgets stay current.
+    /// untouched. Runs from `items.didSet`, so every mutation and sync arrival refreshes it.
     private func refreshWidgetSnapshot() {
         var calendar = Calendar.current
         calendar.firstWeekday = 2   // Mon…Sun, matching RecapView
