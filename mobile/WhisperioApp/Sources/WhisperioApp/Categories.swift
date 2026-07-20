@@ -1,4 +1,5 @@
 import SwiftUI
+import WhisperioKit
 
 // Transcription categories — a light, demo-level taxonomy that carries the desktop
 // brand identity onto the recordings. Each category is a WIcon key (mapped to an SF
@@ -38,6 +39,40 @@ enum WZCategories {
 
     /// Look up a category by id, falling back to Work so callers always get a value.
     static func of(_ id: String) -> WZCategory { byId[id] ?? work }
+
+    // MARK: - Dynamic list (seeds + user-created customs)
+
+    /// Accent-hue cycle for custom categories — auto-assigned round-robin by creation order
+    /// (the design's categorize-page palette), so a category the user adds never needs its own
+    /// stored color and an nth custom category beyond the palette's length still gets one.
+    private static let customHueCycle: [Color] = [
+        .hex(0x4a8cf7), .hex(0xfbbf24), .hex(0xf472b6),
+        .hex(0xa78bfa), .hex(0x34d399), .hex(0x22d3ee),
+    ]
+
+    /// The full category list a view/store should render: the fixed seeds above, followed by
+    /// the user's custom categories (Settings → Content → Categorize → "New category") in
+    /// creation order. Every call site that used to read the static `all` for category
+    /// chips/grouping/lookup should switch to this so a newly added custom category shows up
+    /// everywhere immediately — Home's filter row, Detail's reassign menu, Journal's grouping,
+    /// DigestStore's classification, etc. Each custom category carries its own persisted `icon`
+    /// (fixed to "spark" for new rows per the design's minimal add flow, but not hardcoded here
+    /// so it stays correct if that ever changes) and `hueIndex` — the palette slot it was
+    /// auto-assigned at creation time — so a category's color/icon never drifts if others are
+    /// added, reordered, or deleted around it.
+    static func all(with settings: WhisperioSettings) -> [WZCategory] {
+        let customs = settings.customCategories.map { custom in
+            WZCategory(id: custom.id, label: custom.label, icon: custom.icon,
+                       hue: { _ in customHueCycle[custom.hueIndex % customHueCycle.count] })
+        }
+        return all + customs
+    }
+
+    /// Look up a category by id across both the fixed seeds and `settings`'s custom list,
+    /// falling back to Work so callers always get a value — mirrors the seeds-only `of(_:)`.
+    static func of(_ id: String, with settings: WhisperioSettings) -> WZCategory {
+        all(with: settings).first { $0.id == id } ?? work
+    }
 }
 
 // MARK: - UI
@@ -52,13 +87,13 @@ struct CategoryFilterChip: View {
     var body: some View {
         let hue = category?.hue(t) ?? t.accent
         Button(action: action) {
-            HStack(spacing: 6) {
+            HStack(spacing: 5) {
                 if let category { WIcon(category.icon, size: 12) }
                 Text(category?.label ?? "All")
             }
-            .font(WZFont.mono(11.5, .semibold))
+            .font(WZFont.mono(12.5, .semibold))
             .foregroundStyle(selected ? .white : t.muted)
-            .padding(.horizontal, 13).padding(.vertical, 7)
+            .padding(.horizontal, 12).padding(.vertical, 6)
             .background(selected ? hue : t.surfaceUp, in: Capsule())
             .overlay(Capsule().stroke(selected ? .clear : t.line, lineWidth: 1))
         }

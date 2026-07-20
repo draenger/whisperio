@@ -361,7 +361,7 @@ struct WZPhoneView: View {
         guard client.isConfigured else { return }
         let model = settings.settings.chatModel
         Task {
-            await digests.backfillIfNeeded(recordings: recordings, categories: WZCategories.all,
+            await digests.backfillIfNeeded(recordings: recordings, categories: WZCategories.all(with: settings.settings),
                                            using: client, model: model,
                                            promptConfig: digestPrompts.config)
         }

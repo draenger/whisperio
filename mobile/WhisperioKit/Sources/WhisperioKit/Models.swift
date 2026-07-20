@@ -14,6 +14,15 @@ public enum ProviderID: String, Codable, Sendable, CaseIterable {
     case deepgram = "deepgram"
     case assemblyAI = "assemblyai"
     case mistral = "mistral"
+    /// Replicate — hosted inference for open-source models (canonical `openai/whisper` by
+    /// default). Audio leaves the device for Replicate's infrastructure, same as any other
+    /// cloud engine, so it's gated behind the same cloud-consent flow.
+    case replicate = "replicate"
+    /// A user's own OpenAI-compatible STT server (whisper.cpp's server example,
+    /// faster-whisper-server, speaches, …). Audio still leaves the device — it just goes to a
+    /// server the user controls instead of a named vendor — so this stays `isCloud == true`
+    /// (honest), even though the consent copy/flow can be softer since it's the user's own box.
+    case selfHosted = "selfhosted"
 }
 
 /// Single source of truth for a provider's human-readable name — used by both OnboardingView's
@@ -29,6 +38,8 @@ public extension ProviderID {
         case .deepgram: return "Deepgram"
         case .assemblyAI: return "AssemblyAI"
         case .mistral: return "Mistral"
+        case .replicate: return "Replicate"
+        case .selfHosted: return "Self-hosted"
         }
     }
 }

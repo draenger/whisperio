@@ -22,6 +22,11 @@ public enum ProviderKeyValidator {
         // On-device engines need no key and no network — always valid.
         guard id != .onDevice, id != .localWhisper else { return .success(()) }
 
+        // Self-hosted has no vendor to authenticate against — "the key" here is the server URL
+        // (see SelfHostedProvider), so the only honest check is that it actually parses as a
+        // reachable address. The status text UI already covers whether the server responds.
+        if id == .selfHosted { return validateSelfHostedURL(key) }
+
         guard let request = request(for: id, key: key) else {
             return .failure(.unexpected(0))
         }
@@ -71,9 +76,31 @@ public enum ProviderKeyValidator {
             guard let url = URL(string: "https://api.mistral.ai/v1/models") else { return nil }
             req = URLRequest(url: url)
             req.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
+        case .replicate:
+            guard let url = URL(string: "https://api.replicate.com/v1/account") else { return nil }
+            req = URLRequest(url: url)
+            req.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
+        case .selfHosted:
+            // Handled entirely in `validate(_:key:)` before this is ever reached — no HTTP
+            // request to build. Kept here only so the switch stays exhaustive.
+            return nil
         }
         req.httpMethod = "GET"
         req.timeoutInterval = 15
         return req
+    }
+
+    /// A self-hosted server URL "validates" iff it parses to a reachable address (a scheme
+    /// implied or explicit, and a host) — there's no vendor account to authenticate against, so
+    /// this is the whole honest check. Accepts a bare host ("localhost:8000") the same way
+    /// `SelfHostedProvider` does, defaulting to `http://`.
+    private static func validateSelfHostedURL(_ raw: String) -> Result<Void, ProviderKeyValidationError> {
+        var s = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !s.isEmpty else { return .failure(.unexpected(0)) }
+        if !s.contains("://") { s = "http://" + s }
+        guard let url = URL(string: s), url.host != nil, !url.host!.isEmpty else {
+            return .failure(.unexpected(0))
+        }
+        return .success(())
     }
 }

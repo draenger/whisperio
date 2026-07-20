@@ -1,19 +1,17 @@
 import SwiftUI
 import WhisperioKit
+#if canImport(FoundationModels)
+import FoundationModels
+#endif
 
 // Real "On-device models" screen (design's modelsList page, mob-settings.jsx:520 /
 // M_MODELS in mob-core.jsx). This used to duplicate SettingsView's cloud-engine picker
 // (OpenAI/ElevenLabs cards + consent sheet); that's gone — cloud engines are configured
 // under Settings ▸ Remote connectors only. This screen is on-device engines exclusively:
-// Apple Speech (always available) and local Whisper (WhisperKit), backed by real download
-// state/progress/on-disk sizes from `LocalWhisperModelManager` — no mocked percentages or
-// hardcoded sizes once a model is on disk.
-//
-// The design mock also shows an "Apple Intelligence" row (cleanup & summaries, A17+/M-series
-// tag). It is intentionally omitted: there is no Foundation Models / Apple Intelligence
-// integration anywhere in this codebase to honestly back a state for it (no `TranscriptionProvider`
-// or `CleanupProvider` implementation exists), and the no-mock policy means a screen never ships
-// a row wired to a fabricated "ready"/"active" state. See whisperkit-rulings.md ruling 4.
+// Apple Speech (always available), Apple Intelligence (cleanup & summaries, gated on real
+// `SystemLanguageModel` availability via `AppleIntelligenceService`) and local Whisper
+// (WhisperKit), backed by real download state/progress/on-disk sizes from
+// `LocalWhisperModelManager` — no mocked percentages or hardcoded sizes once a model is on disk.
 struct ModelsView: View {
     @Environment(\.wz) private var t
     @EnvironmentObject private var settings: SettingsStore
@@ -85,8 +83,12 @@ struct ModelsView: View {
     // MARK: - Models group (Apple Speech + Whisper variants)
 
     private var modelsGroup: some View {
-        SettGroup(title: "Models") {
+        // R10: this group renders with no section label (design's modelsList page has none) —
+        // SettGroup's title is optional now; omitting it entirely drops the synthetic "Models"
+        // header this screen used to force.
+        SettGroup {
             appleRow
+            appleIntelligenceRow
             ForEach(Self.variantOrder, id: \.rawValue) { variant in
                 whisperRow(variant, last: variant == Self.variantOrder.last)
             }
@@ -97,15 +99,91 @@ struct ModelsView: View {
         let active = settings.settings.primaryProvider == .onDevice
         return SettRow(icon: "cpu", label: "Apple Speech", sub: "Built-in · on-device · System", last: false) {
             if active {
-                Text("Default")
-                    .font(WZFont.mono(10)).foregroundStyle(t.accentLite)
-                    .padding(.horizontal, 7).padding(.vertical, 2)
-                    .background(t.surfaceUp, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous).stroke(t.line, lineWidth: 1))
+                // S8: the design's "active" state is always an unboxed dot+label indicator
+                // (no pill/border/background) — matches the installed+active Whisper row below,
+                // not a boxed "Default" capsule.
+                HStack(spacing: 6) {
+                    Circle().fill(t.green).frame(width: 7, height: 7)
+                    Text("Active").font(WZFont.mono(11, .semibold)).foregroundStyle(t.green)
+                }
             } else {
                 Button { useApple() } label: { pill("Use") }.buttonStyle(.plain)
             }
         }
+    }
+
+    // MARK: - Apple Intelligence (R6)
+
+    // Real availability, never a hardcoded state — backed by `AppleIntelligenceService`
+    // (Engine/AppleIntelligenceService.swift), a thin passthrough over
+    // `SystemLanguageModel.default.availability` gated to iOS/macOS 26+. On any OS/SDK where
+    // FoundationModels isn't available this always reads as `.deviceNotEligible`, which is
+    // honest (the capability genuinely isn't available there).
+    private enum AppleIntelligenceRowState: Equatable {
+        case active          // available + currently serving as the chat client
+        case ready           // available, but OpenAI is configured and preferred
+        case deviceNotEligible
+        case notEnabled
+        case preparing
+    }
+
+    private var appleIntelligenceState: AppleIntelligenceRowState {
+        #if canImport(FoundationModels)
+        if #available(iOS 26.0, macOS 26.0, *) {
+            switch AppleIntelligenceService.availability {
+            case .available:
+                // Mirrors makeChatClient()'s own gate (SettingsStore.swift): an explicit,
+                // configured OpenAI key is explicit user intent and stays preferred.
+                let openAIReady = settings.settings.cloudConsentGranted &&
+                    !settings.settings.openAIKey.trimmingCharacters(in: .whitespaces).isEmpty
+                return openAIReady ? .ready : .active
+            case .unavailable(let reason):
+                switch reason {
+                case .deviceNotEligible: return .deviceNotEligible
+                case .appleIntelligenceNotEnabled: return .notEnabled
+                case .modelNotReady: return .preparing
+                @unknown default: return .deviceNotEligible
+                }
+            @unknown default:
+                return .deviceNotEligible
+            }
+        }
+        #endif
+        return .deviceNotEligible
+    }
+
+    private var appleIntelligenceRow: some View {
+        let state = appleIntelligenceState
+        let sub = state == .notEnabled
+            ? "Turn on Apple Intelligence in Settings"
+            : "Cleanup & summaries · on-device"
+        return SettRow(icon: "cpu", label: "Apple Intelligence", sub: sub, last: false) {
+            switch state {
+            case .active:
+                HStack(spacing: 6) {
+                    Circle().fill(t.green).frame(width: 7, height: 7)
+                    Text("Active").font(WZFont.mono(11, .semibold)).foregroundStyle(t.green)
+                }
+            case .ready:
+                tagPill("Ready")
+            case .deviceNotEligible:
+                tagPill("A17+ / M-series")
+            case .notEnabled:
+                EmptyView()
+            case .preparing:
+                tagPill("Preparing…")
+            }
+        }
+    }
+
+    // Design's modelsList tag style (mob-settings.jsx:527): capsule, faint text, surfaceUp
+    // background, hairline border.
+    private func tagPill(_ text: String) -> some View {
+        Text(text)
+            .font(WZFont.mono(10)).foregroundStyle(t.faint)
+            .padding(.horizontal, 8).padding(.vertical, 3)
+            .background(t.surfaceUp, in: Capsule())
+            .overlay(Capsule().stroke(t.line, lineWidth: 1))
     }
 
     private func whisperRow(_ variant: LocalWhisperModel, last: Bool) -> some View {

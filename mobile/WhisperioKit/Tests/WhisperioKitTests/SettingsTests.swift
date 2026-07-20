@@ -131,6 +131,117 @@ import Foundation
         #expect(ProviderID.onDevice.rawValue == "ondevice")
     }
 
+    // MARK: - Replicate / Self-hosted (R4)
+
+    @Test func replicateAndSelfHostedDisplayNamesAndRawValues() {
+        #expect(ProviderID.replicate.rawValue == "replicate")
+        #expect(ProviderID.replicate.displayName == "Replicate")
+        #expect(ProviderID.selfHosted.rawValue == "selfhosted")
+        #expect(ProviderID.selfHosted.displayName == "Self-hosted")
+    }
+
+    @Test func replicateAndSelfHostedAreCloudButNeverInTheDefaultChain() {
+        let s = WhisperioSettings()
+        // Both send audio off-device — honestly cloud — but neither is silently added to any
+        // existing user's default fallback order (same opt-in-only treatment as .localWhisper).
+        #expect(s.isCloud(.replicate))
+        #expect(s.isCloud(.selfHosted))
+        #expect(!WhisperioSettings.classicOrder.contains(.replicate))
+        #expect(!WhisperioSettings.classicOrder.contains(.selfHosted))
+    }
+
+    @Test func replicateAndSelfHostedFieldsDefaultEmptyAndResolveThroughSelectedModel() {
+        let s = WhisperioSettings()
+        #expect(s.replicateKey.isEmpty)
+        #expect(s.replicateModel.isEmpty)
+        #expect(s.selfHostedURL.isEmpty)
+        #expect(s.selfHostedKey.isEmpty)
+        #expect(s.selfHostedModel.isEmpty)
+        #expect(s.selectedModel(for: .replicate).isEmpty)
+        #expect(s.selectedModel(for: .selfHosted).isEmpty)
+    }
+
+    @Test func replicateAndSelfHostedFieldsRoundTripAndResolve() throws {
+        var s = WhisperioSettings(replicateKey: "r-key", replicateModel: "owner/model",
+                                  selfHostedURL: "http://localhost:8000", selfHostedKey: "s-key",
+                                  selfHostedModel: "ggml-base")
+        s.setPrimaryProvider(.replicate)
+        let data = try JSONEncoder().encode(s)
+        let decoded = try JSONDecoder().decode(WhisperioSettings.self, from: data)
+        #expect(decoded == s)
+        #expect(decoded.replicateKey == "r-key")
+        #expect(decoded.selfHostedURL == "http://localhost:8000")
+        #expect(decoded.resolvedModel(for: ProviderSlot(provider: .replicate)) == "owner/model")
+        #expect(decoded.resolvedModel(for: ProviderSlot(provider: .selfHosted)) == "ggml-base")
+    }
+
+    // A legacy blob (persisted before Replicate/Self-hosted existed) still decodes cleanly —
+    // the new fields fall back to their empty defaults, never throwing the blob away.
+    @Test func legacyBlobWithoutReplicateOrSelfHostedFieldsFallsBackToDefaults() throws {
+        let legacy = Data(#"{"openAIKey": "x"}"#.utf8)
+        let decoded = try JSONDecoder().decode(WhisperioSettings.self, from: legacy)
+        #expect(decoded.replicateKey.isEmpty)
+        #expect(decoded.selfHostedURL.isEmpty)
+    }
+
+    // MARK: - ElevenLabs model (R5)
+
+    @Test func elevenLabsModelDefaultsEmptyPreservingExistingBehavior() {
+        // Empty means "let ElevenLabsProvider's own diarize/keyterm-driven default decide" — the
+        // exact behavior shipped before this field existed. A stored empty string must never be
+        // read as "no model configured, do something else".
+        let s = WhisperioSettings()
+        #expect(s.elevenLabsModel.isEmpty)
+        #expect(s.selectedModel(for: .elevenLabs).isEmpty)
+    }
+
+    @Test func elevenLabsModelRoundTrips() throws {
+        let original = WhisperioSettings(elevenLabsModel: "scribe_v2")
+        let data = try JSONEncoder().encode(original)
+        let decoded = try JSONDecoder().decode(WhisperioSettings.self, from: data)
+        #expect(decoded.elevenLabsModel == "scribe_v2")
+        #expect(decoded.selectedModel(for: .elevenLabs) == "scribe_v2")
+    }
+
+    // MARK: - Categorize (R7)
+
+    @Test func autoCategorizeDefaultsToTruePreservingExistingBehavior() {
+        // Today's shipped behavior is "every note gets classified" — the toggle must default on
+        // so existing users see zero change until they explicitly turn it off.
+        let s = WhisperioSettings()
+        #expect(s.autoCategorize == true)
+        #expect(s.customCategories.isEmpty)
+    }
+
+    @Test func autoCategorizeAndCustomCategoriesRoundTrip() throws {
+        let cats = [CustomCategory(id: "reading", label: "Reading", icon: "book", hueIndex: 2)]
+        let original = WhisperioSettings(autoCategorize: false, customCategories: cats)
+        let data = try JSONEncoder().encode(original)
+        let decoded = try JSONDecoder().decode(WhisperioSettings.self, from: data)
+        #expect(decoded.autoCategorize == false)
+        #expect(decoded.customCategories == cats)
+    }
+
+    // A legacy blob missing autoCategorize/customCategories entirely still decodes, falling back
+    // to the defaults — same tolerant-decode contract as every other field.
+    @Test func legacyBlobWithoutCategorizeFieldsFallsBackToDefaults() throws {
+        let legacy = Data(#"{"openAIKey": "x"}"#.utf8)
+        let decoded = try JSONDecoder().decode(WhisperioSettings.self, from: legacy)
+        #expect(decoded.autoCategorize == true)
+        #expect(decoded.customCategories.isEmpty)
+    }
+
+    // A CustomCategory persisted before some field existed (or hand-edited to drop one) still
+    // decodes, each missing key falling back to its documented default.
+    @Test func customCategoryTolerantDecodeFallsBackToDefaults() throws {
+        let legacy = Data(#"{"label": "Reading"}"#.utf8)
+        let cat = try JSONDecoder().decode(CustomCategory.self, from: legacy)
+        #expect(cat.label == "Reading")
+        #expect(cat.icon == "spark")
+        #expect(cat.hueIndex == 0)
+        #expect(!cat.id.isEmpty)
+    }
+
     // MARK: - SyncMode
 
     @Test func syncModeDefaultsToAutomaticWithFifteenMinuteInterval() {

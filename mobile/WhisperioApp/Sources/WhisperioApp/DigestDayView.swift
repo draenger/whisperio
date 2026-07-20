@@ -59,7 +59,7 @@ struct DigestDayView: View {
         }
     }
     private var groups: [DigestGroup] {
-        DigestGrouping.groupByCategory(dayRecs, order: WZCategories.all.map(\.id))
+        DigestGrouping.groupByCategory(dayRecs, order: WZCategories.all(with: settings.settings).map(\.id))
     }
     private var cached: DailyDigest? { digests.digest(for: dayKey) }
 
@@ -256,7 +256,7 @@ struct DigestDayView: View {
     private func groupSection(_ group: DigestGroup) -> some View {
         let byID = Dictionary(dayRecs.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         let recs = group.recordingIDs.compactMap { byID[$0] }
-        let known = group.categoryID == uncategorizedCategoryID ? nil : WZCategories.of(group.categoryID)
+        let known = group.categoryID == uncategorizedCategoryID ? nil : WZCategories.of(group.categoryID, with: settings.settings)
         return VStack(alignment: .leading, spacing: 9) {
             HStack(spacing: 8) {
                 SectionLabel(text: known?.label ?? "Uncategorized")
@@ -310,7 +310,7 @@ struct DigestDayView: View {
         Task {
             do {
                 try await digests.generate(for: day, recordings: recordings,
-                                           categories: WZCategories.all,
+                                           categories: WZCategories.all(with: settings.settings),
                                            using: client, model: settings.settings.chatModel,
                                            promptConfig: digestPrompts.config,
                                            sourceMode: sourceMode, allowedSources: allowedSources)

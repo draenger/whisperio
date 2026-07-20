@@ -18,8 +18,8 @@ struct WatchRootView: View {
 
     var body: some View {
         ScrollView {
-            VStack(spacing: 12) {
-                HStack(spacing: 4) {
+            VStack(spacing: 10) {
+                HStack(spacing: 5) {
                     WatchGhostIcon(size: 14)
                     Text("Whisperio").font(.headline)
                 }
@@ -40,7 +40,7 @@ struct WatchRootView: View {
                     WatchMiniWave(color: Color(red: 28 / 255, green: 200 / 255, blue: 180 / 255))
                 }
 
-                HStack(spacing: 4) {
+                HStack(spacing: 5) {
                     if conn.status.contains("Transcribing") {
                         WatchSpinner()
                     }
@@ -58,7 +58,9 @@ struct WatchRootView: View {
                         .background(Color(white: 1.0, opacity: 0.2), in: RoundedRectangle(cornerRadius: 10))
                 }
             }
-            .padding(.horizontal, 6)
+            .padding(.horizontal, 12)
+            .padding(.top, 12)
+            .padding(.bottom, 10)
         }
         .onAppear { conn.activate() }
     }

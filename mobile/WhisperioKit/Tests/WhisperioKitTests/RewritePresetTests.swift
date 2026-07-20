@@ -18,6 +18,14 @@ struct RewritePresetTests {
         #expect(RewritePresetCatalog.seeds.contains { $0.id == "template-builder" && $0.isMeta })
     }
 
+    // Seeds match the design's REWRITE_PRESETS exactly: 6 presets, in this name/order
+    // (mob-settings.jsx:9-16) — R8.
+    @Test func seedsMatchDesignCatalog() {
+        let names = RewritePresetCatalog.seeds.map(\.name)
+        #expect(names == ["Clean up", "Bullet points", "Email reply", "Action items", "Summary", "Template Builder"])
+        #expect(RewritePresetCatalog.seeds.count == 6)
+    }
+
     // resolved() folds seeds + user presets into one display list.
     @Test func resolvedIncludesSeedsAndUserPresets() {
         let mine = RewritePreset(id: "mine", name: "Mine", prompt: "Do a thing.", icon: "spark")
@@ -59,7 +67,7 @@ struct RewritePresetTests {
     @Test func restoreDoesNotDuplicateSeedsAndKeepsUserPreset() {
         let mine = RewritePreset(id: "mine", name: "Mine", prompt: "Do a thing.", icon: "spark")
         var state = RewritePresetState(userPresets: [mine])
-        state = RewritePresetCatalog.afterDelete(id: "tweet", state)
+        state = RewritePresetCatalog.afterDelete(id: "summary", state)
         state = RewritePresetCatalog.restoreDefaults(state)
 
         let out = RewritePresetCatalog.resolved(state)
@@ -88,12 +96,12 @@ struct RewritePresetTests {
     // Editing a tombstoned seed resurrects it (upsert clears the tombstone).
     @Test func upsertSeedResurrectsTombstone() {
         var state = RewritePresetState()
-        state = RewritePresetCatalog.afterDelete(id: "slack", state)
-        var edited = RewritePresetCatalog.seeds.first { $0.id == "slack" }!
-        edited.name = "Team ping"
+        state = RewritePresetCatalog.afterDelete(id: "action-items", state)
+        var edited = RewritePresetCatalog.seeds.first { $0.id == "action-items" }!
+        edited.name = "To-dos"
         state = RewritePresetCatalog.afterUpsert(edited, state)
-        #expect(!state.removedSeedIDs.contains("slack"))
-        #expect(RewritePresetCatalog.resolved(state).contains { $0.id == "slack" && $0.name == "Team ping" })
+        #expect(!state.removedSeedIDs.contains("action-items"))
+        #expect(RewritePresetCatalog.resolved(state).contains { $0.id == "action-items" && $0.name == "To-dos" })
     }
 
     // The full persisted state round-trips through Codable.

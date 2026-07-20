@@ -18,7 +18,8 @@ enum WZIcon {
         "more": "ellipsis", "send": "paperplane.fill", "shield": "checkmark.shield",
         "clock": "clock", "trim": "scissors", "edit": "square.and.pencil",
         "list": "list.bullet", "message": "message.fill", "book": "book.closed",
-        "pause": "pause.fill", "play": "play.fill", "people": "person.2.fill"
+        "pause": "pause.fill", "play": "play.fill", "people": "person.2.fill",
+        "server": "server.rack"
     ]
     static func symbol(_ k: String) -> String { map[k] ?? "questionmark" }
 }

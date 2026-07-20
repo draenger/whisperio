@@ -123,7 +123,10 @@ final class AudioRecorder: NSObject, ObservableObject {
         let clip = (try? Data(contentsOf: url)).map {
             AudioClip(data: $0, filename: url.lastPathComponent, duration: duration)
         }
-        try? FileManager.default.removeItem(at: url)   // don't leave temp .m4a files behind
+        // Deliberately NOT deleted here: keptFilename()/keptName() decide the file's fate
+        // right after transcription — AudioStore.persist moves it to durable storage when
+        // "Keep audio recordings" is on, AudioStore.delete removes it otherwise. Deleting
+        // eagerly here made persist() a silent no-op, which is why kept audio never saved.
         return clip
     }
 

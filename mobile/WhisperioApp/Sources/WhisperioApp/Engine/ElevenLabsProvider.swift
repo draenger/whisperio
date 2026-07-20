@@ -7,6 +7,10 @@ struct ElevenLabsProvider: DiarizingProvider {
     let apiKey: String
     var languageCode: String = ""
     var keyterms: [String] = []
+    /// Explicit model_id override (e.g. "scribe_v2"/"scribe_v1" — see
+    /// `WhisperioSettings.elevenLabsModel`). Empty keeps the original diarize/keyterm-driven
+    /// default below, so existing users who never touch the new model picker see zero change.
+    var model: String = ""
 
     var isConfigured: Bool { !apiKey.trimmingCharacters(in: .whitespaces).isEmpty }
 
@@ -60,7 +64,11 @@ struct ElevenLabsProvider: DiarizingProvider {
         var body = MultipartBody()
         req.setValue(body.contentType, forHTTPHeaderField: "Content-Type")
         let terms = cleanKeyterms
-        body.field("model_id", (diarize || !terms.isEmpty) ? "scribe_v2" : "scribe_v1")
+        let trimmedModel = model.trimmingCharacters(in: .whitespaces)
+        let modelID = trimmedModel.isEmpty
+            ? ((diarize || !terms.isEmpty) ? "scribe_v2" : "scribe_v1")
+            : trimmedModel
+        body.field("model_id", modelID)
         if diarize { body.field("diarize", "true") }
         if !languageCode.isEmpty && languageCode != "auto" { body.field("language_code", languageCode) }
         if !terms.isEmpty, let data = try? JSONEncoder().encode(terms),

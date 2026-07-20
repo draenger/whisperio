@@ -128,6 +128,13 @@ final class SettingsStore: ObservableObject {
             return s.cloudConsentGranted && !s.assemblyAIKey.trimmingCharacters(in: .whitespaces).isEmpty
         case .mistral:
             return s.cloudConsentGranted && !s.mistralKey.trimmingCharacters(in: .whitespaces).isEmpty
+        case .replicate:
+            return s.cloudConsentGranted && !s.replicateKey.trimmingCharacters(in: .whitespaces).isEmpty
+        case .selfHosted:
+            // Same cloud-consent gate as every other remote engine (audio does leave the device,
+            // even though it's the user's own server) — SettingsView.toggleConnection just skips
+            // showing the confirmation sheet for this one, granting consent silently instead.
+            return s.cloudConsentGranted && !s.selfHostedURL.trimmingCharacters(in: .whitespaces).isEmpty
         }
     }
 
@@ -183,14 +190,25 @@ final class SettingsStore: ObservableObject {
         return .elevenLabs
     }
 
-    // Build the text-LLM client for rewrite (render presets) + journaling. Gated the same
-    // way makeChain() gates cloud STT: the client only reports isConfigured when the user has
-    // granted cloud consent AND pasted an OpenAI key — otherwise callers see an unconfigured
-    // client (empty key) and skip/surface accordingly.
+    // Build the text-LLM client for rewrite (render presets) + journaling. OpenAI stays
+    // preferred whenever it's actually configured (an explicit pasted key is explicit intent —
+    // zero behavior change for existing cloud users). When OpenAI isn't configured, Apple
+    // Intelligence serves instead if the on-device model is available on this device right
+    // now — unblocking digest/categorization/rewrites for zero-key users with no network call
+    // and no consent gate (it never leaves the device). When neither is available, the existing
+    // honest empty/failure path is unchanged: callers see an unconfigured OpenAIChatClient and
+    // skip/surface accordingly.
     func makeChatClient() -> ChatLLM {
         let s = settings
-        let ready = s.cloudConsentGranted && !s.openAIKey.trimmingCharacters(in: .whitespaces).isEmpty
-        return OpenAIChatClient(apiKey: ready ? s.openAIKey : "", baseURL: s.openAIBaseURL)
+        let openAIReady = s.cloudConsentGranted && !s.openAIKey.trimmingCharacters(in: .whitespaces).isEmpty
+        if !openAIReady {
+            #if canImport(FoundationModels)
+            if #available(iOS 26.0, macOS 26.0, *), AppleIntelligenceService.isAvailable {
+                return AppleIntelligenceChatClient()
+            }
+            #endif
+        }
+        return OpenAIChatClient(apiKey: openAIReady ? s.openAIKey : "", baseURL: s.openAIBaseURL)
     }
 
     // Build the runner that applies a rewrite (render) preset to a transcript. Wraps the shared
@@ -252,6 +270,11 @@ final class SettingsStore: ObservableObject {
         case .mistral:
             return MistralProvider(apiKey: s.mistralKey, model: model,
                                    language: s.language)
+        case .replicate:
+            return ReplicateProvider(apiKey: s.replicateKey, model: model)
+        case .selfHosted:
+            return SelfHostedProvider(baseURL: s.selfHostedURL, apiKey: s.selfHostedKey,
+                                      model: model, language: s.language)
         }
     }
 
@@ -284,6 +307,11 @@ extension SettingsStore {
         case .deepgram: s.deepgramKey = trimmed
         case .assemblyAI: s.assemblyAIKey = trimmed
         case .mistral: s.mistralKey = trimmed
+        case .replicate: s.replicateKey = trimmed
+        // Self-hosted has no API-key concept — the pasted string here is the server URL itself
+        // (ProviderKeyValidator.validate(.selfHosted, key:) checks it parses as a URL, mirroring
+        // every other provider's "validate then persist" contract without inventing a fake key).
+        case .selfHosted: s.selfHostedURL = trimmed
         }
         s.cloudConsentGranted = true
         s.setPrimaryProvider(id)

@@ -39,9 +39,12 @@ struct SettingsView: View {
 
     @State private var consentProvider: ProviderID?   // non-nil → consent sheet is up
     @State private var showTriggerGuides = false      // presents the trigger onboarding hub
+    @State private var showAddToSiriSheet = false     // "Add to Siri" sheet (System > Quick dictation)
+    @State private var shortcutsOpenFailed = false    // shortcuts:// couldn't open — fall back to ShortcutsLink
     @State private var chainAdd: ChainAddStep? = nil  // "Add provider + model" flow state
     @State private var openConnection: ProviderID?    // expanded connection accordion (none = all collapsed)
     @State private var showRestoreConfirm = false     // confirm before restoring seed templates
+    @State private var langOpen = false               // inline language chip grid expanded?
     @State private var selectedCategory: SettingsCategory? = nil
     @State private var cloudAccountStatusText = "Checking iCloud status…"
     @State private var cloudStatus: CKAccountStatus = .couldNotDetermine
@@ -183,6 +186,18 @@ struct SettingsView: View {
         s.language = code
         settings.settings = s
     }
+
+    #if os(iOS)
+    // "Shortcuts" ghost button — opens the real Shortcuts app via its URL scheme. On the rare
+    // device where that fails (e.g. a restricted profile), fall back to the system ShortcutsLink
+    // control instead of silently doing nothing.
+    private func openShortcutsApp() {
+        guard let url = URL(string: "shortcuts://") else { shortcutsOpenFailed = true; return }
+        openURL(url) { accepted in
+            if !accepted { shortcutsOpenFailed = true }
+        }
+    }
+    #endif
 
     private func setStorageMode(_ mode: StorageMode) {
         var s = settings.settings
@@ -328,6 +343,14 @@ struct SettingsView: View {
                 #endif
         }
         #if os(iOS)
+        .sheet(isPresented: $showAddToSiriSheet) {
+            AddToSiriSheet()
+                .environment(\.wz, t)
+                .preferredColorScheme(t.dark ? .dark : .light)
+                .presentationDetents([.medium])
+        }
+        #endif
+        #if os(iOS)
         .fullScreenCover(isPresented: $showTriggerGuides) {
             TriggerGuidesView(onBack: { showTriggerGuides = false })
                 .environment(\.wz, t)
@@ -376,17 +399,33 @@ struct SettingsView: View {
             HStack {
                 SectionLabel(text: "Remote connectors")
                 Spacer(minLength: 0)
-                // The badge reflects slot 0 of the model order — the engine that transcribes.
-                PrivacyBadge(mode: settings.settings.isCloud(engine) ? .cloud : .device, small: true)
+                if engine == .selfHosted {
+                    // Own-server pill instead of the usual on-device/cloud badge — the primary
+                    // engine is neither: it's a third machine the user runs themselves.
+                    HStack(spacing: 5) {
+                        WIcon("server", size: 11)
+                        Text("your server")
+                    }
+                    .font(WZFont.mono(10.5, .semibold))
+                    .foregroundStyle(t.green)
+                    .padding(.horizontal, 9).padding(.vertical, 3)
+                    .background(t.green.opacity(0.1), in: Capsule())
+                    .overlay(Capsule().stroke(t.green.opacity(0.25), lineWidth: 1))
+                } else {
+                    // The badge reflects slot 0 of the model order — the engine that transcribes.
+                    PrivacyBadge(mode: settings.settings.isCloud(engine) ? .cloud : .device, small: true)
+                }
             }
             .padding(.leading, 4)
             VStack(spacing: 10) {
                 connectionRow(.openAI, "OpenAI", "Cloud · Whisper API", "globe")
                 connectionRow(.elevenLabs, "ElevenLabs", "Cloud · Scribe", "globe")
+                connectionRow(.replicate, "Replicate", "Cloud · open-source models", "globe")
                 connectionRow(.groq, "Groq", "Cloud · fastest Whisper inference", "bolt")
                 connectionRow(.deepgram, "Deepgram", "Cloud · Nova, streaming & diarization", "globe")
                 connectionRow(.assemblyAI, "AssemblyAI", "Cloud · Universal, speaker labels", "globe")
                 connectionRow(.mistral, "Mistral", "Cloud · Voxtral, open weights", "globe")
+                connectionRow(.selfHosted, "Self-hosted", "Your server · whisper.cpp / faster-whisper", "server")
             }
             if let open = openConnection, let choices = Self.engineModelChoices[open] {
                 modelPicker(choices, engineModelBinding(open))
@@ -401,27 +440,66 @@ struct SettingsView: View {
                 plainField("Model (optional)", "whisper-1", binding(\.whisperModel))
             }
             if let open = openConnection {
-                HStack(spacing: 9) {
-                    GhostButton(title: "Manage account · \(engineDisplayName(open))", icon: "arrowUR") {
-                        openManageAccount(open)
+                if open == .selfHosted {
+                    // No vendor console for a server the user runs themselves — open the
+                    // actual configured URL (real, honest) instead of a dead "manage account"
+                    // link to a console that doesn't exist for arbitrary self-hosted servers.
+                    let urlText = settings.settings.selfHostedURL.trimmingCharacters(in: .whitespaces)
+                    if !urlText.isEmpty, let serverURL = URL(string: urlText) {
+                        GhostButton(title: "Open server dashboard", icon: "arrowUR") {
+                            openURL(serverURL)
+                        }
                     }
-                    GhostButton(title: "Usage console", icon: "globe") {
-                        openUsageConsole(open)
+                } else {
+                    HStack(spacing: 9) {
+                        GhostButton(title: "Manage account · \(engineDisplayName(open))", icon: "arrowUR") {
+                            openManageAccount(open)
+                        }
+                        GhostButton(title: "Usage console", icon: "globe") {
+                            openUsageConsole(open)
+                        }
+                        .fixedSize()
                     }
-                    .fixedSize()
                 }
             }
             if openConnection == .elevenLabs { keyField("ElevenLabs API key", binding(\.elevenLabsKey)) }
+            if openConnection == .replicate { keyField("Replicate API token", binding(\.replicateKey), placeholder: "r8_…") }
             if openConnection == .groq { keyField("Groq API key", binding(\.groqKey), placeholder: "gsk_…") }
             if openConnection == .deepgram { keyField("Deepgram API key", binding(\.deepgramKey)) }
             if openConnection == .assemblyAI { keyField("AssemblyAI API key", binding(\.assemblyAIKey)) }
             if openConnection == .mistral { keyField("Mistral API key", binding(\.mistralKey)) }
+            if openConnection == .selfHosted {
+                plainField("Server URL", "http://192.168.1.20:8080/v1", binding(\.selfHostedURL))
+                keyField("Bearer token (optional)", binding(\.selfHostedKey), placeholder: "leave blank if none")
+                plainField("Model", "whisper-large-v3", binding(\.selfHostedModel))
+                // Green "your own server" banner — verbatim design copy, mob-settings.jsx:339-346.
+                HStack(alignment: .top, spacing: 10) {
+                    WIcon("lock", size: 15).foregroundStyle(t.green).padding(.top, 1)
+                    Text("Audio goes only to your own server — no third-party cloud. OpenAI-compatible endpoints (whisper.cpp, faster-whisper, Speaches) work out of the box.")
+                        .font(WZFont.ui(12.5)).foregroundStyle(t.muted).lineSpacing(3)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(.horizontal, 14).padding(.vertical, 12)
+                .background(t.green.opacity(t.dark ? 0.08 : 0.07), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(t.green.opacity(0.25), lineWidth: 1))
+            }
         }
     }
 
     // Per-engine model choices (persisted id → display name) for the cloud engines that carry
     // a selected-model setting. Mirrors ENGINE_MODELS in mob-settings.jsx.
     private static let engineModelChoices: [ProviderID: [(id: String, name: String)]] = [
+        // Real, currently-documented model ids (verified July 2026) — mirrors ENGINE_MODELS in
+        // mob-settings.jsx. The free-text "Model (optional)" field below stays as an advanced
+        // override for anything newer than this list.
+        .openAI: [("whisper-1", "whisper-1"),
+                  ("gpt-4o-transcribe", "gpt-4o-transcribe"),
+                  ("gpt-4o-mini-transcribe", "gpt-4o-mini")],
+        // ElevenLabs Scribe v2 (batch) shipped January 2026; v1 remains real and supported.
+        .elevenLabs: [("scribe_v2", "Scribe v2"), ("scribe_v1", "Scribe v1")],
+        .replicate: [("incredibly-fast-whisper", "incredibly-fast-whisper"),
+                     ("whisper-large-v3", "whisper large-v3"),
+                     ("whisper-diarization", "whisper-diarization")],
         .groq: [("whisper-large-v3-turbo", "whisper-v3 turbo"),
                 ("whisper-large-v3", "whisper large-v3"),
                 ("distil-whisper", "distil-whisper")],
@@ -435,10 +513,16 @@ struct SettingsView: View {
         .localWhisper: [("openai_whisper-tiny", "Whisper tiny"),
                         ("openai_whisper-base", "Whisper base"),
                         ("openai_whisper-small", "Whisper small")],
+        // Self-hosted has no fixed catalog (any OpenAI-compatible server can name its model
+        // anything) — deliberately absent here so it falls through to the free-text Model field
+        // instead of a chip picker, matching mob-settings.jsx's `engine !== 'self'` chip guard.
     ]
 
     private func engineModelBinding(_ id: ProviderID) -> Binding<String> {
         switch id {
+        case .openAI: return binding(\.whisperModel)
+        case .elevenLabs: return binding(\.elevenLabsModel)
+        case .replicate: return binding(\.replicateModel)
         case .groq: return binding(\.groqModel)
         case .deepgram: return binding(\.deepgramModel)
         case .assemblyAI: return binding(\.assemblyAIModel)
@@ -777,10 +861,8 @@ struct SettingsView: View {
             VStack(alignment: .leading, spacing: 8) {
                 SectionLabel(text: "Language & vocabulary").padding(.leading, 4)
                 VStack(spacing: 0) {
-                    Menu {
-                        ForEach(languages, id: \.code) { lang in
-                            Button(lang.name) { setLanguage(lang.code) }
-                        }
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.15)) { langOpen.toggle() }
                     } label: {
                         HStack(spacing: 13) {
                             WIcon("globe", size: 17, weight: .regular).foregroundStyle(t.accentLite)
@@ -792,11 +874,34 @@ struct SettingsView: View {
                             }
                             Spacer(minLength: 0)
                             Text(currentLanguageName).font(WZFont.ui(13)).foregroundStyle(t.accentLite)
-                            WIcon("chevR", size: 16, weight: .regular).foregroundStyle(t.faint)
+                            WIcon(langOpen ? "chevD" : "chevR", size: 16, weight: .regular).foregroundStyle(t.faint)
                         }
                         .padding(.vertical, 13)
                     }
+                    .buttonStyle(.plain)
                     .overlay(alignment: .bottom) { Rectangle().fill(t.lineSoft).frame(height: 1) }
+
+                    if langOpen {
+                        FlowLayout(spacing: 7) {
+                            ForEach(languages, id: \.code) { lang in
+                                let on = settings.settings.language == lang.code
+                                Button {
+                                    setLanguage(lang.code)
+                                    withAnimation(.easeInOut(duration: 0.15)) { langOpen = false }
+                                } label: {
+                                    Text(lang.name)
+                                        .font(WZFont.ui(12.5, .semibold))
+                                        .foregroundStyle(on ? t.accentLite : t.muted)
+                                        .padding(.horizontal, 11).padding(.vertical, 6)
+                                        .background(on ? t.accent.opacity(0.16) : t.surfaceUp, in: Capsule())
+                                        .overlay(Capsule().stroke(on ? t.hair : t.line, lineWidth: 1))
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                        .padding(.vertical, 12)
+                        .overlay(alignment: .bottom) { Rectangle().fill(t.lineSoft).frame(height: 1) }
+                    }
 
                     VStack(alignment: .leading, spacing: 7) {
                         Text("Custom words").font(WZFont.ui(13, .semibold)).foregroundStyle(t.muted)
@@ -1243,8 +1348,16 @@ struct SettingsView: View {
                 VStack(alignment: .leading, spacing: 12) {
                     Text("Say “Dictate with Whisperio” to Siri — or add the shortcut, then assign it to Back Tap (Settings → Accessibility → Touch → Back Tap → Run Shortcut).")
                         .font(WZFont.ui(13)).foregroundStyle(t.muted).lineSpacing(3)
-                    SiriTipView(intent: DictateIntent()).tint(t.accent)
-                    ShortcutsLink().tint(t.accent)
+                    HStack(spacing: 9) {
+                        GhostButton(title: "Add to Siri", icon: "spark") { showAddToSiriSheet = true }
+                        if shortcutsOpenFailed {
+                            // shortcuts:// failed to open (rare — e.g. a restricted profile) —
+                            // fall back to the system's own ShortcutsLink control.
+                            ShortcutsLink().tint(t.accent).frame(maxWidth: .infinity)
+                        } else {
+                            GhostButton(title: "Shortcuts", icon: "arrowUR") { openShortcutsApp() }
+                        }
+                    }
                 }
             }
             #endif
@@ -1297,40 +1410,18 @@ struct SettingsView: View {
         }
     }
 
-    // One titled hub group (AI · Data · System) of category rows.
+    // One titled hub group (AI · Data · System) of category rows — built on the shared SettRow
+    // primitive (17pt chevron, matching every other row in Settings) instead of a hand-rolled
+    // duplicate of it.
     private func hubGroup(_ title: String, _ categories: [SettingsCategory]) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            SectionLabel(text: title).padding(.leading, 4)
-            VStack(spacing: 0) {
-                ForEach(categories) { category in
-                    Button {
-                        if category == .storage { openStorage() } else { selectedCategory = category }
-                    } label: {
-                        HStack(spacing: 13) {
-                            Image(systemName: settSymbol(category.icon))
-                                .font(.system(size: 17, weight: .regular)).foregroundStyle(t.accentLite)
-                                .frame(width: 34, height: 34)
-                                .background(t.surfaceUp, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-                            VStack(alignment: .leading, spacing: 1) {
-                                Text(category.title).font(WZFont.ui(14.5, .medium)).foregroundStyle(t.text)
-                                Text(category.subtitle).font(WZFont.ui(12)).foregroundStyle(t.muted)
-                            }
-                            Spacer(minLength: 0)
-                            WIcon("chevR", size: 16, weight: .regular).foregroundStyle(t.faint)
-                        }
-                        .padding(.vertical, 13)
-                    }
-                    .buttonStyle(.plain)
-                    .overlay(alignment: .bottom) {
-                        if category != categories.last {
-                            Rectangle().fill(t.lineSoft).frame(height: 1)
-                        }
-                    }
-                }
+        SettGroup(title: title) {
+            ForEach(categories) { category in
+                SettRow(icon: category.icon, label: category.title, sub: category.subtitle,
+                        last: category == categories.last,
+                        onTap: {
+                            if category == .storage { openStorage() } else { selectedCategory = category }
+                        })
             }
-            .padding(.horizontal, 16)
-            .background(t.surface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(t.line, lineWidth: 1))
         }
     }
 
@@ -1359,7 +1450,10 @@ struct SettingsView: View {
     private func toggleConnection(_ id: ProviderID) {
         if openConnection == id {
             withAnimation(.easeInOut(duration: 0.2)) { openConnection = nil }
-        } else if settings.settings.isCloud(id) && !settings.settings.cloudConsentGranted {
+        } else if settings.settings.isCloud(id) && id != .selfHosted && !settings.settings.cloudConsentGranted {
+            // Self-hosted is technically "cloud" (audio leaves the device), but it's the user's
+            // own server, not a third party — the consent sheet doesn't apply. The green banner
+            // in its expanded panel carries the honesty instead.
             consentProvider = id   // ask first; only expand on accept
         } else {
             withAnimation(.easeInOut(duration: 0.2)) { openConnection = id }
@@ -1386,8 +1480,12 @@ struct SettingsView: View {
         // configured variant's model folder is actually on disk.
         case .localWhisper:
             return settings.isEngineReady(.localWhisper) ? ("Downloaded", true) : ("Not downloaded", false)
+        case .selfHosted:
+            let url = settings.settings.selfHostedURL.trimmingCharacters(in: .whitespaces)
+            return url.isEmpty ? ("Add your server URL", false) : ("Connected · \(url)", true)
         case .openAI: key = settings.settings.openAIKey
         case .elevenLabs: key = settings.settings.elevenLabsKey
+        case .replicate: key = settings.settings.replicateKey
         case .groq: key = settings.settings.groqKey
         case .deepgram: key = settings.settings.deepgramKey
         case .assemblyAI: key = settings.settings.assemblyAIKey
@@ -1405,6 +1503,11 @@ struct SettingsView: View {
                   URL(string: "https://platform.openai.com/usage")!),
         .elevenLabs: (URL(string: "https://elevenlabs.io/app/settings/api-keys")!,
                      URL(string: "https://elevenlabs.io/app/usage")!),
+        .replicate: (URL(string: "https://replicate.com/account/api-tokens")!,
+                    URL(string: "https://replicate.com/account/billing")!),
+        // .selfHosted intentionally has no entry — there's no vendor console for an arbitrary
+        // user-run server. The "Manage account"/"Usage console" pair is swapped for a single
+        // "Open server dashboard" button that opens the configured server URL directly instead.
         .groq: (URL(string: "https://console.groq.com/keys")!,
                URL(string: "https://console.groq.com/dashboard/usage")!),
         .deepgram: (URL(string: "https://console.deepgram.com/")!,
@@ -1512,11 +1615,16 @@ func settSymbol(_ k: String) -> String { WZIcon.map[k] ?? k }
 
 struct SettGroup<Content: View>: View {
     @Environment(\.wz) private var t
-    let title: String
+    // Optional — mirrors mob-settings.jsx's `{title && <SectionLabel .../>}`. A group with no
+    // title (e.g. the on-device models list) renders with no label above it at all, rather than
+    // being forced to invent one (see ModelsView's models group).
+    var title: String? = nil
     @ViewBuilder var content: Content
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            SectionLabel(text: title).padding(.leading, 4)
+            if let title {
+                SectionLabel(text: title).padding(.leading, 4)
+            }
             VStack(spacing: 0) { content }
                 .padding(.horizontal, 16)
                 .background(t.surface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
@@ -1584,6 +1692,8 @@ struct CloudConsentSheet: View {
         case .localWhisper: return "Whisper"   // never reaches the consent sheet (on-device, same as .onDevice)
         case .openAI: return "OpenAI"
         case .elevenLabs: return "ElevenLabs"
+        case .replicate: return "Replicate"
+        case .selfHosted: return "Self-hosted"   // never reaches the consent sheet (your own server)
         case .groq: return "Groq"
         case .deepgram: return "Deepgram"
         case .assemblyAI: return "AssemblyAI"
@@ -1642,3 +1752,27 @@ struct CloudConsentSheet: View {
         }
     }
 }
+
+#if os(iOS)
+// "Add to Siri" — a small sheet housing the real, system-provided SiriTipView so the phrase
+// gets recorded against the App Shortcut Whisperio already auto-registers (DictateIntent).
+// Nothing here is simulated: this is the system's own Siri-phrase recorder, just reframed as
+// a two-up ghost button alongside "Shortcuts" instead of a bare vertical stack.
+struct AddToSiriSheet: View {
+    @Environment(\.wz) private var t
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Add to Siri")
+                .font(WZFont.display(21)).foregroundStyle(t.text)
+            Text("Record the phrase you want to say to Siri to start a Whisperio dictation.")
+                .font(WZFont.ui(13.5)).foregroundStyle(t.muted).lineSpacing(3)
+                .fixedSize(horizontal: false, vertical: true)
+            SiriTipView(intent: DictateIntent()).tint(t.accent)
+            Spacer(minLength: 0)
+        }
+        .padding(24)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(t.bg.ignoresSafeArea())
+    }
+}
+#endif

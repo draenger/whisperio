@@ -133,6 +133,37 @@ not just add). Three of four clusters returned EMPTY.
 Final trajectory: 13 → 16 → 1 → 5 → 1 → 2 → 3 → 7 → 4 → 3 → 3 → 2 → 1 → 0 (60 gaps fixed
 across 13 fix rounds; every fix adversarially confirmed, gated, and pushed to main).
 
+## Settings repair wave (2026-07-20) — 23 planned gaps → rulings R1-R11 → shipped
+Real features from design: ProviderID.replicate + .selfHosted with full TranscriptionProvider
+implementations (Replicate HTTP API w/ files+predictions+polling; Self-hosted = OpenAI-compatible
+/v1/audio/transcriptions for whisper.cpp/faster-whisper — consent-sheet SKIPPED for self-hosted,
+design's green own-server banner instead); Apple Intelligence row in On-device models backed by
+REAL FoundationModels (SystemLanguageModel availability drives the row; AppleIntelligenceChatClient
+serves digest/categorize/rewrites when no OpenAI key — OpenAI preferred when configured); OpenAI +
+ElevenLabs model chip pickers (new elevenLabsModel setting; scribe_v2/v1 verified real); categorize
+page rebuilt per design (Auto-categorize toggle honored by DigestStore, single Categorization
+prompt = classificationInstruction, Categories group with REAL custom-category CRUD persisted in
+settings); rewrite preset seeds = design's 6 (authored Action items + Summary prompts; dropped
+english-message/slack/tweet seeds); language row = inline chip grid (Menu removed); hub rows on
+SettRow (17pt chevron); SettGroup title optional (modelsList group label dropped); Quick dictation
+= two-up GhostButtons (Siri tip in sheet, shortcuts:// open); triggers/keyboard/storage copy fixes.
+RULED SUPERSETS (richer than mock, kept + logged): 6-trigger guide hub w/ drill-ins; keyboard
+live-detection steps + status + mic explainer; GitHub 5-field BYO-token + Status/Sync now (no fake
+OAuth CTA) + design lead copy restored; iCloudMismatchBanner; Developer pending-sync-queue;
+self-hosted optional Bearer field; real "Open server dashboard" button (mock's was a no-op).
+
+## Sizing audit r1 (2026-07-20) — 42 raw → 29 confirmed (adversarial verify) → fixed
+Highlights: SquareIconButton glyph 19→17; CategoryFilterChip 12.5/12px/gap5; My-journal tile
+r16 + asymmetric 12/14 padding + eyebrow 10; 7 iPad gaps; 5 keyboard-extension gaps (incl.
+rewrite-preset popover font 14→13); watch + onboarding + journal singles. Detail's Rewrite
+button CONFIRMED 1:1 (report's root cause was label truncation on narrow widths → global
+minimumScaleFactor guard on GhostButton/GradButton labels, 09f2a85).
+
+## User-directed deviations (2026-07-20, override design)
+Detail: Copy moved OFF the bottom bar onto the transcript/conversation card header (26×26 ghost
+icon, check-flip); bottom bar is now Share + Rewrite two-up. Categorize seed rows render without
+chevron/onTap (mock's onTap is a no-op stub — no dead affordances).
+
 ## Process
 Weaker agents plan → Fable verifies/corrects plans → weaker agents implement
 (fresh-read + surgical-edit protocol, per-file ownership) → build gates

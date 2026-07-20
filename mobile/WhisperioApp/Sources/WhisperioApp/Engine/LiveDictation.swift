@@ -260,7 +260,11 @@ final class LiveDictation: ObservableObject, @unchecked Sendable {
         var clip: AudioClip?
         if let url = fileURL, let data = try? Data(contentsOf: url) {
             clip = AudioClip(data: data, filename: url.lastPathComponent, duration: duration)
-            try? FileManager.default.removeItem(at: url)
+            // The file stays in tmp on purpose: the caller's keep-audio decision
+            // (AudioStore.persist / .delete via keptFilename) runs after this returns and
+            // needs the file to still exist — eagerly deleting it here was why live-path
+            // audio never persisted. Callers that ignore the clip leave a tmp .caf that
+            // iOS purges on its own.
         }
         fileURL = nil
         return (text, clip)

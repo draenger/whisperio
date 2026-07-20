@@ -32,7 +32,7 @@ struct DetailView: View {
     // The recording's category, resolved live from the store so a reassignment here shows up
     // on Home too. Seeded from the store on appear (falls back to the recording's own tag).
     @State private var categoryId: String = WZCategories.work.id
-    private var category: WZCategory { WZCategories.of(categoryId) }
+    private var category: WZCategory { WZCategories.of(categoryId, with: settings.settings) }
 
     // Rewrite state — the produced render (seeded from the recording on appear), an in-flight
     // flag for the inline processing card, and the two bottom sheets.
@@ -53,6 +53,8 @@ struct DetailView: View {
     @State private var retranscribing = false
     @State private var confirmPlainEngine: ProviderID?
     @StateObject private var playback = PlaybackController()
+    // Brief check-flip for the on-card copy affordance (replaces the bottom-bar Copy).
+    @State private var copiedInline = false
 
     // The backing Recording, resolved live from the store so speaker renames (and any
     // cross-device sync) show up immediately. nil for sample rows.
@@ -98,7 +100,12 @@ struct DetailView: View {
                                 conversationCard
                             } else {
                                 VStack(alignment: .leading, spacing: 0) {
-                                    SectionLabel(text: "Transcript").padding(.bottom, 12)
+                                    HStack(spacing: 8) {
+                                        SectionLabel(text: "Transcript")
+                                        Spacer(minLength: 0)
+                                        copyOnCard
+                                    }
+                                    .padding(.bottom, 12)
                                     Text(source?.transcription ?? r.title)
                                         .font(WZFont.ui(17)).foregroundStyle(t.text).lineSpacing(4)
                                         .fixedSize(horizontal: false, vertical: true)
@@ -123,13 +130,13 @@ struct DetailView: View {
                         .animation(.easeInOut(duration: 0.2), value: rewriting)
                     }
 
-                    // actions
+                    // actions — Copy moved onto the transcript card itself (user request,
+                    // deviation from the mock's 3-button bar; logged in DELTA-QUEUE).
                     HStack(spacing: 9) {
-                        GhostButton(title: "Copy", icon: "copy") { copy(shareableTranscript) }
                         shareButton(shareableTranscript)
                         GhostButton(title: "Rewrite", icon: "spark") { showRewriteSheet = true }
                     }
-                    .padding(.horizontal, 18).padding(.top, 12).padding(.bottom, 32)
+                    .padding(.horizontal, 18).padding(.top, 12).padding(.bottom, 30)
                 }
                 .onAppear {
                     categoryId = recordings.categoryId(for: r)
@@ -204,6 +211,8 @@ struct DetailView: View {
                     engineOption(.assemblyAI,
                                  isConversation ? "AssemblyAI — keeps speakers" : "AssemblyAI — cloud",
                                  "globe")
+                    engineOption(.replicate, "Replicate — cloud", "globe")
+                    engineOption(.selfHosted, "Self-hosted — your server", "globe")
                 }
             }
             Button(role: .destructive) {
@@ -213,7 +222,7 @@ struct DetailView: View {
                 Label("Delete note", systemImage: WZIcon.symbol("trash"))
             }
         } label: {
-            WIcon("more", size: 19, weight: .regular)
+            WIcon("more", size: 17, weight: .regular)
                 .foregroundStyle(t.muted)
                 .frame(width: 38, height: 38)
                 .background(t.surfaceUp, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
@@ -304,6 +313,8 @@ struct DetailView: View {
         case .deepgram: return "Deepgram"
         case .assemblyAI: return "AssemblyAI"
         case .mistral: return "Mistral"
+        case .replicate: return "Replicate · cloud"
+        case .selfHosted: return "Self-hosted · your server"
         }
     }
 
@@ -393,12 +404,33 @@ struct DetailView: View {
     // Speaker-labeled transcript: one row per segment, the speaker chip is tappable to
     // rename. "Name with AI" reads the conversation for introductions/addressing and fills
     // names in — manual names always win over guesses.
+    // 26×26 ghost icon button pinned to the text card's header row — the Copy affordance
+    // lives on the content it copies (user request); flips to a green check for ~1.2s.
+    private var copyOnCard: some View {
+        Button {
+            copy(shareableTranscript)
+            withAnimation(.easeOut(duration: 0.15)) { copiedInline = true }
+            Task {
+                try? await Task.sleep(for: .milliseconds(1200))
+                withAnimation(.easeOut(duration: 0.2)) { copiedInline = false }
+            }
+        } label: {
+            WIcon(copiedInline ? "check" : "copy", size: 13)
+                .foregroundStyle(copiedInline ? t.green : t.muted)
+                .frame(width: 26, height: 26)
+                .background(t.surfaceUp, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(t.line, lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+    }
+
     private var conversationCard: some View {
         let order = SpeakerSegmentBuilder.speakerOrder(segments)
         return VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 8) {
                 SectionLabel(text: "Conversation")
                 Spacer(minLength: 0)
+                copyOnCard
                 if guessingNames {
                     ProgressView().tint(t.accent).scaleEffect(0.8)
                 } else {
@@ -502,7 +534,7 @@ struct DetailView: View {
         return BottomSheet(onClose: { renameSpeaker = nil }) {
             VStack(alignment: .leading, spacing: 0) {
                 Text("Name this speaker")
-                    .font(WZFont.display(18)).foregroundStyle(t.text)
+                    .font(WZFont.display(20)).foregroundStyle(t.text)
                     .padding(.bottom, 8)
                 Text("Shown instead of the generic label, everywhere this conversation appears.")
                     .font(WZFont.ui(13.5)).foregroundStyle(t.muted).lineSpacing(3)
@@ -693,7 +725,7 @@ struct DetailView: View {
     // the Home list + filter row reflect the change immediately.
     private var categoryMenu: some View {
         Menu {
-            ForEach(WZCategories.all) { cat in
+            ForEach(WZCategories.all(with: settings.settings)) { cat in
                 Button {
                     categoryId = cat.id
                     recordings.setCategory(cat.id, for: r)
@@ -783,8 +815,8 @@ private struct RewriteSheet: View {
 
     // A free-text instruction field + run button, for a rewrite you don't want to save as a preset.
     private var customSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            SectionLabel(text: "Or write your own").padding(.leading, 4)
+        VStack(alignment: .leading, spacing: 0) {
+            SectionLabel(text: "Or write your own").padding(.leading, 4).padding(.bottom, 7)
             TextEditor(text: $customPrompt)
                 .font(WZFont.mono(13))
                 .scrollContentBackground(.hidden)
@@ -803,9 +835,11 @@ private struct RewriteSheet: View {
                             .allowsHitTesting(false)
                     }
                 }
+                .padding(.bottom, 7)
             Text("A one-off instruction. It isn’t saved — add a template in Settings to keep it.")
                 .font(WZFont.mono(11)).foregroundStyle(t.faint)
                 .fixedSize(horizontal: false, vertical: true)
+                .padding(.bottom, 12)
             GradButton(title: "Rewrite with this", icon: "spark",
                        action: canRunCustom ? runCustom : {})
                 .opacity(canRunCustom ? 1 : 0.5)

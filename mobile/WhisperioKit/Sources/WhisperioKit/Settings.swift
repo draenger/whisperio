@@ -79,6 +79,37 @@ public struct ProviderSlot: Codable, Sendable, Equatable, Hashable {
     }
 }
 
+/// A user-defined transcript category, persisted as plain data — not a UI type. The app target
+/// (which owns icon/color rendering) turns this into whatever category shape it renders; here
+/// it's just the durable id/label/icon plus a `hueIndex` that cycles through the design's fixed
+/// accent-hue palette in creation order, so a freshly added category gets a stable, distinct
+/// color without this Kit needing to know what a `Color` is. Seed categories (Work/Personal/
+/// Ideas/Messages/Code/To-do) are NOT stored here — they're fixed in the app's category
+/// taxonomy; this only carries the ones the user added themselves (see R7's "New category" row).
+public struct CustomCategory: Codable, Sendable, Equatable, Identifiable {
+    public var id: String
+    public var label: String
+    public var icon: String
+    public var hueIndex: Int
+
+    public init(id: String = UUID().uuidString, label: String, icon: String = "spark", hueIndex: Int = 0) {
+        self.id = id
+        self.label = label
+        self.icon = icon
+        self.hueIndex = hueIndex
+    }
+
+    // Tolerant decoding — a legacy/partial blob falls back to sane defaults instead of throwing,
+    // matching every other persisted type in this Kit.
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decodeIfPresent(String.self, forKey: .id) ?? UUID().uuidString
+        label = try c.decodeIfPresent(String.self, forKey: .label) ?? ""
+        icon = try c.decodeIfPresent(String.self, forKey: .icon) ?? "spark"
+        hueIndex = try c.decodeIfPresent(Int.self, forKey: .hueIndex) ?? 0
+    }
+}
+
 /// Automatic stop timeout after silence. Off by default so Whisperio behaves like a normal
 /// dictation app unless the user opts into auto-release.
 /// User settings, mirroring the desktop `AppSettings` shape (so config can be shared/synced
@@ -102,6 +133,11 @@ public struct WhisperioSettings: Codable, Sendable, Equatable {
     public var openAIBaseURL: String
     public var whisperModel: String
     public var elevenLabsKey: String
+    /// ElevenLabs Scribe model id (e.g. "scribe_v2", "scribe_v1"). Empty means "follow
+    /// ElevenLabsProvider's own default" (diarize/keyterms picks v2, otherwise v1) — the exact
+    /// behavior existing users already had before this field existed, so leaving it unset is a
+    /// true no-op, not a silent model change.
+    public var elevenLabsModel: String
     /// Groq — OpenAI-compatible Whisper inference (fastest cloud Whisper).
     public var groqKey: String
     public var groqModel: String
@@ -114,6 +150,17 @@ public struct WhisperioSettings: Codable, Sendable, Equatable {
     /// Mistral — Voxtral open-weights transcription.
     public var mistralKey: String
     public var mistralModel: String
+    /// Replicate — hosted inference (BYO API token). `replicateModel` names an owner/name (or
+    /// owner/name:version) slug; empty follows `ReplicateProvider`'s default (`openai/whisper`).
+    public var replicateKey: String
+    public var replicateModel: String
+    /// Self-hosted OpenAI-compatible STT server (whisper.cpp server / faster-whisper-server /
+    /// speaches). `selfHostedKey` is an optional bearer token — many self-hosted setups run with
+    /// no auth at all, so unlike the other cloud keys an empty one is a normal, working state,
+    /// not "not configured" (configuration is driven by `selfHostedURL` instead).
+    public var selfHostedURL: String
+    public var selfHostedKey: String
+    public var selfHostedModel: String
     /// On-device Whisper (WhisperKit/CoreML) — which local model variant a modelless
     /// `.localWhisper` slot follows. One of `LocalWhisperModel`'s raw values (e.g.
     /// "openai_whisper-base"). Not a secret — no Keychain scrubbing needed, unlike the cloud keys.
@@ -156,6 +203,15 @@ public struct WhisperioSettings: Codable, Sendable, Equatable {
     /// `.all` — today's shipped behavior (every completed note counts) — so existing users see
     /// no change until they opt into filtering keyboard/Watch notes out.
     public var digestSourceMode: DigestSourceMode
+
+    /// Whether a note's category is auto-assigned by the classification LLM call. Defaults to
+    /// `true` — today's shipped behavior (every note is classified) — so existing users see no
+    /// change; turning it off skips the classification network call entirely (notes land
+    /// uncategorized/in their existing category) per R7.
+    public var autoCategorize: Bool
+    /// User-added transcript categories, appended after the fixed seed taxonomy. Empty by
+    /// default — every user starts with just the seeds; see `CustomCategory`.
+    public var customCategories: [CustomCategory]
 
     // GitHub sync — mirror transcripts/renders/daily syntheses into a Git repo as Markdown.
     // Off by default; the personal access token itself lives in the Keychain (see
@@ -204,6 +260,7 @@ public struct WhisperioSettings: Codable, Sendable, Equatable {
         openAIBaseURL: String = "",
         whisperModel: String = "",
         elevenLabsKey: String = "",
+        elevenLabsModel: String = "",
         groqKey: String = "",
         groqModel: String = "whisper-large-v3-turbo",
         deepgramKey: String = "",
@@ -212,6 +269,11 @@ public struct WhisperioSettings: Codable, Sendable, Equatable {
         assemblyAIModel: String = "universal-2",
         mistralKey: String = "",
         mistralModel: String = "voxtral-small",
+        replicateKey: String = "",
+        replicateModel: String = "",
+        selfHostedURL: String = "",
+        selfHostedKey: String = "",
+        selfHostedModel: String = "",
         localWhisperModel: String = "openai_whisper-base",
         chatModel: String = "gpt-4o-mini",
         language: String = "auto",
@@ -226,6 +288,8 @@ public struct WhisperioSettings: Codable, Sendable, Equatable {
         cloudConsentGranted: Bool = false,
         autoDailyDigest: Bool = false,
         digestSourceMode: DigestSourceMode = .all,
+        autoCategorize: Bool = true,
+        customCategories: [CustomCategory] = [],
         githubSyncEnabled: Bool = false,
         githubOwner: String = "",
         githubRepo: String = "",
@@ -251,6 +315,7 @@ public struct WhisperioSettings: Codable, Sendable, Equatable {
         self.openAIBaseURL = openAIBaseURL
         self.whisperModel = whisperModel
         self.elevenLabsKey = elevenLabsKey
+        self.elevenLabsModel = elevenLabsModel
         self.groqKey = groqKey
         self.groqModel = groqModel
         self.deepgramKey = deepgramKey
@@ -259,6 +324,11 @@ public struct WhisperioSettings: Codable, Sendable, Equatable {
         self.assemblyAIModel = assemblyAIModel
         self.mistralKey = mistralKey
         self.mistralModel = mistralModel
+        self.replicateKey = replicateKey
+        self.replicateModel = replicateModel
+        self.selfHostedURL = selfHostedURL
+        self.selfHostedKey = selfHostedKey
+        self.selfHostedModel = selfHostedModel
         self.localWhisperModel = localWhisperModel
         self.chatModel = chatModel
         self.language = language
@@ -273,6 +343,8 @@ public struct WhisperioSettings: Codable, Sendable, Equatable {
         self.cloudConsentGranted = cloudConsentGranted
         self.autoDailyDigest = autoDailyDigest
         self.digestSourceMode = digestSourceMode
+        self.autoCategorize = autoCategorize
+        self.customCategories = customCategories
         self.githubSyncEnabled = githubSyncEnabled
         self.githubOwner = githubOwner
         self.githubRepo = githubRepo
@@ -326,6 +398,7 @@ public struct WhisperioSettings: Codable, Sendable, Equatable {
         openAIBaseURL = try c.decodeIfPresent(String.self, forKey: .openAIBaseURL) ?? d.openAIBaseURL
         whisperModel = try c.decodeIfPresent(String.self, forKey: .whisperModel) ?? d.whisperModel
         elevenLabsKey = try c.decodeIfPresent(String.self, forKey: .elevenLabsKey) ?? d.elevenLabsKey
+        elevenLabsModel = try c.decodeIfPresent(String.self, forKey: .elevenLabsModel) ?? d.elevenLabsModel
         groqKey = try c.decodeIfPresent(String.self, forKey: .groqKey) ?? d.groqKey
         groqModel = try c.decodeIfPresent(String.self, forKey: .groqModel) ?? d.groqModel
         deepgramKey = try c.decodeIfPresent(String.self, forKey: .deepgramKey) ?? d.deepgramKey
@@ -334,6 +407,11 @@ public struct WhisperioSettings: Codable, Sendable, Equatable {
         assemblyAIModel = try c.decodeIfPresent(String.self, forKey: .assemblyAIModel) ?? d.assemblyAIModel
         mistralKey = try c.decodeIfPresent(String.self, forKey: .mistralKey) ?? d.mistralKey
         mistralModel = try c.decodeIfPresent(String.self, forKey: .mistralModel) ?? d.mistralModel
+        replicateKey = try c.decodeIfPresent(String.self, forKey: .replicateKey) ?? d.replicateKey
+        replicateModel = try c.decodeIfPresent(String.self, forKey: .replicateModel) ?? d.replicateModel
+        selfHostedURL = try c.decodeIfPresent(String.self, forKey: .selfHostedURL) ?? d.selfHostedURL
+        selfHostedKey = try c.decodeIfPresent(String.self, forKey: .selfHostedKey) ?? d.selfHostedKey
+        selfHostedModel = try c.decodeIfPresent(String.self, forKey: .selfHostedModel) ?? d.selfHostedModel
         localWhisperModel = try c.decodeIfPresent(String.self, forKey: .localWhisperModel) ?? d.localWhisperModel
         chatModel = try c.decodeIfPresent(String.self, forKey: .chatModel) ?? d.chatModel
         language = try c.decodeIfPresent(String.self, forKey: .language) ?? d.language
@@ -350,6 +428,8 @@ public struct WhisperioSettings: Codable, Sendable, Equatable {
         // Same unknown-raw-value tolerance as syncMode below: `try?` swallows both "missing" and
         // "unrecognized" (a future build's mode) instead of throwing the whole blob away.
         digestSourceMode = (try? c.decodeIfPresent(DigestSourceMode.self, forKey: .digestSourceMode)) ?? d.digestSourceMode
+        autoCategorize = try c.decodeIfPresent(Bool.self, forKey: .autoCategorize) ?? d.autoCategorize
+        customCategories = try c.decodeIfPresent([CustomCategory].self, forKey: .customCategories) ?? d.customCategories
         githubSyncEnabled = try c.decodeIfPresent(Bool.self, forKey: .githubSyncEnabled) ?? d.githubSyncEnabled
         githubOwner = try c.decodeIfPresent(String.self, forKey: .githubOwner) ?? d.githubOwner
         githubRepo = try c.decodeIfPresent(String.self, forKey: .githubRepo) ?? d.githubRepo
@@ -405,17 +485,21 @@ public struct WhisperioSettings: Codable, Sendable, Equatable {
     }
 
     /// The per-engine "selected model" — the default a modelless slot follows for this
-    /// provider. Engines without a model setting (on-device, ElevenLabs) return empty.
+    /// provider. `.onDevice` has no model setting and always returns empty; every cloud engine
+    /// (including ElevenLabs, since `elevenLabsModel` was added) has one, though it may be
+    /// empty to mean "the provider's own built-in default" (see each field's doc comment).
     public func selectedModel(for id: ProviderID) -> String {
         switch id {
         case .onDevice: return ""
         case .localWhisper: return localWhisperModel
         case .openAI: return whisperModel
-        case .elevenLabs: return ""
+        case .elevenLabs: return elevenLabsModel
         case .groq: return groqModel
         case .deepgram: return deepgramModel
         case .assemblyAI: return assemblyAIModel
         case .mistral: return mistralModel
+        case .replicate: return replicateModel
+        case .selfHosted: return selfHostedModel
         }
     }
 

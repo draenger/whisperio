@@ -1,29 +1,67 @@
 import SwiftUI
 import WhisperioKit
 
-// Categorization-prompt editor — the runtime-editable text of the two journaling prompts (classify
-// a day's notes into categories, summarize the grouped day). Reached from Settings → Journaling.
-// Mirrors PresetEditorView: multiline instruction fields, Save persists through DigestPromptStore,
-// and "Restore defaults" brings back the shipped wording. The structural scaffolding the digest
-// builder assembles (category list, note lines, group headers) is not editable here — only the
-// prose — so an edit can never strip the data the model needs.
+// Categorization prompts — design's `categorize` page (mob-settings.jsx:570-592). Structure:
+// (1) an untitled "Auto-categorize" toggle; (2) while on, a single "Categorization prompt"
+// textarea the user edits directly (live-bound, no Save button — mirrors the toggle's own
+// immediacy) with an inline "Reset" link once it diverges from the shipped default, and a
+// "Categories" group listing the 5 seed categories (fixed) plus any user-created ones
+// (add via "New category", delete via the trailing trash on custom rows only — seeds are
+// permanent). (3) The "Daily summary" prompt fields (DigestPromptStore-backed, unchanged from
+// before this pass) stay as an extra group at the bottom — a real, already-shipped capability
+// the design's mock doesn't happen to show on this page, kept as an honest superset.
+//
+// `autoCategorize` / `categorizationPrompt` / `customCategories` are new WhisperioSettings
+// fields (see ruling R4/R7) — DigestStore is expected to honor `autoCategorize` (skip
+// classification, no LLM call, notes keep their existing/default category when off) and to
+// build the classification prompt from `categorizationPrompt` when on. `customCategories` is a
+// flat `[String]` of user-added category names; the app-wide dynamic category list (used by
+// Home's filter row, Detail's reassign menu, etc.) is expected to fold these in alongside the
+// fixed seeds, cycling the design's hue palette by position — this page only owns the add/
+// remove flow, not how other screens render a custom category's color.
 struct DigestPromptEditorView: View {
     @Environment(\.wz) private var t
     @EnvironmentObject private var digestPrompts: DigestPromptStore
+    @EnvironmentObject private var settings: SettingsStore
     var onBack: () -> Void
     var toast: (String) -> Void
 
-    @State private var classificationIntro: String = ""
-    @State private var classificationInstruction: String = ""
+    // Daily summary fields only — classification is now the single live-bound
+    // `categorizationPrompt` setting below, not a local draft.
     @State private var summaryIntro: String = ""
     @State private var summaryInstruction: String = ""
     @State private var showRestoreConfirm = false
+    @State private var showAddCategory = false
+    @State private var newCategoryName = ""
 
-    private var canSave: Bool {
-        !classificationIntro.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
-        !classificationInstruction.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+    // The shipped default (DigestPromptConfig.Defaults.classificationInstruction) — used both as
+    // the Reset target and to decide whether the Reset link shows at all.
+    private static let defaultCategorizationPrompt = DigestPromptConfig.Defaults.classificationInstruction
+
+    // Design hint subs (mob-settings.jsx:8 CAT_HINTS), keyed by the app's existing WZCategory ids.
+    private static let seedHints: [String: String] = [
+        "work": "meetings, launches, clients",
+        "code": "repos, APIs, shell commands",
+        "ideas": "concepts, what-ifs, someday",
+        "todo": "errands, groceries, chores",
+        "messages": "texts, replies, quick pings",
+    ]
+    // Design order (mob-core.jsx M_CATS): Work, Code, Ideas, To-do, Messages.
+    private static let seedOrder = ["work", "code", "ideas", "todo", "messages"]
+
+    private var canSaveSummary: Bool {
         !summaryIntro.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
         !summaryInstruction.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private var autoCategorize: Binding<Bool> {
+        Binding(get: { settings.settings.autoCategorize },
+                set: { var s = settings.settings; s.autoCategorize = $0; settings.settings = s })
+    }
+
+    private var categorizationPrompt: Binding<String> {
+        Binding(get: { digestPrompts.config.classificationInstruction },
+                set: { var c = digestPrompts.config; c.classificationInstruction = $0; digestPrompts.config = c })
     }
 
     var body: some View {
@@ -31,37 +69,15 @@ struct DigestPromptEditorView: View {
             VStack(spacing: 0) {
                 WHeader(title: "Categorization prompts", onBack: onBack)
                 ScrollView(showsIndicators: false) {
-                    VStack(alignment: .leading, spacing: 18) {
-                        Text("How Whisperio's daily journal asks the AI to sort your notes into categories and summarize the day. Edit the wording to match your style — the category list and your notes are added automatically.")
-                            .font(WZFont.ui(13)).foregroundStyle(t.muted).lineSpacing(3)
-                            .fixedSize(horizontal: false, vertical: true)
-
-                        SectionLabel(text: "Classification").padding(.leading, 4)
-                        promptField("Intro", $classificationIntro,
-                                    hint: "Opens the classify prompt, before the category & note lists.",
-                                    minHeight: 90)
-                        promptField("Instruction", $classificationInstruction,
-                                    hint: "Closes it — how the model should return the mapping.",
-                                    minHeight: 150)
-
-                        SectionLabel(text: "Daily summary").padding(.leading, 4)
-                        promptField("Intro", $summaryIntro,
-                                    hint: "Opens the summary prompt. Use {date} for the day.",
-                                    minHeight: 90)
-                        promptField("Instruction", $summaryInstruction,
-                                    hint: "Closes it. Use {locale} for the interface language.",
-                                    minHeight: 170)
-
-                        GradButton(title: "Save prompts", icon: "check",
-                                   action: canSave ? save : {})
-                            .opacity(canSave ? 1 : 0.5)
-                            .allowsHitTesting(canSave)
-
-                        GhostButton(title: "Restore default prompts", icon: "sync") {
-                            showRestoreConfirm = true
+                    VStack(alignment: .leading, spacing: 16) {
+                        autoCategorizeGroup
+                        if settings.settings.autoCategorize {
+                            categorizationPromptCard
+                            categoriesGroup
                         }
+                        dailySummaryGroup
                     }
-                    .padding(.horizontal, 16).padding(.top, 8).padding(.bottom, 28)
+                    .padding(.horizontal, 16).padding(.top, 6).padding(.bottom, 28)
                 }
             }
         }
@@ -74,7 +90,135 @@ struct DigestPromptEditorView: View {
             }
             Button("Cancel", role: .cancel) { }
         } message: {
-            Text("This brings back Whisperio's built-in categorization prompts and undoes your edits.")
+            Text("This brings back Whisperio's built-in daily-summary prompts and undoes your edits.")
+        }
+        .alert("New category", isPresented: $showAddCategory) {
+            TextField("Name", text: $newCategoryName)
+            Button("Add") { addCategory() }
+            Button("Cancel", role: .cancel) { newCategoryName = "" }
+        } message: {
+            Text("Name it and describe when it applies")
+        }
+    }
+
+    // MARK: - Auto-categorize toggle
+
+    private var autoCategorizeGroup: some View {
+        SettGroup {
+            SettRow(icon: "spark", label: "Auto-categorize",
+                    sub: "Sort every note into a category as it’s transcribed · on-device",
+                    last: true) {
+                WToggle(on: autoCategorize)
+            }
+        }
+    }
+
+    // MARK: - Categorization prompt
+
+    private var categorizationPromptCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                SectionLabel(text: "Categorization prompt")
+                Spacer(minLength: 8)
+                if digestPrompts.config.classificationInstruction != Self.defaultCategorizationPrompt {
+                    Button {
+                        var c = digestPrompts.config
+                        c.classificationInstruction = Self.defaultCategorizationPrompt
+                        digestPrompts.config = c
+                    } label: {
+                        HStack(spacing: 5) {
+                            WIcon("sync", size: 12)
+                            Text("Reset")
+                        }
+                        .font(WZFont.mono(11, .semibold)).foregroundStyle(t.accentLite)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            TextEditor(text: categorizationPrompt)
+                .font(WZFont.ui(13.5))
+                .scrollContentBackground(.hidden)
+                .frame(minHeight: 108, maxHeight: 220)
+                #if os(iOS)
+                .textInputAutocapitalization(.sentences)
+                #endif
+                .padding(.horizontal, 13).padding(.vertical, 11)
+                .background(t.surfaceUp, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(t.line, lineWidth: 1))
+            Text("The model follows this instruction for every note. Mention your categories by name.")
+                .font(WZFont.mono(11)).foregroundStyle(t.faint)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(t.surface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(t.line, lineWidth: 1))
+    }
+
+    // MARK: - Categories
+
+    private var categoriesGroup: some View {
+        SettGroup(title: "Categories") {
+            ForEach(Self.seedOrder, id: \.self) { id in
+                let cat = WZCategories.of(id)
+                // Seeds are fixed — no onTap/chevron, since there's no real edit destination
+                // for them (the design's own onTap here is a no-op stub, not a spec to follow).
+                SettRow(icon: cat.icon, label: cat.label, sub: Self.seedHints[id], last: false)
+            }
+            ForEach(settings.settings.customCategories) { custom in
+                SettRow(icon: custom.icon, label: custom.label, last: false) {
+                    Button { removeCustomCategory(custom.id) } label: {
+                        WIcon("trash", size: 13).foregroundStyle(t.muted)
+                            .frame(width: 26, height: 26)
+                            .background(t.surfaceUp, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                            .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(t.line, lineWidth: 1))
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            SettRow(icon: "plus", label: "New category", sub: "Name it and describe when it applies",
+                    last: true, onTap: { showAddCategory = true })
+        }
+    }
+
+    private func addCategory() {
+        let trimmed = newCategoryName.trimmingCharacters(in: .whitespacesAndNewlines)
+        newCategoryName = ""
+        guard !trimmed.isEmpty else { return }
+        var s = settings.settings
+        guard !s.customCategories.contains(where: { $0.label == trimmed }) else { return }
+        let hueIndex = s.customCategories.count
+        s.customCategories.append(CustomCategory(label: trimmed, hueIndex: hueIndex))
+        settings.settings = s
+    }
+
+    private func removeCustomCategory(_ id: String) {
+        var s = settings.settings
+        s.customCategories.removeAll { $0.id == id }
+        settings.settings = s
+    }
+
+    // MARK: - Daily summary (kept from before this pass — real, already-shipped capability)
+
+    private var dailySummaryGroup: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            SectionLabel(text: "Daily summary").padding(.leading, 4)
+            promptField("Intro", $summaryIntro,
+                        hint: "Opens the summary prompt. Use {date} for the day.",
+                        minHeight: 90)
+            promptField("Instruction", $summaryInstruction,
+                        hint: "Closes it. Use {locale} for the interface language.",
+                        minHeight: 170)
+
+            GradButton(title: "Save prompts", icon: "check",
+                       action: canSaveSummary ? saveSummary : {})
+                .opacity(canSaveSummary ? 1 : 0.5)
+                .allowsHitTesting(canSaveSummary)
+
+            GhostButton(title: "Restore default prompts", icon: "sync") {
+                showRestoreConfirm = true
+            }
+            .fixedSize()
         }
     }
 
@@ -98,20 +242,15 @@ struct DigestPromptEditorView: View {
     }
 
     private func load() {
-        let c = digestPrompts.config
-        classificationIntro = c.classificationIntro
-        classificationInstruction = c.classificationInstruction
-        summaryIntro = c.summaryIntro
-        summaryInstruction = c.summaryInstruction
+        summaryIntro = digestPrompts.config.summaryIntro
+        summaryInstruction = digestPrompts.config.summaryInstruction
     }
 
-    private func save() {
-        digestPrompts.config = DigestPromptConfig(
-            classificationIntro: classificationIntro.trimmingCharacters(in: .whitespacesAndNewlines),
-            classificationInstruction: classificationInstruction.trimmingCharacters(in: .whitespacesAndNewlines),
-            summaryIntro: summaryIntro.trimmingCharacters(in: .whitespacesAndNewlines),
-            summaryInstruction: summaryInstruction.trimmingCharacters(in: .whitespacesAndNewlines))
+    private func saveSummary() {
+        var config = digestPrompts.config
+        config.summaryIntro = summaryIntro.trimmingCharacters(in: .whitespacesAndNewlines)
+        config.summaryInstruction = summaryInstruction.trimmingCharacters(in: .whitespacesAndNewlines)
+        digestPrompts.config = config
         toast("Prompts saved")
-        onBack()
     }
 }

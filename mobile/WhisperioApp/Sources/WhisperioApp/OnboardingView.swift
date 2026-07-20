@@ -802,7 +802,7 @@ private struct ProviderConnectSheet: View {
                     .multilineTextAlignment(.center).lineSpacing(3)
             }
             .frame(maxWidth: .infinity)
-            .padding(.bottom, 14)
+            .padding(.bottom, 12)
 
             VStack(spacing: 9) {
                 ForEach(Self.providers, id: \.0) { id, sub in
@@ -812,7 +812,7 @@ private struct ProviderConnectSheet: View {
             .padding(.bottom, 12)
 
             keyField
-                .padding(.bottom, 10)
+                .padding(.bottom, 12)
 
             if let error {
                 Text(error)

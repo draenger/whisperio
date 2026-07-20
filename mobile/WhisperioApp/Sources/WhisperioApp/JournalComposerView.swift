@@ -476,7 +476,7 @@ struct JournalComposerView: View {
         guard !picks.isEmpty else { return }
         let day = Date()
         let stacked = picks.map { "• " + ($0.transcription ?? "") }.joined(separator: "\n")
-        let groups = DigestGrouping.groupByCategory(picks, order: WZCategories.all.map(\.id))
+        let groups = DigestGrouping.groupByCategory(picks, order: WZCategories.all(with: settings.settings).map(\.id))
         digests.storeComposed(DailyDigest(
             id: DigestGrouping.dayKey(for: day, calendar: .current), date: day,
             recordingIDs: picks.map(\.id), groups: groups,
@@ -505,11 +505,11 @@ struct JournalComposerView: View {
         let model = settings.settings.chatModel
         Task {
             do {
-                let groups = DigestGrouping.groupByCategory(picks, order: WZCategories.all.map(\.id))
+                let groups = DigestGrouping.groupByCategory(picks, order: WZCategories.all(with: settings.settings).map(\.id))
                 let byID = Dictionary(picks.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
                 let promptGroups: [(label: String, notes: [String])] = groups.map { g in
                     let label = g.categoryID == uncategorizedCategoryID
-                        ? "Uncategorized" : WZCategories.of(g.categoryID).label
+                        ? "Uncategorized" : WZCategories.of(g.categoryID, with: settings.settings).label
                     return (label: label, notes: g.recordingIDs.compactMap { byID[$0]?.transcription })
                 }
                 let summary = try await client.summarize(

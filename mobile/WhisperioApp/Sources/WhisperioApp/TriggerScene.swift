@@ -55,8 +55,15 @@ struct TriggerScene: View {
             // Action Button (hardware hint, left edge)
             VStack {
                 Button { fire("action") } label: {
-                    Capsule().fill(stage == "listening" && via == "action" ? t.accentLite : t.line)
-                        .frame(width: 5, height: 38)
+                    UnevenRoundedRectangle(
+                        topLeadingRadius: 0,
+                        bottomLeadingRadius: 0,
+                        bottomTrailingRadius: 3,
+                        topTrailingRadius: 3,
+                        style: .continuous
+                    )
+                    .fill(stage == "listening" && via == "action" ? t.accentLite : t.line)
+                    .frame(width: 5, height: 38)
                 }
                 .buttonStyle(.plain)
             }

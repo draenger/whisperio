@@ -82,7 +82,7 @@ struct HomeView: View {
                                 CategoryFilterChip(category: nil, selected: selectedCategory == nil) {
                                     withAnimation(.easeInOut(duration: 0.2)) { selectedCategory = nil }
                                 }
-                                ForEach(WZCategories.all) { cat in
+                                ForEach(WZCategories.all(with: settings.settings)) { cat in
                                     CategoryFilterChip(category: cat, selected: selectedCategory == cat.id) {
                                         withAnimation(.easeInOut(duration: 0.2)) { selectedCategory = cat.id }
                                     }
@@ -145,7 +145,7 @@ struct HomeView: View {
             preview = "Dictate a note to start today's digest"
         }
         return Button(action: openJournal) {
-            HStack(spacing: 13) {
+            HStack(spacing: 12) {
                 ZStack {
                     RoundedRectangle(cornerRadius: 12, style: .continuous).fill(t.primary)
                     WIcon("pencil", size: 17, weight: .semibold).foregroundStyle(t.primaryInk)
@@ -153,18 +153,18 @@ struct HomeView: View {
                 .frame(width: 40, height: 40)
                 VStack(alignment: .leading, spacing: 4) {
                     Text("MY JOURNAL")
-                        .font(WZFont.mono(11, .semibold)).tracking(1.1).foregroundStyle(t.accentLite)
+                        .font(WZFont.mono(10, .semibold)).tracking(1.1).foregroundStyle(t.accentLite)
                     Text(preview)
-                        .font(WZFont.ui(13.5)).foregroundStyle(t.muted)
+                        .font(WZFont.ui(13)).foregroundStyle(t.muted)
                         .lineLimit(2).truncationMode(.tail)
                 }
                 Spacer(minLength: 0)
                 WIcon("chevR", size: 14, weight: .semibold).foregroundStyle(t.faint)
             }
-            .padding(14)
+            .padding(.vertical, 12).padding(.horizontal, 14)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-            .background(t.surface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(t.line, lineWidth: 1))
+            .background(t.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(t.line, lineWidth: 1))
         }
         .buttonStyle(.plain)
     }
@@ -230,6 +230,10 @@ struct HomeView: View {
             return ProviderPricing.ratePerMinuteUSD(provider: .assemblyAI, model: s.assemblyAIModel)
         case .mistral:
             return ProviderPricing.ratePerMinuteUSD(provider: .mistral, model: s.mistralModel)
+        case .replicate:
+            return ProviderPricing.ratePerMinuteUSD(provider: .replicate, model: s.replicateModel)
+        case .selfHosted:
+            return 0   // Free — the user's own hardware, same treatment as on-device.
         }
     }
 
@@ -301,7 +305,7 @@ struct HomeView: View {
             let demo = DemoRecording($0)
             return demo.title.localizedCaseInsensitiveContains(query)
                 || demo.app.localizedCaseInsensitiveContains(query)
-                || WZCategories.of(demo.category).label.localizedCaseInsensitiveContains(query)
+                || WZCategories.of(demo.category, with: settings.settings).label.localizedCaseInsensitiveContains(query)
         }
     }
 
@@ -311,7 +315,7 @@ struct HomeView: View {
             VStack(spacing: 0) {
                 ForEach(Array(recs.enumerated()), id: \.element.id) { idx, item in
                     let demo = DemoRecording(item)
-                    let cat = WZCategories.of(recordings.categoryId(for: demo))
+                    let cat = WZCategories.of(recordings.categoryId(for: demo), with: settings.settings)
                     RecRow(r: demo, category: cat, onTap: { openRec(demo) }, onDelete: { recordings.delete(item) })
                     if idx < recs.count - 1 { Divider().overlay(t.lineSoft) }
                 }
@@ -338,7 +342,7 @@ struct HomeView: View {
     }
 
     private var filteredEmptyState: some View {
-        let cat = selectedCategory.map { WZCategories.of($0) }
+        let cat = selectedCategory.map { WZCategories.of($0, with: settings.settings) }
         return VStack(spacing: 12) {
             Spacer()
             WIcon(cat?.icon ?? "search", size: 30, weight: .regular).foregroundStyle(t.faint)
@@ -370,7 +374,7 @@ struct HomeView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
                 .ignoresSafeArea(edges: .bottom)
                 .allowsHitTesting(false)
-            HStack(spacing: 10) {
+            HStack(spacing: 9) {
                 Button(action: openRecording) {
                     HStack(spacing: 10) {
                         WIcon("mic", size: 20, weight: .bold)
@@ -386,7 +390,7 @@ struct HomeView: View {
 
                 // Conversation mode — records everyone near the mic and separates speakers.
                 Button(action: openConversation) {
-                    WIcon("people", size: 19, weight: .bold)
+                    WIcon("people", size: 20, weight: .bold)
                         .foregroundStyle(t.accentLite)
                         .frame(width: 56, height: 56)
                         .background(t.surface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
@@ -421,6 +425,10 @@ struct RecRow: View {
     @State private var dx: CGFloat = 0
     // dx captured when a horizontal drag claims the gesture; nil while not dragging.
     @State private var dragBase: CGFloat? = nil
+    // Set when a gesture's first eligible movement was NOT decisively horizontal: the row
+    // refuses that gesture for its whole lifetime so vertical list scrolling can never be
+    // grabbed halfway through by horizontal wobble.
+    @State private var dragRefused = false
 
     private let openOffset: CGFloat = -88
     private let snap = Animation.timingCurve(0.2, 0.8, 0.3, 1, duration: 0.22)
@@ -514,20 +522,28 @@ struct RecRow: View {
     // vertical, so the enclosing ScrollView keeps vertical pans. Clamped to [openOffset, 0];
     // on release it snaps open past the halfway point, closed otherwise (mirrors the mock).
     private var swipe: some Gesture {
-        DragGesture(minimumDistance: 8)
+        DragGesture(minimumDistance: 15)
             .onChanged { g in
-                guard onDelete != nil else { return }
+                guard onDelete != nil, !dragRefused else { return }
                 let base: CGFloat
                 if let dragBase {
                     base = dragBase
                 } else {
-                    guard abs(g.translation.width) > abs(g.translation.height) else { return }
+                    // Claim only a decisively horizontal start (1.5× dominance). Anything
+                    // else is a scroll: refuse once and stay refused for this gesture —
+                    // re-evaluating every change let diagonal scrolls slide rows sideways
+                    // mid-pan, which is what broke list scrolling.
+                    guard abs(g.translation.width) > abs(g.translation.height) * 1.5 else {
+                        dragRefused = true
+                        return
+                    }
                     base = dx
                     dragBase = base
                 }
                 dx = min(0, max(openOffset, base + g.translation.width))
             }
             .onEnded { _ in
+                dragRefused = false
                 guard dragBase != nil else { return }
                 dragBase = nil
                 withAnimation(snap) { dx = dx < openOffset / 2 ? openOffset : 0 }

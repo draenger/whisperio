@@ -179,6 +179,8 @@ struct iPadSplitView: View {
         case .deepgram: return "Deepgram"
         case .assemblyAI: return "AssemblyAI"
         case .mistral: return "Mistral"
+        case .replicate: return "Replicate · cloud"
+        case .selfHosted: return "Self-hosted · your server"
         }
     }
 
@@ -224,25 +226,25 @@ struct iPadSplitView: View {
     }
 
     private var segmented: some View {
-        HStack(spacing: 3) {
+        HStack(spacing: 2) {
             segItem(id: "library", label: "Library", icon: "list")
             segItem(id: "journal", label: "Journal", icon: "book")
         }
         .padding(3)
-        .background(t.surfaceUp, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(t.line, lineWidth: 1))
+        .background(t.surfaceUp, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(t.line, lineWidth: 1))
     }
 
     private func segItem(id: String, label: String, icon: String) -> some View {
         let on = tab == id
         return Button { withAnimation(.easeInOut(duration: 0.18)) { tab = id } } label: {
-            HStack(spacing: 6) {
-                WIcon(icon, size: 13); Text(label)
+            HStack(spacing: 7) {
+                WIcon(icon, size: 14); Text(label)
             }
-            .font(WZFont.ui(13, .semibold))
+            .font(WZFont.ui(12.5, .semibold))
             .foregroundStyle(on ? .white : t.muted)
             .padding(.vertical, 6).padding(.horizontal, 13)
-            .background(on ? t.accent : .clear, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+            .background(on ? t.accent : .clear, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
         }
         .buttonStyle(.plain)
     }
@@ -264,7 +266,7 @@ struct iPadSplitView: View {
                     PrivacyBadge(mode: .device, small: true)
                 }
             }
-            .padding(.horizontal, 18).padding(.top, 20).padding(.bottom, 12)
+            .padding(.horizontal, 18).padding(.top, 18).padding(.bottom, 12)
             HStack(spacing: 8) {
                 WIcon("search", size: 16, weight: .regular); Text("Search").font(WZFont.ui(14)); Spacer()
             }
@@ -275,7 +277,7 @@ struct iPadSplitView: View {
             HStack(spacing: 16) {
                 Text("All").foregroundStyle(t.accentLite); Text("Keyboard"); Text("Watch")
             }
-            .font(WZFont.mono(11, .semibold)).foregroundStyle(t.faint).padding(.horizontal, 18).padding(.bottom, 6)
+            .font(WZFont.mono(11, .semibold)).foregroundStyle(t.faint).padding(.horizontal, 18).padding(.bottom, 8)
             ScrollView {
                 VStack(spacing: 2) {
                     ForEach(libraryRecordings) { r in
@@ -292,7 +294,7 @@ struct iPadSplitView: View {
     // (recordings.categoryId(for:) / WZCategories) — falls back to omitting the chip rather
     // than inventing one for a row whose category id doesn't map to a known category.
     private func categoryFor(_ r: DemoRecording) -> WZCategory? {
-        WZCategories.all.first { $0.id == recordings.categoryId(for: r) }
+        WZCategories.all(with: settings.settings).first { $0.id == recordings.categoryId(for: r) }
     }
 
     private func sidebarRow(_ r: DemoRecording) -> some View {
@@ -385,7 +387,7 @@ struct iPadSplitView: View {
                 }.fixedSize()
                 GradButton(title: "Insert", icon: "arrowUR").fixedSize()
             }
-            .padding(.horizontal, 32).padding(.vertical, 18)
+            .padding(.horizontal, 32).padding(.vertical, 16)
             .overlay(alignment: .bottom) { Rectangle().fill(t.lineSoft).frame(height: 1) }
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
@@ -418,9 +420,10 @@ struct iPadSplitView: View {
                         MiniWave(color: t.accent, n: 64, height: 32).frame(maxWidth: .infinity)
                         Text(cur.dur).font(WZFont.mono(13)).foregroundStyle(t.faint)
                     }
-                    .padding(.horizontal, 22).padding(.vertical, 18).padding(.top, 30)
+                    .padding(.horizontal, 22).padding(.vertical, 18)
                     .background(t.surface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
                     .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(t.line, lineWidth: 1))
+                    .padding(.top, 30)
                 }
                 .frame(maxWidth: 640, alignment: .leading)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -709,7 +712,7 @@ private struct iPadJournal: View {
                 }
             }
         }
-        .padding(14)
+        .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(on ? t.accent.opacity(t.dark ? 0.14 : 0.08) : t.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(on ? t.hair : t.line, lineWidth: 1))
@@ -717,16 +720,16 @@ private struct iPadJournal: View {
 
     private var dayDetail: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
-                Text(current.title).font(WZFont.display(28, .medium)).foregroundStyle(t.text)
+            VStack(alignment: .leading, spacing: 20) {
+                Text(current.title).font(WZFont.display(20, .medium)).foregroundStyle(t.text)
                 summaryCard
                 ForEach(categories(current.recs)) { cat in
                     groupSection(cat)
                 }
             }
-            .frame(maxWidth: 720, alignment: .leading)
+            .frame(maxWidth: 680, alignment: .leading)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 40).padding(.vertical, 30)
+            .padding(.horizontal, 40).padding(.vertical, 24)
         }
     }
 
@@ -760,7 +763,7 @@ private struct iPadJournal: View {
                 GradButton(title: "Generate summary", icon: "spark") { generate() }.fixedSize()
             }
         }
-        .padding(18)
+        .padding(22)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(t.surface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(t.line, lineWidth: 1))
@@ -793,7 +796,7 @@ private struct iPadJournal: View {
             }
             VStack(spacing: 0) {
                 ForEach(Array(recs.enumerated()), id: \.element.id) { idx, r in
-                    HStack(alignment: .top, spacing: 11) {
+                    HStack(alignment: .top, spacing: 12) {
                         WIcon(cat.icon, size: 14, weight: .regular).foregroundStyle(cat.hue(t))
                             .frame(width: 30, height: 30)
                             .background(t.surfaceUp, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
@@ -805,7 +808,7 @@ private struct iPadJournal: View {
                         }
                         Spacer(minLength: 0)
                     }
-                    .padding(.horizontal, 14).padding(.vertical, 11)
+                    .padding(.horizontal, 16).padding(.vertical, 13)
                     if idx < recs.count - 1 { Divider().overlay(t.lineSoft) }
                 }
             }

@@ -120,6 +120,19 @@ final class DigestStore: ObservableObject {
         return s.digestSourceMode
     }
 
+    /// The user's persisted "Auto-categorize" choice (Content → Categorize), decoded the same way
+    /// `persistedDigestSourceMode()` reads its setting. Lets `backfillIfNeeded` honor the live
+    /// flag without threading it through its one call site. Defaults to `true` (today's shipped
+    /// behavior — every uncategorized note gets classified) so existing users see no change until
+    /// they explicitly turn it off.
+    private static func persistedAutoCategorize() -> Bool {
+        guard let data = UserDefaults.standard.data(forKey: RecordingSyncStore.settingsDefaultsKey),
+              let s = try? JSONDecoder().decode(WhisperioSettings.self, from: data) else {
+            return true
+        }
+        return s.autoCategorize
+    }
+
     private func updateICloudResumeAvailability() {
         iCloudResumeAvailable = RecordingSync.iCloudResumeMismatch(
             storageMode: Self.persistedStorageMode(),
@@ -247,6 +260,12 @@ final class DigestStore: ObservableObject {
     ///     source-picker sheet. `nil` (the default) means "no restriction" — every source counts,
     ///     which is also the correct behavior for a day with only one real source (ruling: skip
     ///     the picker sheet when there's nothing to choose between).
+    ///   - autoCategorize: Settings → Content → Categorize's "Auto-categorize" toggle. `true`
+    ///     (the default) keeps today's shipped behavior — every uncategorized note in the day is
+    ///     classified via `client` before grouping. `false` honestly skips that LLM call entirely:
+    ///     notes are grouped by whatever category they already carry (their existing assignment,
+    ///     or the default "Uncategorized" bucket) with no classification request ever made — never
+    ///     a fabricated/mock category.
     func generate(
         for day: Date,
         recordings: RecordingsStore,
@@ -255,7 +274,8 @@ final class DigestStore: ObservableObject {
         model: String,
         promptConfig: DigestPromptConfig = .default,
         sourceMode: DigestSourceMode = .all,
-        allowedSources: Set<String?>? = nil
+        allowedSources: Set<String?>? = nil,
+        autoCategorize: Bool = true
     ) async throws {
         let calendar = Calendar.current
         let dayKey = DigestGrouping.dayKey(for: day, calendar: calendar)
@@ -284,15 +304,18 @@ final class DigestStore: ObservableObject {
 
         // 1) Classify the day's uncategorized notes and persist each confident match back through
         // the store. Best-effort: a thrown/empty classification leaves them uncategorized.
-        let uncategorized = DigestGrouping.uncategorized(dayRecordings())
-        if !uncategorized.isEmpty {
-            let notes = uncategorized.map { (id: $0.id, text: $0.transcription ?? "") }
-            let labels = categories.map { (id: $0.id, label: $0.label) }
-            if let map = try? await client.classify(notes: notes, categories: labels,
-                                                     model: model, promptConfig: promptConfig) {
-                for rec in uncategorized {
-                    if let categoryID = map[rec.id] {
-                        recordings.setCategory(categoryID, for: DemoRecording(rec))
+        // Skipped entirely (no LLM call, honest) when the user has turned Auto-categorize off.
+        if autoCategorize {
+            let uncategorized = DigestGrouping.uncategorized(dayRecordings())
+            if !uncategorized.isEmpty {
+                let notes = uncategorized.map { (id: $0.id, text: $0.transcription ?? "") }
+                let labels = categories.map { (id: $0.id, label: $0.label) }
+                if let map = try? await client.classify(notes: notes, categories: labels,
+                                                         model: model, promptConfig: promptConfig) {
+                    for rec in uncategorized {
+                        if let categoryID = map[rec.id] {
+                            recordings.setCategory(categoryID, for: DemoRecording(rec))
+                        }
                     }
                 }
             }
@@ -348,6 +371,7 @@ final class DigestStore: ObservableObject {
         guard client.isConfigured else { return }
         let sourceMode = Self.persistedDigestSourceMode()
         guard sourceMode != .manual else { return }
+        let autoCategorize = Self.persistedAutoCategorize()
         let calendar = Calendar.current
         let todayKey = DigestGrouping.dayKey(for: Date(), calendar: calendar)
         // Once/day: bail if we already ran today.
@@ -367,7 +391,8 @@ final class DigestStore: ObservableObject {
             guard hasNotes else { continue }
             try? await generate(for: day, recordings: recordings,
                                 categories: categories, using: client, model: model,
-                                promptConfig: promptConfig, sourceMode: sourceMode)
+                                promptConfig: promptConfig, sourceMode: sourceMode,
+                                autoCategorize: autoCategorize)
         }
     }
 

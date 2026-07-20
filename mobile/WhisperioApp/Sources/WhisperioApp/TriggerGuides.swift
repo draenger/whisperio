@@ -78,28 +78,8 @@ private struct TriggerGuide: Identifiable {
                             text: "Back Tap runs a Shortcut, and Shortcuts can’t paste into other apps silently on iOS. Whisperio records, then copies — you paste. Honest and predictable."),
             openSettings: true
         ),
-        // 3 — Custom keyboard
-        TriggerGuide(
-            id: "keyboard",
-            symbol: "keyboard",
-            name: "Whisperio keyboard",
-            blurb: "A mic key on your keyboard, in every app.",
-            whatYouGet: "Tap the mic on the Whisperio keyboard to dictate right where you’re typing.",
-            steps: [
-                GuideStep(icon: "gearshape", title: "Settings → General → Keyboard",
-                          detail: "Open Keyboards → Add New Keyboard… and choose Whisperio."),
-                GuideStep(icon: "lock.open", title: "Turn on “Allow Full Access”",
-                          detail: "Tap Whisperio in the list and enable Allow Full Access — the mic key needs it to open the app."),
-                GuideStep(icon: "globe", title: "Switch to the Whisperio keyboard",
-                          detail: "In any text field, hold the 🌐 globe key and pick Whisperio, then tap the mic."),
-                GuideStep(icon: "arrow.uturn.backward", title: "Record, then swipe back",
-                          detail: "Whisperio opens and records on-device. Swipe back (or tap “← app” top-left) and the text is inserted for you."),
-            ],
-            note: GuideNote(icon: "keyboard",
-                            text: "A keyboard can’t record audio itself, so the mic key BOUNCES to the Whisperio app to listen, then hands the text back when you return. That one swipe back is the only manual step — nothing happens behind your back."),
-            openSettings: true
-        ),
-        // 4 — Lock Screen / Control Center
+        // 3 — Lock Screen / Control Center (design order: Action Button, Back Tap, Lock Screen &
+        // Control Center, Keyboard, Home Screen widget, Dynamic Island — mob-settings.jsx:17-22)
         TriggerGuide(
             id: "control",
             symbol: "switch.2",
@@ -119,6 +99,27 @@ private struct TriggerGuide: Identifiable {
             note: GuideNote(icon: "lock",
                             text: "From the Lock Screen and Control Center, Whisperio records and copies to the clipboard — iOS doesn’t allow silent paste into another app, so the last step is yours."),
             openSettings: false
+        ),
+        // 4 — Custom keyboard
+        TriggerGuide(
+            id: "keyboard",
+            symbol: "keyboard",
+            name: "Whisperio keyboard",
+            blurb: "A mic key on your keyboard, in every app.",
+            whatYouGet: "Tap the mic on the Whisperio keyboard to dictate right where you’re typing.",
+            steps: [
+                GuideStep(icon: "gearshape", title: "Settings → General → Keyboard",
+                          detail: "Open Keyboards → Add New Keyboard… and choose Whisperio."),
+                GuideStep(icon: "lock.open", title: "Turn on “Allow Full Access”",
+                          detail: "Tap Whisperio in the list and enable Allow Full Access — the mic key needs it to open the app."),
+                GuideStep(icon: "globe", title: "Switch to the Whisperio keyboard",
+                          detail: "In any text field, hold the 🌐 globe key and pick Whisperio, then tap the mic."),
+                GuideStep(icon: "arrow.uturn.backward", title: "Record, then swipe back",
+                          detail: "Whisperio opens and records on-device. Swipe back (or tap “← app” top-left) and the text is inserted for you."),
+            ],
+            note: GuideNote(icon: "keyboard",
+                            text: "A keyboard can’t record audio itself, so the mic key BOUNCES to the Whisperio app to listen, then hands the text back when you return. That one swipe back is the only manual step — nothing happens behind your back."),
+            openSettings: true
         ),
         // 5 — Home Screen widget
         TriggerGuide(
@@ -176,13 +177,13 @@ struct TriggerGuidesView: View {
     var body: some View {
         ScreenScaffold {
             VStack(spacing: 0) {
-                WHeader(title: "Set up triggers", onBack: onBack)
+                WHeader(title: "Dictation triggers", onBack: onBack)
                 ScrollView(showsIndicators: false) {
                     VStack(alignment: .leading, spacing: 18) {
-                        hero
+                        InfoCard(text: "Whisperio can start a dictation from all over iOS. Set up any of these once, then talk from anywhere — every transcript still lands back in your library.")
 
                         VStack(alignment: .leading, spacing: 9) {
-                            SectionLabel(text: "Ways to dictate").padding(.leading, 4)
+                            SectionLabel(text: "Available triggers").padding(.leading, 4)
                             VStack(spacing: 0) {
                                 ForEach(Array(TriggerGuide.all.enumerated()), id: \.element.id) { idx, g in
                                     hubRow(g, last: idx == TriggerGuide.all.count - 1)
@@ -213,24 +214,6 @@ struct TriggerGuidesView: View {
                 .presentationDetents([.large])
                 #endif
         }
-    }
-
-    private var hero: some View {
-        HStack(spacing: 14) {
-            WIcon("zap", size: 24).foregroundStyle(.white)
-                .frame(width: 54, height: 54)
-                .background(t.gradient, in: RoundedRectangle(cornerRadius: 15, style: .continuous))
-            VStack(alignment: .leading, spacing: 3) {
-                Text("Dictate from anywhere").font(WZFont.display(18)).foregroundStyle(t.text)
-                Text("Pick a trigger below. Each one is a quick, guided setup — no guesswork.")
-                    .font(WZFont.ui(13)).foregroundStyle(t.muted).lineSpacing(2)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        }
-        .padding(16)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(t.surface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(t.line, lineWidth: 1))
     }
 
     private func hubRow(_ g: TriggerGuide, last: Bool) -> some View {

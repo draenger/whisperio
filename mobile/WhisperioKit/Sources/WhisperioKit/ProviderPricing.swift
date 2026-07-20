@@ -65,6 +65,17 @@ public enum ProviderPricing {
             case "voxtral-mini": return 0.003
             default: return nil
             }
+
+        case .selfHosted:
+            // The user's own hardware — no vendor to bill, always free.
+            return 0
+
+        case .replicate:
+            // Replicate bills per-second of hardware time for the underlying model, not a
+            // flat per-minute audio rate like the other cloud engines — there's no single
+            // honest number to publish here. Callers must show the same "—" unknown-rate path
+            // used for a custom/self-hosted model string, not a guessed number.
+            return nil
         }
     }
 }

@@ -66,7 +66,7 @@ struct SquareIconButton: View {
     var action: () -> Void = {}
     var body: some View {
         Button(action: action) {
-            WIcon(icon, size: 19, weight: .regular)
+            WIcon(icon, size: 17, weight: .regular)
                 .foregroundStyle(t.muted)
                 .frame(width: 38, height: 38)
                 .background(t.surfaceUp, in: RoundedRectangle(cornerRadius: 12, style: .continuous))

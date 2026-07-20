@@ -12,6 +12,7 @@ struct JournalView: View {
     @Environment(\.wz) private var t
     @EnvironmentObject private var recordings: RecordingsStore
     @EnvironmentObject private var digests: DigestStore
+    @EnvironmentObject private var settings: SettingsStore
     var onBack: () -> Void
     var openDay: (Date) -> Void
     // New page (journal composer) — the book view's + menu, per PhoneJournal's onAdd.
@@ -168,7 +169,7 @@ struct JournalView: View {
                         }
                     }
                 } label: {
-                    WIcon("plus", size: 19, weight: .regular)
+                    WIcon("plus", size: 17, weight: .regular)
                         .foregroundStyle(t.muted)
                         .frame(width: 38, height: 38)
                         .background(t.surfaceUp, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
@@ -285,7 +286,7 @@ struct JournalView: View {
                 categoryID: nil, isCustom: false, chapters: chapters))
         }
 
-        for cat in WZCategories.all {
+        for cat in WZCategories.all(with: settings.settings) {
             let catDays = all.compactMap { day -> JournalDay? in
                 let recs = day.recs.filter { $0.category == cat.id }
                 return recs.isEmpty ? nil : JournalDay(key: day.key, date: day.date, recs: recs)
@@ -451,8 +452,9 @@ struct JournalView: View {
 
     // The known categories present among a day's notes, in the canonical display order.
     private func categories(in recs: [Recording]) -> [WZCategory] {
-        let present = Set(DigestGrouping.groupByCategory(recs, order: WZCategories.all.map(\.id)).map(\.categoryID))
-        return WZCategories.all.filter { present.contains($0.id) }
+        let cats = WZCategories.all(with: settings.settings)
+        let present = Set(DigestGrouping.groupByCategory(recs, order: cats.map(\.id)).map(\.categoryID))
+        return cats.filter { present.contains($0.id) }
     }
 }
 

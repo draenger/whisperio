@@ -9,6 +9,23 @@ import WhisperioKit
 // Everything here is BYO: the personal access token is Keychain-backed (scrubbed from the settings
 // blob by SettingsStore) and nothing leaves the device until the user taps Sync.
 
+// Plain, text-only "info" card — matches infoCard() in mob-settings.jsx (16pt padding, muted
+// 13.5pt body copy). Used by deep pages whose design intro is a simple explanatory sentence
+// rather than an icon+title hero block. Shared with TriggerGuides.swift (same module).
+struct InfoCard: View {
+    @Environment(\.wz) private var t
+    let text: String
+    var body: some View {
+        Text(text)
+            .font(WZFont.ui(13.5)).foregroundStyle(t.muted).lineSpacing(4)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(16)
+            .background(t.surface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(t.line, lineWidth: 1))
+    }
+}
+
 struct GitHubSyncView: View {
     @Environment(\.wz) private var t
     @EnvironmentObject private var settings: SettingsStore
@@ -38,6 +55,8 @@ struct GitHubSyncView: View {
                 WHeader(title: "Sync to GitHub", onBack: onBack)
                 ScrollView(showsIndicators: false) {
                     VStack(alignment: .leading, spacing: 18) {
+                        InfoCard(text: "Mirror transcripts, journals, rendered rewrites and daily summaries to a Git repository — a plain-text backup you own.")
+
                         // Repository config — the token is a secret (Keychain-backed), the rest are
                         // plain fields matching the cloud-engine key entry area in Settings.
                         VStack(alignment: .leading, spacing: 9) {
@@ -117,10 +136,11 @@ struct GitHubSyncView: View {
     // repo tree so unchanged files are skipped (SyncPlan diffs on git blob sha).
     private func syncNow() {
         guard let client = settings.makeGitHubSync() else { return }
+        let categories = WZCategories.all(with: settings.settings)
         let items = recordings.items
             .filter { $0.status == .completed
                 && !($0.transcription ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
-            .map(SyncItem.init)
+            .map { SyncItem($0, categories: categories) }
         let syntheses = digests.digests.compactMap(DailySynthesis.init)
         let prefix = settings.settings.githubPathPrefix
         syncing = true
@@ -234,10 +254,12 @@ extension SyncItem {
     /// Flatten a persisted `Recording` into the sync shape. A nil or unknown category maps to the
     /// shared `uncategorized` bucket — the SAME bucket the journal/digest use — so the GitHub layout
     /// matches what the app shows (rather than silently filing uncategorized notes under `work/`).
-    init(_ r: Recording) {
-        let known = r.category.flatMap { id in WZCategories.all.contains { $0.id == id } ? id : nil }
+    /// `categories` is the caller's resolved list (seeds + customs), so a custom-tagged note mirrors
+    /// under its real category folder instead of `uncategorized/`.
+    init(_ r: Recording, categories: [WZCategory]) {
+        let known = r.category.flatMap { id in categories.contains { $0.id == id } ? id : nil }
         let categoryId = known ?? uncategorizedCategoryID
-        let categoryLabel = known.map { WZCategories.of($0).label } ?? "Uncategorized"
+        let categoryLabel = known.flatMap { id in categories.first { $0.id == id }?.label } ?? "Uncategorized"
         self.init(id: r.id,
                   categoryId: categoryId,
                   categoryLabel: categoryLabel,

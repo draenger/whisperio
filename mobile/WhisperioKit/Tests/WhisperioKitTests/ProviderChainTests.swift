@@ -87,6 +87,17 @@ private let clip = AudioClip(data: Data(), filename: "a.wav", duration: 1)
         #expect(result == .success(Transcript(text: "local whisper", provider: .localWhisper)))
     }
 
+    @Test func replicateAndSelfHostedParticipateInTheChainLikeAnyOtherProvider() async {
+        // R4 — the new engines are ordinary chain participants: no special-casing anywhere in
+        // ProviderChain, same as .localWhisper before them.
+        let chain = ProviderChain(providers: [
+            MockProvider(id: .selfHosted, isConfigured: false, outcome: .success("never")),
+            MockProvider(id: .replicate, isConfigured: true, outcome: .success("replicate"))
+        ])
+        let result = await chain.transcribe(clip)
+        #expect(result == .success(Transcript(text: "replicate", provider: .replicate)))
+    }
+
     @Test func fallbackCallbackFiresWithFailedAndNext() async {
         final class Box: @unchecked Sendable { var pairs: [(ProviderID, ProviderID)] = [] }
         let box = Box()

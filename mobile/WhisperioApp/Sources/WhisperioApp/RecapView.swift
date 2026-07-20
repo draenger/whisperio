@@ -97,6 +97,10 @@ struct RecapView: View {
             return ProviderPricing.ratePerMinuteUSD(provider: .assemblyAI, model: s.assemblyAIModel)
         case .mistral:
             return ProviderPricing.ratePerMinuteUSD(provider: .mistral, model: s.mistralModel)
+        case .replicate:
+            return ProviderPricing.ratePerMinuteUSD(provider: .replicate, model: s.replicateModel)
+        case .selfHosted:
+            return 0   // Free — the user's own hardware, same treatment as on-device.
         }
     }
 
@@ -154,7 +158,7 @@ struct RecapView: View {
         var counts: [String: Int] = [:]
         for r in weekItems { counts[r.category ?? WZCategories.work.id, default: 0] += 1 }
         return counts
-            .map { (WZCategories.of($0.key), $0.value) }
+            .map { (WZCategories.of($0.key, with: settings.settings), $0.value) }
             .sorted { $0.1 > $1.1 }
     }
 
@@ -360,7 +364,7 @@ struct RecapView: View {
                     VStack(spacing: 6) {
                         RoundedRectangle(cornerRadius: 6, style: .continuous)
                             .fill(day.1 == maxWords && day.1 > 0 ? t.accent : t.accent.opacity(0.3))
-                            .frame(height: max(4, 72 * CGFloat(day.1) / CGFloat(maxWords)))
+                            .frame(height: day.1 > 0 ? 72 * CGFloat(day.1) / CGFloat(maxWords) : 0)
                             .frame(maxHeight: 72, alignment: .bottom)
                         Text(day.0)
                             .font(WZFont.mono(10))
@@ -419,6 +423,8 @@ struct RecapView: View {
         // the last hyphen is the honest short name (derived from the real configured model,
         // not a fabricated string).
         case .localWhisper: raw = s.localWhisperModel.split(separator: "-").last.map(String.init) ?? ""
+        case .replicate: raw = s.replicateModel
+        case .selfHosted: raw = s.selfHostedModel
         case .onDevice, .elevenLabs: raw = ""
         }
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -466,11 +472,13 @@ struct RecapView: View {
         case .deepgram: return .hex(0xd946ef)
         case .assemblyAI: return .hex(0xec4899)
         case .mistral: return .hex(0xfb7185)
+        case .replicate: return .hex(0x8b5cf6)
+        case .selfHosted: return .hex(0x14b8a6)
         }
     }
 
     private func engineCostLabel(_ provider: ProviderID, _ minutes: Double) -> String {
-        if provider == .onDevice || provider == .localWhisper { return "Free" }
+        if provider == .onDevice || provider == .localWhisper || provider == .selfHosted { return "Free" }
         guard let rate = rate(for: provider) else { return "—" }
         let cost = rate * minutes
         if cost > 0 && cost < 0.01 { return "<$0.01" }
@@ -525,7 +533,7 @@ struct RecapView: View {
             HStack(spacing: 8) {
                 SectionLabel(text: "Note of the week")
                 Spacer(minLength: 0)
-                CategoryTag(category: WZCategories.of(note.category ?? WZCategories.work.id))
+                CategoryTag(category: WZCategories.of(note.category ?? WZCategories.work.id, with: settings.settings))
             }
             Text("“\(preview)”")
                 .font(WZFont.display(16.5, .medium)).foregroundStyle(t.text).lineSpacing(5)

@@ -74,7 +74,13 @@ public struct RewritePresetState: Codable, Sendable, Equatable {
 
 /// The built-in rewrite presets + the pure edit algebra over RewritePresetState.
 public enum RewritePresetCatalog {
-    /// The seed catalog, in display order. Prompts are authored verbatim; ids are stable keys.
+    /// The seed catalog, in display order. Prompts are authored verbatim; ids are stable keys —
+    /// this list mirrors the design's `REWRITE_PRESETS` (mob-settings.jsx:9-16) exactly: 6
+    /// presets, same names/icons/order. "Bullet summary"→"Bullet points" and "Email"→"Email
+    /// reply" keep their old ids (`bullets`/`email`) so existing recordings' `renderPresetID`
+    /// still resolves; "Action items"/"Summary" are new. "Message in English"/"Slack message"/
+    /// "Tweet" are intentionally dropped — the design doesn't ship them and Template Builder
+    /// lets a user recreate any of them in seconds.
     public static let seeds: [RewritePreset] = [
         RewritePreset(
             id: "clean-up",
@@ -84,45 +90,38 @@ public enum RewritePresetCatalog {
             isSeed: true
         ),
         RewritePreset(
-            id: "email",
-            name: "Email",
-            prompt: "Turn the following spoken notes into a clear, polite email. Infer a suitable subject line and put it on the first line prefixed with 'Subject: '. Use a natural greeting and sign-off, group the content into short paragraphs, and keep every fact from the notes without inventing details. Match the language of the notes. Return only the email.",
-            icon: "send",
-            isSeed: true
-        ),
-        RewritePreset(
-            id: "english-message",
-            name: "Message in English",
-            prompt: "Translate and rewrite the following into a natural, friendly English message suitable for a chat app. Keep it concise and conversational, preserve all the meaning, and fix any grammar so it reads like a fluent native speaker wrote it. Return only the English message.",
-            icon: "globe",
-            isSeed: true
-        ),
-        RewritePreset(
             id: "bullets",
-            name: "Bullet summary",
+            name: "Bullet points",
             prompt: "Summarize the following into 3-6 concise bullet points capturing the key points and any action items. Start each bullet with '- '. Do not add information that isn't in the text. Keep the original language. Return only the bullet list.",
             icon: "list",
             isSeed: true
         ),
         RewritePreset(
-            id: "slack",
-            name: "Slack message",
-            prompt: "Rewrite the following spoken notes as a short, friendly Slack message for teammates. Keep it casual but clear, use line breaks for readability, and add a relevant emoji only where it feels natural. Preserve all facts and the original language. Return only the message.",
+            id: "email",
+            name: "Email reply",
+            prompt: "Turn the following spoken notes into a clear, polite email. Infer a suitable subject line and put it on the first line prefixed with 'Subject: '. Use a natural greeting and sign-off, group the content into short paragraphs, and keep every fact from the notes without inventing details. Match the language of the notes. Return only the email.",
             icon: "message",
             isSeed: true
         ),
         RewritePreset(
-            id: "tweet",
-            name: "Tweet",
-            prompt: "Rewrite the following as a single engaging post of at most 280 characters. Keep the core point, make it punchy, drop hashtags unless they add real value, and never exceed 280 characters. Match the original language. Return only the post text.",
-            icon: "spark",
+            id: "action-items",
+            name: "Action items",
+            prompt: "Extract every actionable task from the following spoken notes into a short checklist. Start each line with '- ' followed by a clear, concrete task, naming who does it if the notes say so. Skip anything that isn't an action — no commentary, context, or summary. If the notes contain no clear action items, return a single line saying so, in the notes' own language. Do not invent tasks that aren't implied by the text. Keep the original language. Return only the checklist.",
+            icon: "check",
+            isSeed: true
+        ),
+        RewritePreset(
+            id: "summary",
+            name: "Summary",
+            prompt: "Summarize the following spoken notes into a short, well-structured paragraph of 3-5 sentences capturing the key points a listener would need to know. Do not add information that isn't in the notes, and do not format it as a list, email, or checklist. Keep the original language. Return only the summary.",
+            icon: "book",
             isSeed: true
         ),
         RewritePreset(
             id: "template-builder",
             name: "Template Builder",
             prompt: "You help the user author a new Whisperio rewrite template. The user's message describes, in plain words, a format they want their voice notes turned into. Produce a single reusable instruction prompt (a 'template') that Whisperio can later apply to any transcript to produce that format. The template you write must: address the model directly, tell it to return only the rewritten text, tell it to preserve the input's language unless the format requires a specific language, and tell it not to invent facts. Output only the template prompt text, with no preamble, quotes, or commentary.",
-            icon: "command",
+            icon: "zap",
             isSeed: true,
             isMeta: true
         ),

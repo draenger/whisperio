@@ -56,6 +56,19 @@ import Testing
         #expect(ProviderPricing.ratePerMinuteUSD(provider: .mistral, model: "voxtral-large") == nil)
     }
 
+    @Test func selfHostedIsAlwaysFree() {
+        // The user's own hardware — no vendor to bill, always 0 (Free), never nil/unknown.
+        #expect(ProviderPricing.ratePerMinuteUSD(provider: .selfHosted, model: "") == 0)
+        #expect(ProviderPricing.ratePerMinuteUSD(provider: .selfHosted, model: "whisper.cpp-base") == 0)
+    }
+
+    @Test func replicateHasNoPublishedFlatRate() {
+        // Replicate bills per-second of hardware time, not a flat per-minute audio rate — Recap
+        // must show the honest "—" unknown-rate path, never a guessed number.
+        #expect(ProviderPricing.ratePerMinuteUSD(provider: .replicate, model: "") == nil)
+        #expect(ProviderPricing.ratePerMinuteUSD(provider: .replicate, model: "openai/whisper") == nil)
+    }
+
     @Test func modelMatchingIsCaseInsensitiveAndTrimmed() {
         #expect(ProviderPricing.ratePerMinuteUSD(provider: .openAI, model: "  WHISPER-1  ") == 0.006)
         #expect(ProviderPricing.ratePerMinuteUSD(provider: .groq, model: "Whisper-Large-V3-Turbo") == 0.04 / 60)

@@ -32,8 +32,10 @@ struct KeyboardSetupView: View {
                     VStack(alignment: .leading, spacing: 18) {
                         hero
 
+                        GradButton(title: "Add keyboard in Settings", icon: "keyboard") { openSettings() }
+
                         VStack(alignment: .leading, spacing: 9) {
-                            SectionLabel(text: "Set it up").padding(.leading, 4)
+                            SectionLabel(text: "Setup").padding(.leading, 4)
                             VStack(spacing: 0) {
                                 step(1, "Open Keyboard settings",
                                      "Settings → General → Keyboard → Keyboards → Add New Keyboard → Whisperio.",
@@ -46,8 +48,6 @@ struct KeyboardSetupView: View {
                             .background(t.surface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
                             .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(t.line, lineWidth: 1))
                         }
-
-                        GradButton(title: "Open Settings", icon: "settings") { openSettings() }
 
                         statusCard
 

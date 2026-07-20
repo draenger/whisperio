@@ -145,9 +145,9 @@ struct KeyboardRootView: View {
     private var amberChip: Color { Color(red: 0.96, green: 0.62, blue: 0.04) }
 
     private func privacyCapsule(icon: String, label: String, color: Color) -> some View {
-        HStack(spacing: 5) {
+        HStack(spacing: 4) {
             Image(systemName: icon)
-                .font(.system(size: 9.5, weight: .semibold))
+                .font(.system(size: 10, weight: .semibold))
             Text(label)
                 .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
         }
@@ -189,12 +189,12 @@ struct KeyboardRootView: View {
                             .font(.system(size: 12, weight: .semibold))
                             .foregroundStyle(accent)
                         Text(preset.name)
-                            .font(.system(size: 14, weight: .medium))
+                            .font(.system(size: 13, weight: .medium))
                             .foregroundStyle(keyText)
                             .lineLimit(1)
                         Spacer(minLength: 0)
                     }
-                    .padding(.horizontal, 12)
+                    .padding(.horizontal, 13)
                     .padding(.vertical, 10)
                 }
                 .buttonStyle(KBPressStyle())
@@ -269,14 +269,14 @@ struct KeyboardRootView: View {
             } else {
                 ForEach(Self.pRow3, id: \.self) { symKey($0) }
             }
-            specialKey(icon: "delete.left", flex: 1.5) { model.backspace() }
+            specialKey(icon: "delete.left", flex: 1.5, width: 40) { model.backspace() }
         }
     }
 
     @ViewBuilder private var row3LeftKey: some View {
         switch plane {
         case .letters:
-            specialKey(icon: model.shifted ? "shift.fill" : "shift", flex: 1.5) { model.toggleShift() }
+            specialKey(icon: model.shifted ? "shift.fill" : "shift", flex: 1.5, width: 40) { model.toggleShift() }
         case .numbers:
             specialKey(text: "#+=", flex: 1.5) { plane = .symbols }
         case .symbols:
@@ -291,9 +291,9 @@ struct KeyboardRootView: View {
             }
             Button(action: { model.space() }) {
                 Text("space")
-                    .font(.system(size: 15))
+                    .font(.system(size: 17))
                     .foregroundStyle(keyText.opacity(0.9))
-                    .frame(maxWidth: .infinity, minHeight: 42)
+                    .frame(maxWidth: .infinity, minHeight: 40)
                     .background(keyFill, in: keyShape)
             }
             .buttonStyle(KBPressStyle())
@@ -346,7 +346,7 @@ struct KeyboardRootView: View {
     }
 
     private func specialKey(icon: String? = nil, text: String? = nil, flex: CGFloat,
-                            height: CGFloat = 40, action: @escaping () -> Void) -> some View {
+                            height: CGFloat = 40, width: CGFloat? = nil, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Group {
                 if let icon {
@@ -362,7 +362,7 @@ struct KeyboardRootView: View {
             .background(specialFill, in: keyShape)
         }
         .buttonStyle(KBPressStyle())
-        .frame(width: 42 * flex)
+        .frame(width: width ?? 42 * flex)
     }
 }
 

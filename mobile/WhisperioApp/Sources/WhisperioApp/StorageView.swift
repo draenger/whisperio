@@ -18,7 +18,7 @@ struct StorageView: View {
     @State private var erased = false
     // Bytes freed by "Clear old recordings" — nil until run this visit.
     @State private var clearedBytes: Int64?
-    // Bytes freed by the granular "Delete audio files" / "Delete daily summaries" rows —
+    // Bytes freed by the granular "Delete audio recordings" / "Delete daily summaries" rows —
     // each nil until run this visit, then holds what was actually freed.
     @State private var audioDeletedBytes: Int64?
     @State private var summariesDeletedBytes: Int64?
@@ -122,9 +122,9 @@ struct StorageView: View {
                     }
                 }
             }
-            .frame(height: 10)
-            .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-            .background(t.surfaceUp, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+            .frame(height: 9)
+            .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
+            .background(t.surfaceUp, in: RoundedRectangle(cornerRadius: 5, style: .continuous))
             .animation(.easeOut(duration: 0.4), value: totalBytes)
             HStack(spacing: 14) {
                 legend("Audio", audioBytes, t.accent)
@@ -180,26 +180,26 @@ struct StorageView: View {
                 if clearedBytes != nil { WIcon("check", size: 17).foregroundStyle(t.green) }
             }
             SettRow(icon: "trash",
-                    label: audioDeletedBytes != nil ? "Audio files — deleted" : "Delete audio files",
+                    label: audioDeletedBytes != nil ? "Delete audio recordings — deleted" : "Delete audio recordings",
                     sub: audioDeletedBytes.map { "Freed \(Self.format($0))" }
-                        ?? "Keeps every transcript — only the sound files go",
+                        ?? "Keeps every transcript — only the sound files go · \(Self.format(audioBytes))",
                     onTap: audioDeletedBytes == nil ? { confirmDeleteAudio = true } : nil) {
                 if audioDeletedBytes != nil { WIcon("check", size: 17).foregroundStyle(t.green) }
             }
             SettRow(icon: "trash",
-                    label: summariesDeletedBytes != nil ? "Daily summaries — deleted" : "Delete daily summaries",
-                    sub: summariesDeletedBytes.map { "Freed \(Self.format($0))" }
-                        ?? "Clears the Journal digests",
-                    onTap: summariesDeletedBytes == nil ? { confirmDeleteSummaries = true } : nil) {
-                if summariesDeletedBytes != nil { WIcon("check", size: 17).foregroundStyle(t.green) }
-            }
-            SettRow(icon: "trash",
-                    label: transcriptsDeletedBytes != nil ? "Transcripts — deleted" : "Delete transcripts",
+                    label: transcriptsDeletedBytes != nil ? "Delete transcripts — deleted" : "Delete transcripts",
                     sub: transcriptsDeletedBytes.map { "Freed \(Self.format($0))" }
-                        ?? "Removes the text notes; audio stays",
-                    last: true,
+                        ?? "Removes the text notes; audio stays · \(Self.format(transcriptBytes))",
                     onTap: transcriptsDeletedBytes == nil ? { confirmDeleteTranscripts = true } : nil) {
                 if transcriptsDeletedBytes != nil { WIcon("check", size: 17).foregroundStyle(t.green) }
+            }
+            SettRow(icon: "trash",
+                    label: summariesDeletedBytes != nil ? "Delete daily summaries — deleted" : "Delete daily summaries",
+                    sub: summariesDeletedBytes.map { "Freed \(Self.format($0))" }
+                        ?? "Clears the Journal digests · \(Self.format(summaryBytes))",
+                    last: true,
+                    onTap: summariesDeletedBytes == nil ? { confirmDeleteSummaries = true } : nil) {
+                if summariesDeletedBytes != nil { WIcon("check", size: 17).foregroundStyle(t.green) }
             }
         }
     }

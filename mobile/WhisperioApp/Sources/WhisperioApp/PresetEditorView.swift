@@ -14,6 +14,9 @@ struct PresetEditorView: View {
     @State private var name: String
     @State private var prompt: String
     @State private var showDeleteConfirm = false
+    // R11: the Save button flips to a "Saved ✓" confirmed state briefly before the screen
+    // dismisses, instead of navigating back immediately.
+    @State private var saved = false
 
     init(preset: RewritePreset, onBack: @escaping () -> Void, toast: @escaping (String) -> Void) {
         self.original = preset
@@ -41,10 +44,11 @@ struct PresetEditorView: View {
                         nameField
                         promptField
 
-                        GradButton(title: "Save template", icon: "check",
-                                   action: canSave ? save : {})
+                        GradButton(title: saved ? "Saved ✓" : "Save template",
+                                   icon: saved ? nil : "check",
+                                   action: (canSave && !saved) ? save : {})
                             .opacity(canSave ? 1 : 0.5)
-                            .allowsHitTesting(canSave)
+                            .allowsHitTesting(canSave && !saved)
 
                         if isExisting {
                             GhostButton(title: "Delete template", icon: "trash") {
@@ -52,7 +56,7 @@ struct PresetEditorView: View {
                             }
                         }
                     }
-                    .padding(.horizontal, 16).padding(.top, 8).padding(.bottom, 28)
+                    .padding(.horizontal, 16).padding(.top, 6).padding(.bottom, 28)
                 }
             }
         }
@@ -74,7 +78,7 @@ struct PresetEditorView: View {
         VStack(alignment: .leading, spacing: 7) {
             SectionLabel(text: "Name").padding(.leading, 4)
             TextField("e.g. Meeting notes", text: $name)
-                .font(WZFont.ui(14.5))
+                .font(WZFont.ui(13))
                 .padding(.horizontal, 13).padding(.vertical, 12)
                 .background(t.surfaceUp, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(t.line, lineWidth: 1))
@@ -85,6 +89,7 @@ struct PresetEditorView: View {
         VStack(alignment: .leading, spacing: 7) {
             SectionLabel(text: "Instruction").padding(.leading, 4)
             // Multiline editor styled like plainField (hidden default background, mono face).
+            // R11: TextEditor has no native placeholder — overlay ghost copy when empty.
             TextEditor(text: $prompt)
                 .font(WZFont.mono(13))
                 .scrollContentBackground(.hidden)
@@ -92,6 +97,14 @@ struct PresetEditorView: View {
                 .padding(.horizontal, 9).padding(.vertical, 6)
                 .background(t.surfaceUp, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(t.line, lineWidth: 1))
+                .overlay(alignment: .topLeading) {
+                    if prompt.isEmpty {
+                        Text("How Whisperio should rewrite a transcript…")
+                            .font(WZFont.mono(13)).foregroundStyle(t.faint)
+                            .padding(.horizontal, 9 + 5).padding(.vertical, 6 + 8)
+                            .allowsHitTesting(false)
+                    }
+                }
             Text("How Whisperio should rewrite a transcript. Written as an instruction to the model.")
                 .font(WZFont.mono(11)).foregroundStyle(t.faint)
                 .fixedSize(horizontal: false, vertical: true)
@@ -99,13 +112,19 @@ struct PresetEditorView: View {
     }
 
     // Persist name + prompt, preserving the id / isSeed / icon / isMeta so a seed stays an
-    // override and a user preset stays itself.
+    // override and a user preset stays itself. R11: the button shows a "Saved ✓" confirmed
+    // state for ~700ms (matching the design's setTimeout) before navigating back; the toast
+    // still fires immediately.
     private func save() {
         var p = original
         p.name = name.trimmingCharacters(in: .whitespacesAndNewlines)
         p.prompt = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
         presets.upsert(p)
         toast("Template saved")
-        onBack()
+        saved = true
+        Task {
+            try? await Task.sleep(for: .milliseconds(700))
+            onBack()
+        }
     }
 }
