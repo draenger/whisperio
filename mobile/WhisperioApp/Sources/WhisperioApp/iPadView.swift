@@ -15,7 +15,12 @@ import AppKit
 // this split is a self-contained visual over WZSample data (no stores injected here), so the
 // Journal tab mirrors that design on the same sample recordings.
 struct iPadSplitView: View {
-    @Environment(\.wz) private var t
+    // The split shell owns its theme (persisted): unlike the phone shell (AppShell's @State
+    // `dark` → .environment(\.wz)), nothing above this view derives a theme from user state —
+    // the Mac entry point used to hardcode .rezmeTheme, leaving Settings' Dark-mode toggle a
+    // dead control here. IPadLiveJournal binds the same @AppStorage key into SettingsView.
+    @AppStorage("wz.split.dark") private var splitDark = true
+    private var t: WZTheme { .of(splitDark) }
     @EnvironmentObject private var settings: SettingsStore
     // Both real entry points (AppShell.swift RootView and WhisperioMacApp.swift) already inject
     // RecordingsStore above this view, so this is safe; Gallery's `iPadHost` never sets
@@ -88,6 +93,10 @@ struct iPadSplitView: View {
             // pane is correct, but no row reads as selected until the user taps one.
             if sel == nil { sel = libraryRecordings.first?.id }
         }
+        // Everything below (tabs, sheets, IPadLiveJournal) reads the live, user-controlled
+        // theme — Settings' Dark-mode toggle flips splitDark and the whole shell re-themes.
+        .environment(\.wz, t)
+        .preferredColorScheme(splitDark ? .dark : .light)
     }
 
     // Compact, read-only engine status strip (mob-screens.jsx AppleSplit `engineBar`): a thin
@@ -325,6 +334,19 @@ struct iPadSplitView: View {
     // Shown when the Library tab's real data source (`libraryRecordings`) is empty — a live,
     // genuinely empty RecordingsStore, never a substitute for WZSample rows. Same shape as
     // IPadLiveJournal.placeholder below.
+    // Real clipboard copy for the reading pane's Copy button — same pattern as DetailView's
+    // copy and iPadJournal's local helper (this struct has no toast chip; the paste is the
+    // feedback, as in the phone's Detail bottom bar before its toast landed).
+    private func copyTranscript(_ text: String) {
+#if canImport(UIKit)
+        UIPasteboard.general.string = text
+        UINotificationFeedbackGenerator().notificationOccurred(.success)
+#elseif canImport(AppKit)
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
+#endif
+    }
+
     private var libraryEmptyState: some View {
         VStack(spacing: 12) {
             WIcon("mic", size: 34, weight: .regular).foregroundStyle(t.faint)
@@ -348,7 +370,7 @@ struct iPadSplitView: View {
                 Text("\(cur.app) · \(cur.when) · \(cur.dur) · \(cur.words) words")
                     .font(WZFont.mono(12)).foregroundStyle(t.faint)
                 Spacer()
-                GhostButton(title: "Copy", icon: "copy").fixedSize()
+                GhostButton(title: "Copy", icon: "copy") { copyTranscript(cur.title) }.fixedSize()
                 GradButton(title: "Insert", icon: "arrowUR").fixedSize()
             }
             .padding(.horizontal, 32).padding(.vertical, 18)
@@ -437,7 +459,9 @@ private struct IPadLiveJournal: View {
     @State private var showSettings = false
     @State private var showComposer = false
     @State private var showScratchpad = false
-    @State private var settingsDark = false
+    // Same persisted key iPadSplitView derives the shell theme from — binding it into
+    // SettingsView makes the Dark-mode toggle actually re-theme the whole split.
+    @AppStorage("wz.split.dark") private var splitDark = true
     @State private var settingsCategory: String?
     @State private var toastMsg: String?
 
@@ -458,10 +482,7 @@ private struct IPadLiveJournal: View {
                                   openRec: { demo in
                                       if let sourceId = demo.sourceId { openLibrary(sourceId) }
                                   },
-                                  openSettings: {
-                                      settingsDark = t.dark
-                                      showSettings = true
-                                  },
+                                  openSettings: { showSettings = true },
                                   toast: showToast,
                                   seed: daySeed,
                                   startInManual: dayStartInManual)
@@ -490,7 +511,7 @@ private struct IPadLiveJournal: View {
                 Group {
                     switch settingsSub {
                     case .none:
-                        SettingsView(onBack: { showSettings = false }, dark: $settingsDark,
+                        SettingsView(onBack: { showSettings = false }, dark: $splitDark,
                                      openModels: { settingsSub = .models },
                                      openKeyboardSetup: { settingsSub = .keyboard },
                                      openOnboarding: { settingsSub = .onboarding },
@@ -501,20 +522,20 @@ private struct IPadLiveJournal: View {
                                      toast: showToast,
                                      initialCategoryID: $settingsCategory)
                     case .models:
-                        ModelsView(onBack: { settingsSub = nil })
+                        ModelsView(onBack: { settingsCategory = "models"; settingsSub = nil })
                     case .keyboard:
                         // Unreachable on macOS: the hub row that sets .keyboard is iOS-only
                         // (see SettingsView's "Dictate from anywhere" group) and the setup
                         // view itself isn't in the Mac target.
                         #if os(iOS)
-                        KeyboardSetupView(onBack: { settingsSub = nil })
+                        KeyboardSetupView(onBack: { settingsCategory = "system"; settingsSub = nil })
                         #else
                         EmptyView()
                         #endif
                     case .onboarding:
                         OnboardingView { settingsSub = nil }
                     case .github:
-                        GitHubSyncView(onBack: { settingsSub = nil }, toast: showToast)
+                        GitHubSyncView(onBack: { settingsCategory = "sync"; settingsSub = nil }, toast: showToast)
                     case .digestPrompts:
                         DigestPromptEditorView(onBack: { settingsSub = nil }, toast: showToast)
                     case .storage:
@@ -553,13 +574,13 @@ private struct IPadLiveJournal: View {
                                     case .split: break
                                     }
                                 },
-                                openSettings: { settingsDark = t.dark; showSettings = true },
+                                openSettings: { showSettings = true },
                                 toast: showToast)
         }
         .sheet(isPresented: $showScratchpad) {
             ScratchpadView(onBack: { showScratchpad = false },
                            onHistory: { showScratchpad = false },
-                           openSettings: { settingsDark = t.dark; showSettings = true },
+                           openSettings: { showSettings = true },
                            // Dismiss the sheet before opening today's digest so DigestDayView is
                            // actually visible — same idiom as the composer sheet's onDone above.
                            summarizeDay: { showScratchpad = false; dayStartInManual = false; daySeed = nil; day = Date() },

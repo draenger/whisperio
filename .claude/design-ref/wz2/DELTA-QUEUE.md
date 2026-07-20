@@ -86,6 +86,12 @@ Rulings recorded (do NOT re-report):
 Scratchpad "Summarize the day now" wired at both call sites (iPhone → today's digest;
 iPad dismisses the sheet first). settings-all cluster clean.
 
+## Parity round 6 (2026-07-20) — 3 raw → 2 unique gaps → fixed directly (99a057f)
+iPad/Mac Settings sheet: deep pages (models / preset editor / categorization prompts /
+GitHub sync / storage / onboarding) now swap the sheet content with an in-sheet toast
+banner; keyboard-setup row is iOS-only (iOS extension — nothing to install on macOS,
+RULED). settings sub-state resets on sheet dismiss.
+
 ## Process
 Weaker agents plan → Fable verifies/corrects plans → weaker agents implement
 (fresh-read + surgical-edit protocol, per-file ownership) → build gates

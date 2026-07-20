@@ -21,8 +21,10 @@ struct WhisperioMacApp: App {
 
     var body: some Scene {
         WindowGroup("Whisperio") {
+            // Theme comes from iPadSplitView itself (persisted "wz.split.dark" @AppStorage →
+            // .environment(\.wz, ...)) so Settings' Dark-mode toggle really re-themes the app —
+            // a hardcoded .rezmeTheme here would freeze it dark.
             iPadSplitView()
-                .environment(\.wz, .rezmeTheme)
                 .environment(\.wzLiveJournal, true)
                 .environmentObject(settings)
                 .environmentObject(recordings)
