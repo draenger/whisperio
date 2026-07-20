@@ -115,7 +115,7 @@ struct GradButton: View {
         Button(action: action) {
             HStack(spacing: 8) {
                 if let icon { WIcon(icon, size: 17) }
-                Text(title)
+                Text(title).lineLimit(1).minimumScaleFactor(0.75)
             }
             .font(WZFont.ui(15, .semibold))
             .foregroundStyle(t.primaryInk)
@@ -137,7 +137,10 @@ struct GhostButton: View {
         Button(action: action) {
             HStack(spacing: 8) {
                 if let icon { WIcon(icon, size: 16) }
-                Text(title)
+                // Scale-down guard: in equal-width action rows (Detail's Copy/Share/Rewrite)
+                // a ⅓ share on narrow phones is a few points short of the label's natural
+                // width — CSS flex quietly absorbs that, SwiftUI truncates to "Rewrit…".
+                Text(title).lineLimit(1).minimumScaleFactor(0.75)
             }
             .font(WZFont.ui(14, .semibold))
             .foregroundStyle(t.text)

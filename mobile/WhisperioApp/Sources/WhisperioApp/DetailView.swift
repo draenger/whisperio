@@ -679,7 +679,8 @@ struct DetailView: View {
         ShareLink(item: text) {
             HStack(spacing: 8) {
                 WIcon("share", size: 16)
-                Text("Share")
+                // Same scale-down guard as GhostButton — this sits in the same equal-width row.
+                Text("Share").lineLimit(1).minimumScaleFactor(0.75)
             }
             .font(WZFont.ui(14, .semibold)).foregroundStyle(t.text)
             .frame(maxWidth: .infinity).padding(.vertical, 12).padding(.horizontal, 18)
