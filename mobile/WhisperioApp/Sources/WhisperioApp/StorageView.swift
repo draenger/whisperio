@@ -216,7 +216,7 @@ struct StorageView: View {
     private var dangerGroup: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("DANGER")
-                .font(WZFont.mono(10.5, .semibold)).tracking(0.8).foregroundStyle(t.red)
+                .font(WZFont.mono(10.5, .semibold)).tracking(1.26).foregroundStyle(t.red)
                 .padding(.leading, 4)
             Button(action: { if !erased { eraseOpen = true } }) {
                 HStack(spacing: 13) {

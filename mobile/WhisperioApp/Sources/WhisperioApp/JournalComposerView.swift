@@ -369,7 +369,7 @@ struct JournalComposerView: View {
         }
         .buttonStyle(.plain)
         .opacity(enabled || busy ? 1 : 0.5)
-        .padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 10)
+        .padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 30)
     }
 
     // MARK: - Selection

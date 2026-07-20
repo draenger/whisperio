@@ -525,7 +525,7 @@ struct OnboardingView: View {
                 if tryState == .done {
                     VStack(alignment: .leading, spacing: 7) {
                         Text("GOOD TO KNOW")
-                            .font(WZFont.mono(10, .semibold)).tracking(1.4)
+                            .font(WZFont.mono(10)).tracking(1.2)
                             .foregroundStyle(t.faint)
                         HStack(spacing: 9) {
                             WIcon("copy", size: 14).foregroundStyle(t.accentLite)

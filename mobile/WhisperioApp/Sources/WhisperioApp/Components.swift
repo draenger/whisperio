@@ -111,11 +111,12 @@ struct GradButton: View {
     @Environment(\.wz) private var t
     let title: String
     var icon: String? = nil
+    var iconSize: CGFloat = 17
     var action: () -> Void = {}
     var body: some View {
         Button(action: action) {
             HStack(spacing: 8) {
-                if let icon { WIcon(icon, size: 17) }
+                if let icon { WIcon(icon, size: iconSize) }
                 Text(title).lineLimit(1).minimumScaleFactor(0.75)
             }
             .font(WZFont.ui(15, .semibold))

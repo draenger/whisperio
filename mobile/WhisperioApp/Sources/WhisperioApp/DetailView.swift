@@ -325,6 +325,7 @@ struct DetailView: View {
             Spacer(minLength: 0)
         }
         .padding(18)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .background(t.surface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(t.line, lineWidth: 1))
     }
@@ -543,7 +544,7 @@ struct DetailView: View {
                 if !quotes.isEmpty {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("WHAT THEY SAID")
-                            .font(WZFont.mono(10, .semibold)).foregroundStyle(t.faint)
+                            .font(WZFont.mono(10)).foregroundStyle(t.faint)
                         ForEach(Array(quotes.enumerated()), id: \.offset) { _, seg in
                             HStack(alignment: .top, spacing: 9) {
                                 Circle().fill(color).frame(width: 7, height: 7).padding(.top, 5)
@@ -572,7 +573,7 @@ struct DetailView: View {
                     }
                     .padding(.bottom, 14)
                 }
-                GradButton(title: "Save", icon: "check") { commitRename() }
+                GradButton(title: "Save", icon: "check", iconSize: 16) { commitRename() }
                     .padding(.bottom, 10)
                 GhostButton(title: "Cancel") { renameSpeaker = nil }
             }

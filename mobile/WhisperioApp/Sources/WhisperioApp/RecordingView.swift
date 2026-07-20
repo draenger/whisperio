@@ -98,7 +98,9 @@ struct RecordingView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .animation(.easeOut(duration: 0.15), value: live.transcript)
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+                // .topLeading, not .leading — plain .leading vertical-centers in the
+                // flexible region; the design top-packs (justifyContent: flex-start).
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 .padding(.horizontal, 24).padding(.top, 26)
 
                 // The design's ListeningGhost: leans in and nods while you talk, scribbles

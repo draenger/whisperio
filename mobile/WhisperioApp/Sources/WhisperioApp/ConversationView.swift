@@ -105,7 +105,8 @@ struct ConversationView: View {
                             .fixedSize()
                     }
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+                // .topLeading, not .leading — same vertical-center trap as RecordingView.
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 .padding(.horizontal, 24).padding(.top, 26)
 
                 // The design's ListeningGhost keeps the conversation company while it records

@@ -176,7 +176,7 @@ struct KeyboardScene: View {
                         .padding(.horizontal, 26).padding(.vertical, 14)
                         .background(t.primary, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                 }
-                .buttonStyle(.plain).padding(.top, 14).padding(.bottom, 40)
+                .buttonStyle(.plain).padding(.top, 20).padding(.bottom, 40)
             }
         }
     }
