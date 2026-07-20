@@ -168,7 +168,7 @@ struct KeyboardReturnView: View {
                         .font(.system(size: 15, weight: .bold))
                         .foregroundStyle(t.accentLite)
                         .offset(x: nudge ? -4 : 2, y: nudge ? -4 : 2)
-                    Text("Wróć przez „← \(Text("nazwa apki").italic())” w lewym górnym rogu")
+                    Text("Go back via “← \(Text("app name").italic())” in the top-left corner")
                         .font(WZFont.ui(12.5, .medium)).foregroundStyle(t.muted)
                     Spacer(minLength: 0)
                 }
@@ -177,10 +177,10 @@ struct KeyboardReturnView: View {
                 Spacer(minLength: 14)
 
                 WGhost(size: 56).padding(.bottom, 14)
-                Text("Gotowe — tekst w schowku")
+                Text("Done — text is on the clipboard")
                     .font(WZFont.display(22, .semibold)).foregroundStyle(t.text)
                     .multilineTextAlignment(.center)
-                Text("Wróć do swojej aplikacji — Whisperio wklei tekst sam. Jeśli nie, **przytrzymaj pole → Wklej** (tekst jest w schowku).")
+                Text("Return to your app — Whisperio will paste the text for you. If it doesn’t, **press and hold the field → Paste** (the text is on the clipboard).")
                     .font(WZFont.ui(14)).foregroundStyle(t.muted)
                     .multilineTextAlignment(.center).lineSpacing(3)
                     .padding(.horizontal, 30).padding(.top, 8)
@@ -198,7 +198,7 @@ struct KeyboardReturnView: View {
 
                     HStack(spacing: 6) {
                         WIcon("check", size: 12).foregroundStyle(t.green)
-                        Text("W schowku — gotowe do wklejenia")
+                        Text("On the clipboard — ready to paste")
                             .font(WZFont.mono(11.5)).foregroundStyle(t.green)
                     }.padding(.top, 12)
                 }
@@ -207,7 +207,7 @@ struct KeyboardReturnView: View {
 
                 // Last-resort hint: the (flaky) bottom-bar swipe, over a faux home indicator.
                 VStack(spacing: 12) {
-                    Text("albo przesuń w prawo po dolnym pasku ↓")
+                    Text("or swipe right along the bottom bar ↓")
                         .font(WZFont.ui(11.5)).foregroundStyle(t.faint)
                     Capsule().fill(t.text.opacity(0.5)).frame(width: 140, height: 5)
                         .offset(x: nudge ? 10 : -6)
@@ -215,7 +215,7 @@ struct KeyboardReturnView: View {
                 .padding(.bottom, 8)
 
                 Button(action: onClose) {
-                    Text("Zostań w Whisperio").font(WZFont.ui(13, .medium)).foregroundStyle(t.muted)
+                    Text("Stay in Whisperio").font(WZFont.ui(13, .medium)).foregroundStyle(t.muted)
                 }
                 .padding(.top, 6).padding(.bottom, 16)
             }

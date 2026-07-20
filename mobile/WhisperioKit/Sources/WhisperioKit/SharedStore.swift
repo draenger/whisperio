@@ -262,6 +262,11 @@ public enum SharedStore {
         public var digestNoteCount: Int
         /// Number of distinct categories represented in today's digest.
         public var digestCategoryCount: Int
+        /// Whether today's digest summary was produced by a cloud model (AI woven) rather than
+        /// assembled on-device (raw stack / manual authoring). Optional so snapshots written
+        /// before this field existed keep decoding — nil means "unknown", and the widget makes
+        /// no privacy claim for it.
+        public var digestIsCloud: Bool?
         /// When this snapshot was written — lets a widget show a stale/last-updated hint if ever needed.
         public var updatedAt: Date
 
@@ -273,6 +278,7 @@ public enum SharedStore {
             digestText: String? = nil,
             digestNoteCount: Int = 0,
             digestCategoryCount: Int = 0,
+            digestIsCloud: Bool? = nil,
             updatedAt: Date = Date()
         ) {
             self.recentRecordings = recentRecordings
@@ -282,6 +288,7 @@ public enum SharedStore {
             self.digestText = digestText
             self.digestNoteCount = digestNoteCount
             self.digestCategoryCount = digestCategoryCount
+            self.digestIsCloud = digestIsCloud
             self.updatedAt = updatedAt
         }
     }

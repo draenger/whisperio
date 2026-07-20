@@ -385,13 +385,15 @@ final class DigestStore: ObservableObject {
     /// Journal composer (New page): cache a digest assembled outside the classify/summarize
     /// pipeline — a raw stacked page built on-device, or an AI-woven summary the composer already
     /// produced from user-picked notes. Same upsert path as `generate`, minus the orchestration.
-    func storeComposed(_ digest: DailyDigest) {
-        upsert(digest)
+    /// `viaCloud` records how the summary was produced (AI cloud model vs on-device raw
+    /// stack / manual authoring) so the Today's-digest widget can show an honest privacy glyph.
+    func storeComposed(_ digest: DailyDigest, viaCloud: Bool = true) {
+        upsert(digest, viaCloud: viaCloud)
     }
 
     // MARK: - Upsert (routes to whichever backend is live)
 
-    private func upsert(_ digest: DailyDigest) {
+    private func upsert(_ digest: DailyDigest, viaCloud: Bool = true) {
         switch backend {
         case .sync(let store):
             store.upsert(digest)
@@ -399,7 +401,7 @@ final class DigestStore: ObservableObject {
             upsertJSON(digest)
             saveJSON(to: url)
         }
-        refreshWidgetSnapshotIfToday(digest)
+        refreshWidgetSnapshotIfToday(digest, viaCloud: viaCloud)
     }
 
     // MARK: - Widget snapshot (digest-owned fields)
@@ -408,13 +410,14 @@ final class DigestStore: ObservableObject {
     /// straight off the digest DigestDayView already renders, not a fabricated blurb. Only
     /// today's digest matters to the "Today's digest" widget, so a write for any other day is a
     /// no-op here. Leaves the recordings fields `RecordingsStore` owns untouched.
-    private func refreshWidgetSnapshotIfToday(_ digest: DailyDigest) {
+    private func refreshWidgetSnapshotIfToday(_ digest: DailyDigest, viaCloud: Bool) {
         let todayKey = DigestGrouping.dayKey(for: Date(), calendar: Calendar.current)
         guard digest.id == todayKey else { return }
         SharedStore.updateWidgetSnapshot { snapshot in
             snapshot.digestText = digest.summary
             snapshot.digestNoteCount = digest.recordingIDs.count
             snapshot.digestCategoryCount = digest.groups.count
+            snapshot.digestIsCloud = viaCloud
         }
         WidgetCenter.shared.reloadAllTimelines()
     }

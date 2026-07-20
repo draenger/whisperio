@@ -99,6 +99,13 @@ preferredColorScheme; Mac hardcoded theme removed); deep-page back restores pare
 pane's "Insert" button remains display-only (desktop insert concept — no target field
 exists in this shell; RULED, do not re-report).
 
+## Parity round 8 (2026-07-20) — 7 raw → 7 confirmed → all fixed (889db30)
+Rulings: keyboard chip = tri-state truth (on-device green / cloud amber / hidden when the
+App Group flag is unreadable — no unconditional claims); Watch duration from AVAudioPlayer;
+split Copy uses speaker-labeled text for conversations; SETT_PARENT sweep completed
+(content ← categorization prompts + template editor); error phase keeps 3-slot row;
+platform-aware empty-state copy.
+
 ## Process
 Weaker agents plan → Fable verifies/corrects plans → weaker agents implement
 (fresh-read + surgical-edit protocol, per-file ownership) → build gates

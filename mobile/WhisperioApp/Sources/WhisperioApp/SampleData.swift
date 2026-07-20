@@ -19,6 +19,17 @@ struct DemoRecording: Identifiable {
     var sourceId: UUID? = nil   // backing Recording.id for real rows; nil for sample data
     var render: String? = nil          // persisted AI rewrite (see RecordingsStore.setRender)
     var renderPresetID: String? = nil  // id of the preset that produced `render`
+
+    /// Capture-channel glyph for this row — the ONE source→icon mapping every list surface
+    /// (Home rows, iPad sidebar, journal-composer picker) shares, so a Watch or Back-Tap note
+    /// never degrades to a generic mic on one screen while another shows its real channel.
+    var srcIcon: String {
+        switch src {
+        case "watch": return "watch"; case "action": return "bolt"
+        case "backtap": return "command"; case "keyboard": return "keyboard"
+        default: return "mic"
+        }
+    }
 }
 
 enum WZSample {

@@ -36,6 +36,13 @@ struct JournalComposerView: View {
     @State private var prompt = ""
     @State private var busy = false
     @State private var showConsent = false
+    // "Dictate the instructions" mic on the AI-prompt field — same real dictation stack as
+    // DigestDayView's manual card (LiveDictation when the on-device path supports it, else
+    // record + provider-chain transcribe), appending into `prompt`.
+    private enum DictateStage { case idle, listening, processing }
+    @State private var dictateStage: DictateStage = .idle
+    @StateObject private var dictation = LiveDictation()
+    @StateObject private var micRecorder = AudioRecorder()
 
     private static let promptPresets = ["Standup update", "Bullet points", "Dear diary", "Client email"]
 
@@ -119,6 +126,11 @@ struct JournalComposerView: View {
             seeded = true
             let cal = Calendar.current
             picked = Set(allNotes.filter { cal.isDateInToday($0.timestamp) }.map(\.id))
+        }
+        .onDisappear {
+            // Tear down an in-flight prompt dictation — same guard DigestDayView's manual
+            // card applies when the screen goes away mid-listen.
+            if dictateStage == .listening { dictation.cancel(); micRecorder.cancel() }
         }
         .sheet(isPresented: $showConsent) {
             CloudConsentSheet(provider: .openAI,
@@ -215,7 +227,7 @@ struct JournalComposerView: View {
                     .font(WZFont.ui(13)).foregroundStyle(t.text)
                     .lineLimit(1).truncationMode(.tail)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                WIcon(demo.src == "keyboard" ? "keyboard" : "mic", size: 13).foregroundStyle(t.faint)
+                WIcon(demo.srcIcon, size: 13).foregroundStyle(t.faint)
                 Text(demo.when).font(WZFont.mono(9.5)).foregroundStyle(t.faint)
             }
             .padding(.horizontal, 14).padding(.vertical, 9)
@@ -233,10 +245,22 @@ struct JournalComposerView: View {
                 .padding(.leading, 13).padding(.trailing, 46).padding(.vertical, 11)
                 .background(t.surfaceUp, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(t.line, lineWidth: 1))
-            Circle().fill(t.primary)
-                .frame(width: 30, height: 30)
-                .overlay(WIcon("mic", size: 13).foregroundStyle(t.primaryInk))
-                .padding(.trailing, 9).padding(.bottom, 10)
+            Button(action: toggleDictate) {
+                Circle().fill(dictateStage == .listening ? t.red : t.primary)
+                    .frame(width: 30, height: 30)
+                    .overlay {
+                        if dictateStage == .processing {
+                            ProgressView().controlSize(.mini).tint(t.primaryInk)
+                        } else {
+                            WIcon(dictateStage == .listening ? "stop" : "mic", size: 13)
+                                .foregroundStyle(t.primaryInk)
+                        }
+                    }
+            }
+            .buttonStyle(.plain)
+            .disabled(dictateStage == .processing)
+            .accessibilityLabel(dictateStage == .listening ? "Stop dictating" : "Dictate the instructions")
+            .padding(.trailing, 9).padding(.bottom, 10)
         }
         .padding(.top, 2)
 
@@ -364,6 +388,75 @@ struct JournalComposerView: View {
         allNotes.filter { picked.contains($0.id) }
     }
 
+    // MARK: - Prompt dictation (mirrors DigestDayView's manual-card pattern)
+
+    private var useLiveDictation: Bool {
+        settings.settings.liveTranscriptionEnabled
+            && (settings.settings.providerChain.first ?? .onDevice) == .onDevice
+            && LiveDictation.isSupported(language: settings.settings.language,
+                                         requireOnDevice: !settings.settings.appleAllowOnline)
+    }
+
+    private func toggleDictate() {
+        switch dictateStage {
+        case .idle: startDictate()
+        case .listening: stopDictate()
+        case .processing: break
+        }
+    }
+
+    private func startDictate() {
+        Task {
+            let ok = await micRecorder.requestPermissions()
+            guard ok else {
+                toast("Microphone access denied — enable it in Settings.")
+                return
+            }
+            do {
+                if useLiveDictation {
+                    try dictation.start(language: settings.settings.language,
+                                         vocabulary: settings.settings.vocabularyTerms,
+                                         requireOnDevice: !settings.settings.appleAllowOnline)
+                } else {
+                    try micRecorder.start()
+                }
+                dictateStage = .listening
+            } catch {
+                toast(error.localizedDescription)
+            }
+        }
+    }
+
+    private func stopDictate() {
+        guard dictateStage == .listening else { return }
+        dictateStage = .processing
+        if useLiveDictation {
+            Task {
+                let (raw, _) = await dictation.finish()
+                appendToPrompt(raw)
+                dictateStage = .idle
+            }
+        } else {
+            let clip = micRecorder.stop()
+            Task {
+                defer { dictateStage = .idle }
+                guard let clip else { return }
+                let result = await settings.makeChain().transcribe(clip)
+                if case .success(let tr) = result { appendToPrompt(tr.text) }
+                if !settings.settings.keepAudioRecordings {
+                    try? FileManager.default.removeItem(
+                        at: FileManager.default.temporaryDirectory.appendingPathComponent(clip.filename))
+                }
+            }
+        }
+    }
+
+    private func appendToPrompt(_ raw: String) {
+        let text = settings.cleanup(raw).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return }
+        prompt = prompt.isEmpty ? text : prompt + " " + text
+    }
+
     // MARK: - Completion
 
     private func go(_ kind: JournalComposeKind) {
@@ -387,7 +480,7 @@ struct JournalComposerView: View {
         digests.storeComposed(DailyDigest(
             id: DigestGrouping.dayKey(for: day, calendar: .current), date: day,
             recordingIDs: picks.map(\.id), groups: groups,
-            summary: stacked, summaryGeneratedAt: Date()))
+            summary: stacked, summaryGeneratedAt: Date()), viaCloud: false)
         onDone(.raw)
     }
 

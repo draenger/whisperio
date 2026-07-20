@@ -414,7 +414,7 @@ struct DigestDayView: View {
         digests.storeComposed(DailyDigest(
             id: dayKey, date: day,
             recordingIDs: dayRecs.map(\.id), groups: groups,
-            summary: text, summaryGeneratedAt: Date()))
+            summary: text, summaryGeneratedAt: Date()), viaCloud: false)
         manual = false
         manualText = ""
     }

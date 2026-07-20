@@ -297,7 +297,7 @@ struct iPadSplitView: View {
 
     private func sidebarRow(_ r: DemoRecording) -> some View {
         let on = sel == r.id
-        let icon = r.src == "watch" ? "watch" : r.src == "action" ? "bolt" : r.src == "keyboard" ? "keyboard" : r.src == "backtap" ? "command" : "mic"
+        let icon = r.srcIcon
         let category = categoryFor(r)
         return HStack(alignment: .top, spacing: 11) {
             WIcon(icon, size: 15, weight: .regular).foregroundStyle(t.accentLite)

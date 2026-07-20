@@ -418,13 +418,6 @@ struct RecRow: View {
     private let openOffset: CGFloat = -88
     private let snap = Animation.timingCurve(0.2, 0.8, 0.3, 1, duration: 0.22)
 
-    private var srcIcon: String {
-        switch r.src {
-        case "watch": return "watch"; case "action": return "bolt"
-        case "backtap": return "command"; case "keyboard": return "keyboard"
-        default: return "mic"
-        }
-    }
 
     var body: some View {
         rowContent
@@ -436,7 +429,7 @@ struct RecRow: View {
     private var rowContent: some View {
         VStack(alignment: .leading, spacing: 5) {
             HStack(spacing: 7) {
-                WIcon(srcIcon, size: 12, weight: .regular).foregroundStyle(t.accentLite)
+                WIcon(r.srcIcon, size: 12, weight: .regular).foregroundStyle(t.accentLite)
                 Text(r.when); Text("·"); Text(r.dur)
                 Spacer(minLength: 0)
                 if let category {

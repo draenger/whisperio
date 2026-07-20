@@ -276,8 +276,19 @@ struct TodayDigestWidgetView: View {
                 Image(systemName: "sparkle").font(.system(size: 13)).foregroundStyle(wzAccentLite)
                 Text("Today's digest").font(.system(size: 13, weight: .semibold))
                 Spacer()
-                Image(systemName: "lock.fill").font(.system(size: 9))
-                    .foregroundStyle(.secondary)
+                // Honest privacy glyph: cloud when the summary came from the AI model, lock
+                // when it was assembled on-device (raw stack / manual), nothing when the
+                // snapshot predates the flag — never an unconditional claim.
+                switch snapshot?.digestIsCloud {
+                case .some(true):
+                    Image(systemName: "cloud.fill").font(.system(size: 9))
+                        .foregroundStyle(.secondary)
+                case .some(false):
+                    Image(systemName: "lock.fill").font(.system(size: 9))
+                        .foregroundStyle(.secondary)
+                case .none:
+                    EmptyView()
+                }
             }
             if let text = snapshot?.digestText, !text.isEmpty {
                 Text(text)
