@@ -315,13 +315,15 @@ struct KeyboardRootView: View {
     }
 
     private func charRow(_ keys: [String], raw: Bool, inset: CGFloat = 0) -> some View {
+        // Inset as padding, not Spacer children — a Spacer inside HStack(spacing:5)
+        // participates in the spacing distribution and silently adds 5pt per side
+        // (21 instead of the design's 16px container padding).
         HStack(spacing: 5) {
-            if inset > 0 { Spacer().frame(width: inset) }
             ForEach(keys, id: \.self) { k in
                 raw ? AnyView(symKey(k)) : AnyView(letterKey(k))
             }
-            if inset > 0 { Spacer().frame(width: inset) }
         }
+        .padding(.horizontal, inset)
     }
 
     private func letterKey(_ k: String) -> some View {
