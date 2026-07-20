@@ -35,7 +35,7 @@ struct KeyboardSetupView: View {
                         GradButton(title: "Add keyboard in Settings", icon: "keyboard") { openSettings() }
                             .fixedSize()
 
-                        VStack(alignment: .leading, spacing: 9) {
+                        VStack(alignment: .leading, spacing: 8) {
                             SectionLabel(text: "Setup").padding(.leading, 4)
                             VStack(spacing: 0) {
                                 step(1, "Open Keyboard settings",

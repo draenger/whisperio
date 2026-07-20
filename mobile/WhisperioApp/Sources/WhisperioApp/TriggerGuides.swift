@@ -179,10 +179,10 @@ struct TriggerGuidesView: View {
             VStack(spacing: 0) {
                 WHeader(title: "Dictation triggers", onBack: onBack)
                 ScrollView(showsIndicators: false) {
-                    VStack(alignment: .leading, spacing: 18) {
+                    VStack(alignment: .leading, spacing: 16) {
                         InfoCard(text: "Whisperio can start a dictation from all over iOS. Set up any of these once, then talk from anywhere — every transcript still lands back in your library.")
 
-                        VStack(alignment: .leading, spacing: 9) {
+                        VStack(alignment: .leading, spacing: 8) {
                             SectionLabel(text: "Available triggers").padding(.leading, 4)
                             VStack(spacing: 0) {
                                 ForEach(Array(TriggerGuide.all.enumerated()), id: \.element.id) { idx, g in

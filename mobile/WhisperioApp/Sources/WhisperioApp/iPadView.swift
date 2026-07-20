@@ -692,7 +692,8 @@ private struct iPadJournal: View {
         let ready = generatedDays.contains(day.id)
         return VStack(alignment: .leading, spacing: 10) {
             HStack {
-                Text(day.title).font(WZFont.display(16, .medium)).foregroundStyle(t.text)
+                Text(day.title.uppercased())
+                    .font(WZFont.mono(11, .semibold)).tracking(1.1).foregroundStyle(t.faint)
                 Spacer(minLength: 0)
                 Text("\(day.recs.count) note\(day.recs.count == 1 ? "" : "s")")
                     .font(WZFont.mono(11)).foregroundStyle(t.faint)
@@ -719,17 +720,29 @@ private struct iPadJournal: View {
     }
 
     private var dayDetail: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
+        VStack(spacing: 0) {
+            // Fixed header like iPadSplitView.detail's — title + count + badge over a
+            // hairline, with the scrollable content below it (not scrolled along).
+            HStack(spacing: 10) {
                 Text(current.title).font(WZFont.display(20, .medium)).foregroundStyle(t.text)
-                summaryCard
-                ForEach(categories(current.recs)) { cat in
-                    groupSection(cat)
-                }
+                Text("\(current.recs.count) note\(current.recs.count == 1 ? "" : "s")")
+                    .font(WZFont.mono(11)).foregroundStyle(t.faint)
+                Spacer(minLength: 0)
+                PrivacyBadge(mode: .device, small: true)
             }
-            .frame(maxWidth: 680, alignment: .leading)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 40).padding(.vertical, 24)
+            .padding(.horizontal, 32).padding(.vertical, 16)
+            .overlay(alignment: .bottom) { Rectangle().fill(t.line).frame(height: 1) }
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    summaryCard
+                    ForEach(categories(current.recs)) { cat in
+                        groupSection(cat)
+                    }
+                }
+                .frame(maxWidth: 680, alignment: .leading)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 40).padding(.vertical, 24)
+            }
         }
     }
 

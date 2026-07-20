@@ -163,7 +163,7 @@ struct DigestDayView: View {
                 manualCard
             } else {
                 Text("Start with an AI summary of the day’s notes — or write it yourself from scratch.")
-                    .font(WZFont.ui(13.5)).foregroundStyle(t.muted).lineSpacing(3)
+                    .font(WZFont.ui(14)).foregroundStyle(t.muted).lineSpacing(3)
                     .fixedSize(horizontal: false, vertical: true)
                 HStack(spacing: 9) {
                     GradButton(title: "Generate summary", icon: "spark") { generate() }.fixedSize()

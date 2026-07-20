@@ -40,7 +40,7 @@ struct PresetEditorView: View {
             VStack(spacing: 0) {
                 WHeader(title: isExisting ? "Edit template" : "New template", onBack: onBack)
                 ScrollView(showsIndicators: false) {
-                    VStack(alignment: .leading, spacing: 18) {
+                    VStack(alignment: .leading, spacing: 16) {
                         nameField
                         promptField
 

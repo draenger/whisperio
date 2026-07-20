@@ -377,7 +377,7 @@ struct JournalView: View {
                     .background(t.primary, in: RoundedRectangle(cornerRadius: 11, style: .continuous))
                 VStack(alignment: .leading, spacing: 2) {
                     Text("TODAY · RUNNING NOTE")
-                        .font(WZFont.mono(9.5, .semibold)).tracking(1.1).foregroundStyle(t.accentLite)
+                        .font(WZFont.mono(9.5)).tracking(1.1).foregroundStyle(t.accentLite)
                     Text("\(day.recs.count) take\(day.recs.count == 1 ? "" : "s") so far — open to continue")
                         .font(WZFont.ui(13)).foregroundStyle(t.text)
                 }

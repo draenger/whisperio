@@ -54,7 +54,7 @@ struct GitHubSyncView: View {
             VStack(spacing: 0) {
                 WHeader(title: "Sync to GitHub", onBack: onBack)
                 ScrollView(showsIndicators: false) {
-                    VStack(alignment: .leading, spacing: 18) {
+                    VStack(alignment: .leading, spacing: 16) {
                         InfoCard(text: "Mirror transcripts, journals, rendered rewrites and daily summaries to a Git repository — a plain-text backup you own.")
 
                         // Repository config — the token is a secret (Keychain-backed), the rest are

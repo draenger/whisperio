@@ -1382,6 +1382,7 @@ struct SettingsView: View {
                         }
                     }
                 }
+                .padding(.vertical, 13)
             }
             #endif
             SettGroup(title: "Dictate from anywhere") {
