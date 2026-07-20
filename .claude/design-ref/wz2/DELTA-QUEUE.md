@@ -159,6 +159,21 @@ rewrite-preset popover font 14→13); watch + onboarding + journal singles. Deta
 button CONFIRMED 1:1 (report's root cause was label truncation on narrow widths → global
 minimumScaleFactor guard on GhostButton/GradButton labels, 09f2a85).
 
+## Sizing loop rounds 2-14 (2026-07-20/21) — DRY at round 14
+Trajectory 29 → 22 → 14 → 9 → 9 → 10 → 1 → 1 → 2 → 2 → 1 → 1 → 2 → 0: 103 adversarially-
+confirmed box-model/typography gaps fixed across 13 rounds (commits f1970c2, 8bddce2, 270cf7f,
+9977dcf, f001008, f85b96e, 5038785, 353bb72, fe2d7ee, b3e9bc6, 37117e2, 1fcb187). Notable
+class-level lessons institutionalized: Spacer inside a spacing HStack participates in spacing
+(keyboard row-2 inset); .frame(alignment: .leading) vertical-centers (Recording/Conversation
+status blocks → .topLeading); ZStack default-centers a fixed-height keyboard panel (→ bottom
+anchor); .fixedSize() hug is a ROW-flex idiom — column-flex children stretch (Restore-templates);
+semantic fonts (.footnote/.caption2) drift from literal design px on watchOS; @GestureState is
+the only stuck-proof store for row-swipe state (RecRow scroll fix). CategoryFilterChip = FUI face
++ tinted selected state (CategoryTag stays mono — different component). TestFlight: build 59
+(settings wave + audio/scroll), build 60 (rounds 4-6 + gesture rework + Copy-on-card), build 61
+(rounds 7-13 tail: watch 11.5/11pt, keyboard inset+anchor, tinted chips, dashed key field,
+composer CTA guard, tracking nits).
+
 ## User-directed deviations (2026-07-20, override design)
 Detail: Copy moved OFF the bottom bar onto the transcript/conversation card header (26×26 ghost
 icon, check-flip); bottom bar is now Share + Rewrite two-up. Categorize seed rows render without
