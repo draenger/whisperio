@@ -52,7 +52,7 @@ struct WatchRootView: View {
 
                 if !conn.transcript.isEmpty {
                     Text(conn.transcript)
-                        .font(.footnote)
+                        .font(.system(size: 11.5)).lineSpacing(3)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(8)
                         .background(Color(white: 1.0, opacity: 0.2), in: RoundedRectangle(cornerRadius: 10))
