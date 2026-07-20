@@ -179,6 +179,18 @@ Detail: Copy moved OFF the bottom bar onto the transcript/conversation card head
 icon, check-flip); bottom bar is now Share + Rewrite two-up. Categorize seed rows render without
 chevron/onTap (mock's onTap is a no-op stub — no dead affordances).
 
+## Feature-gap wave (2026-07-21) — 7 confirmed design-feature gaps -> shipped (0d566b7)
+Completeness audit (existence/behavior, 6 finders + skeptics, 0 refuted): EdgeStates finally WIRED
+(real NWPathMonitor offline banner on Home; ProviderChain.onFallback consumed -> cloud->on-device
+warn banner in Recording/Scratchpad, no Retry ruled OK; OldDeviceView real capability gate via
+SFSpeechRecognizer.supportsOnDeviceRecognition, once-only, toggle bound to real cloudConsentGranted;
+Conversation skipped honestly - no chain there); onboarding languages persist (preferredLanguages +
+language=first); Recap reachable in the split shell (streak pill + dimmed panel, RecapView(bare:),
+mount point invented - design had none, logged); REAL Live Activity dictation (ActivityKit Lock
+Screen + Dynamic Island, Stop via LiveActivityIntent -> SharedStore flag, all recording exit paths,
+silent-skip when activities disabled, iOS-gated for Mac); desktop chain labels + platform launch
+label. Kit 220 tests green.
+
 ## Process
 Weaker agents plan → Fable verifies/corrects plans → weaker agents implement
 (fresh-read + surgical-edit protocol, per-file ownership) → build gates
