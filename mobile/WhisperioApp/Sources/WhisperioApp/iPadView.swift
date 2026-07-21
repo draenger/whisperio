@@ -48,6 +48,8 @@ struct iPadSplitView: View {
     // shell only (Gallery's design-preview iPadHost never injects RecordingsStore, and Recap
     // needs the real store).
     @State private var showRecap = false
+    // Toolbar-gear Settings sheet — the split shell's own entry (see settingsGear below).
+    @State private var showSettingsSheet = false
     // Library tab's rows: the real library (mapped through the existing DemoRecording adapter)
     // when the live shell injected a store, otherwise the design's sample rows.
     private var libraryRecordings: [DemoRecording] { liveJournal ? recordings.items.map(DemoRecording.init) : WZSample.recordings }
@@ -77,10 +79,13 @@ struct iPadSplitView: View {
             if showEngineBar {
                 engineBar
             }
-            HStack {
+            HStack(spacing: 9) {
                 segmented
                 Spacer(minLength: 0)
-                if liveJournal { recapTrigger }
+                if liveJournal {
+                    recapTrigger
+                    settingsGear
+                }
             }
             .padding(.horizontal, 16).padding(.vertical, 8)
             .overlay(alignment: .bottom) { Rectangle().fill(t.lineSoft).frame(height: 1) }
@@ -119,6 +124,9 @@ struct iPadSplitView: View {
                 recapPanel.transition(.opacity)
             }
         }
+        .sheet(isPresented: $showSettingsSheet) {
+            SplitSettingsSheet(onClose: { showSettingsSheet = false })
+        }
         .onAppear {
             // Seed the sidebar's selection highlight to the row the detail pane is already
             // showing (mob-screens.jsx:797 initializes `sel` to the first recording's id) —
@@ -136,6 +144,22 @@ struct iPadSplitView: View {
     // segmented Library/Journal control, visible in both tabs. Mirrors HomeView's
     // `recapStreakTile` styling (bolt glyph + streak) at a size that fits this thin toolbar row
     // instead of that tile's tall vertical card.
+    // The split shell's ALWAYS-VISIBLE Settings entry (both tabs). Before this, Settings was
+    // reachable on iPad only from journal sub-screens (scratchpad/digest/composer) — from the
+    // Library tab there was no way in at all (the Mac engine-bar Menu is hidden on iPad).
+    // Gated on liveJournal like recapTrigger: Gallery's design-preview host injects no stores.
+    private var settingsGear: some View {
+        Button(action: { showSettingsSheet = true }) {
+            WIcon("settings", size: 15, weight: .regular)
+                .foregroundStyle(t.text)
+                .padding(.horizontal, 9).padding(.vertical, 7)
+                .background(t.surfaceUp, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous).stroke(t.line, lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Settings")
+    }
+
     private var recapTrigger: some View {
         Button(action: { withAnimation(.easeInOut(duration: 0.18)) { showRecap = true } }) {
             HStack(spacing: 6) {
@@ -601,15 +625,16 @@ struct iPadSplitView: View {
 // the real DigestDayView for the selected day on the right. Both read the injected RecordingsStore /
 // DigestStore / SettingsStore, so summaries generate and notes reflect live edits. Only constructed
 // when `wzLiveJournal` is true (stores present), so the sample path never resolves those objects.
-private struct IPadLiveJournal: View {
+// The split shell's self-contained Settings sheet: SettingsView hub + content-swapped deep
+// pages + an in-sheet toast. Extracted from IPadLiveJournal so BOTH entry points share one
+// implementation: the toolbar gear on iPadSplitView (the only Settings entry visible from the
+// Library tab — without it, Settings was unreachable on iPad outside journal sub-screens) and
+// the journal flows' openSettings callbacks.
+private struct SplitSettingsSheet: View {
     @Environment(\.wz) private var t
-    var onExit: () -> Void = {}
-    // Resolves a note tap to the Library tab: parent (iPadSplitView) matches the recording's
-    // real `sourceId` against `libraryRecordings` and sets `sel`/`tab` — kept out of this view
-    // since library selection state lives one level up.
-    var openLibrary: (UUID) -> Void = { _ in }
-    // Which deep settings page the settings sheet is showing instead of the hub (content swap,
-    // not a nested sheet — see the .sheet below). Nil = the SettingsView hub itself.
+    var onClose: () -> Void
+    // Which deep settings page is showing instead of the hub (content swap, not a nested
+    // sheet — one sheet, back returns to the hub). Nil = the SettingsView hub itself.
     private enum SettingsSub {
         case models, keyboard, onboarding, github, digestPrompts, storage
         case preset(RewritePreset)
@@ -618,16 +643,93 @@ private struct IPadLiveJournal: View {
         RewritePreset(id: UUID().uuidString, name: "", prompt: "", icon: "spark")
     }
     @State private var settingsSub: SettingsSub?
+    @State private var settingsCategory: String?
+    @State private var toastMsg: String?
+    // Same persisted key iPadSplitView derives the shell theme from — binding it into
+    // SettingsView makes the Dark-mode toggle actually re-theme the whole split.
+    @AppStorage("wz.split.dark") private var splitDark = true
+
+    var body: some View {
+        ZStack {
+            Group {
+                switch settingsSub {
+                case .none:
+                    SettingsView(onBack: onClose, dark: $splitDark,
+                                 openModels: { settingsSub = .models },
+                                 openKeyboardSetup: { settingsSub = .keyboard },
+                                 openOnboarding: { settingsSub = .onboarding },
+                                 openPresetEditor: { settingsSub = .preset($0 ?? Self.newPreset()) },
+                                 openGitHubSync: { settingsSub = .github },
+                                 openDigestPrompts: { settingsSub = .digestPrompts },
+                                 openStorage: { settingsSub = .storage },
+                                 toast: showToast,
+                                 initialCategoryID: $settingsCategory)
+                case .models:
+                    ModelsView(onBack: { settingsCategory = "models"; settingsSub = nil })
+                case .keyboard:
+                    // Unreachable on macOS: the hub row that sets .keyboard is iOS-only
+                    // (see SettingsView's "Dictate from anywhere" group) and the setup
+                    // view itself isn't in the Mac target.
+                    #if os(iOS)
+                    KeyboardSetupView(onBack: { settingsCategory = "system"; settingsSub = nil })
+                    #else
+                    EmptyView()
+                    #endif
+                case .onboarding:
+                    OnboardingView { settingsSub = nil }
+                case .github:
+                    GitHubSyncView(onBack: { settingsCategory = "sync"; settingsSub = nil }, toast: showToast)
+                case .digestPrompts:
+                    DigestPromptEditorView(onBack: { settingsCategory = "content"; settingsSub = nil }, toast: showToast)
+                case .storage:
+                    StorageView(onBack: { settingsSub = nil }, toast: showToast)
+                case .preset(let p):
+                    PresetEditorView(preset: p, onBack: { settingsCategory = "content"; settingsSub = nil }, toast: showToast)
+                }
+            }
+            if let toastMsg {
+                HStack(spacing: 8) {
+                    WIcon("check", size: 16).foregroundStyle(t.green)
+                    Text(toastMsg).font(WZFont.ui(13.5, .medium)).foregroundStyle(.white)
+                }
+                .padding(.horizontal, 18).padding(.vertical, 11)
+                .background(t.dark ? t.elevated : WZTheme.rezmeTheme.elevated,
+                            in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+                .shadow(color: .black.opacity(0.4), radius: 15, y: 12)
+                .transition(.opacity.combined(with: .move(edge: .bottom)))
+                .frame(maxHeight: .infinity, alignment: .bottom)
+                .padding(.bottom, 24)
+            }
+        }
+        // PresetStore isn't injected by the Mac app entry point (WhisperioMacApp.swift
+        // only provides settings/recordings/digests); it's UserDefaults-backed like
+        // SettingsStore, so a fresh instance here still reflects real persisted presets
+        // rather than diverging state. Applied to the whole Group so the preset editor
+        // shares it with the hub.
+        .environmentObject(PresetStore())
+    }
+
+    private func showToast(_ m: String) {
+        withAnimation { toastMsg = m }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.7) {
+            withAnimation { toastMsg = nil }
+        }
+    }
+}
+
+private struct IPadLiveJournal: View {
+    @Environment(\.wz) private var t
+    var onExit: () -> Void = {}
+    // Resolves a note tap to the Library tab: parent (iPadSplitView) matches the recording's
+    // real `sourceId` against `libraryRecordings` and sets `sel`/`tab` — kept out of this view
+    // since library selection state lives one level up.
+    var openLibrary: (UUID) -> Void = { _ in }
     @State private var day: Date?
     @State private var dayStartInManual = false
     @State private var daySeed: String? = nil
     @State private var showSettings = false
     @State private var showComposer = false
     @State private var showScratchpad = false
-    // Same persisted key iPadSplitView derives the shell theme from — binding it into
-    // SettingsView makes the Dark-mode toggle actually re-theme the whole split.
-    @AppStorage("wz.split.dark") private var splitDark = true
-    @State private var settingsCategory: String?
     @State private var toastMsg: String?
 
     var body: some View {
@@ -665,63 +767,8 @@ private struct IPadLiveJournal: View {
         }
         .sheet(isPresented: $showSettings) {
             // No dedicated "settings" route exists in the split shell (unlike AppShell's
-            // `.settings` screen), so this is a self-contained sheet over the same SettingsView
-            // the phone uses. Deep pages that AppShell reaches as separate screens (models,
-            // preset editor, GitHub sync, digest prompts, storage, keyboard setup, onboarding)
-            // swap the sheet's CONTENT instead of stacking nested sheets — one sheet, back
-            // returns to the hub — so none of those rows are dead ends here. The toast banner
-            // is mirrored inside the sheet: a toast fired from Settings (or a deep page) would
-            // otherwise render on the split view underneath and never be seen.
-            ZStack {
-                Group {
-                    switch settingsSub {
-                    case .none:
-                        SettingsView(onBack: { showSettings = false }, dark: $splitDark,
-                                     openModels: { settingsSub = .models },
-                                     openKeyboardSetup: { settingsSub = .keyboard },
-                                     openOnboarding: { settingsSub = .onboarding },
-                                     openPresetEditor: { settingsSub = .preset($0 ?? Self.newPreset()) },
-                                     openGitHubSync: { settingsSub = .github },
-                                     openDigestPrompts: { settingsSub = .digestPrompts },
-                                     openStorage: { settingsSub = .storage },
-                                     toast: showToast,
-                                     initialCategoryID: $settingsCategory)
-                    case .models:
-                        ModelsView(onBack: { settingsCategory = "models"; settingsSub = nil })
-                    case .keyboard:
-                        // Unreachable on macOS: the hub row that sets .keyboard is iOS-only
-                        // (see SettingsView's "Dictate from anywhere" group) and the setup
-                        // view itself isn't in the Mac target.
-                        #if os(iOS)
-                        KeyboardSetupView(onBack: { settingsCategory = "system"; settingsSub = nil })
-                        #else
-                        EmptyView()
-                        #endif
-                    case .onboarding:
-                        OnboardingView { settingsSub = nil }
-                    case .github:
-                        GitHubSyncView(onBack: { settingsCategory = "sync"; settingsSub = nil }, toast: showToast)
-                    case .digestPrompts:
-                        DigestPromptEditorView(onBack: { settingsCategory = "content"; settingsSub = nil }, toast: showToast)
-                    case .storage:
-                        StorageView(onBack: { settingsSub = nil }, toast: showToast)
-                    case .preset(let p):
-                        PresetEditorView(preset: p, onBack: { settingsCategory = "content"; settingsSub = nil }, toast: showToast)
-                    }
-                }
-                if let toastMsg {
-                    toastBanner(toastMsg)
-                        .frame(maxHeight: .infinity, alignment: .bottom)
-                        .padding(.bottom, 24)
-                }
-            }
-            // PresetStore isn't injected by the Mac app entry point (WhisperioMacApp.swift
-            // only provides settings/recordings/digests); it's UserDefaults-backed like
-            // SettingsStore, so a fresh instance here still reflects real persisted presets
-            // rather than diverging state. Applied to the whole Group so the preset editor
-            // shares it with the hub.
-            .environmentObject(PresetStore())
-            .onDisappear { settingsSub = nil }
+            // `.settings` screen) — the shared SplitSettingsSheet hosts the hub + deep pages.
+            SplitSettingsSheet(onClose: { showSettings = false })
         }
         .sheet(isPresented: $showComposer) {
             // "New page" composer over the split. onDone routes exactly like the phone
