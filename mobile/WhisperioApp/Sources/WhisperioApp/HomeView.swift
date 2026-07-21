@@ -338,16 +338,29 @@ struct HomeView: View {
         }
     }
 
+    // First-run empty scene — port of StateHome's `empty` branch (mob-screens.jsx:1032-1044):
+    // ghost + glow, "Nothing captured yet", trigger-guidance copy, and the Action
+    // Button/Keyboard EngineChips — rendered inside HomeView's own chrome (the pinned
+    // row above and the dictate bar below stay put; this only replaces the list body).
     private var emptyState: some View {
-        VStack(spacing: 12) {
-            Spacer()
-            WIcon("mic", size: 34, weight: .regular).foregroundStyle(t.faint)
-            Text("No recordings yet").font(WZFont.ui(16, .semibold)).foregroundStyle(t.text)
-            Text("Tap the mic to dictate your first note.")
-                .font(WZFont.ui(13.5)).foregroundStyle(t.muted)
-            Spacer()
+        VStack(spacing: 0) {
+            ZStack {
+                Circle().fill(t.gradient).frame(width: 140, height: 140).blur(radius: 34).opacity(0.3)
+                WGhost(size: 92)
+            }
+            .padding(.bottom, 22)
+            Text("Nothing captured yet").font(WZFont.display(23)).foregroundStyle(t.text)
+            Text("Tap the mic, hold the Action Button, or use the Whisperio keyboard. Everything you say lands here.")
+                .font(WZFont.ui(14.5)).foregroundStyle(t.muted).multilineTextAlignment(.center)
+                .lineSpacing(3).padding(.top, 10).padding(.horizontal, 40)
+            HStack(spacing: 8) {
+                EngineChip(label: "Action Button", icon: "bolt")
+                EngineChip(label: "Keyboard", icon: "keyboard")
+            }
+            .padding(.top, 18)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(.top, -40)
         .padding(.bottom, 120)
     }
 

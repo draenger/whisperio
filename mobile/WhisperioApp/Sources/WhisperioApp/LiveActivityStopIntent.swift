@@ -25,12 +25,23 @@ import ActivityKit
 /// levels across the process boundary, and faking one would violate the no-mocked-data policy.
 @available(iOS 16.2, *)
 public struct WhisperioLiveActivityAttributes: ActivityAttributes {
+    /// R6: which of the two real states this Activity is currently in — still capturing, or the
+    /// note has actually finished saving. Drives WhisperioLiveActivity.swift's rendering
+    /// (mob-triggers.jsx:207-221: recording pill vs. green-check "Saved · tap to record" pill).
+    public enum Phase: String, Codable, Hashable {
+        case recording
+        case saved
+    }
     public struct ContentState: Codable, Hashable {
         /// Whether THIS session's primary engine is on-device — the same check RecordingView
         /// already makes (providerChain.first is .onDevice/.localWhisper). Never hardcoded to
         /// "on-device" regardless of the real engine, unlike the static design mock.
         public var isOnDevice: Bool
-        public init(isOnDevice: Bool) { self.isOnDevice = isOnDevice }
+        public var phase: Phase
+        public init(isOnDevice: Bool, phase: Phase = .recording) {
+            self.isOnDevice = isOnDevice
+            self.phase = phase
+        }
     }
     public var startedAt: Date
     public init(startedAt: Date) { self.startedAt = startedAt }

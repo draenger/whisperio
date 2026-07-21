@@ -294,10 +294,10 @@ struct RecordingView: View {
         guard phase == .listening, !done else { return }
         done = shouldDismiss
         phase = .processing
-        // Capture is ending right now on every path below (live finish or file stop) — end the
-        // Live Activity here rather than after transcription, matching the design's "pressing
-        // Stop instantly collapses the pill" behavior instead of lingering through processing.
-        LiveActivityController.shared.end()
+        // R6: the Live Activity stays up through processing now — it only resolves once the
+        // outcome is actually known: finalizeLive/transcribe call finishSaved() on a real success
+        // (→ "Saved · tap to record" phase, brief linger, self-dismiss) or end() on a failure,
+        // never speculatively here before the note has actually persisted.
         if startedLive {
             Task {
                 // finish() waits briefly for the recognizer to flush the tail of the last
@@ -316,6 +316,7 @@ struct RecordingView: View {
         let text = settings.cleanup(raw).trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else {
             SharedStore.setRecordingActive(false)
+            LiveActivityController.shared.end()   // nothing was actually saved — no "Saved" claim
             phase = .error; errorMsg = "Nothing was transcribed — try again and speak clearly."; return
         }
         let rec = Recording(filename: keptFilename(clip?.filename), duration: clip?.duration ?? 0,
@@ -331,6 +332,9 @@ struct RecordingView: View {
         NSPasteboard.general.setString(text, forType: .string)
 #endif
         SharedStore.setRecordingActive(false)
+        // R6: the note has actually persisted — flip the Live Activity to "Saved · tap to
+        // record" instead of ending it silently. This path is always on-device (live dictation).
+        LiveActivityController.shared.finishSaved(isOnDevice: true)
         if fromKeyboard { SharedStore.setPendingTranscript(text) }
         if shouldDismiss {
             onDone(rec)
@@ -343,6 +347,7 @@ struct RecordingView: View {
     private func transcribe(_ clip: AudioClip?, shouldDismiss: Bool) async {
         guard let clip else {
             SharedStore.setRecordingActive(false)
+            LiveActivityController.shared.end()   // nothing was actually saved — no "Saved" claim
             phase = .error; errorMsg = "Nothing was recorded."; return
         }
         // R2: capture the chain's first real fallback (if any) so a cloud→on-device handoff can
@@ -363,6 +368,11 @@ struct RecordingView: View {
             NSPasteboard.general.setString(text, forType: .string)
 #endif
             SharedStore.setRecordingActive(false)
+            // R6: the note has actually persisted — flip the Live Activity to "Saved · tap to
+            // record" instead of ending it silently, reflecting the engine that actually produced
+            // this result (may differ from the session's original primary on a fallback).
+            let resultIsOnDevice = (tr.provider == .onDevice || tr.provider == .localWhisper)
+            LiveActivityController.shared.finishSaved(isOnDevice: resultIsOnDevice)
             // Bounce-to-app from the keyboard: stash the transcript in the shared App Group
             // so the keyboard can insert it via textDocumentProxy when the user swipes back.
             if fromKeyboard { SharedStore.setPendingTranscript(text) }
@@ -386,6 +396,7 @@ struct RecordingView: View {
             }
         case .failure(let err):
             SharedStore.setRecordingActive(false)
+            LiveActivityController.shared.end()   // nothing was actually saved — no "Saved" claim
             phase = .error
             switch err {
             case .noProvidersConfigured:

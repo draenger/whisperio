@@ -191,6 +191,20 @@ Screen + Dynamic Island, Stop via LiveActivityIntent -> SharedStore flag, all re
 silent-skip when activities disabled, iOS-gated for Mac); desktop chain labels + platform launch
 label. Kit 220 tests green.
 
+## Feature-gap round 2 (2026-07-21) — 6 confirmed -> shipped
+r2 dryness check (workflow stalled on infra; redone via direct agents): 3 MAJOR onboarding
+no-mock violations fixed — step 2 languages now seed from REAL installed keyboards (+one-shot
+migration repairing build 62's "pl"-as-language regression for untouched seeds only); step 3
+"Go to Settings" actually opens Settings and drives the keyboard toggle from the real
+keyboardEverLoaded heartbeat (Full Access never claimed); step 5 guided dictation is a REAL
+LiveDictation session with mic+speech permissions (canned typewriter survives only as the
+labeled permission-denied demo). Minors: Home first-run empty state = the designed StateHome
+scene; iPad/Mac sidebar search + All/Keyboard/Watch tabs are real filters; Live Activity gained
+the honest post-save "Saved · tap to record" phase (success paths only, 6s linger,
+whisperio://dictate tap). RULED: LA compact regions show check+"Saved" (full copy on lock
+screen/expanded — ActivityKit width constraint); processing window keeps .recording phase (no
+fabricated third state).
+
 ## Process
 Weaker agents plan → Fable verifies/corrects plans → weaker agents implement
 (fresh-read + surgical-edit protocol, per-file ownership) → build gates

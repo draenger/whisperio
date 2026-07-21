@@ -3,6 +3,10 @@ import WhisperioKit
 #if canImport(UIKit)
 import UIKit
 #endif
+#if os(iOS)
+import AVFoundation
+import Speech
+#endif
 
 // First-run onboarding — port of wz2/mob-onboarding.jsx (OnboardingScene).
 // Steps: 0 welcome (ghost, "Speak it. / Whisperio types.", "Get started")
@@ -19,6 +23,7 @@ import UIKit
 // Progress bar: 8 segments, back chevron, Skip on steps 3-7.
 struct OnboardingView: View {
     @Environment(\.wz) private var t
+    @Environment(\.scenePhase) private var scenePhase
     @EnvironmentObject private var settings: SettingsStore
     var done: () -> Void
 
@@ -31,14 +36,23 @@ struct OnboardingView: View {
     private enum TryState { case idle, listening, done }
 
     @State private var step = 0
-    @State private var langs: [String] = ["pl", "en"]
-    @State private var kbOn = false
-    @State private var kbFA = false
-    @State private var kbBusy = false
+    @State private var langs: [String] = []
+    // R2: real App-Group heartbeat (SharedStore.keyboardEverLoaded) the keyboard extension
+    // writes the first time it loads — iOS gives no API to read whether Full Access is on,
+    // so that toggle is never rendered as confirmed (see keyboardSetup / kbVisitedSettings).
+    @State private var kbSeen = SharedStore.keyboardEverLoaded
+    @State private var kbVisitedSettings = false
+    @State private var kbOpeningSettings = false
     @State private var tryState: TryState = .idle
     @State private var typed = ""
+    // R3: whether the current/last try was the canned fallback (mic/speech access denied,
+    // or the real engine failed to start) rather than a genuine on-device dictation.
+    @State private var tryIsDemo = false
+    @State private var tryStartedAt: Date?
+    @State private var tryLastActivityAt: Date?
+    @State private var tryLastTranscript = ""
+    @StateObject private var tryDictation = LiveDictation()
     @State private var typeTask: Task<Void, Never>?
-    @State private var settingsTask: Task<Void, Never>?
     @State private var showProviderSheet = false
     @State private var providerPick: ProviderID = .elevenLabs
     @State private var providerKeyInput = ""
@@ -47,7 +61,9 @@ struct OnboardingView: View {
     @State private var btVisitedSettings = false
     @State private var btOpeningSettings = false
 
-    private var kbReady: Bool { kbOn && kbFA }
+    // R2: "ready" now means the real heartbeat fired — Full Access can never be confirmed,
+    // so it no longer gates this (see keyboardSetup's honest note instead).
+    private var kbReady: Bool { kbSeen }
 
     var body: some View {
         ScreenScaffold {
@@ -66,9 +82,28 @@ struct OnboardingView: View {
             // Settings) instead of always resetting to the design's fresh-install seed.
             if !settings.settings.preferredLanguages.isEmpty {
                 langs = settings.settings.preferredLanguages
+            } else if langs.isEmpty {
+                // R1: seed from the user's REAL installed keyboards, not a hardcoded guess.
+                langs = Self.seedLanguagesFromKeyboards()
             }
+            kbSeen = SharedStore.keyboardEverLoaded
         }
-        .onDisappear { typeTask?.cancel(); settingsTask?.cancel() }
+        .onChange(of: scenePhase) { _, phase in
+            // R2: re-check the real heartbeat whenever the app comes back to the foreground —
+            // e.g. returning from the Settings trip goSettings() opened.
+            if phase == .active { kbSeen = SharedStore.keyboardEverLoaded }
+        }
+        .onChange(of: step) { _, newStep in
+            // R3: leaving step 5 mid-dictation shouldn't leave a live mic session running.
+            guard newStep != 5, tryState == .listening else { return }
+            cancelActiveTry()
+        }
+        .onDisappear {
+            typeTask?.cancel()
+            #if os(iOS)
+            if tryDictation.isRunning { tryDictation.cancel() }
+            #endif
+        }
         .sheet(isPresented: $showProviderSheet) {
             ProviderConnectSheet(pick: $providerPick, keyInput: $providerKeyInput,
                                  busy: $providerBusy, error: $providerError,
@@ -145,7 +180,7 @@ struct OnboardingView: View {
         case 1, 2: foot("Next", action: next)
         case 3:
             if kbReady { foot("Next", action: next) }
-            else { foot(kbBusy ? "Opening Settings…" : "Go to Settings", disabled: kbBusy, action: goSettings) }
+            else { foot(kbOpeningSettings ? "Opening Settings…" : "Go to Settings", disabled: kbOpeningSettings, action: goSettings) }
         case 4:
             if btVisitedSettings { foot("Next", action: next) }
             else { foot(btOpeningSettings ? "Opening Settings…" : "Go to Settings", disabled: btOpeningSettings, action: openBackTapSettings) }
@@ -348,6 +383,34 @@ struct OnboardingView: View {
         .buttonStyle(.plain)
     }
 
+    // R1: real keyboard-based seed (fixes build 62's hardcoded ["pl","en"]) — reads the
+    // user's actually-installed keyboards, the same source of truth Settings → General →
+    // Keyboard uses, and maps each one onto this step's offered codes. macOS has no
+    // keyboard-extension analog, so it goes straight to the system's preferred languages.
+    // Either way, falls back to Locale.preferredLanguages, then ["en"] as a last resort —
+    // never an empty seed, and never the old hardcoded guess.
+    private static func seedLanguagesFromKeyboards() -> [String] {
+        var codes: [String] = []
+        #if canImport(UIKit) && os(iOS)
+        codes = UITextInputMode.activeInputModes.compactMap { mode in
+            mode.primaryLanguage.flatMap(offeredLanguageCode) }
+        #endif
+        if codes.isEmpty {
+            codes = Locale.preferredLanguages.compactMap(offeredLanguageCode)
+        }
+        var seen = Set<String>()
+        let deduped = codes.filter { seen.insert($0).inserted }
+        return deduped.isEmpty ? ["en"] : deduped
+    }
+
+    /// Maps a BCP-47 identifier (e.g. "pl-PL", "en") onto one of this step's offered
+    /// language codes, or nil if it isn't one of them.
+    private static func offeredLanguageCode(_ identifier: String) -> String? {
+        let code = Locale(identifier: identifier).language.languageCode?.identifier.lowercased()
+            ?? String(identifier.prefix(2)).lowercased()
+        return allLangs.contains { $0.0 == code } ? code : nil
+    }
+
     // MARK: - Step 3 · keyboard setup
     private var keyboardSetup: some View {
         ScrollView(showsIndicators: false) {
@@ -370,21 +433,29 @@ struct OnboardingView: View {
                         .stroke(t.line, lineWidth: 1))
 
                     VStack(spacing: 0) {
-                        settRow("Whisperio", on: kbOn, icon: nil)
+                        settRow("Whisperio", on: kbSeen, icon: nil)
                         Rectangle().fill(t.lineSoft).frame(height: 1)
-                        settRow("Allow Full Access", on: kbFA, icon: "lock")
+                        // R2: iOS gives no API to read whether Full Access is granted, so
+                        // this toggle is NEVER rendered as confirmed — only the honest note
+                        // below (post-Settings-trip) tells the user what to check for.
+                        settRow("Allow Full Access", on: false, icon: "lock")
                     }
                     .background(t.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                     .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .stroke(kbReady ? t.hair : t.line, lineWidth: 1))
+                        .stroke(kbSeen ? t.hair : t.line, lineWidth: 1))
 
-                    if kbReady {
+                    if kbSeen {
                         HStack(spacing: 7) {
                             WIcon("check", size: 14)
                             Text("Keyboard ready — let’s try it")
                         }
                         .font(WZFont.mono(12, .semibold)).foregroundStyle(t.green)
                         .padding(.top, 4)
+                    } else if kbVisitedSettings {
+                        Text("We can’t confirm Full Access from here — if you flipped both switches in Settings, you’re all set.")
+                            .font(WZFont.ui(12.5)).foregroundStyle(t.faint)
+                            .multilineTextAlignment(.center).lineSpacing(3)
+                            .padding(.horizontal, 8).padding(.top, 4)
                     } else {
                         Text("We never store or sell what you say. Full Access only lets Whisperio insert text across apps.")
                             .font(WZFont.ui(12.5)).foregroundStyle(t.faint)
@@ -411,18 +482,26 @@ struct OnboardingView: View {
         .padding(.horizontal, 14).padding(.vertical, 13)
     }
 
+    // R2: KeyboardSetupView's honest pattern — open Settings, then re-check the real
+    // App-Group heartbeat SharedStore.keyboardEverLoaded (both on return via the open()
+    // completion, and again via scenePhase → .active, matching KeyboardSetupView). No
+    // fabricated toggle animation: the row only lights up once the keyboard extension has
+    // genuinely loaded at least once.
     private func goSettings() {
-        guard !kbBusy, !kbReady else { return }
-        kbBusy = true
-        settingsTask?.cancel()
-        settingsTask = Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 550_000_000)
-            guard !Task.isCancelled else { return }
-            withAnimation(.spring(response: 0.25, dampingFraction: 0.8)) { kbOn = true }
-            try? await Task.sleep(nanoseconds: 700_000_000)
-            guard !Task.isCancelled else { return }
-            withAnimation(.spring(response: 0.25, dampingFraction: 0.8)) { kbFA = true; kbBusy = false }
+        #if canImport(UIKit) && os(iOS)
+        guard !kbOpeningSettings, !kbSeen else { return }
+        guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
+        kbOpeningSettings = true
+        UIApplication.shared.open(url) { success in
+            Task { @MainActor in
+                kbOpeningSettings = false
+                if success { withAnimation { kbVisitedSettings = true } }
+                withAnimation(.spring(response: 0.25, dampingFraction: 0.8)) {
+                    kbSeen = SharedStore.keyboardEverLoaded
+                }
+            }
         }
+        #endif
     }
 
     // MARK: - Step 4 · Back-Tap
@@ -488,6 +567,16 @@ struct OnboardingView: View {
         VStack(spacing: 0) {
             heading("Try whispering a note",
                     sub: "Bring the phone close and speak quietly — whispering works.")
+            // R3: the canned typing animation only ever plays when mic/speech access was
+            // declined (or the real engine failed to start) — and whenever it does, this
+            // makes that explicit instead of quietly passing the scripted text off as real.
+            if tryIsDemo {
+                Text("Demo — mic/speech access wasn’t granted, so this is a scripted preview, not a real dictation.")
+                    .font(WZFont.mono(11)).foregroundStyle(t.faint)
+                    .multilineTextAlignment(.center).lineSpacing(2)
+                    .padding(.horizontal, 30).padding(.top, 2)
+                    .transition(.opacity)
+            }
             VStack(spacing: 0) {
                 VStack(spacing: 0) {
                     HStack {
@@ -516,7 +605,9 @@ struct OnboardingView: View {
                 .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous)
                     .stroke(tryState == .done ? t.hair : t.line, lineWidth: 1))
 
-                if tryState == .done {
+                // R3: "Inserted · on-device" only ever claims success for a REAL dictation —
+                // the demo fallback finishes silently instead of faking this confirmation.
+                if tryState == .done, !tryIsDemo {
                     HStack(spacing: 10) {
                         ListeningGhost(phase: .note, size: 54)
                         HStack(spacing: 7) {
@@ -614,8 +705,110 @@ struct OnboardingView: View {
         .padding(.horizontal, pad ? 16 : 0)
     }
 
+    // R3: real on-device dictation, reusing the same LiveDictation engine + requireOnDevice
+    // config RecordingView uses. Mic + Speech permission is requested here — the natural
+    // moment for it, right as the user is about to try it. macOS keeps the original canned
+    // preview (no LiveDictation mic session wired up here for that platform).
     private func startTry() {
         guard tryState != .listening else { return }
+        #if os(iOS)
+        startRealTry()
+        #else
+        startCannedTry(demo: false)
+        #endif
+    }
+
+    #if os(iOS)
+    private func startRealTry() {
+        Task { @MainActor in
+            let mic = await withCheckedContinuation { (c: CheckedContinuation<Bool, Never>) in
+                AVAudioApplication.requestRecordPermission { c.resume(returning: $0) }
+            }
+            let speech = await withCheckedContinuation { (c: CheckedContinuation<Bool, Never>) in
+                SFSpeechRecognizer.requestAuthorization { c.resume(returning: $0 == .authorized) }
+            }
+            guard mic, speech else {
+                startCannedTry(demo: true)
+                return
+            }
+            withAnimation(.easeInOut(duration: 0.2)) { tryState = .listening }
+            typed = ""
+            tryIsDemo = false
+            tryLastTranscript = ""
+            do {
+                try tryDictation.start(language: settings.settings.language,
+                                       vocabulary: settings.settings.vocabularyTerms,
+                                       requireOnDevice: !settings.settings.appleAllowOnline)
+            } catch {
+                // The real engine failed to start (e.g. an unsupported locale) — fall back to
+                // the labeled demo rather than getting stuck on "Listening…" forever.
+                startCannedTry(demo: true)
+                return
+            }
+            tryStartedAt = Date()
+            tryLastActivityAt = Date()
+            watchRealTry()
+        }
+    }
+
+    /// Polls the live transcript so the Notes mock streams the user's actual words, and
+    /// auto-stops on ~2s of silence after the first words land, or a ~10s hard cap either
+    /// way — kept short, matching the design's vibe for a first-try demo.
+    private func watchRealTry() {
+        typeTask?.cancel()
+        typeTask = Task { @MainActor in
+            while !Task.isCancelled, tryState == .listening {
+                try? await Task.sleep(nanoseconds: 250_000_000)
+                guard !Task.isCancelled, tryState == .listening else { return }
+                let current = tryDictation.transcript
+                if current != tryLastTranscript {
+                    tryLastTranscript = current
+                    typed = current
+                    tryLastActivityAt = Date()
+                }
+                let elapsed = tryStartedAt.map { Date().timeIntervalSince($0) } ?? 0
+                let sinceActivity = tryLastActivityAt.map { Date().timeIntervalSince($0) } ?? 0
+                let silenceCutoff = !tryLastTranscript.isEmpty && sinceActivity >= 2.0
+                if elapsed >= 10 || silenceCutoff {
+                    await finishRealTry()
+                    return
+                }
+            }
+        }
+    }
+
+    private func finishRealTry() async {
+        let (text, _) = await tryDictation.finish()
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            // Honest empty guard (mirrors RecordingView.finalizeLive): don't claim "Inserted"
+            // for silence — let the user tap the mic and try again.
+            typed = ""
+            withAnimation(.easeInOut(duration: 0.2)) { tryState = .idle }
+            return
+        }
+        typed = trimmed
+        withAnimation(.easeInOut(duration: 0.25)) { tryState = .done }
+    }
+
+    #endif
+
+    /// Stops whatever try is in flight (real dictation on iOS, canned preview on macOS) —
+    /// used when the user navigates away from step 5 mid-listening.
+    private func cancelActiveTry() {
+        typeTask?.cancel()
+        #if os(iOS)
+        tryDictation.cancel()
+        #endif
+        tryState = .idle
+        typed = ""
+    }
+
+    /// Canned typing preview — the design's original scripted note. `demo: true` marks it as
+    /// the honestly-labeled permission-denied fallback (iOS); `demo: false` is macOS's
+    /// unchanged pre-R3 behavior.
+    private func startCannedTry(demo: Bool) {
+        tryIsDemo = demo
         withAnimation(.easeInOut(duration: 0.2)) { tryState = .listening }
         typed = ""
         typeTask?.cancel()

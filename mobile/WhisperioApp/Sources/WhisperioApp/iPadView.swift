@@ -37,6 +37,11 @@ struct iPadSplitView: View {
     @State private var sel: Int?
     @State private var showCloudConsent = false
     @State private var pendingCloudEngine: ProviderID?
+    // Sidebar search + source filter (R5): mirrors HomeView's own searchText/visibleItems
+    // pattern — real TextField input and a real All/Keyboard/Watch source filter driving
+    // the sidebar list, rather than the design's static mock row.
+    @State private var searchText = ""
+    @State private var sourceFilter: String? = nil   // nil = All; else "keyboard" | "watch"
     // Weekly Recap (F4/R5): unlike the phone shell, the split view has no push-navigation stack
     // to route a `.recap` screen onto, so it mounts as a dimmed detail panel over the split —
     // same overlay idiom `showCloudConsent`/ConsentSheet already use below. Gated to the live
@@ -46,6 +51,22 @@ struct iPadSplitView: View {
     // Library tab's rows: the real library (mapped through the existing DemoRecording adapter)
     // when the live shell injected a store, otherwise the design's sample rows.
     private var libraryRecordings: [DemoRecording] { liveJournal ? recordings.items.map(DemoRecording.init) : WZSample.recordings }
+    // The sidebar's real filtering (R5): source tab (All/Keyboard/Watch, matched against the
+    // row's real `src`) combined with the search field (title/app/category, case-insensitive) —
+    // the same shape as HomeView.visibleItems.
+    private var filteredLibraryRecordings: [DemoRecording] {
+        var items = libraryRecordings
+        if let sourceFilter {
+            items = items.filter { $0.src == sourceFilter }
+        }
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return items }
+        return items.filter {
+            $0.title.localizedCaseInsensitiveContains(query)
+                || $0.app.localizedCaseInsensitiveContains(query)
+                || categoryFor($0)?.label.localizedCaseInsensitiveContains(query) == true
+        }
+    }
     // A live-but-empty library must show its own empty state, never fall back to WZSample rows.
     private var cur: DemoRecording? { libraryRecordings.first { $0.id == sel } ?? libraryRecordings.first }
     private var primaryEngine: ProviderID { settings.settings.providerChain.first ?? .onDevice }
@@ -353,26 +374,70 @@ struct iPadSplitView: View {
             }
             .padding(.horizontal, 18).padding(.top, 18).padding(.bottom, 12)
             HStack(spacing: 8) {
-                WIcon("search", size: 16, weight: .regular); Text("Search").font(WZFont.ui(14)); Spacer()
+                WIcon("search", size: 16, weight: .regular).foregroundStyle(t.faint)
+                TextField("Search", text: $searchText)
+                    .font(WZFont.ui(14))
+                    .foregroundStyle(t.text)
+                    .textFieldStyle(.plain)
+                    #if os(iOS)
+                    .textInputAutocapitalization(.never)
+                    #endif
+                    .autocorrectionDisabled()
+                if !searchText.isEmpty {
+                    Button { searchText = "" } label: {
+                        WIcon("x", size: 12, weight: .regular).foregroundStyle(t.faint)
+                    }
+                    .buttonStyle(.plain)
+                }
             }
-            .foregroundStyle(t.faint).padding(.horizontal, 12).padding(.vertical, 9)
+            .padding(.horizontal, 12).padding(.vertical, 9)
             .background(t.surfaceUp, in: RoundedRectangle(cornerRadius: 11, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 11, style: .continuous).stroke(t.line, lineWidth: 1))
             .padding(.horizontal, 16).padding(.bottom, 12)
             HStack(spacing: 16) {
-                Text("All").foregroundStyle(t.accentLite); Text("Keyboard"); Text("Watch")
+                sourceTab(nil, "All")
+                sourceTab("keyboard", "Keyboard")
+                sourceTab("watch", "Watch")
             }
-            .font(WZFont.mono(11, .semibold)).foregroundStyle(t.faint).padding(.horizontal, 18).padding(.bottom, 8)
-            ScrollView {
-                VStack(spacing: 2) {
-                    ForEach(libraryRecordings) { r in
-                        Button { sel = r.id } label: { sidebarRow(r) }.buttonStyle(.plain)
+            .font(WZFont.mono(11, .semibold)).padding(.horizontal, 18).padding(.bottom, 8)
+            let filtered = filteredLibraryRecordings
+            if filtered.isEmpty {
+                sidebarEmptyState
+            } else {
+                ScrollView {
+                    VStack(spacing: 2) {
+                        ForEach(filtered) { r in
+                            Button { sel = r.id } label: { sidebarRow(r) }.buttonStyle(.plain)
+                        }
                     }
+                    .padding(.horizontal, 10).padding(.top, 8).padding(.bottom, 8)
                 }
-                .padding(.horizontal, 10).padding(.top, 8).padding(.bottom, 8)
             }
         }
         .background(t.bg2)
+    }
+
+    // One All/Keyboard/Watch source-filter tab (R5) — a real driver of
+    // `filteredLibraryRecordings`, not the design's static label row.
+    private func sourceTab(_ id: String?, _ label: String) -> some View {
+        Button { sourceFilter = id } label: {
+            Text(label).foregroundStyle(sourceFilter == id ? t.accentLite : t.faint)
+        }
+        .buttonStyle(.plain)
+    }
+
+    // Shown when the search/source filter matches nothing — distinct from `libraryEmptyState`
+    // (which fires when the library itself is genuinely empty). Reuses that view's
+    // platform-aware wording pattern for consistency.
+    private var sidebarEmptyState: some View {
+        VStack(spacing: 10) {
+            WIcon("search", size: 26, weight: .regular).foregroundStyle(t.faint)
+            Text("No matches").font(WZFont.ui(14, .semibold)).foregroundStyle(t.text)
+            Text("Nothing matches this search or filter.")
+                .font(WZFont.ui(12.5)).foregroundStyle(t.muted).multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(24)
     }
 
     // The row's category, resolved the same way HomeView resolves it for RecRow

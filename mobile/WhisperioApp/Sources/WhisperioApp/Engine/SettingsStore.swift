@@ -1,6 +1,9 @@
 import Foundation
 import Combine
 import WhisperioKit
+#if canImport(UIKit)
+import UIKit
+#endif
 
 // Persisted user settings (provider chain + keys), mirroring the desktop settings.
 // Stored in UserDefaults as JSON so it survives relaunches.
@@ -23,6 +26,10 @@ final class SettingsStore: ObservableObject {
         }
         didCompleteSetup = d.bool(forKey: Self.setupKey)
 
+        // R1: one-shot repair for the build-62 onboarding regression (see
+        // migrateBuild62PolishSeedRegression below for the full story).
+        Self.migrateBuild62PolishSeedRegression(&loaded)
+
         // API secrets live in the Keychain, not in the UserDefaults blob. Prefer the Keychain
         // copy; fall back to any legacy plaintext key still embedded in the blob (pre-Keychain
         // installs) so a stored key is never lost across the upgrade.
@@ -44,6 +51,34 @@ final class SettingsStore: ObservableObject {
         if !legacyOpenAI.isEmpty || !legacyEleven.isEmpty || !legacyGitHub.isEmpty {
             save()
         }
+    }
+
+    // R1: build 62 shipped an onboarding language step that seeded its chips (and, on
+    // finish, the persisted `language`) with a hardcoded ["pl", "en"] instead of reading the
+    // user's real keyboards — so anyone who breezed through that step without touching it
+    // got silently stuck transcribing as Polish. One-shot, narrowly scoped repair: only
+    // fires when BOTH `language` and `preferredLanguages` exactly match that shipped seed,
+    // AND there's no independent evidence the user actually wanted Polish — a Polish
+    // keyboard installed (iOS, the same UITextInputMode source the fixed onboarding step
+    // itself now reads) or Polish among the system's preferred languages (macOS, which has
+    // no keyboard-extension equivalent to check). A genuine Polish speaker who happens to
+    // match the seed will, by definition, also carry one of those signals and is left alone.
+    private static func migrateBuild62PolishSeedRegression(_ settings: inout WhisperioSettings) {
+        guard settings.language == "pl", settings.preferredLanguages == ["pl", "en"] else { return }
+        let hasRealPolishSignal: Bool
+        #if canImport(UIKit) && os(iOS)
+        hasRealPolishSignal = UITextInputMode.activeInputModes.contains { mode in
+            guard let lang = mode.primaryLanguage else { return false }
+            return Locale(identifier: lang).language.languageCode?.identifier.lowercased() == "pl"
+        }
+        #else
+        hasRealPolishSignal = Locale.preferredLanguages.contains { raw in
+            Locale(identifier: raw).language.languageCode?.identifier.lowercased() == "pl"
+        }
+        #endif
+        guard !hasRealPolishSignal else { return }
+        settings.language = "auto"
+        settings.preferredLanguages = []
     }
 
     private func save() {
