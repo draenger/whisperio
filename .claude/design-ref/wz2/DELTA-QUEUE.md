@@ -205,6 +205,12 @@ whisperio://dictate tap). RULED: LA compact regions show check+"Saved" (full cop
 screen/expanded — ActivityKit width constraint); processing window keeps .recording phase (no
 fabricated third state).
 
+## Feature-gap round 3 (2026-07-21) — DRY. Feature-completeness loop closed.
+All 13 shipped fixes from waves 1-2 re-verified in place (file:line audit), onboarding 0-8
+honest, LA both phases, working tree clean, Kit 220/220. Trajectory: 7 -> 6 -> 0.
+Every design surface now: pixel parity (sizing loop, 103 gaps) + feature parity (13 gaps) +
+honest-state policy enforced end to end. TestFlight: 63 VALID.
+
 ## Process
 Weaker agents plan → Fable verifies/corrects plans → weaker agents implement
 (fresh-read + surgical-edit protocol, per-file ownership) → build gates
