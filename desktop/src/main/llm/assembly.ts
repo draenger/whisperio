@@ -8,6 +8,12 @@
 // mobile/WhisperioApp/Sources/WhisperioApp/Engine/AssemblyAIProvider.swift.
 import { app } from 'electron'
 import { handleTranscriptionError } from '../errorHandler'
+import { assemblyAISegments, type SpeakerSegment, type AssemblyAIUtterance } from '../dictation/conversation'
+
+export interface DiarizedResult {
+  segments: SpeakerSegment[]
+  text: string
+}
 
 const ASSEMBLYAI_BASE = 'https://api.assemblyai.com/v2'
 export const DEFAULT_ASSEMBLYAI_MODEL = 'universal'
@@ -26,6 +32,7 @@ interface JobResponse {
   status?: string
   text?: string
   error?: string
+  utterances?: AssemblyAIUtterance[]
 }
 
 // True only in unpackaged (development) builds — see transcribe.ts's isDev()
@@ -68,12 +75,13 @@ async function assemblyRequest(url: string, init: RequestInit, step: string): Pr
   }
 }
 
-export async function assemblyAITranscribe(
+async function assemblyAIRun(
   apiKey: string,
   audioBuffer: Buffer,
   model: string,
-  language = 'auto'
-): Promise<string> {
+  language: string,
+  speakerLabels: boolean
+): Promise<JobResponse> {
   const apiModel = model?.trim() || DEFAULT_ASSEMBLYAI_MODEL
 
   // 1. Upload the raw audio; the response carries a private URL for step 2.
@@ -99,7 +107,8 @@ export async function assemblyAITranscribe(
     audio_url: audioUrl,
     speech_model: apiModel,
     language_detection: auto ? true : undefined,
-    language_code: auto ? undefined : language
+    language_code: auto ? undefined : language,
+    speaker_labels: speakerLabels || undefined
   }
   const job = (await assemblyRequest(
     `${ASSEMBLYAI_BASE}/transcript`,
@@ -130,7 +139,7 @@ export async function assemblyAITranscribe(
         handleTranscriptionError(err, 'assemblyai')
         throw err
       }
-      return state.text
+      return state
     }
     if (state.status === 'error') {
       const err = new Error(`AssemblyAI failed: ${state.error ?? 'unknown error'}`)
@@ -143,4 +152,36 @@ export async function assemblyAITranscribe(
   const timeoutErr = new Error('AssemblyAI timed out waiting for the transcript.')
   handleTranscriptionError(timeoutErr, 'assemblyai')
   throw timeoutErr
+}
+
+export async function assemblyAITranscribe(
+  apiKey: string,
+  audioBuffer: Buffer,
+  model: string,
+  language = 'auto'
+): Promise<string> {
+  const state = await assemblyAIRun(apiKey, audioBuffer, model, language, false)
+  return state.text as string
+}
+
+/**
+ * Diarizing variant of assemblyAITranscribe: `speaker_labels=true` requests
+ * AssemblyAI's per-utterance speaker breakdown (mirrors
+ * AssemblyAIProvider.swift's diarized transcribe). Maps `utterances` ->
+ * SpeakerSegment via assemblyAISegments(); `text` is the plain-transcript
+ * fallback from the same job so callers always get a usable string even if
+ * utterances comes back empty.
+ */
+export async function assemblyAITranscribeDiarized(
+  apiKey: string,
+  audioBuffer: Buffer,
+  model: string,
+  language = 'auto'
+): Promise<DiarizedResult> {
+  const state = await assemblyAIRun(apiKey, audioBuffer, model, language, true)
+  const utterances = state.utterances ?? []
+  const segments = assemblyAISegments(utterances)
+  const fallbackText = (state.text as string) ?? ''
+  const text = segments.length > 0 ? segments.map((s) => s.text).join(' ') : fallbackText
+  return { segments, text }
 }

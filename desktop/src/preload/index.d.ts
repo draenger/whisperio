@@ -145,6 +145,19 @@ export interface RecordingEntry {
   // RecordingEntry.recordedProcessName doc comment. Both optional/additive.
   recordedProcessName?: string
   recordedWindowTitle?: string
+  // Group-conversation mode (multi-speaker transcription) — see
+  // recordingStore.ts's RecordingEntry.segments doc comment. Both optional/
+  // additive; absent on every plain recording.
+  segments?: SpeakerSegment[]
+  speakerNames?: Record<string, string>
+}
+
+/** Mirrors src/main/dictation/conversation.ts's SpeakerSegment. */
+export interface SpeakerSegment {
+  speaker: string
+  start: number
+  end: number
+  text: string
 }
 
 export interface CleanupRequestOptions {
@@ -185,6 +198,10 @@ export interface RecordingsAPI {
   // handler) and is NOT added here; wiring it up is a follow-up outside this
   // package's assigned files.
   cleanup: (id: string, options: CleanupRequestOptions) => Promise<CleanupRequestResult>
+  // Group-conversation mode: rename a raw speaker id to a user-chosen
+  // display name — persists to RecordingEntry.speakerNames and recomputes
+  // the labeled `transcription` text server-side.
+  renameSpeaker: (id: string, speakerId: string, name: string) => Promise<RecordingEntry | null>
 }
 
 export interface WhisperioError {
@@ -323,6 +340,15 @@ export interface ContextAPI {
   enableWindowTitleMatching: () => Promise<AppSettings>
 }
 
+export interface ConversationAPI {
+  /** Whether a diarizing provider (ElevenLabs/Deepgram/AssemblyAI) is
+   * currently configured — gates the Conversation record button. */
+  available: () => Promise<boolean>
+  /** Transcribe + save a captured multi-speaker clip. Always resolves to the
+   * saved RecordingEntry, even on a provider failure. */
+  save: (audioData: ArrayBuffer, metadata: { duration: number; filename?: string }) => Promise<RecordingEntry>
+}
+
 export interface WhisperioAPI {
   dictation: DictationAPI
   settings: SettingsAPI
@@ -335,6 +361,7 @@ export interface WhisperioAPI {
   github: GithubAPI
   usage: UsageAPI
   context: ContextAPI
+  conversation: ConversationAPI
 }
 
 declare global {

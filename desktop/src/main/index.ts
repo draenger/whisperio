@@ -8,7 +8,14 @@ import {
   migrateProviderKeysToKeyStore
 } from './secure/keyAccessor'
 import { isEncryptionAvailable as isKeyStoreAvailable } from './secure/keyStore'
-import { transcribeAudio, handleRecordingsCleanup, type OnDemandCleanupRequest } from './transcribe'
+import {
+  transcribeAudio,
+  transcribeConversation,
+  getConfiguredDiarizingProvider,
+  handleRecordingsCleanup,
+  type OnDemandCleanupRequest
+} from './transcribe'
+import { transcriptText } from './dictation/conversation'
 import { openSettingsWindow } from './settingsWindow'
 import { getRecentErrors } from './errorHandler'
 import { openRecordingsWindow } from './recordingsWindow'
@@ -107,6 +114,35 @@ async function reprocessRecording(id: string) {
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     return updateRecording(id, { status: 'failed', error: message })
+  }
+}
+
+// Group-conversation mode (multi-speaker recording): transcribe a captured
+// clip through the first configured diarizing provider, then save it as a
+// RecordingEntry carrying `segments` (see recordingStore.ts's doc comment)
+// alongside a labeled plain-text rendering (conversation.ts's
+// transcriptText()) so every existing text-only consumer — search, copy,
+// on-demand cleanup — keeps working unchanged. Mirrors reprocessRecording()
+// above's fail-soft shape: a provider failure still saves a 'failed' entry
+// with the error message rather than losing the captured audio.
+async function saveConversationRecording(audioBuffer: Buffer, filename: string, duration: number) {
+  try {
+    const { segments, text } = await transcribeConversation(audioBuffer, filename)
+    const labeled = segments.length > 0 ? transcriptText(segments, {}) : text
+    return saveRecording(audioBuffer, {
+      duration,
+      provider: 'conversation',
+      segments,
+      transcription: labeled,
+      status: 'completed'
+    })
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    return saveRecording(audioBuffer, {
+      duration,
+      provider: 'conversation',
+      status: 'failed'
+    }).then((entry) => updateRecording(entry.id, { error: message }))
   }
 }
 
@@ -323,6 +359,31 @@ app.whenReady().then(() => {
   ipcMain.handle('recordings:cleanup', (_e, id: string, options: OnDemandCleanupRequest) =>
     handleRecordingsCleanup(id, options)
   )
+
+  // Group-conversation mode (multi-speaker recording) IPC. `available`
+  // mirrors the mobile app's Conversation record button guard — the button
+  // is disabled with a hint when no diarizing provider (ElevenLabs/
+  // Deepgram/AssemblyAI) is configured, checked BEFORE the renderer even
+  // starts capturing audio.
+  ipcMain.handle('conversation:available', () => getConfiguredDiarizingProvider(getEffectiveSettings()) !== null)
+  ipcMain.handle(
+    'conversation:save',
+    async (_e, audioBuffer: Buffer, metadata: { duration: number; filename?: string }) =>
+      saveConversationRecording(audioBuffer, metadata.filename || 'conversation.webm', metadata.duration)
+  )
+  ipcMain.handle('recordings:renameSpeaker', async (_e, id: string, speakerId: string, name: string) => {
+    const entry = getRecording(id)
+    if (!entry) return null
+    const speakerNames = { ...(entry.speakerNames || {}), [speakerId]: name }
+    const updated = await updateRecording(id, { speakerNames })
+    if (updated?.segments) {
+      // Keep the labeled plain-text rendering (search/copy/cleanup) in sync
+      // with the rename — recomputed from the untouched segments, never a
+      // string-replace on the old text.
+      await updateRecording(id, { transcription: transcriptText(updated.segments, speakerNames) })
+    }
+    return getRecording(id)
+  })
 
   // Model manager IPC handlers
   ipcMain.handle('models:available', () => getAvailableModels())

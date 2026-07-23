@@ -51,6 +51,11 @@ function mockApi(overrides: Partial<Record<string, unknown>> = {}): {
     settings: {
       load: vi.fn().mockResolvedValue({ cleanupMode: 'full', cleanupTemplates: TEMPLATES }),
       ...((overrides.settings as Record<string, unknown>) ?? {})
+    },
+    conversation: {
+      available: vi.fn().mockResolvedValue(true),
+      save: vi.fn().mockResolvedValue({ ...RECORDING }),
+      ...((overrides.conversation as Record<string, unknown>) ?? {})
     }
   }
   // @ts-expect-error minimal test double — only the methods this panel calls are exercised

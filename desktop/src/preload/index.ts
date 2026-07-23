@@ -153,6 +153,19 @@ export interface RecordingEntry {
   // RecordingEntry.recordedProcessName doc comment. Both optional/additive.
   recordedProcessName?: string
   recordedWindowTitle?: string
+  // Group-conversation mode (multi-speaker transcription) — see
+  // recordingStore.ts's RecordingEntry.segments doc comment. Both optional/
+  // additive; absent on every plain recording.
+  segments?: SpeakerSegment[]
+  speakerNames?: Record<string, string>
+}
+
+/** Mirrors src/main/dictation/conversation.ts's SpeakerSegment. */
+export interface SpeakerSegment {
+  speaker: string
+  start: number
+  end: number
+  text: string
 }
 
 export interface CleanupRequestOptions {
@@ -193,6 +206,22 @@ export interface RecordingsAPI {
   // handler) and is NOT added here; wiring it up is a follow-up outside this
   // package's assigned files.
   cleanup: (id: string, options: CleanupRequestOptions) => Promise<CleanupRequestResult>
+  // Group-conversation mode: rename a raw speaker id ("speaker_0", …) to a
+  // user-chosen display name — persists to RecordingEntry.speakerNames and
+  // recomputes the labeled `transcription` text server-side. Returns the
+  // updated entry (or null if the recording no longer exists).
+  renameSpeaker: (id: string, speakerId: string, name: string) => Promise<RecordingEntry | null>
+}
+
+export interface ConversationAPI {
+  /** Whether a diarizing provider (ElevenLabs/Deepgram/AssemblyAI) is
+   * currently configured — gates the Conversation record button, mirroring
+   * the mobile app's makeConversationTranscriber() guard. */
+  available: () => Promise<boolean>
+  /** Transcribe + save a captured multi-speaker clip. Always resolves to the
+   * saved RecordingEntry, even on a provider failure (status: 'failed' with
+   * `error` set) — the audio is never lost. */
+  save: (audioData: ArrayBuffer, metadata: { duration: number; filename?: string }) => Promise<RecordingEntry>
 }
 
 export interface WhisperioError {
@@ -346,6 +375,7 @@ export interface WhisperioAPI {
   github: GithubAPI
   usage: UsageAPI
   context: ContextAPI
+  conversation: ConversationAPI
 }
 
 const dictationApi: DictationAPI = {
@@ -427,7 +457,8 @@ const recordingsApi: RecordingsAPI = {
   deleteByDate: (date) => ipcRenderer.invoke('recordings:deleteByDate', date),
   getAudio: (id) => ipcRenderer.invoke('recordings:getAudio', id),
   reprocess: (id) => ipcRenderer.invoke('recordings:reprocess', id),
-  cleanup: (id, options) => ipcRenderer.invoke('recordings:cleanup', id, options)
+  cleanup: (id, options) => ipcRenderer.invoke('recordings:cleanup', id, options),
+  renameSpeaker: (id, speakerId, name) => ipcRenderer.invoke('recordings:renameSpeaker', id, speakerId, name)
 }
 
 const errorsApi: ErrorAPI = {
@@ -518,6 +549,12 @@ const contextApi: ContextAPI = {
   enableWindowTitleMatching: () => ipcRenderer.invoke('context:enableWindowTitleMatching')
 }
 
+const conversationApi: ConversationAPI = {
+  available: () => ipcRenderer.invoke('conversation:available'),
+  save: (audioData, metadata) =>
+    ipcRenderer.invoke('conversation:save', Buffer.from(audioData), metadata)
+}
+
 contextBridge.exposeInMainWorld('api', {
   dictation: dictationApi,
   settings: settingsApi,
@@ -530,4 +567,5 @@ contextBridge.exposeInMainWorld('api', {
   github: githubApi,
   usage: usageApi,
   context: contextApi,
+  conversation: conversationApi,
 })

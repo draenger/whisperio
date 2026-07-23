@@ -7,6 +7,7 @@
 // mobile/WhisperioApp/Sources/WhisperioApp/Engine/DeepgramProvider.swift.
 import { net, app } from 'electron'
 import { handleTranscriptionError } from '../errorHandler'
+import { deepgramSegments, type SpeakerSegment, type DeepgramUtterance } from '../dictation/conversation'
 
 const DEEPGRAM_LISTEN_URL = 'https://api.deepgram.com/v1/listen'
 export const DEFAULT_DEEPGRAM_MODEL = 'nova-3'
@@ -14,7 +15,13 @@ export const DEFAULT_DEEPGRAM_MODEL = 'nova-3'
 interface DeepgramResponse {
   results?: {
     channels?: { alternatives?: { transcript?: string }[] }[]
+    utterances?: DeepgramUtterance[]
   }
+}
+
+export interface DiarizedResult {
+  segments: SpeakerSegment[]
+  text: string
 }
 
 // True only in unpackaged (development) builds — see transcribe.ts's isDev()
@@ -27,18 +34,8 @@ function isDev(): boolean {
   }
 }
 
-export function deepgramTranscribe(
-  apiKey: string,
-  audioBuffer: Buffer,
-  model: string,
-  language = 'auto'
-): Promise<string> {
-  const apiModel = model?.trim() || DEFAULT_DEEPGRAM_MODEL
-  const params = new URLSearchParams({ model: apiModel, smart_format: 'true' })
-  if (language && language !== 'auto') params.set('language', language)
-  const url = `${DEEPGRAM_LISTEN_URL}?${params.toString()}`
-
-  return new Promise<string>((resolve, reject) => {
+function deepgramRequest(url: string, apiKey: string, audioBuffer: Buffer): Promise<DeepgramResponse> {
+  return new Promise<DeepgramResponse>((resolve, reject) => {
     let settled = false
     const timeout = setTimeout(() => {
       if (!settled) {
@@ -79,13 +76,9 @@ export function deepgramTranscribe(
         }
         try {
           const data = JSON.parse(responseBody) as DeepgramResponse
-          const text = data.results?.channels?.[0]?.alternatives?.[0]?.transcript
-          if (typeof text !== 'string') {
-            throw new Error('no transcript in response')
-          }
-          settle(resolve)(text)
+          settle(resolve)(data)
         } catch {
-          const err = new Error(`Deepgram returned no transcript (HTTP ${response.statusCode})`)
+          const err = new Error(`Failed to parse Deepgram response (HTTP ${response.statusCode})`)
           handleTranscriptionError(err, 'deepgram')
           settle(reject)(err)
         }
@@ -103,4 +96,57 @@ export function deepgramTranscribe(
     request.write(audioBuffer)
     request.end()
   })
+}
+
+export async function deepgramTranscribe(
+  apiKey: string,
+  audioBuffer: Buffer,
+  model: string,
+  language = 'auto'
+): Promise<string> {
+  const apiModel = model?.trim() || DEFAULT_DEEPGRAM_MODEL
+  const params = new URLSearchParams({ model: apiModel, smart_format: 'true' })
+  if (language && language !== 'auto') params.set('language', language)
+  const url = `${DEEPGRAM_LISTEN_URL}?${params.toString()}`
+
+  const data = await deepgramRequest(url, apiKey, audioBuffer)
+  const text = data.results?.channels?.[0]?.alternatives?.[0]?.transcript
+  if (typeof text !== 'string') {
+    const err = new Error('Deepgram returned no transcript')
+    handleTranscriptionError(err, 'deepgram')
+    throw err
+  }
+  return text
+}
+
+/**
+ * Diarizing variant of deepgramTranscribe: `diarize=true&utterances=true`
+ * requests Deepgram's per-utterance speaker breakdown (mirrors
+ * DeepgramProvider.swift's diarized transcribe). Maps
+ * `results.utterances` -> SpeakerSegment via deepgramSegments(); `text` is
+ * the plain-transcript fallback from the same response so callers always get
+ * a usable string even if utterances comes back empty.
+ */
+export async function deepgramTranscribeDiarized(
+  apiKey: string,
+  audioBuffer: Buffer,
+  model: string,
+  language = 'auto'
+): Promise<DiarizedResult> {
+  const apiModel = model?.trim() || DEFAULT_DEEPGRAM_MODEL
+  const params = new URLSearchParams({
+    model: apiModel,
+    smart_format: 'true',
+    diarize: 'true',
+    utterances: 'true'
+  })
+  if (language && language !== 'auto') params.set('language', language)
+  const url = `${DEEPGRAM_LISTEN_URL}?${params.toString()}`
+
+  const data = await deepgramRequest(url, apiKey, audioBuffer)
+  const utterances = data.results?.utterances ?? []
+  const segments = deepgramSegments(utterances)
+  const fallbackText = data.results?.channels?.[0]?.alternatives?.[0]?.transcript ?? ''
+  const text = segments.length > 0 ? segments.map((s) => s.text).join(' ') : fallbackText
+  return { segments, text }
 }

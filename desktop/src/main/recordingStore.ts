@@ -1,6 +1,7 @@
 import { app } from 'electron'
 import { existsSync, mkdirSync, writeFileSync, readFileSync, unlinkSync, renameSync } from 'fs'
 import { join } from 'path'
+import type { SpeakerSegment } from './dictation/conversation'
 
 export interface RecordingEntry {
   id: string
@@ -43,6 +44,18 @@ export interface RecordingEntry {
   // so legacy index rows written before this change still load.
   updatedAt?: number
   deletedAt?: number
+  // Group-conversation mode (multi-speaker transcription) — additive, absent
+  // on every plain (single-speaker) recording, which stay text-only exactly
+  // as before. `segments` is the diarized per-speaker breakdown produced by
+  // transcribeConversation() (transcribe.ts); `speakerNames` maps a raw
+  // speaker id ("speaker_0", …) to a user-assigned display name, mirroring
+  // Recording.speakerNames on the mobile app (Conversation.swift's
+  // SpeakerSegmentBuilder.displayName reads the same shape). `transcription`
+  // still holds the labeled plain-text rendering for these recordings (see
+  // conversation.ts's transcriptText()), so every existing text-only
+  // consumer (search, copy, cleanup) keeps working unchanged.
+  segments?: SpeakerSegment[]
+  speakerNames?: Record<string, string>
 }
 
 interface RecordingIndex {
@@ -163,6 +176,10 @@ export function saveRecording(
      * (main/index.ts's `recordings:save` handler) at recording time. */
     recordedProcessName?: string
     recordedWindowTitle?: string
+    /** Group-conversation mode — see RecordingEntry.segments doc comment. */
+    segments?: SpeakerSegment[]
+    transcription?: string
+    status?: 'completed' | 'failed' | 'pending'
   }
 ): Promise<RecordingEntry> {
   const dir = getRecordingsDir()
@@ -180,12 +197,14 @@ export function saveRecording(
     filepath,
     timestamp,
     duration: metadata.duration,
-    status: 'pending',
+    status: metadata.status ?? 'pending',
     provider: metadata.provider,
     size: audioBuffer.length,
     updatedAt: timestamp,
     recordedProcessName: metadata.recordedProcessName,
-    recordedWindowTitle: metadata.recordedWindowTitle
+    recordedWindowTitle: metadata.recordedWindowTitle,
+    segments: metadata.segments,
+    transcription: metadata.transcription
   }
 
   return enqueue(() => {

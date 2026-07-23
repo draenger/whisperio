@@ -3,6 +3,16 @@ import { useTheme } from '../../ThemeContext'
 import { TitleBar } from '../common/TitleBar'
 import type { Theme } from '../../theme'
 
+// Group-conversation mode (multi-speaker transcription) — mirrors
+// src/main/dictation/conversation.ts's SpeakerSegment exactly. See that
+// module's doc comment for the folding semantics that produced these.
+interface SpeakerSegment {
+  speaker: string
+  start: number
+  end: number
+  text: string
+}
+
 interface RecordingEntry {
   id: string
   filename: string
@@ -18,6 +28,29 @@ interface RecordingEntry {
   // recordings that were never run through "Clean up". See recordingStore.ts.
   cleanedText?: string
   cleanedWith?: string
+  // Group-conversation mode — additive, absent on plain recordings. See
+  // recordingStore.ts's RecordingEntry.segments doc comment.
+  segments?: SpeakerSegment[]
+  speakerNames?: Record<string, string>
+}
+
+/** Stable speaker-id ordering + "Speaker N" fallback naming — mirrors
+ * dictation/conversation.ts's speakerOrder()/displayName() (kept as a small
+ * renderer-local copy per this file's existing "preload/renderer own their
+ * types" convention rather than importing a main-process module). */
+function speakerOrderOf(segments: SpeakerSegment[]): string[] {
+  const seen: string[] = []
+  for (const s of segments) {
+    if (!seen.includes(s.speaker)) seen.push(s.speaker)
+  }
+  return seen
+}
+
+function speakerDisplayName(speaker: string, names: Record<string, string>, order: string[]): string {
+  const name = names[speaker]?.trim()
+  if (name) return name
+  const idx = order.indexOf(speaker)
+  return idx !== -1 ? `Speaker ${idx + 1}` : speaker
 }
 
 /* ─── ROUGH-FIRST on-demand cleanup (v1.4 PR2) ───
@@ -87,6 +120,37 @@ export function RecordingsView(): ReactElement {
     mode: 'full',
     templates: []
   })
+
+  // Group-conversation mode capture (multi-speaker recording) — an in-app
+  // record button, NOT a global hotkey (mirrors the mobile app's own
+  // Conversation screen). `conversationAvailable` gates the button on
+  // whether a diarizing provider (ElevenLabs/Deepgram/AssemblyAI) is
+  // configured, same guard as SettingsStore.makeConversationTranscriber().
+  const [conversationAvailable, setConversationAvailable] = useState(true)
+  const [isCapturing, setIsCapturing] = useState(false)
+  const [captureElapsed, setCaptureElapsed] = useState(0)
+  const [captureBusy, setCaptureBusy] = useState(false)
+  const captureRecorderRef = useRef<MediaRecorder | null>(null)
+  const captureStreamRef = useRef<MediaStream | null>(null)
+  const captureChunksRef = useRef<Blob[]>([])
+  const captureStartRef = useRef(0)
+  const captureTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    window.api.conversation
+      .available()
+      .then((available) => {
+        if (!cancelled) setConversationAvailable(available)
+      })
+      .catch(() => {
+        // Fail-soft: leave the button enabled rather than hiding a feature
+        // because the availability check itself failed to answer.
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   const s = makeStyles(theme)
 
@@ -186,6 +250,69 @@ export function RecordingsView(): ReactElement {
     setCopiedId(id)
     setTimeout(() => setCopiedId(null), 1500)
   }, [])
+
+  const stopCaptureTimer = (): void => {
+    if (captureTimerRef.current) {
+      clearInterval(captureTimerRef.current)
+      captureTimerRef.current = null
+    }
+  }
+
+  const startConversationCapture = useCallback(async () => {
+    if (!navigator.mediaDevices?.getUserMedia) return
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: true, noiseSuppression: true }
+      })
+      captureStreamRef.current = stream
+      captureChunksRef.current = []
+      captureStartRef.current = Date.now()
+      setCaptureElapsed(0)
+
+      const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+        ? 'audio/webm;codecs=opus'
+        : 'audio/webm'
+      const recorder = new MediaRecorder(stream, { mimeType })
+      captureRecorderRef.current = recorder
+      recorder.ondataavailable = (e) => {
+        if (e.data.size > 0) captureChunksRef.current.push(e.data)
+      }
+      recorder.start(250)
+      setIsCapturing(true)
+      captureTimerRef.current = setInterval(() => {
+        setCaptureElapsed((Date.now() - captureStartRef.current) / 1000)
+      }, 250)
+    } catch (err) {
+      console.error('[Whisperio] Conversation capture failed to start:', err)
+    }
+  }, [])
+
+  const stopConversationCapture = useCallback(async () => {
+    const recorder = captureRecorderRef.current
+    if (!recorder) return
+    const duration = (Date.now() - captureStartRef.current) / 1000
+    stopCaptureTimer()
+
+    const stopped = new Promise<void>((resolve) => {
+      recorder.onstop = () => resolve()
+    })
+    recorder.stop()
+    captureStreamRef.current?.getTracks().forEach((t) => t.stop())
+    captureStreamRef.current = null
+    captureRecorderRef.current = null
+    setIsCapturing(false)
+    await stopped
+
+    setCaptureBusy(true)
+    try {
+      const blob = new Blob(captureChunksRef.current, { type: 'audio/webm' })
+      const buffer = await blob.arrayBuffer()
+      await window.api.conversation.save(buffer, { duration, filename: 'conversation.webm' })
+      await loadRecordings()
+    } finally {
+      setCaptureBusy(false)
+    }
+  }, [loadRecordings])
 
   const formatDate = (timestamp: number): string => {
     const d = new Date(timestamp)
@@ -293,7 +420,50 @@ export function RecordingsView(): ReactElement {
           <span style={{ fontSize: '12px', fontWeight: 600, color: theme.text }}>{recordings.length} recording{recordings.length !== 1 ? 's' : ''}</span>
           <span style={s.recordingCount}>Latest first. Click any row for detail.</span>
         </div>
-        <div style={{ display: 'flex', gap: '8px' }}>
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+          {!conversationAvailable && !isCapturing && (
+            <span style={{ fontSize: 11, color: theme.textMuted, maxWidth: 220, lineHeight: 1.4 }}>
+              Add an ElevenLabs, Deepgram or AssemblyAI key to transcribe conversations
+            </span>
+          )}
+          <button
+            onClick={isCapturing ? stopConversationCapture : startConversationCapture}
+            disabled={(!conversationAvailable && !isCapturing) || captureBusy}
+            data-testid="conversation-record-button"
+            title={
+              conversationAvailable || isCapturing
+                ? isCapturing
+                  ? 'Stop conversation recording'
+                  : 'Start a new conversation recording'
+                : 'Add an ElevenLabs, Deepgram or AssemblyAI key to transcribe conversations'
+            }
+            style={{
+              ...s.toolbarButton,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 7,
+              padding: '6px 12px',
+              color: isCapturing ? '#ffffff' : theme.text,
+              background: isCapturing ? theme.danger : theme.bgSecondary,
+              borderColor: isCapturing ? theme.danger : theme.border,
+              opacity: !conversationAvailable && !isCapturing ? 0.5 : 1,
+              cursor: !conversationAvailable && !isCapturing ? 'not-allowed' : 'pointer'
+            }}
+          >
+            <span
+              style={{
+                width: 9,
+                height: 9,
+                borderRadius: isCapturing ? 2 : 999,
+                background: isCapturing ? '#ffffff' : theme.danger
+              }}
+            />
+            {captureBusy
+              ? 'Transcribing…'
+              : isCapturing
+                ? `Stop · ${Math.floor(captureElapsed / 60)}:${Math.floor(captureElapsed % 60).toString().padStart(2, '0')}`
+                : 'New Conversation'}
+          </button>
           <button
             onClick={loadRecordings}
             style={s.toolbarButton}
@@ -447,6 +617,20 @@ export function RecordingsView(): ReactElement {
                       <span style={s.recordingDate}>{formatDate(rec.timestamp)}</span>
                       <span style={s.recordingMeta}>{formatDuration(rec.duration)}</span>
                       <span style={s.recordingMeta}>{rec.provider}</span>
+                      {rec.segments && rec.segments.length > 0 && (
+                        <span
+                          style={{
+                            ...s.recordingMeta,
+                            color: theme.accent,
+                            border: `1px solid ${theme.accent}40`,
+                            borderRadius: 999,
+                            padding: '1px 8px'
+                          }}
+                          data-testid={`conversation-badge-${rec.id}`}
+                        >
+                          Conversation · {speakerOrderOf(rec.segments).length} speaker{speakerOrderOf(rec.segments).length !== 1 ? 's' : ''}
+                        </span>
+                      )}
                     </div>
                     <div style={s.recordingText}>
                       {rec.status === 'completed' && rec.transcription
@@ -569,6 +753,103 @@ function mimeFromName(name: string): string {
   if (ext === 'ogg') return 'audio/ogg'
   if (ext === 'm4a') return 'audio/mp4'
   return 'audio/webm'
+}
+
+/**
+ * Group-conversation mode's "WHAT THEY SAID" section (see DetailView.swift on
+ * the mobile app for the reference) — one row per SpeakerSegment with a
+ * clickable speaker chip. Clicking a chip opens an inline rename input;
+ * submitting persists the new name via recordings.renameSpeaker (main
+ * process recomputes rec.transcription from the untouched segments), and the
+ * local speakerNames override is applied immediately so the rename doesn't
+ * wait on a full recordings reload.
+ */
+function ConversationSegments({ theme, rec }: { theme: Theme; rec: RecordingEntry }): ReactElement {
+  const segments = rec.segments ?? []
+  const [names, setNames] = useState<Record<string, string>>(rec.speakerNames ?? {})
+  const [editingSpeaker, setEditingSpeaker] = useState<string | null>(null)
+  const [draftName, setDraftName] = useState('')
+
+  useEffect(() => {
+    setNames(rec.speakerNames ?? {})
+  }, [rec.id, rec.speakerNames])
+
+  const order = speakerOrderOf(segments)
+
+  const startEdit = (speaker: string): void => {
+    setEditingSpeaker(speaker)
+    setDraftName(names[speaker] ?? '')
+  }
+
+  const commitEdit = async (speaker: string): Promise<void> => {
+    const trimmed = draftName.trim()
+    setEditingSpeaker(null)
+    if (!trimmed || trimmed === names[speaker]) return
+    setNames((prev) => ({ ...prev, [speaker]: trimmed }))
+    await window.api.recordings.renameSpeaker(rec.id, speaker, trimmed)
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }} data-testid="conversation-segments">
+      {segments.map((seg, i) => {
+        const label = speakerDisplayName(seg.speaker, names, order)
+        const isEditing = editingSpeaker === seg.speaker
+        return (
+          <div key={`${seg.speaker}-${i}-${seg.start}`} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            {isEditing ? (
+              <input
+                autoFocus
+                value={draftName}
+                onChange={(e) => setDraftName(e.target.value)}
+                onBlur={() => commitEdit(seg.speaker)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') commitEdit(seg.speaker)
+                  if (e.key === 'Escape') setEditingSpeaker(null)
+                }}
+                style={{
+                  width: 140,
+                  fontSize: 11,
+                  fontWeight: 700,
+                  letterSpacing: '.04em',
+                  textTransform: 'uppercase',
+                  color: theme.accentInk,
+                  background: theme.accent,
+                  border: 'none',
+                  borderRadius: 999,
+                  padding: '3px 10px'
+                }}
+              />
+            ) : (
+              <button
+                onClick={() => startEdit(seg.speaker)}
+                title="Rename speaker"
+                style={{
+                  alignSelf: 'flex-start',
+                  fontSize: 11,
+                  fontWeight: 700,
+                  letterSpacing: '.04em',
+                  textTransform: 'uppercase',
+                  color: theme.accentInk,
+                  background: theme.accent,
+                  border: 'none',
+                  borderRadius: 999,
+                  padding: '3px 10px',
+                  cursor: 'pointer',
+                  fontFamily: 'IBM Plex Sans, sans-serif'
+                }}
+                data-testid={`speaker-chip-${seg.speaker}`}
+              >
+                {label}
+              </button>
+            )}
+            <div style={{ fontSize: 14.5, color: theme.text, lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>
+              {seg.text}
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
 }
 
 function RecordingDetail({
@@ -798,11 +1079,15 @@ function RecordingDetail({
       )}
 
       <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10.5, letterSpacing: '.16em', textTransform: 'uppercase', color: theme.textMuted, margin: failed ? '24px 0 10px' : '6px 0 10px' }}>
-        Transcription
+        {rec.segments && rec.segments.length > 0 ? 'What They Said' : 'Transcription'}
       </div>
-      <div style={{ fontSize: 14.5, color: failed ? theme.danger : theme.text, lineHeight: 1.75, whiteSpace: 'pre-wrap' }}>
-        {failed ? rec.error || 'Transcription failed.' : rec.transcription || 'No transcription available.'}
-      </div>
+      {!failed && rec.segments && rec.segments.length > 0 ? (
+        <ConversationSegments theme={theme} rec={rec} />
+      ) : (
+        <div style={{ fontSize: 14.5, color: failed ? theme.danger : theme.text, lineHeight: 1.75, whiteSpace: 'pre-wrap' }}>
+          {failed ? rec.error || 'Transcription failed.' : rec.transcription || 'No transcription available.'}
+        </div>
+      )}
 
       <div style={{ display: 'flex', gap: 8, marginTop: 26, flexWrap: 'wrap' }}>
         {!failed && rec.transcription && (
