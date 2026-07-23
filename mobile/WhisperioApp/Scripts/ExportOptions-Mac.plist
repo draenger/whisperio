@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Mac App Store / TestFlight export for the WhisperioMac target. Mirrors ExportOptions.plist's
+     manual-signing approach (automatic export hits cloud-signing permission errors on this
+     machine): the MAS profile + 3rd-party certs below were created headless via the ASC API. -->
+<plist version="1.0">
+<dict>
+	<key>method</key>
+	<string>app-store</string>
+	<key>destination</key>
+	<string>upload</string>
+	<key>signingStyle</key>
+	<string>manual</string>
+	<key>teamID</key>
+	<string>953Q6T2WTB</string>
+	<key>signingCertificate</key>
+	<string>3rd Party Mac Developer Application</string>
+	<key>installerSigningCertificate</key>
+	<string>3rd Party Mac Developer Installer</string>
+	<key>provisioningProfiles</key>
+	<dict>
+		<key>ai.whisperio.mobile</key>
+		<string>WZ MAS mobile mac</string>
+	</dict>
+	<key>manageAppVersionAndBuildNumber</key>
+	<true/>
+</dict>
+</plist>
