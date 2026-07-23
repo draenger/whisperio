@@ -70,12 +70,17 @@ struct WhisperioMacApp: App {
         }
         .defaultSize(width: 1100, height: 760)
 
-        // Native macOS Settings window (⌘,) — F7/R8: the app previously had no "Launch at
-        // login" control anywhere (grepped; none existed), so this is a new, real surface for
-        // it rather than a relabel of an existing stub.
+        // Native macOS Settings window (⌘,) — full wz-shell.jsx sidebar shell (wz-shell-SPEC.md),
+        // replacing the minimal MacGeneralSettingsView stub. Same stores the main window uses so
+        // Providers/Audio/Recordings tabs (MacSettingsTabs2.swift) see live, persisted state.
         Settings {
-            MacGeneralSettingsView()
+            MacSettingsShell()
+                .environmentObject(settings)
+                .environmentObject(recordings)
+                .environmentObject(digests)
+                .environmentObject(localWhisperModels)
         }
+        .defaultSize(width: 760, height: 780)
 
         // Menu-bar affordance for the global-hotkey dictation flow — lets a user without a
         // memorized shortcut still start/stop dictation, jump to the main window, or Settings.

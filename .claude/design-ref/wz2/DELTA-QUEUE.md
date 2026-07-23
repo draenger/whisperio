@@ -239,3 +239,11 @@ Design promise "OpenAI up to 4 speakers" delivered (was the last conversation-en
 - iOS/Mac: OpenAIProvider conforms to DiarizingProvider via gpt-4o-transcribe-diarize (response_format=diarized_json); OpenAISegmentMapper in WhisperioKit/Conversation.swift (+tests, 224 green); priority ElevenLabs → OpenAI → Deepgram → AssemblyAI in makeConversationTranscriber/conversationEngineHint; copy updated in ConversationView/Onboarding.
 - Electron: openAITranscribeDiarized in transcribe.ts + openAISegments mapper (first-appearance speaker ids); same priority order; RecordingsPanel hint copy; tests extended (693 green, coverage 91.8%).
 Gates: swift test + iOS/Mac builds + desktop typecheck/coverage all green.
+
+## Mac desktop-design Settings wave (2026-07-23)
+User: native Mac didn't match the desktop design; trigger settings missing/broken.
+- NEW MacApp/MacSettingsShell.swift — wz-shell-SPEC 1:1: Settings window 760×780, sidebar 198 ("SETTINGS", tab list, version badge), StatusHeader (status dot / dictate keycaps / engine chain / AI cleanup), autosave footer pulse; tabs General (launch-at-login + dark toggle on shared wz.split.dark), Hotkeys (4 KeyComboRecorderView rows), Updates (TestFlight card).
+- NEW MacApp/MacSettingsTabs2.swift — Providers (full chain + per-provider keys/models on real WhisperioSettings fields), Audio (input device list → wz.mac.inputDevice; honest note it's not consumed by LiveDictation yet), Recordings (real AudioStore/RecordingsStore stats + Reveal in Finder).
+- Gear in split shell on macOS opens the native Settings window (showSettingsWindow:); iPad keeps full-shell takeover.
+- SettingsView macOS: broken "Set up dictation triggers" (iOS-only TriggerGuides) replaced with "Global hotkeys" row opening the native window.
+Deviations logged in-code: single vocabulary field doubles as OpenAI prompt (engine has one field); "AI vocabulary correction" maps to cleanupEnabled. Gates: Mac + iOS builds green (both agents, first attempt).

@@ -157,7 +157,16 @@ struct iPadSplitView: View {
     // Library tab there was no way in at all (the Mac engine-bar Menu is hidden on iPad).
     // Gated on liveJournal like recapTrigger: Gallery's design-preview host injects no stores.
     private var settingsGear: some View {
-        Button(action: { withAnimation(.easeInOut(duration: 0.2)) { showSettingsSheet = true } }) {
+        Button(action: {
+            #if os(macOS)
+            // The Mac target has a native Settings (⌘,) window (MacSettingsShell) — SettingsLink
+            // only works from a scene-scoped view, so from this plain view we ask AppKit to open
+            // it directly via the standard `showSettingsWindow:` first-responder action.
+            NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+            #else
+            withAnimation(.easeInOut(duration: 0.2)) { showSettingsSheet = true }
+            #endif
+        }) {
             WIcon("settings", size: 15, weight: .regular)
                 .foregroundStyle(t.text)
                 .padding(.horizontal, 9).padding(.vertical, 7)

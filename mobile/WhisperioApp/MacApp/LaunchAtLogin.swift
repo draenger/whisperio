@@ -41,64 +41,7 @@ final class LaunchAtLoginController: ObservableObject {
     }
 }
 
-// The macOS Settings (⌘,) window — this native Mac target's only system-standard Preferences
-// surface (the shared SettingsView is presented as an in-app sheet elsewhere in the split shell
-// and already covers everything else; this pane stays intentionally minimal rather than
-// duplicating that hub).
-struct MacGeneralSettingsView: View {
-    @AppStorage("wz.split.dark") private var splitDark = true
-    // `@ObservedObject`, not `@StateObject` — `.shared` is an existing singleton this view
-    // doesn't own the lifecycle of.
-    @ObservedObject private var launch = LaunchAtLoginController.shared
-    private var t: WZTheme { .of(splitDark) }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 20) {
-            HStack(alignment: .top, spacing: 14) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Launch at login")
-                        .font(WZFont.ui(14, .medium)).foregroundStyle(t.text)
-                    Text("Automatically start Whisperio when you log in")
-                        .font(WZFont.ui(12)).foregroundStyle(t.muted)
-                }
-                Spacer(minLength: 20)
-                WToggle(on: Binding(
-                    get: { launch.isEnabled },
-                    set: { launch.setEnabled($0) }
-                ))
-            }
-
-            Divider().overlay(t.line)
-
-            VStack(alignment: .leading, spacing: 12) {
-                Text("Shortcuts")
-                    .font(WZFont.ui(13, .semibold)).foregroundStyle(t.text)
-
-                shortcutRow(title: "Dictate", subtitle: "Start/stop dictation anywhere", action: .dictation)
-                shortcutRow(title: "Dictate & send", subtitle: "Dictate and submit immediately", action: .dictateAndSend)
-                shortcutRow(title: "Command mode", subtitle: "Rewrite clipboard text", action: .command)
-                shortcutRow(title: "Record system audio", subtitle: "Dictate from what's playing — meetings, videos", action: .outputRecording)
-            }
-        }
-        .padding(20)
-        .frame(width: 380)
-        .background(t.bg)
-        .environment(\.wz, t)
-        .onAppear { launch.refresh() }
-    }
-
-    @ViewBuilder
-    private func shortcutRow(title: String, subtitle: String, action: MacHotkeyAction) -> some View {
-        HStack(alignment: .top, spacing: 14) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title)
-                    .font(WZFont.ui(13, .medium)).foregroundStyle(t.text)
-                Text(subtitle)
-                    .font(WZFont.ui(11)).foregroundStyle(t.muted)
-            }
-            Spacer(minLength: 20)
-            KeyComboRecorderView(action: action)
-        }
-    }
-}
+// The full macOS Settings (⌘,) window is now MacSettingsShell.swift's wz-shell.jsx port —
+// General/Startup content (Launch at login toggle) lives there as MacGeneralTab, and the
+// per-action hotkey rows live in its MacHotkeysTab. This file keeps only the controller.
 #endif

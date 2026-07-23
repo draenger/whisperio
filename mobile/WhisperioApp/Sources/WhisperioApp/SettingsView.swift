@@ -5,6 +5,9 @@ import WhisperioKit
 #if canImport(UIKit)
 import UIKit
 #endif
+#if os(macOS)
+import AppKit
+#endif
 
 // Settings — real, backed by SettingsStore: pick the transcription engine, enter
 // cloud keys, toggle AI cleanup. Appearance + models below.
@@ -1399,10 +1402,10 @@ struct SettingsView: View {
                         sub: "Dictate from any app — install & setup", last: true,
                         onTap: openKeyboardSetup)
                 #else
-                SettRow(icon: "zap", label: "Set up dictation triggers",
-                        sub: "Action Button, Back Tap, keyboard, widgets & more — step by step",
+                SettRow(icon: "zap", label: "Global hotkeys",
+                        sub: "Dictate anywhere with a system-wide shortcut",
                         last: true,
-                        onTap: { showTriggerGuides = true })
+                        onTap: { NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil) })
                 #endif
             }
 
