@@ -35,7 +35,7 @@ import { mistralTranscribe } from './llm/mistral'
 // mobile/WhisperioKit/Sources/WhisperioKit/Conversation.swift. Pure segment
 // logic lives in dictation/conversation.ts; this file only picks the
 // diarizing provider and shapes its raw words/utterances into segments.
-import { buildSpeakerSegments, type SpeakerSegment, type DiarizedWord } from './dictation/conversation'
+import { buildSpeakerSegments, openAISegments, type SpeakerSegment, type DiarizedWord, type OpenAIDiarizedSegment } from './dictation/conversation'
 
 // True only in unpackaged (development) builds. Used to gate logging of
 // privacy-sensitive transcript content so it never reaches production stdout.
@@ -968,21 +968,136 @@ function elevenLabsTranscribeDiarized(
   })
 }
 
+interface OpenAIDiarizedResponse {
+  text?: string
+  segments?: OpenAIDiarizedSegment[]
+}
+
+/**
+ * Conversation mode's OpenAI call: reuses the same multipart/net.request
+ * plumbing as whisperTranscribe() (transcribeAudio()'s OpenAI path) rather
+ * than duplicating the request builder, but targets
+ * `gpt-4o-transcribe-diarize` with `response_format=diarized_json` — OpenAI's
+ * "up to 4 speakers" group-transcription model — and maps the returned
+ * per-segment `speaker` labels ("A"/"B"/…) into SpeakerSegments via
+ * dictation/conversation.ts's openAISegments().
+ */
+function openAITranscribeDiarized(
+  apiKey: string,
+  audioBuffer: Buffer,
+  filename: string,
+  language: string
+): Promise<DiarizedResult> {
+  const boundary = `----Whisperio${Date.now()}`
+  const parts: Buffer[] = []
+
+  parts.push(Buffer.from(
+    `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="${filename}"\r\nContent-Type: audio/webm\r\n\r\n`
+  ))
+  parts.push(audioBuffer)
+  parts.push(Buffer.from('\r\n'))
+
+  parts.push(Buffer.from(
+    `--${boundary}\r\nContent-Disposition: form-data; name="model"\r\n\r\ngpt-4o-transcribe-diarize\r\n`
+  ))
+  parts.push(Buffer.from(
+    `--${boundary}\r\nContent-Disposition: form-data; name="response_format"\r\n\r\ndiarized_json\r\n`
+  ))
+
+  if (language && language !== 'auto') {
+    parts.push(Buffer.from(
+      `--${boundary}\r\nContent-Disposition: form-data; name="language"\r\n\r\n${language}\r\n`
+    ))
+  }
+
+  parts.push(Buffer.from(`--${boundary}--\r\n`))
+
+  const body = Buffer.concat(parts)
+
+  return new Promise<DiarizedResult>((resolve, reject) => {
+    let settled = false
+    const timeout = setTimeout(() => {
+      if (!settled) {
+        settled = true
+        request.abort()
+        const err = new Error('OpenAI transcription request timed out after 45s')
+        handleTranscriptionError(err, 'openai')
+        reject(err)
+      }
+    }, 45_000)
+
+    const settle = <T>(fn: (val: T) => void) => (val: T) => {
+      if (!settled) {
+        settled = true
+        clearTimeout(timeout)
+        fn(val)
+      }
+    }
+
+    const request = net.request({
+      method: 'POST',
+      url: `${DEFAULT_OPENAI_BASE}/audio/transcriptions`
+    })
+
+    request.setHeader('Authorization', `Bearer ${apiKey}`)
+    request.setHeader('Content-Type', `multipart/form-data; boundary=${boundary}`)
+
+    const chunks: Buffer[] = []
+
+    request.on('response', (response) => {
+      response.on('data', (chunk: Buffer) => {
+        chunks.push(chunk)
+      })
+      response.on('end', () => {
+        const responseBody = Buffer.concat(chunks).toString('utf-8')
+        if (response.statusCode !== 200) {
+          if (isDev()) console.error(`[Whisperio] OpenAI API error body: ${responseBody}`)
+          const err = new Error(`OpenAI API error ${response.statusCode}`)
+          handleTranscriptionError(err, 'openai')
+          settle(reject)(err)
+          return
+        }
+        try {
+          const data = JSON.parse(responseBody) as OpenAIDiarizedResponse
+          const segments = openAISegments(data.segments ?? [])
+          const text = segments.length > 0 ? segments.map((s) => s.text).join(' ') : data.text ?? ''
+          settle(resolve)({ segments, text })
+        } catch {
+          const err = new Error(`Failed to parse transcription response (HTTP ${response.statusCode})`)
+          handleTranscriptionError(err, 'openai')
+          settle(reject)(err)
+        }
+      })
+      response.on('error', (err: Error) => {
+        handleTranscriptionError(err, 'openai')
+        settle(reject)(err)
+      })
+    })
+
+    request.on('error', (err: Error) => {
+      handleTranscriptionError(err, 'openai')
+      settle(reject)(err)
+    })
+    request.write(body)
+    request.end()
+  })
+}
+
 /**
  * Conversation mode (group/multi-speaker transcription) — mirrors the mobile
  * app's `SettingsStore.makeConversationTranscriber()` (see
  * Engine/SettingsStore.swift): the first diarization-capable provider that's
- * actually configured, in the fixed order ElevenLabs -> Deepgram ->
- * AssemblyAI (the same order the mobile app's diarizingProviderIDs list
- * declares). Unlike transcribeAudio()'s chain, there is no "fall through the
- * user's whole providerChain" behavior here — only these three engines can
- * diarize at all, so a non-diarizing primary provider (OpenAI, Groq, …) is
- * simply skipped for this purpose. Returns null when no diarizing provider is
+ * actually configured, in the fixed order ElevenLabs -> OpenAI -> Deepgram ->
+ * AssemblyAI. Unlike transcribeAudio()'s chain, there is no "fall through the
+ * user's whole providerChain" behavior here — only these four engines can
+ * diarize at all, so a non-diarizing primary provider (Groq, …) is simply
+ * skipped for this purpose. Returns null when no diarizing provider is
  * configured, so callers (the IPC handler / renderer) can show the same
  * "add a key" guard the mobile app's Conversation record button shows.
  */
 export function getConfiguredDiarizingProvider(settings: AppSettings): ProviderId | null {
   if (settings.elevenlabsApiKey) return 'elevenlabs'
+  if (settings.openaiApiKey) return 'openai'
   if (settings.deepgramApiKey) return 'deepgram'
   if (settings.assemblyaiApiKey) return 'assemblyai'
   return null
@@ -997,7 +1112,7 @@ export async function transcribeConversation(
 
   if (!provider) {
     const err = new Error(
-      'Add an ElevenLabs, Deepgram or AssemblyAI key to transcribe conversations. Open Settings to set one up.'
+      'Add an ElevenLabs, OpenAI, Deepgram or AssemblyAI key to transcribe conversations. Open Settings to set one up.'
     )
     handleTranscriptionError(err, 'elevenlabs')
     throw err
@@ -1008,6 +1123,10 @@ export async function transcribeConversation(
   if (provider === 'elevenlabs') {
     const vocab = getActiveVocabulary(settings)
     return elevenLabsTranscribeDiarized(settings.elevenlabsApiKey, audioBuffer, filename, vocab, lang)
+  }
+
+  if (provider === 'openai') {
+    return openAITranscribeDiarized(settings.openaiApiKey, audioBuffer, filename, lang)
   }
 
   if (provider === 'deepgram') {

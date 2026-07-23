@@ -170,3 +170,43 @@ export function deepgramSegments(utterances: DeepgramUtterance[]): SpeakerSegmen
   }
   return out
 }
+
+// ─── OpenAI mapper ───
+// Maps OpenAI's `gpt-4o-transcribe-diarize` (response_format=diarized_json)
+// `segments` array into SpeakerSegments. OpenAI labels speakers with letters
+// ("A", "B", …) rather than the numeric/lettered ids ElevenLabs/AssemblyAI
+// use, and doesn't guarantee "A" is always the first speaker to talk — so,
+// unlike the other two mappers (which just lowercase/reuse the provider's own
+// id), this one assigns stable `speaker_0`/`speaker_1`/… ids itself, in the
+// order each raw label FIRST appears in the segment list. Defensive: missing
+// start/end default to 0 (a truncated/malformed response shouldn't crash the
+// mapper), and an unrecognized/missing speaker label is tolerated as its own
+// distinct speaker bucket rather than dropped.
+export interface OpenAIDiarizedSegment {
+  speaker?: string
+  text: string
+  start?: number
+  end?: number
+}
+
+export function openAISegments(segments: OpenAIDiarizedSegment[]): SpeakerSegment[] {
+  const out: SpeakerSegment[] = []
+  const order: string[] = []
+  for (const seg of segments) {
+    const text = seg.text?.trim() ?? ''
+    if (!text) continue
+    const rawLabel = seg.speaker?.trim() || 'unknown'
+    let idx = order.indexOf(rawLabel)
+    if (idx === -1) {
+      idx = order.length
+      order.push(rawLabel)
+    }
+    out.push({
+      speaker: `speaker_${idx}`,
+      start: seg.start ?? 0,
+      end: seg.end ?? 0,
+      text
+    })
+  }
+  return out
+}

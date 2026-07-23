@@ -2,7 +2,13 @@ import Foundation
 import WhisperioKit
 
 // Cloud transcription via OpenAI's audio/transcriptions endpoint (BYO key).
-struct OpenAIProvider: TranscriptionProvider {
+//
+// Diarization: `gpt-4o-transcribe-diarize` with `response_format=diarized_json` returns a
+// `segments` array (speaker letter + text + start/end seconds) alongside the flat `text` —
+// folded into `SpeakerSegment`s by `OpenAISegmentMapper` (WhisperioKit, unit-tested there).
+// Design promises "up to 4 speakers" for this engine (vs. ElevenLabs' up to 32), matching
+// OpenAI's documented diarization ceiling.
+struct OpenAIProvider: DiarizingProvider {
     let id: ProviderID = .openAI
     let apiKey: String
     let baseURL: String
@@ -13,6 +19,25 @@ struct OpenAIProvider: TranscriptionProvider {
     var isConfigured: Bool { !apiKey.trimmingCharacters(in: .whitespaces).isEmpty }
 
     func transcribe(_ clip: AudioClip) async throws -> String {
+        struct R: Decodable { let text: String }
+        let data = try await send(clip, diarize: false)
+        return try JSONDecoder().decode(R.self, from: data).text
+    }
+
+    /// Conversation mode: same endpoint with the diarizing model + `response_format=diarized_json`,
+    /// folding the returned segments into per-speaker segments.
+    func transcribeDiarized(_ clip: AudioClip) async throws -> DiarizedTranscription {
+        struct R: Decodable {
+            let text: String
+            let segments: [OpenAISegmentMapper.Segment]?
+        }
+        let data = try await send(clip, diarize: true)
+        let r = try JSONDecoder().decode(R.self, from: data)
+        let segments = OpenAISegmentMapper.segments(from: r.segments ?? [])
+        return DiarizedTranscription(text: r.text, segments: segments)
+    }
+
+    private func send(_ clip: AudioClip, diarize: Bool) async throws -> Data {
         let trimmedBase = baseURL.trimmingCharacters(in: .whitespaces)
         let base = trimmedBase.isEmpty ? "https://api.openai.com/v1" : trimmedBase
         guard let url = URL(string: base + "/audio/transcriptions") else {
@@ -24,7 +49,8 @@ struct OpenAIProvider: TranscriptionProvider {
 
         var body = MultipartBody()
         req.setValue(body.contentType, forHTTPHeaderField: "Content-Type")
-        body.field("model", model.isEmpty ? "whisper-1" : model)
+        body.field("model", diarize ? "gpt-4o-transcribe-diarize" : (model.isEmpty ? "whisper-1" : model))
+        if diarize { body.field("response_format", "diarized_json") }
         if language != "auto" && !language.isEmpty { body.field("language", language) }
         if !prompt.trimmingCharacters(in: .whitespaces).isEmpty { body.field("prompt", prompt) }
         body.file(name: "file", filename: clip.filename,
@@ -36,8 +62,7 @@ struct OpenAIProvider: TranscriptionProvider {
         guard (200..<300).contains(http.statusCode) else {
             throw Self.err("OpenAI error \(http.statusCode): \(String(data: data, encoding: .utf8) ?? "")")
         }
-        struct R: Decodable { let text: String }
-        return try JSONDecoder().decode(R.self, from: data).text
+        return data
     }
 
     static func err(_ m: String) -> NSError {

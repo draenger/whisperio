@@ -233,3 +233,9 @@ Ported natively into the WhisperioMac target (MacApp/):
 DEFERRED (logged): Electron's outputRecordingHotkey (system-audio capture) — needs ScreenCaptureKit audio tap; separate wave.
 Also: onboarding privacy copy now says iPad/Mac instead of a literal "this iPhone" (OnboardingView.deviceWord).
 Gates: WhisperioMac + WhisperioApp (iPad sim) builds green.
+
+## OpenAI diarization — both apps (2026-07-23)
+Design promise "OpenAI up to 4 speakers" delivered (was the last conversation-engine gap):
+- iOS/Mac: OpenAIProvider conforms to DiarizingProvider via gpt-4o-transcribe-diarize (response_format=diarized_json); OpenAISegmentMapper in WhisperioKit/Conversation.swift (+tests, 224 green); priority ElevenLabs → OpenAI → Deepgram → AssemblyAI in makeConversationTranscriber/conversationEngineHint; copy updated in ConversationView/Onboarding.
+- Electron: openAITranscribeDiarized in transcribe.ts + openAISegments mapper (first-appearance speaker ids); same priority order; RecordingsPanel hint copy; tests extended (693 green, coverage 91.8%).
+Gates: swift test + iOS/Mac builds + desktop typecheck/coverage all green.

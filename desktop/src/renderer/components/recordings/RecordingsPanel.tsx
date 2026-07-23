@@ -423,7 +423,7 @@ export function RecordingsView(): ReactElement {
         <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
           {!conversationAvailable && !isCapturing && (
             <span style={{ fontSize: 11, color: theme.textMuted, maxWidth: 220, lineHeight: 1.4 }}>
-              Add an ElevenLabs, Deepgram or AssemblyAI key to transcribe conversations
+              Add an ElevenLabs, OpenAI, Deepgram or AssemblyAI key to transcribe conversations
             </span>
           )}
           <button
@@ -435,7 +435,7 @@ export function RecordingsView(): ReactElement {
                 ? isCapturing
                   ? 'Stop conversation recording'
                   : 'Start a new conversation recording'
-                : 'Add an ElevenLabs, Deepgram or AssemblyAI key to transcribe conversations'
+                : 'Add an ElevenLabs, OpenAI, Deepgram or AssemblyAI key to transcribe conversations'
             }
             style={{
               ...s.toolbarButton,

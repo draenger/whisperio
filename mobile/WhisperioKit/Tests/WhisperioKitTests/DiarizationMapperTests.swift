@@ -80,3 +80,53 @@ import Testing
         #expect(segments.isEmpty)
     }
 }
+
+// MARK: - OpenAISegmentMapper (gpt-4o-transcribe-diarize segments → segments)
+
+@Suite struct OpenAISegmentMapperTests {
+    // A trimmed but realistic `diarized_json` `segments` array from gpt-4o-transcribe-diarize.
+    private let fixtureJSON = """
+    [
+      {"speaker": "A", "text": "Hey, how's it going?", "start": 0.32, "end": 1.78},
+      {"speaker": "B", "text": "Pretty good, thanks for asking.", "start": 1.9, "end": 3.4},
+      {"speaker": "A", "text": "Glad to hear it.", "start": 3.5, "end": 4.2}
+    ]
+    """
+
+    private func decode() throws -> [OpenAISegmentMapper.Segment] {
+        try JSONDecoder().decode([OpenAISegmentMapper.Segment].self, from: Data(fixtureJSON.utf8))
+    }
+
+    @Test func decodesRealisticSegmentFixture() throws {
+        let segments = try decode()
+        #expect(segments.count == 3)
+        #expect(segments[0].speaker == "A")
+        #expect(segments[0].start == 0.32)
+        #expect(segments[0].end == 1.78)
+    }
+
+    @Test func mapsLetterSpeakersToLowercasedIDsPreservingSecondTimestamps() throws {
+        let segments = OpenAISegmentMapper.segments(from: try decode())
+        #expect(segments.map(\.speaker) == ["speaker_a", "speaker_b", "speaker_a"])
+        #expect(segments[0].start == 0.32)
+        #expect(segments[0].end == 1.78)
+        #expect(segments[0].text == "Hey, how's it going?")
+    }
+
+    @Test func blankSegmentTextIsDropped() {
+        let segments = OpenAISegmentMapper.segments(from: [
+            .init(speaker: "A", text: "   ", start: 0, end: 100)
+        ])
+        #expect(segments.isEmpty)
+    }
+
+    @Test func missingSpeakerAndTimestampsDefaultDefensively() {
+        let segments = OpenAISegmentMapper.segments(from: [
+            .init(speaker: nil, text: "Untagged speech.", start: nil, end: nil)
+        ])
+        #expect(segments.count == 1)
+        #expect(segments[0].speaker == "speaker_a")
+        #expect(segments[0].start == 0)
+        #expect(segments[0].end == 0)
+    }
+}

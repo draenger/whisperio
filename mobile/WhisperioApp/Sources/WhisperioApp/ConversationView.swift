@@ -10,8 +10,9 @@ import AppKit
 
 // Conversation mode — long-form mic capture of an in-person conversation (a chat in a café,
 // an interview) with user-controlled pause/resume, transcribed with speaker diarization
-// (whichever diarizing cloud engine — ElevenLabs Scribe, Deepgram Nova, or AssemblyAI
-// Universal — the user has configured). Distinct from RecordingView on purpose: dictation is
+// (whichever diarizing cloud engine — ElevenLabs Scribe, OpenAI gpt-4o-transcribe-diarize,
+// Deepgram Nova, or AssemblyAI Universal — the user has configured). Distinct from
+// RecordingView on purpose: dictation is
 // a short single-voice clip with live partials; a conversation is long, multi-voice, and only
 // transcribable in the cloud — so this screen is always file-based and never auto-stops.
 struct ConversationView: View {
@@ -50,9 +51,9 @@ struct ConversationView: View {
         switch phase {
         case .setup:
             return "Conversations are transcribed in the cloud with speaker detection " +
-                   "(ElevenLabs Scribe, Deepgram Nova, or AssemblyAI Universal) — this mode " +
-                   "doesn’t work with the on-device models. Grant cloud consent and add an " +
-                   "API key for one of them in Settings to use it."
+                   "(ElevenLabs Scribe, OpenAI gpt-4o-transcribe-diarize, Deepgram Nova, or " +
+                   "AssemblyAI Universal) — this mode doesn’t work with the on-device models. " +
+                   "Grant cloud consent and add an API key for one of them in Settings to use it."
         case .listening:
             return "Recording everyone near the microphone. Pause anytime — tap stop when " +
                    "the conversation is over."

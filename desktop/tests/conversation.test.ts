@@ -6,6 +6,7 @@ import {
   transcriptText,
   assemblyAISegments,
   deepgramSegments,
+  openAISegments,
   type DiarizedWord
 } from '../src/main/dictation/conversation'
 
@@ -168,5 +169,45 @@ describe('deepgramSegments', () => {
 
   it('returns an empty array for no utterances', () => {
     expect(deepgramSegments([])).toEqual([])
+  })
+})
+
+describe('openAISegments', () => {
+  it('assigns stable speaker ids in first-appearance order, not by label letter', () => {
+    const segments = openAISegments([
+      { speaker: 'B', text: 'Hello', start: 0, end: 1 },
+      { speaker: 'A', text: 'Hi there', start: 1, end: 2 },
+      { speaker: 'B', text: 'again', start: 2, end: 3 }
+    ])
+    expect(segments).toEqual([
+      { speaker: 'speaker_0', start: 0, end: 1, text: 'Hello' },
+      { speaker: 'speaker_1', start: 1, end: 2, text: 'Hi there' },
+      { speaker: 'speaker_0', start: 2, end: 3, text: 'again' }
+    ])
+  })
+
+  it('returns an empty array for no segments', () => {
+    expect(openAISegments([])).toEqual([])
+  })
+
+  it('drops segments whose text trims to empty', () => {
+    expect(openAISegments([{ speaker: 'A', text: '   ', start: 0, end: 1 }])).toEqual([])
+  })
+
+  it('defaults missing start/end to 0', () => {
+    expect(openAISegments([{ speaker: 'A', text: 'Hi' }])).toEqual([
+      { speaker: 'speaker_0', start: 0, end: 0, text: 'Hi' }
+    ])
+  })
+
+  it('tolerates a missing speaker label as its own distinct speaker bucket', () => {
+    const segments = openAISegments([
+      { text: 'Hi', start: 0, end: 1 },
+      { speaker: 'A', text: 'Hey', start: 1, end: 2 }
+    ])
+    expect(segments).toEqual([
+      { speaker: 'speaker_0', start: 0, end: 1, text: 'Hi' },
+      { speaker: 'speaker_1', start: 1, end: 2, text: 'Hey' }
+    ])
   })
 })

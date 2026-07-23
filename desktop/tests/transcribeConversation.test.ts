@@ -73,17 +73,28 @@ describe('getConfiguredDiarizingProvider', () => {
     expect(getConfiguredDiarizingProvider({} as never)).toBeNull()
   })
 
-  it('prefers ElevenLabs over Deepgram and AssemblyAI', () => {
+  it('prefers ElevenLabs over OpenAI, Deepgram and AssemblyAI', () => {
     expect(
       getConfiguredDiarizingProvider({
         elevenlabsApiKey: 'e',
+        openaiApiKey: 'o',
         deepgramApiKey: 'd',
         assemblyaiApiKey: 'a'
       } as never)
     ).toBe('elevenlabs')
   })
 
-  it('falls back to Deepgram when ElevenLabs is not configured', () => {
+  it('falls back to OpenAI when ElevenLabs is not configured', () => {
+    expect(
+      getConfiguredDiarizingProvider({
+        openaiApiKey: 'o',
+        deepgramApiKey: 'd',
+        assemblyaiApiKey: 'a'
+      } as never)
+    ).toBe('openai')
+  })
+
+  it('falls back to Deepgram when ElevenLabs and OpenAI are not configured', () => {
     expect(
       getConfiguredDiarizingProvider({ deepgramApiKey: 'd', assemblyaiApiKey: 'a' } as never)
     ).toBe('deepgram')
@@ -102,7 +113,7 @@ describe('transcribeConversation', () => {
   it('throws a "add a key" error when no diarizing provider is configured', async () => {
     mockLoadSettings.mockReturnValue({})
     await expect(transcribeConversation(Buffer.from('audio'), 'clip.webm')).rejects.toThrow(
-      'Add an ElevenLabs, Deepgram or AssemblyAI key'
+      'Add an ElevenLabs, OpenAI, Deepgram or AssemblyAI key'
     )
   })
 
@@ -120,6 +131,43 @@ describe('transcribeConversation', () => {
     const result = await transcribeConversation(Buffer.from('audio'), 'clip.webm')
     expect(result.segments).toEqual([{ speaker: 'speaker_0', start: 0, end: 0.9, text: 'Hi there' }])
     expect(result.text).toBe('Hi there')
+  })
+
+  it('maps OpenAI segments into speaker segments when ElevenLabs is not configured', async () => {
+    mockLoadSettings.mockReturnValue({ openaiApiKey: 'oa-key', transcriptionLanguage: 'auto' })
+    const body = JSON.stringify({
+      text: 'Hi there',
+      segments: [
+        { speaker: 'A', text: 'Hi', start: 0, end: 0.4 },
+        { speaker: 'B', text: 'there', start: 0.4, end: 0.9 }
+      ]
+    })
+    mockNetRequest.mockReturnValue(createMockNetRequest(200, body))
+
+    const result = await transcribeConversation(Buffer.from('audio'), 'clip.webm')
+    expect(result.segments).toEqual([
+      { speaker: 'speaker_0', start: 0, end: 0.4, text: 'Hi' },
+      { speaker: 'speaker_1', start: 0.4, end: 0.9, text: 'there' }
+    ])
+    expect(result.text).toBe('Hi there')
+  })
+
+  it('falls back to the plain transcript when OpenAI returns no segments', async () => {
+    mockLoadSettings.mockReturnValue({ openaiApiKey: 'oa-key', transcriptionLanguage: 'auto' })
+    mockNetRequest.mockReturnValue(createMockNetRequest(200, JSON.stringify({ text: 'plain text' })))
+
+    const result = await transcribeConversation(Buffer.from('audio'), 'clip.webm')
+    expect(result.segments).toEqual([])
+    expect(result.text).toBe('plain text')
+  })
+
+  it('propagates an OpenAI API error', async () => {
+    mockLoadSettings.mockReturnValue({ openaiApiKey: 'oa-key', transcriptionLanguage: 'auto' })
+    mockNetRequest.mockReturnValue(createMockNetRequest(401, '{"error":"unauthorized"}'))
+
+    await expect(transcribeConversation(Buffer.from('audio'), 'clip.webm')).rejects.toThrow(
+      'OpenAI API error 401'
+    )
   })
 
   it('maps Deepgram utterances into speaker segments when ElevenLabs is not configured', async () => {

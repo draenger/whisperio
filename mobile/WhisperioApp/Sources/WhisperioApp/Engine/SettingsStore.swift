@@ -176,17 +176,18 @@ final class SettingsStore: ObservableObject {
     // Engines that can diarize at all (architectural capability, independent of whether they're
     // currently configured) — the set Conversation mode's gating and the retranscribe menu's
     // "keeps speakers" labeling both key off of.
-    private static let diarizingProviderIDs: [ProviderID] = [.elevenLabs, .deepgram, .assemblyAI]
+    private static let diarizingProviderIDs: [ProviderID] = [.elevenLabs, .openAI, .deepgram, .assemblyAI]
 
     /// Whether `id` names an engine capable of diarization at all (key/consent-independent) —
     /// drives which retranscribe options warn about losing speaker labels vs. which keep them.
     func isDiarizingEngine(_ id: ProviderID) -> Bool { Self.diarizingProviderIDs.contains(id) }
 
     /// Build the diarizing transcriber for Conversation mode: the first diarization-capable engine
-    /// (ElevenLabs Scribe, Deepgram Nova, or AssemblyAI Universal) that's actually configured,
-    /// preferring the user's own model-order ranking among diarizing engines (so a chosen primary
-    /// sticks), then falling back through the rest — so a user who's only set up Deepgram or
-    /// AssemblyAI still gets real diarization instead of a dead end. Gated the same way makeChain()
+    /// (ElevenLabs Scribe up to 32 speakers, OpenAI gpt-4o-transcribe-diarize up to 4, Deepgram
+    /// Nova, or AssemblyAI Universal) that's actually configured, preferring the user's own
+    /// model-order ranking among diarizing engines (so a chosen primary sticks), then falling
+    /// back through the rest — so a user who's only set up Deepgram or AssemblyAI still gets real
+    /// diarization instead of a dead end. Gated the same way makeChain()
     /// gates cloud STT: nil until cloud consent is granted, so callers surface the setup state
     /// instead of failing silently.
     func makeConversationTranscriber() -> (any DiarizingProvider)? {
@@ -220,6 +221,7 @@ final class SettingsStore: ObservableObject {
     var conversationEngineHint: ProviderID {
         let s = settings
         if !s.elevenLabsKey.trimmingCharacters(in: .whitespaces).isEmpty { return .elevenLabs }
+        if !s.openAIKey.trimmingCharacters(in: .whitespaces).isEmpty { return .openAI }
         if !s.deepgramKey.trimmingCharacters(in: .whitespaces).isEmpty { return .deepgram }
         if !s.assemblyAIKey.trimmingCharacters(in: .whitespaces).isEmpty { return .assemblyAI }
         return .elevenLabs

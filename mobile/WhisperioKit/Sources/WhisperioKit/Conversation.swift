@@ -170,6 +170,38 @@ public enum DeepgramSegmentMapper {
     }
 }
 
+/// Maps OpenAI's `gpt-4o-transcribe-diarize` (`response_format=diarized_json`) `segments` array
+/// into `SpeakerSegment`s. `Segment` mirrors the response's wire JSON directly; OpenAI labels
+/// speakers with short letters ("A", "B", …) similar to AssemblyAI, so the mapping mirrors
+/// `AssemblyAISegmentMapper`'s lowercased `speaker_<letter>` convention. Defensive against
+/// missing/absent `start`/`end` (defaults to 0) since the diarizing model is new and its exact
+/// field guarantees aren't documented as strictly as the flat transcription response.
+public enum OpenAISegmentMapper {
+    public struct Segment: Decodable, Sendable, Equatable {
+        public var speaker: String?
+        public var text: String
+        public var start: Double?
+        public var end: Double?
+
+        public init(speaker: String?, text: String, start: Double?, end: Double?) {
+            self.speaker = speaker
+            self.text = text
+            self.start = start
+            self.end = end
+        }
+    }
+
+    public static func segments(from segments: [Segment]) -> [SpeakerSegment] {
+        segments.compactMap { seg in
+            let text = seg.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !text.isEmpty else { return nil }
+            let letter = (seg.speaker ?? "A").trimmingCharacters(in: .whitespaces).lowercased()
+            return SpeakerSegment(speaker: "speaker_\(letter.isEmpty ? "a" : letter)",
+                                  start: seg.start ?? 0, end: seg.end ?? 0, text: text)
+        }
+    }
+}
+
 /// Prompt + strict parse for LLM speaker-name guessing ("who said X"): the model reads the
 /// labeled transcript and maps speaker ids to real names ONLY where the conversation itself
 /// reveals them (introductions, being addressed by name). Mirrors the digest classify
