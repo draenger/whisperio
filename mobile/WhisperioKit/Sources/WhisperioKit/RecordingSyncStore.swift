@@ -181,6 +181,11 @@ public final class RecordingSyncStore: ObservableObject {
         let mode = RecordingSyncStore.persistedStorageMode()
         let useCloudKit = (mode == .iCloud)
             && FileManager.default.ubiquityIdentityToken != nil
+            // Crash-loop breaker: recent launches died seconds in with CloudKit enabled (the
+            // uncatchable PFCloudKitSetupAssistant SIGTRAP), so pin this launch to the local
+            // store. `storageMode` is untouched — the mismatch surfaces the existing "Resume
+            // iCloud sync" banner (`RecordingSync.iCloudResumeMismatch`) for a manual retry.
+            && !LaunchSentinel.blocksCloudThisLaunch()
         // BUG 1 (CONFIRMED, data-loss on upgrade): build 37 shipped `RecordingSyncStore` on
         // SwiftData's anonymous `ModelConfiguration` — no explicit name/url — which SwiftData
         // resolves to a shared `default.store` in Application Support. An interim commit on this

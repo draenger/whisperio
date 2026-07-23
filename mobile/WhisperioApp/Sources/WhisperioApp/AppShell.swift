@@ -26,9 +26,29 @@ final class WhisperioAppDelegate: NSObject, UIApplicationDelegate {
     // is exactly one RecordingsStore for the process, not two out-of-sync copies.
     static let sharedRecordings = RecordingsStore()
 
+    // Retained token for the didEnterBackground observer below. Kept for the process's
+    // lifetime, same as the stores' own lifecycle observers.
+    private var backgroundObserver: NSObjectProtocol?
+
     func application(_ application: UIApplication,
                       didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
         UIApplication.shared.registerForRemoteNotifications()
+        // Crash-loop breaker bookkeeping (see LaunchSentinel): this launch counts as survived
+        // once it outlives the CloudKit-setup trap window…
+        Task {
+            try? await Task.sleep(for: .seconds(LaunchSentinel.survivalSeconds))
+            LaunchSentinel.markAlive()
+        }
+        // …or reaches background first — a quick dictate-and-leave session is this app's core
+        // flow, and without this it would read as an "early death" once iOS later evicts the
+        // suspended process, falsely tripping the breaker after two short sessions in a row.
+        backgroundObserver = NotificationCenter.default.addObserver(
+            forName: UIApplication.didEnterBackgroundNotification,
+            object: nil,
+            queue: .main
+        ) { _ in
+            MainActor.assumeIsolated { LaunchSentinel.markAlive() }
+        }
         // Activate the Watch bridge from the delegate, not from RootView.onAppear: a background
         // relaunch to deliver a WCSessionFile can invoke session(_:didReceive:) as soon as a
         // delegate exists. If activation instead waited for the SwiftUI view to appear, the

@@ -251,6 +251,9 @@ struct SettingsView: View {
         }
 
         setStorageMode(.iCloud)
+        // Explicit user return to cloud — clear the crash-loop breaker's early-death streak so
+        // the next launch honors this choice instead of pinning local again (see LaunchSentinel).
+        LaunchSentinel.noteManualCloudResume()
 
         if digestsNeedsMigration {
             do {

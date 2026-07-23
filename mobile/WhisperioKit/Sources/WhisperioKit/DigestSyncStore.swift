@@ -184,6 +184,9 @@ public final class DigestSyncStore: ObservableObject {
         let mode = DigestSyncStore.persistedStorageMode()
         let useCloudKit = (mode == .iCloud)
             && FileManager.default.ubiquityIdentityToken != nil
+            // Crash-loop breaker — same gate as `RecordingSyncStore`'s convenience init (the
+            // decision is latched per process, so both stores always agree).
+            && !LaunchSentinel.blocksCloudThisLaunch()
         // Explicit, distinct on-disk file (not the unnamed-config default `default.store`) so
         // this store never collides with `RecordingSyncStore`'s own cache file — see
         // `DigestSync.storeURL()`.

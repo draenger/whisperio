@@ -30,7 +30,26 @@ struct WhisperioMacApp: App {
         }
         HotkeyCenter.shared.registerAll()
         MacAutoPaste.ensureAccessibility(prompt: false)
+
+        // Crash-loop breaker bookkeeping (see LaunchSentinel), mirroring the iOS delegate:
+        // this launch counts as survived once it outlives the CloudKit-setup trap window…
+        Task {
+            try? await Task.sleep(for: .seconds(LaunchSentinel.survivalSeconds))
+            LaunchSentinel.markAlive()
+        }
+        // …or quits gracefully first (⌘Q seconds after launch is a user choice, not a crash —
+        // without this it would count toward the breaker's early-death streak).
+        terminateObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.willTerminateNotification,
+            object: nil,
+            queue: .main
+        ) { _ in
+            MainActor.assumeIsolated { LaunchSentinel.markAlive() }
+        }
     }
+
+    // Retained token for the willTerminate observer above. Kept for the process's lifetime.
+    private let terminateObserver: NSObjectProtocol
     // Real, persisted stores so the Journal tab is live (store-backed digests over real notes),
     // not sample data. `wzLiveJournal` flips iPadSplitView's Journal onto JournalView/DigestDayView.
     @StateObject private var settings = SettingsStore()
