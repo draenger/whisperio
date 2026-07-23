@@ -28,6 +28,15 @@ struct OnboardingView: View {
     var done: () -> Void
 
     private static let note = "Things to do today: pick up the dry cleaning, book a table for four on Friday."
+
+    // The privacy copy names the device it runs on — a literal "iPhone" read wrong on iPad/Mac.
+    private static let deviceWord: String = {
+#if os(iOS)
+        UIDevice.current.userInterfaceIdiom == .pad ? "iPad" : "iPhone"
+#else
+        "Mac"
+#endif
+    }()
     private static let allLangs: [(String, String)] = [
         ("pl", "Polski"), ("en", "English"), ("de", "Deutsch"), ("es", "Español"),
         ("fr", "Français"), ("it", "Italiano"), ("pt", "Português"), ("uk", "Українська")
@@ -218,7 +227,7 @@ struct OnboardingView: View {
             Text("Speak it.\nWhisperio types.")
                 .font(WZFont.display(34, .semibold)).foregroundStyle(t.text)
                 .multilineTextAlignment(.center).lineSpacing(2)
-            Text("Dictate into any app — transcribed on this iPhone, never uploaded.")
+            Text("Dictate into any app — transcribed on this \(Self.deviceWord), never uploaded.")
                 .font(WZFont.ui(15)).foregroundStyle(t.muted)
                 .multilineTextAlignment(.center).lineSpacing(4)
             Spacer()
@@ -262,7 +271,7 @@ struct OnboardingView: View {
             VStack(spacing: 0) {
                 ghostStrip
                 heading("Your words stay yours",
-                        sub: "Everything is transcribed on this iPhone — unless you choose a third-party model provider.")
+                        sub: "Everything is transcribed on this \(Self.deviceWord) — unless you choose a third-party model provider.")
                 VStack(spacing: 11) {
                     onbCard(on: !isCloudChosen, action: chooseOnDevice) {
                         HStack(spacing: 10) {
@@ -280,7 +289,7 @@ struct OnboardingView: View {
                                 .background(t.accent.opacity(0.13), in: Capsule())
                                 .overlay(Capsule().stroke(t.hair, lineWidth: 1))
                         }
-                        Text("Audio is transcribed by the neural engine and never leaves this iPhone. Works in airplane mode.")
+                        Text("Audio is transcribed by the neural engine and never leaves this \(Self.deviceWord). Works in airplane mode.")
                             .font(WZFont.ui(13)).foregroundStyle(t.muted).lineSpacing(3)
                         HStack(alignment: .top, spacing: 7) {
                             WIcon("people", size: 13).foregroundStyle(t.faint).padding(.top, 1)

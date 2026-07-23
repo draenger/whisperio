@@ -221,3 +221,15 @@ until dry → commit+push.
 See SYNC-NOTES.md — settings hub, engines (Groq/Deepgram/AssemblyAI/Mistral),
 model-order slots, journal books, RecRow variant D, JournalComposer, onboarding v1,
 widgets on snapshot data, watch, iPad split, desktop e1/titlebar/overlay/COMMAND.
+
+## Mac-native parity wave — Electron shortcuts + overlay (2026-07-23)
+User: "Ta wersja na macos nie ma funkcjonalnosci ktore ma appka elektronowa czyli skroty i overlay."
+Ported natively into the WhisperioMac target (MacApp/):
+- MacHotkeys.swift — Carbon RegisterEventHotKey global hotkeys mirroring desktop/src/main/dictation/hotkeyManager.ts: dictation ⌃⇧Space, command ⌃⇧C, dictate&send opt-in; persisted wz.mac.hotkey.*; KeyComboRecorderView + "Shortcuts" section in MacGeneralSettingsView.
+- MacOverlay.swift — NSPanel pill per screen (nonactivating, .screenSaver level, all Spaces + fullscreen, bottom-center +40pt), phases armed/recording/transcribing/pasting/done, teal #1cc8b4 / command #7cc0fb, hover hint, on-device badge.
+- MacDictationSession.swift — toggle state machine with monotonic sessionId, 60s transcribing timeout, Esc global+local monitors while active; reuses shared LiveDictation + SettingsStore; command mode rewrites CLIPBOARD via makeChatClient (never pastes the spoken instruction).
+- MacAutoPaste.swift — NSPasteboard + CGEvent ⌘V (AXIsProcessTrusted gate; untrusted → notification, text left on clipboard), optional Enter for dictate&send.
+- WhisperioMacApp.swift — hotkey wiring at init, MenuBarExtra (Dictate/Open/Settings/Quit).
+DEFERRED (logged): Electron's outputRecordingHotkey (system-audio capture) — needs ScreenCaptureKit audio tap; separate wave.
+Also: onboarding privacy copy now says iPad/Mac instead of a literal "this iPhone" (OnboardingView.deviceWord).
+Gates: WhisperioMac + WhisperioApp (iPad sim) builds green.

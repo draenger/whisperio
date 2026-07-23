@@ -21,6 +21,15 @@ struct WhisperioMacApp: App {
         for url in Bundle.main.urls(forResourcesWithExtension: "ttf", subdirectory: nil) ?? [] {
             CTFontManagerRegisterFontsForURL(url as CFURL, .process, nil)
         }
+
+        // Global-hotkey dictation (native port of desktop's hotkeyManager.ts): wire the
+        // hotkey→session→overlay→auto-paste pipeline once at launch. No Accessibility prompt
+        // here — that's only shown the first time a session actually tries to auto-paste.
+        HotkeyCenter.shared.handler = { action in
+            MacDictationSession.shared.handle(action)
+        }
+        HotkeyCenter.shared.registerAll()
+        MacAutoPaste.ensureAccessibility(prompt: false)
     }
     // Real, persisted stores so the Journal tab is live (store-backed digests over real notes),
     // not sample data. `wzLiveJournal` flips iPadSplitView's Journal onto JournalView/DigestDayView.
@@ -67,6 +76,26 @@ struct WhisperioMacApp: App {
         Settings {
             MacGeneralSettingsView()
         }
+
+        // Menu-bar affordance for the global-hotkey dictation flow — lets a user without a
+        // memorized shortcut still start/stop dictation, jump to the main window, or Settings.
+        MenuBarExtra("Whisperio", systemImage: "waveform") {
+            Button("Dictate  \(HotkeyCenter.shared.combo(for: .dictation)?.display ?? "")") {
+                MacDictationSession.shared.handle(.dictation)
+            }
+            Button("Open Whisperio") {
+                NSApp.activate(ignoringOtherApps: true)
+                for window in NSApp.windows where window.isVisible || !window.isMiniaturized {
+                    window.makeKeyAndOrderFront(nil)
+                }
+            }
+            SettingsLink { Text("Settings…") }
+            Divider()
+            Button("Quit Whisperio") {
+                NSApp.terminate(nil)
+            }
+        }
+        .menuBarExtraStyle(.menu)
     }
 
 #if DEBUG
