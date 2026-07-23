@@ -356,13 +356,22 @@ struct JournalView: View {
     // A day that has notes: its key (YYYY-MM-DD), a representative date, and its recordings.
     private struct JournalDay { let key: String; let date: Date; let recs: [Recording] }
 
-    // Completed recordings bucketed by calendar day, newest day first.
+    // Completed recordings bucketed by calendar day, PLUS days that only exist as a composed/
+    // manual digest page (JournalComposerView / DigestDayView.saveManual persist a DailyDigest
+    // with no recordings — without this union a freshly added page never shows up in the book).
     private var days: [JournalDay] {
         let cal = Calendar.current
         let completed = recordings.items.filter { $0.status == .completed }
-        return DigestGrouping.bucketByDay(completed, calendar: cal)
-            .map { key, recs in JournalDay(key: key, date: recs.map(\.timestamp).max() ?? Date(), recs: recs) }
-            .sorted { $0.key > $1.key }
+        var byKey: [String: JournalDay] = [:]
+        for (key, recs) in DigestGrouping.bucketByDay(completed, calendar: cal) {
+            byKey[key] = JournalDay(key: key, date: recs.map(\.timestamp).max() ?? Date(), recs: recs)
+        }
+        for digest in digests.digests where digest.summary?.isEmpty == false {
+            if byKey[digest.id] == nil {
+                byKey[digest.id] = JournalDay(key: digest.id, date: digest.date, recs: [])
+            }
+        }
+        return byKey.values.sorted { $0.key > $1.key }
     }
 
     // Today's page is a distinct "running note" shortcut into Scratchpad rather than the generic
