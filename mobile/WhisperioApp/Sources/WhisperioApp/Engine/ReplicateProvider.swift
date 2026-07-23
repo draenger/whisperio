@@ -2,8 +2,9 @@ import Foundation
 import WhisperioKit
 
 // Cloud transcription via Replicate's hosted-model API (BYO API token). Runs the canonical
-// `openai/whisper` model unless `model` names a different `owner/name` (or `owner/name:version`)
-// slug — see `WhisperioSettings.replicateModel`.
+// `openai/whisper` model unless `model` names a different one — either a full `owner/name`
+// path or a bare Settings catalog slug (see `catalogModelPaths` /
+// `WhisperioSettings.replicateModel`).
 //
 // Verified against Replicate's HTTP API docs (2026-07): predictions are created with
 // `POST /v1/models/{owner}/{name}/predictions`, `Authorization: Bearer <token>`, and a JSON
@@ -30,10 +31,27 @@ struct ReplicateProvider: TranscriptionProvider {
 
     var isConfigured: Bool { !apiKey.trimmingCharacters(in: .whitespaces).isEmpty }
 
+    /// The Settings model chips persist bare catalog slugs (SettingsView.engineModelChoices,
+    /// mirroring ENGINE_MODELS in mob-settings.jsx), but the predictions endpoint needs a full
+    /// `owner/name` path — a bare slug 404s. Map the catalog here; anything already containing
+    /// "/" is an explicit full path (e.g. the desktop-style free-text override) and passes
+    /// through untouched, and an unknown bare value falls back to the canonical default rather
+    /// than forming a request that can never succeed.
+    private static let catalogModelPaths: [String: String] = [
+        "incredibly-fast-whisper": "vaibhavs10/incredibly-fast-whisper",
+        "whisper-large-v3": "openai/whisper",
+    ]
+
+    private var resolvedModelPath: String {
+        let slug = model.trimmingCharacters(in: .whitespaces)
+        if slug.isEmpty { return "openai/whisper" }
+        if slug.contains("/") { return slug }
+        return Self.catalogModelPaths[slug] ?? "openai/whisper"
+    }
+
     func transcribe(_ clip: AudioClip) async throws -> String {
         let audioRef = try await audioInput(for: clip)
-        let slug = model.trimmingCharacters(in: .whitespaces)
-        let modelSlug = slug.isEmpty ? "openai/whisper" : slug
+        let modelSlug = resolvedModelPath
 
         guard let url = URL(string: "https://api.replicate.com/v1/models/\(modelSlug)/predictions") else {
             throw Self.err("Invalid Replicate model \"\(modelSlug)\".")

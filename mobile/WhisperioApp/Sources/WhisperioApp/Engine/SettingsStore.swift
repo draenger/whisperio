@@ -294,7 +294,8 @@ final class SettingsStore: ObservableObject {
                                   prompt: s.customVocabulary)
         case .elevenLabs:
             return ElevenLabsProvider(apiKey: s.elevenLabsKey,
-                                      languageCode: s.language, keyterms: s.vocabularyTerms)
+                                      languageCode: s.language, keyterms: s.vocabularyTerms,
+                                      model: model)
         case .groq:
             return GroqProvider(apiKey: s.groqKey, model: model,
                                 language: s.language, prompt: s.customVocabulary)

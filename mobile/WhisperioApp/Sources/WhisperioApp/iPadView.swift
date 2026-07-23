@@ -253,9 +253,12 @@ struct iPadSplitView: View {
     // still reachable from the same control, matching the strip's appearance when closed.
     private var engineBar: some View {
         Menu {
-            engineChoice(id: .onDevice, title: "On-device")
-            engineChoice(id: .openAI, title: "OpenAI")
-            engineChoice(id: .elevenLabs, title: "ElevenLabs")
+            // Every engine the app supports as a primary — same source Settings' "Add
+            // provider + model" step offers (ProviderID.allCases), so a newly added
+            // ProviderID case can never regress to a hardcoded three-row menu here.
+            ForEach(ProviderID.allCases, id: \.self) { id in
+                engineChoice(id: id, title: engineLabel(id))
+            }
         } label: {
             HStack(spacing: 10) {
                 WIcon("settings", size: 15).foregroundStyle(t.faint)

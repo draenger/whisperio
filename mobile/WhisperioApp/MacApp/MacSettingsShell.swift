@@ -66,7 +66,9 @@ struct MacSettingsShell: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .frame(minWidth: 760, minHeight: 780)
+        // minHeight stays below small/scaled laptop displays so the pinned autosave footer
+        // is never clipped; the Settings scene's .defaultSize(760, 780) still opens full-size.
+        .frame(minWidth: 760, minHeight: 580)
         .background(t.bg)
         .environment(\.wz, t)
         .preferredColorScheme(splitDark ? .dark : .light)

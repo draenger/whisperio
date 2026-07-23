@@ -14,11 +14,15 @@ import WhisperioKit
 struct MacProvidersTab: View {
     @AppStorage("wz.split.dark") private var splitDark = true
     @EnvironmentObject private var settings: SettingsStore
-    @State private var expanded: ProviderID?
+    // Slot INDEX, not ProviderID — the same provider may occupy several modelOrder slots
+    // (with different pinned models), so positional identity is the only stable one.
+    @State private var expanded: Int?
 
     private var t: WZTheme { .of(splitDark) }
-    private var chain: [ProviderID] { settings.settings.providerChain }
-    private var available: [ProviderID] { ProviderID.allCases.filter { !chain.contains($0) } }
+    private var slots: [ProviderSlot] { settings.settings.modelOrder }
+    private var available: [ProviderID] {
+        ProviderID.allCases.filter { id in !slots.contains { $0.provider == id } }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
@@ -26,9 +30,12 @@ struct MacProvidersTab: View {
                 title: "Provider Chain",
                 hint: "First = primary. If it fails, the next one kicks in. Reorder with the arrows."
             ) {
-                ForEach(Array(chain.enumerated()), id: \.element) { idx, id in
-                    chainRow(id, idx)
-                    if idx < chain.count - 1 || !available.isEmpty {
+                ForEach(Array(slots.enumerated()), id: \.offset) { idx, slot in
+                    chainRow(slot, idx)
+                    if expanded == idx {
+                        configPanel(slot.provider)
+                    }
+                    if idx < slots.count - 1 || !available.isEmpty {
                         Divider().overlay(t.line)
                     }
                 }
@@ -43,12 +50,6 @@ struct MacProvidersTab: View {
                     }
                     .menuStyle(.borderlessButton)
                     .fixedSize()
-                }
-            }
-
-            if let open = expanded {
-                MacSettingsSection(title: "\(open.displayName) configuration") {
-                    providerConfig(open)
                 }
             }
 
@@ -92,11 +93,11 @@ struct MacProvidersTab: View {
     }
 
     @ViewBuilder
-    private func chainRow(_ id: ProviderID, _ idx: Int) -> some View {
+    private func chainRow(_ slot: ProviderSlot, _ idx: Int) -> some View {
         HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 1) {
                 HStack(spacing: 6) {
-                    Text(id.displayName).font(WZFont.ui(14, idx == 0 ? .semibold : .medium))
+                    Text(slotTitle(slot)).font(WZFont.ui(14, idx == 0 ? .semibold : .medium))
                         .foregroundStyle(idx == 0 ? t.accentLite : t.text)
                     if idx == 0 {
                         Text("PRIMARY")
@@ -106,22 +107,42 @@ struct MacProvidersTab: View {
                             .background(t.accent.opacity(0.15), in: Capsule())
                     }
                 }
-                Text(statusLine(id)).font(WZFont.mono(10.5)).foregroundStyle(t.faint)
+                Text(statusLine(slot.provider)).font(WZFont.mono(10.5)).foregroundStyle(t.faint)
             }
             Spacer(minLength: 8)
-            Button { move(id, -1) } label: { Image(systemName: "chevron.up") }
+            Button { move(idx, -1) } label: { Image(systemName: "chevron.up") }
                 .buttonStyle(.borderless).disabled(idx == 0)
-            Button { move(id, 1) } label: { Image(systemName: "chevron.down") }
-                .buttonStyle(.borderless).disabled(idx == chain.count - 1)
-            Button { toggleExpand(id) } label: {
-                Image(systemName: expanded == id ? "chevron.up.circle" : "gearshape")
+            Button { move(idx, 1) } label: { Image(systemName: "chevron.down") }
+                .buttonStyle(.borderless).disabled(idx == slots.count - 1)
+            Button { toggleExpand(idx) } label: {
+                Image(systemName: expanded == idx ? "chevron.up.circle" : "gearshape")
             }.buttonStyle(.borderless)
-            if chain.count > 1 {
-                Button { removeFromChain(id) } label: { Image(systemName: "minus.circle") }
+            if slots.count > 1 {
+                Button { removeSlot(idx) } label: { Image(systemName: "minus.circle") }
                     .buttonStyle(.borderless).foregroundStyle(t.red)
             }
         }
         .padding(.vertical, 4)
+        // wz-tabs.jsx:202 — the whole row toggles its config; the Buttons above hit-test
+        // first, so move/gear/remove clicks never fall through to the row tap.
+        .contentShape(Rectangle())
+        .onTapGesture { toggleExpand(idx) }
+    }
+
+    /// "Provider · model" when the slot pins a model, plain provider name otherwise.
+    private func slotTitle(_ slot: ProviderSlot) -> String {
+        slot.model.isEmpty ? slot.provider.displayName : "\(slot.provider.displayName) · \(slot.model)"
+    }
+
+    // Inline accordion body directly under its expanded row (wz-tabs.jsx:239-243).
+    @ViewBuilder
+    private func configPanel(_ id: ProviderID) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            providerConfig(id)
+        }
+        .padding(12)
+        .background(t.surfaceUp, in: RoundedRectangle(cornerRadius: 8))
+        .transition(.opacity.combined(with: .move(edge: .top)))
     }
 
     private func statusLine(_ id: ProviderID) -> String {
@@ -202,33 +223,38 @@ struct MacProvidersTab: View {
         }
     }
 
-    // MARK: - Chain mutation (operates on the real modelOrder — providerChain's setter only
-    // moves a primary, so reorder/add/remove go straight at the slot array).
+    // MARK: - Chain mutation (operates on the real modelOrder by slot INDEX — providerChain's
+    // setter only moves a primary, and provider-keyed lookups would mistarget duplicate slots).
 
-    private func toggleExpand(_ id: ProviderID) { expanded = expanded == id ? nil : id }
+    private func toggleExpand(_ idx: Int) {
+        withAnimation(.easeOut(duration: 0.18)) { expanded = expanded == idx ? nil : idx }
+    }
 
-    private func move(_ id: ProviderID, _ dir: Int) {
+    private func move(_ idx: Int, _ dir: Int) {
         var s = settings.settings
-        guard let i = s.modelOrder.firstIndex(where: { $0.provider == id }) else { return }
-        let j = i + dir
-        guard j >= 0, j < s.modelOrder.count else { return }
-        s.modelOrder.swapAt(i, j)
+        let j = idx + dir
+        guard s.modelOrder.indices.contains(idx), s.modelOrder.indices.contains(j) else { return }
+        s.modelOrder.swapAt(idx, j)
         settings.settings = s
+        // Keep the open accordion attached to the slot it was on.
+        if expanded == idx { expanded = j } else if expanded == j { expanded = idx }
     }
 
     private func addToChain(_ id: ProviderID) {
         var s = settings.settings
         s.modelOrder.append(ProviderSlot(provider: id))
         settings.settings = s
-        expanded = id
+        withAnimation(.easeOut(duration: 0.18)) { expanded = s.modelOrder.count - 1 }
     }
 
-    private func removeFromChain(_ id: ProviderID) {
+    private func removeSlot(_ idx: Int) {
         var s = settings.settings
-        guard s.modelOrder.count > 1 else { return }
-        s.modelOrder.removeAll { $0.provider == id }
+        guard s.modelOrder.count > 1, s.modelOrder.indices.contains(idx) else { return }
+        s.modelOrder.remove(at: idx)
         settings.settings = s
-        if expanded == id { expanded = nil }
+        if let open = expanded {
+            if open == idx { expanded = nil } else if open > idx { expanded = open - 1 }
+        }
     }
 
     private var languageBinding: Binding<String> {

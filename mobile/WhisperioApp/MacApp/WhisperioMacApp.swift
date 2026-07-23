@@ -36,6 +36,9 @@ struct WhisperioMacApp: App {
     @StateObject private var settings = SettingsStore()
     @StateObject private var recordings = RecordingsStore()
     @StateObject private var digests = DigestStore()
+    // Required by DigestPromptEditorView (@EnvironmentObject), reachable from both scenes via
+    // SplitSettingsSheet's "Categorization prompts" route — same store the iOS root injects.
+    @StateObject private var digestPrompts = DigestPromptStore()
     // On-device Whisper (WhisperKit) download/model state — same singleton the iOS entry
     // point injects, so Mac's ModelsView sees the real, shared on-disk state too.
     @StateObject private var localWhisperModels = LocalWhisperModelManager.shared
@@ -50,6 +53,7 @@ struct WhisperioMacApp: App {
                 .environmentObject(settings)
                 .environmentObject(recordings)
                 .environmentObject(digests)
+                .environmentObject(digestPrompts)
                 .environmentObject(localWhisperModels)
                 .frame(minWidth: 820, minHeight: 560)
                 .task {
@@ -78,6 +82,7 @@ struct WhisperioMacApp: App {
                 .environmentObject(settings)
                 .environmentObject(recordings)
                 .environmentObject(digests)
+                .environmentObject(digestPrompts)
                 .environmentObject(localWhisperModels)
         }
         .defaultSize(width: 760, height: 780)

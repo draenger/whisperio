@@ -247,3 +247,14 @@ User: native Mac didn't match the desktop design; trigger settings missing/broke
 - Gear in split shell on macOS opens the native Settings window (showSettingsWindow:); iPad keeps full-shell takeover.
 - SettingsView macOS: broken "Set up dictation triggers" (iOS-only TriggerGuides) replaced with "Global hotkeys" row opening the native window.
 Deviations logged in-code: single vocabulary field doubles as OpenAI prompt (engine has one field); "AI vocabulary correction" maps to cleanupEnabled. Gates: Mac + iOS builds green (both agents, first attempt).
+
+## Model-settings repair wave (ultracode, 2026-07-23)
+User: "settingsy modeli zjebane na wszystkich appkach / strona edycji remote modeli nie pokazuje się / model pickery / scroll". Diagnose workflow (3 investigators + 17 adversarially confirmed findings) → fix workflow (3 implementers + fresh-eyes reviewer). Shipped:
+- ROOT CAUSE: SettingsView modelCategory expanded provider config rendered AFTER the whole 8-row connector list (~550pt off-viewport, pickers detached under Self-hosted) → TRUE ACCORDION: providerConfig(id) inline under the tapped connectionRow (connectorSection helper), transition+animation preserved; consent flow untouched. Same fix in Mac ⌘, Providers tab (configPanel inline under expanded chainRow; whole row clickable, was gear-only).
+- ElevenLabs model chips were a dead control (model never passed to provider) — threaded via provider(for:); Replicate chips persisted bare slugs forming invalid API paths — catalogModelPaths mapping + '/'-passthrough + openai/whisper fallback; whisper-diarization chip REMOVED (schema mismatch — file_url/file_string input, segments-only output; would be a dead control).
+- Empty-string model defaults now display-highlight the catalog default chip (effectiveModelID, no storage write); OpenAI free-text field honestly labeled as same storage as chips.
+- CloudConsentSheet scrollable (accept/cancel were clipped in .medium detent).
+- Hub<->category scroll reset: .id on the ScrollView ITSELF (reviewer empirically proved content-level .id keeps contentOffset).
+- Split-shell engine menu: 3 → all ProviderID cases with existing consent gating.
+- Mac: DigestPromptStore injected in both scenes (crash on Categorization prompts); Providers tab rebuilt on modelOrder slots (duplicates safe, move/remove by index); Settings window minHeight 780→580.
+Gates: iOS+Mac builds, Kit 224 tests — green. Reviewer verdicts: 2 residuals found and fixed inline (scroll .id placement, diarization chip).

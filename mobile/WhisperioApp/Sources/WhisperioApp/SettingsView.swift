@@ -333,6 +333,10 @@ struct SettingsView: View {
                     .padding(.horizontal, 16).padding(.top, 6).padding(.bottom, 28)
                     .animation(.easeInOut(duration: 0.2), value: selectedCategory)
                 }
+                // Fresh identity per page so the hub <-> category swap starts at the top.
+                // Must sit on the ScrollView itself — re-identifying only the content keeps
+                // the old contentOffset (verified empirically on the iOS 26.5 simulator).
+                .id(selectedCategory?.id ?? "hub")
             }
         }
         .sheet(item: Binding(get: { consentProvider.map { ConsentTarget(id: $0) } },
@@ -421,57 +425,60 @@ struct SettingsView: View {
             }
             .padding(.leading, 4)
             VStack(spacing: 10) {
-                connectionRow(.openAI, "OpenAI", "Cloud · Whisper API", "globe")
-                connectionRow(.elevenLabs, "ElevenLabs", "Cloud · Scribe", "globe")
-                connectionRow(.replicate, "Replicate", "Cloud · open-source models", "globe")
-                connectionRow(.groq, "Groq", "Cloud · fastest Whisper inference", "bolt")
-                connectionRow(.deepgram, "Deepgram", "Cloud · Nova, streaming & diarization", "globe")
-                connectionRow(.assemblyAI, "AssemblyAI", "Cloud · Universal, speaker labels", "globe")
-                connectionRow(.mistral, "Mistral", "Cloud · Voxtral, open weights", "globe")
-                connectionRow(.selfHosted, "Self-hosted", "Your server · whisper.cpp / faster-whisper", "server")
-            }
-            if let open = openConnection, let choices = Self.engineModelChoices[open] {
-                modelPicker(choices, engineModelBinding(open))
+                connectorSection(.openAI, "OpenAI", "Cloud · Whisper API", "globe")
+                connectorSection(.elevenLabs, "ElevenLabs", "Cloud · Scribe", "globe")
+                connectorSection(.replicate, "Replicate", "Cloud · open-source models", "globe")
+                connectorSection(.groq, "Groq", "Cloud · fastest Whisper inference", "bolt")
+                connectorSection(.deepgram, "Deepgram", "Cloud · Nova, streaming & diarization", "globe")
+                connectorSection(.assemblyAI, "AssemblyAI", "Cloud · Universal, speaker labels", "globe")
+                connectorSection(.mistral, "Mistral", "Cloud · Voxtral, open weights", "globe")
+                connectorSection(.selfHosted, "Self-hosted", "Your server · whisper.cpp / faster-whisper", "server")
             }
             Text("Tap a provider to configure its connection and model. Which one is actually used — and in what order — is set above.")
                 .font(WZFont.mono(11)).foregroundStyle(t.faint).lineSpacing(3)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.leading, 4)
-            if openConnection == .openAI {
+        }
+    }
+
+    // A connector row plus its expanded configuration directly beneath it — a real accordion.
+    // The config must sit right under its row (not after the whole 8-row list) so tapping a
+    // row visibly opens where the finger is instead of landing off-viewport.
+    @ViewBuilder
+    private func connectorSection(_ id: ProviderID, _ title: String, _ sub: String, _ icon: String) -> some View {
+        connectionRow(id, title, sub, icon)
+        if openConnection == id {
+            providerConfig(id)
+                .transition(.opacity.combined(with: .move(edge: .top)))
+        }
+    }
+
+    // Expanded per-provider configuration: model chips, key/URL fields, then the
+    // manage-account/usage (or self-hosted dashboard) buttons.
+    @ViewBuilder
+    private func providerConfig(_ id: ProviderID) -> some View {
+        VStack(alignment: .leading, spacing: 16) {
+            // Self-hosted is deliberately absent from engineModelChoices (free-text model
+            // instead of a chip catalog) — this `if let` doubles as that guard.
+            if let choices = Self.engineModelChoices[id] {
+                modelPicker(id, choices)
+            }
+            switch id {
+            case .openAI:
                 keyField("OpenAI API key", binding(\.openAIKey))
                 plainField("Base URL (optional, self-hosted)", "https://api.openai.com/v1", binding(\.openAIBaseURL))
                 plainField("Model (optional)", "whisper-1", binding(\.whisperModel))
-            }
-            if let open = openConnection {
-                if open == .selfHosted {
-                    // No vendor console for a server the user runs themselves — open the
-                    // actual configured URL (real, honest) instead of a dead "manage account"
-                    // link to a console that doesn't exist for arbitrary self-hosted servers.
-                    let urlText = settings.settings.selfHostedURL.trimmingCharacters(in: .whitespaces)
-                    if !urlText.isEmpty, let serverURL = URL(string: urlText) {
-                        GhostButton(title: "Open server dashboard", icon: "arrowUR") {
-                            openURL(serverURL)
-                        }
-                    }
-                } else {
-                    HStack(spacing: 9) {
-                        GhostButton(title: "Manage account · \(engineDisplayName(open))", icon: "arrowUR") {
-                            openManageAccount(open)
-                        }
-                        GhostButton(title: "Usage console", icon: "globe") {
-                            openUsageConsole(open)
-                        }
-                        .fixedSize()
-                    }
-                }
-            }
-            if openConnection == .elevenLabs { keyField("ElevenLabs API key", binding(\.elevenLabsKey)) }
-            if openConnection == .replicate { keyField("Replicate API token", binding(\.replicateKey), placeholder: "r8_…") }
-            if openConnection == .groq { keyField("Groq API key", binding(\.groqKey), placeholder: "gsk_…") }
-            if openConnection == .deepgram { keyField("Deepgram API key", binding(\.deepgramKey)) }
-            if openConnection == .assemblyAI { keyField("AssemblyAI API key", binding(\.assemblyAIKey)) }
-            if openConnection == .mistral { keyField("Mistral API key", binding(\.mistralKey)) }
-            if openConnection == .selfHosted {
+                Text("Same setting as the chips above — tap a chip or type any newer model id here. Empty means whisper-1.")
+                    .font(WZFont.mono(11)).foregroundStyle(t.faint).lineSpacing(3)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.leading, 4)
+            case .elevenLabs: keyField("ElevenLabs API key", binding(\.elevenLabsKey))
+            case .replicate: keyField("Replicate API token", binding(\.replicateKey), placeholder: "r8_…")
+            case .groq: keyField("Groq API key", binding(\.groqKey), placeholder: "gsk_…")
+            case .deepgram: keyField("Deepgram API key", binding(\.deepgramKey))
+            case .assemblyAI: keyField("AssemblyAI API key", binding(\.assemblyAIKey))
+            case .mistral: keyField("Mistral API key", binding(\.mistralKey))
+            case .selfHosted:
                 plainField("Server URL", "http://192.168.1.20:8080/v1", binding(\.selfHostedURL))
                 keyField("Bearer token (optional)", binding(\.selfHostedKey), placeholder: "leave blank if none")
                 plainField("Model", "whisper-large-v3", binding(\.selfHostedModel))
@@ -485,6 +492,29 @@ struct SettingsView: View {
                 .padding(.horizontal, 14).padding(.vertical, 12)
                 .background(t.green.opacity(t.dark ? 0.08 : 0.07), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(t.green.opacity(0.25), lineWidth: 1))
+            default:
+                EmptyView()   // .onDevice / .localWhisper never appear in the connector list
+            }
+            if id == .selfHosted {
+                // No vendor console for a server the user runs themselves — open the
+                // actual configured URL (real, honest) instead of a dead "manage account"
+                // link to a console that doesn't exist for arbitrary self-hosted servers.
+                let urlText = settings.settings.selfHostedURL.trimmingCharacters(in: .whitespaces)
+                if !urlText.isEmpty, let serverURL = URL(string: urlText) {
+                    GhostButton(title: "Open server dashboard", icon: "arrowUR") {
+                        openURL(serverURL)
+                    }
+                }
+            } else {
+                HStack(spacing: 9) {
+                    GhostButton(title: "Manage account · \(engineDisplayName(id))", icon: "arrowUR") {
+                        openManageAccount(id)
+                    }
+                    GhostButton(title: "Usage console", icon: "globe") {
+                        openUsageConsole(id)
+                    }
+                    .fixedSize()
+                }
             }
         }
     }
@@ -500,9 +530,11 @@ struct SettingsView: View {
                   ("gpt-4o-mini-transcribe", "gpt-4o-mini")],
         // ElevenLabs Scribe v2 (batch) shipped January 2026; v1 remains real and supported.
         .elevenLabs: [("scribe_v2", "Scribe v2"), ("scribe_v1", "Scribe v1")],
+        // whisper-diarization deliberately absent: thomasmol's schema takes file_url/file_string
+        // (not "audio") and returns segments with no top-level text — ReplicateProvider can't
+        // drive it, so offering the chip would be a dead control.
         .replicate: [("incredibly-fast-whisper", "incredibly-fast-whisper"),
-                     ("whisper-large-v3", "whisper large-v3"),
-                     ("whisper-diarization", "whisper-diarization")],
+                     ("whisper-large-v3", "whisper large-v3")],
         .groq: [("whisper-large-v3-turbo", "whisper-v3 turbo"),
                 ("whisper-large-v3", "whisper large-v3"),
                 ("distil-whisper", "distil-whisper")],
@@ -535,14 +567,27 @@ struct SettingsView: View {
         }
     }
 
-    // Model chips under the engine list — capsule per choice, accent tint on the selection.
-    private func modelPicker(_ choices: [(id: String, name: String)],
-                             _ selection: Binding<String>) -> some View {
-        VStack(alignment: .leading, spacing: 7) {
+    /// Display-level selection for a provider's model chips: the stored value when set,
+    /// otherwise the provider's documented default — its catalog's first chip (whisper-1,
+    /// scribe_v2, …). Engines whose setting defaults to "" (whisperModel, elevenLabsModel,
+    /// replicateModel) thus open with the real default highlighted instead of nothing, and
+    /// storage stays untouched until the user actually taps a chip. Trimmed so the OpenAI
+    /// free-text Model field tracks its chip even with stray whitespace.
+    private func effectiveModelID(for id: ProviderID) -> String {
+        let stored = engineModelBinding(id).wrappedValue.trimmingCharacters(in: .whitespaces)
+        return stored.isEmpty ? (Self.engineModelChoices[id]?.first?.id ?? "") : stored
+    }
+
+    // Model chips under an expanded connector — capsule per choice, accent tint on the
+    // effective selection (tapping writes storage; the default highlight alone never does).
+    private func modelPicker(_ id: ProviderID, _ choices: [(id: String, name: String)]) -> some View {
+        let selection = engineModelBinding(id)
+        let effective = effectiveModelID(for: id)
+        return VStack(alignment: .leading, spacing: 7) {
             SectionLabel(text: "Model").padding(.leading, 4)
             FlowLayout(spacing: 7) {
                 ForEach(choices, id: \.id) { choice in
-                    let on = selection.wrappedValue == choice.id
+                    let on = effective == choice.id
                     Button { selection.wrappedValue = choice.id } label: {
                         Text(choice.name)
                             .font(WZFont.mono(11.5, .semibold))
@@ -1736,45 +1781,47 @@ struct CloudConsentSheet: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack {
-                PrivacyBadge(mode: .cloud)
-                Spacer()
-                Button(action: onCancel) {
-                    WIcon("x", size: 16).foregroundStyle(t.muted)
-                        .frame(width: 34, height: 34)
-                        .background(t.surfaceUp, in: Circle())
+        // Scrolls because the .medium detent can be shorter than this content — the
+        // accept/cancel buttons must always be reachable, not clipped off the bottom.
+        ScrollView(showsIndicators: false) {
+            VStack(alignment: .leading, spacing: 0) {
+                HStack {
+                    PrivacyBadge(mode: .cloud)
+                    Spacer()
+                    Button(action: onCancel) {
+                        WIcon("x", size: 16).foregroundStyle(t.muted)
+                            .frame(width: 34, height: 34)
+                            .background(t.surfaceUp, in: Circle())
+                    }
+                    .buttonStyle(.plain)
                 }
-                .buttonStyle(.plain)
+                .padding(.bottom, 18)
+
+                WIcon("cloud", size: 26).foregroundStyle(.white)
+                    .frame(width: 56, height: 56)
+                    .background(t.amber.opacity(0.9), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    .padding(.bottom, 16)
+
+                Text("Turn on cloud transcription?")
+                    .font(WZFont.display(21)).foregroundStyle(t.text).padding(.bottom, 10)
+
+                Text("To use \(name), your audio will leave this device and be sent to \(name)’s servers to be transcribed. That’s the only way a cloud engine can work.")
+                    .font(WZFont.ui(14.5)).foregroundStyle(t.muted).lineSpacing(4)
+                    .fixedSize(horizontal: false, vertical: true).padding(.bottom, 16)
+
+                VStack(alignment: .leading, spacing: 11) {
+                    bullet("lock", "Prefer privacy? Apple’s on-device engine is free, works in airplane mode, and never uploads anything.")
+                    bullet("shield", "You can switch back to on-device any time. Your saved transcripts stay on this device.")
+                }
+                .padding(.bottom, 22)
+
+                GradButton(title: "I understand — enable \(name)", icon: "cloud", action: onAccept)
+                    .padding(.bottom, 10)
+                GhostButton(title: "Keep audio on-device", action: onCancel)
             }
-            .padding(.bottom, 18)
-
-            WIcon("cloud", size: 26).foregroundStyle(.white)
-                .frame(width: 56, height: 56)
-                .background(t.amber.opacity(0.9), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-                .padding(.bottom, 16)
-
-            Text("Turn on cloud transcription?")
-                .font(WZFont.display(21)).foregroundStyle(t.text).padding(.bottom, 10)
-
-            Text("To use \(name), your audio will leave this device and be sent to \(name)’s servers to be transcribed. That’s the only way a cloud engine can work.")
-                .font(WZFont.ui(14.5)).foregroundStyle(t.muted).lineSpacing(4)
-                .fixedSize(horizontal: false, vertical: true).padding(.bottom, 16)
-
-            VStack(alignment: .leading, spacing: 11) {
-                bullet("lock", "Prefer privacy? Apple’s on-device engine is free, works in airplane mode, and never uploads anything.")
-                bullet("shield", "You can switch back to on-device any time. Your saved transcripts stay on this device.")
-            }
-            .padding(.bottom, 22)
-
-            GradButton(title: "I understand — enable \(name)", icon: "cloud", action: onAccept)
-                .padding(.bottom, 10)
-            GhostButton(title: "Keep audio on-device", action: onCancel)
-
-            Spacer(minLength: 0)
+            .padding(24)
+            .frame(maxWidth: .infinity, alignment: .topLeading)
         }
-        .padding(24)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(t.bg.ignoresSafeArea())
     }
 
