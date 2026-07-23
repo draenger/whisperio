@@ -101,6 +101,7 @@ struct iPadSplitView: View {
                 }
             } else if liveJournal {
                 IPadLiveJournal(onExit: { withAnimation(.easeInOut(duration: 0.18)) { tab = "library" } },
+                                openSettings: { withAnimation(.easeInOut(duration: 0.2)) { showSettingsSheet = true } },
                                 openLibrary: { sourceId in
                                     if let match = libraryRecordings.first(where: { $0.sourceId == sourceId }) {
                                         sel = match.id
@@ -124,8 +125,15 @@ struct iPadSplitView: View {
                 recapPanel.transition(.opacity)
             }
         }
-        .sheet(isPresented: $showSettingsSheet) {
-            SplitSettingsSheet(onClose: { showSettingsSheet = false })
+        // Full-app takeover, not a sheet — Settings on iPad/Mac covers the whole split shell
+        // (toolbar included), matching the phone's full-screen `.settings` route.
+        .overlay {
+            if showSettingsSheet {
+                SplitSettingsSheet(onClose: { withAnimation(.easeInOut(duration: 0.2)) { showSettingsSheet = false } })
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(t.bg.ignoresSafeArea())
+                    .transition(.opacity)
+            }
         }
         .onAppear {
             // Seed the sidebar's selection highlight to the row the detail pane is already
@@ -149,7 +157,7 @@ struct iPadSplitView: View {
     // Library tab there was no way in at all (the Mac engine-bar Menu is hidden on iPad).
     // Gated on liveJournal like recapTrigger: Gallery's design-preview host injects no stores.
     private var settingsGear: some View {
-        Button(action: { showSettingsSheet = true }) {
+        Button(action: { withAnimation(.easeInOut(duration: 0.2)) { showSettingsSheet = true } }) {
             WIcon("settings", size: 15, weight: .regular)
                 .foregroundStyle(t.text)
                 .padding(.horizontal, 9).padding(.vertical, 7)
@@ -720,6 +728,9 @@ private struct SplitSettingsSheet: View {
 private struct IPadLiveJournal: View {
     @Environment(\.wz) private var t
     var onExit: () -> Void = {}
+    // Settings presentation is owned by iPadSplitView (a full-shell takeover, not a sheet) —
+    // this view only requests it (see requestSettings()).
+    var openSettings: () -> Void = {}
     // Resolves a note tap to the Library tab: parent (iPadSplitView) matches the recording's
     // real `sourceId` against `libraryRecordings` and sets `sel`/`tab` — kept out of this view
     // since library selection state lives one level up.
@@ -727,7 +738,6 @@ private struct IPadLiveJournal: View {
     @State private var day: Date?
     @State private var dayStartInManual = false
     @State private var daySeed: String? = nil
-    @State private var showSettings = false
     @State private var showComposer = false
     @State private var showScratchpad = false
     @State private var toastMsg: String?
@@ -749,7 +759,7 @@ private struct IPadLiveJournal: View {
                                   openRec: { demo in
                                       if let sourceId = demo.sourceId { openLibrary(sourceId) }
                                   },
-                                  openSettings: { showSettings = true },
+                                  openSettings: requestSettings,
                                   toast: showToast,
                                   seed: daySeed,
                                   startInManual: dayStartInManual)
@@ -764,11 +774,6 @@ private struct IPadLiveJournal: View {
             if let toastMsg {
                 toastBanner(toastMsg).padding(.bottom, 24)
             }
-        }
-        .sheet(isPresented: $showSettings) {
-            // No dedicated "settings" route exists in the split shell (unlike AppShell's
-            // `.settings` screen) — the shared SplitSettingsSheet hosts the hub + deep pages.
-            SplitSettingsSheet(onClose: { showSettings = false })
         }
         .sheet(isPresented: $showComposer) {
             // "New page" composer over the split. onDone routes exactly like the phone
@@ -786,18 +791,24 @@ private struct IPadLiveJournal: View {
                                     case .split: break
                                     }
                                 },
-                                openSettings: { showSettings = true },
+                                openSettings: requestSettings,
                                 toast: showToast)
         }
         .sheet(isPresented: $showScratchpad) {
             ScratchpadView(onBack: { showScratchpad = false },
                            onHistory: { showScratchpad = false },
-                           openSettings: { showSettings = true },
+                           openSettings: requestSettings,
                            // Dismiss the sheet before opening today's digest so DigestDayView is
                            // actually visible — same idiom as the composer sheet's onDone above.
                            summarizeDay: { showScratchpad = false; dayStartInManual = false; daySeed = nil; day = Date() },
                            toast: showToast)
         }
+    }
+
+    private func requestSettings() {
+        showComposer = false
+        showScratchpad = false
+        openSettings()
     }
 
     // Mirrors AppShell's `showToast`/`toast(_:)` chip so generation failures and the
