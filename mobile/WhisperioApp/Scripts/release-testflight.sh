@@ -28,8 +28,13 @@ KEY="$HOME/.appstoreconnect/private_keys/AuthKey_HUMHQQ6DB3.p8"   # App Manager 
 KID="HUMHQQ6DB3"
 ISS="ee61e2e6-1f5f-44e8-a4aa-d80fabb8e83d"
 
-ARCHIVE="$HOME/whisperio-release.xcarchive"
-EXPORT_DIR="$HOME/whisperio-export"
+# Build products live on DevDisk when it's mounted — the system disk runs chronically full
+# (a full startup disk evicts the iOS platform and kills archives), the dev volume doesn't.
+if [ -d "/Volumes/DevDisk" ]; then BUILD_ROOT="/Volumes/DevDisk/whisperio-build"; else BUILD_ROOT="$HOME"; fi
+mkdir -p "$BUILD_ROOT"
+ARCHIVE="$BUILD_ROOT/whisperio-release.xcarchive"
+EXPORT_DIR="$BUILD_ROOT/whisperio-export"
+DERIVED="$BUILD_ROOT/DerivedData-Release"
 EXPORT_OPTS="$SCRIPTS/ExportOptions.plist"
 
 auth=(-allowProvisioningUpdates -authenticationKeyPath "$KEY" -authenticationKeyID "$KID" -authenticationKeyIssuerID "$ISS")
@@ -62,7 +67,7 @@ xcodebuild -downloadPlatform iOS >/dev/null 2>&1 || true
 echo "▸ archiving…"
 rm -rf "$ARCHIVE"
 xcodebuild -project "$PROJ" -scheme WhisperioApp -configuration Release \
-  -destination 'generic/platform=iOS' -archivePath "$ARCHIVE" archive "${auth[@]}"
+  -destination 'generic/platform=iOS' -archivePath "$ARCHIVE" -derivedDataPath "$DERIVED" archive "${auth[@]}"
 [ -d "$ARCHIVE" ] || { echo "✘ archive not produced"; exit 1; }
 
 # 3. Export with MANUAL signing (the pre-created 'WZ AppStore …' profiles) + upload.
