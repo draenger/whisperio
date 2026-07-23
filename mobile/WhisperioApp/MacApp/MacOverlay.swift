@@ -19,6 +19,7 @@ enum OverlayMode {
     case dictation
     case dictateAndSend
     case command
+    case outputRecording
 }
 
 enum OverlayPhase {
@@ -49,6 +50,8 @@ private enum OverlayColors {
     static let teal = Color(red: 0x1c / 255, green: 0xc8 / 255, blue: 0xb4 / 255)
     // Command mode sky (#7cc0fb)
     static let sky = Color(red: 0x7c / 255, green: 0xc0 / 255, blue: 0xfb / 255)
+    // Output-recording (system audio) blue (#3b82f6) — DictationOverlay.tsx's output-mode accent.
+    static let outputBlue = Color(red: 0x3b / 255, green: 0x82 / 255, blue: 0xf6 / 255)
     // Recording dot red
     static let red = Color(red: 0xef / 255, green: 0x44 / 255, blue: 0x44 / 255)
     static let doneGreen = Color(red: 0x22 / 255, green: 0xc5 / 255, blue: 0x5e / 255)
@@ -57,6 +60,7 @@ private enum OverlayColors {
         switch mode {
         case .command: return sky
         case .dictation, .dictateAndSend: return teal
+        case .outputRecording: return outputBlue
         }
     }
 }
@@ -304,7 +308,11 @@ struct OverlayPill: View {
         case .armed:
             return model.mode == .command ? "Command ready" : "Ready"
         case .recording:
-            return model.mode == .command ? "Listening for a command" : "Listening…"
+            switch model.mode {
+            case .command: return "Listening for a command"
+            case .outputRecording: return "Recording system audio…"
+            case .dictation, .dictateAndSend: return "Listening…"
+            }
         case .transcribing:
             return "Transcribing…"
         case .pasting:

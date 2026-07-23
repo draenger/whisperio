@@ -77,6 +77,7 @@ struct MacGeneralSettingsView: View {
                 shortcutRow(title: "Dictate", subtitle: "Start/stop dictation anywhere", action: .dictation)
                 shortcutRow(title: "Dictate & send", subtitle: "Dictate and submit immediately", action: .dictateAndSend)
                 shortcutRow(title: "Command mode", subtitle: "Rewrite clipboard text", action: .command)
+                shortcutRow(title: "Record system audio", subtitle: "Dictate from what's playing — meetings, videos", action: .outputRecording)
             }
         }
         .padding(20)

@@ -2,6 +2,7 @@
 import Foundation
 import AppKit
 import AVFoundation
+import UserNotifications
 import WhisperioKit
 
 // Native port of desktop/src/main/dictation/hotkeyManager.ts's activate()/activateAndSend()/
@@ -33,6 +34,10 @@ final class MacDictationSession: ObservableObject {
 
     private let live = LiveDictation()
     private lazy var settings = SettingsStore()
+    // System-output capture used only by `.outputRecording` — mirrors hotkeyManager.ts's
+    // activateOutput(), a mic-free sibling of `live` that records what's PLAYING instead.
+    private let outputCapture = MacSystemAudioCapture()
+    private var outputCaptureStart: Date?
 
     private var escapeMonitorGlobal: Any?
     private var escapeMonitorLocal: Any?
@@ -70,12 +75,19 @@ final class MacDictationSession: ObservableObject {
         removeEscapeMonitors()
         stopElapsedTimer()
         live.cancel()
+        Task { await outputCapture.cancel() }
+        outputCaptureStart = nil
         OverlayController.shared.hide()
     }
 
     // MARK: - Start / stop
 
     private func start(_ action: MacHotkeyAction) async {
+        if action == .outputRecording {
+            await startOutputRecording()
+            return
+        }
+
         // Mic permission — mirrors RecordingView's gate before LiveDictation.start(); requested
         // explicitly here since there's no view lifecycle to lean on.
         if AVCaptureDevice.authorizationStatus(for: .audio) == .notDetermined {
@@ -111,10 +123,68 @@ final class MacDictationSession: ObservableObject {
         startElapsedTimer()
     }
 
+    // MARK: - Output recording (system audio, mirrors hotkeyManager.ts's activateOutput())
+
+    /// Screen Recording (the TCC bucket ScreenCaptureKit audio capture needs) typically only
+    /// takes effect after the app is relaunched the first time it's granted — unlike mic/
+    /// Accessibility, there's no "prompt then immediately proceed" path here, so a still-denied
+    /// result after requesting just tells the user to restart Whisperio instead of retrying.
+    private func startOutputRecording() async {
+        if !MacSystemAudioCapture.hasPermission() {
+            _ = MacSystemAudioCapture.requestPermission()
+            guard MacSystemAudioCapture.hasPermission() else {
+                NSSound.beep()
+                await notifyScreenRecordingNeeded()
+                return
+            }
+        }
+
+        sessionId += 1
+        let mySession = sessionId
+        state = .recording(.outputRecording)
+
+        let overlay = OverlayModel.shared
+        overlay.mode = .outputRecording
+        overlay.phase = .armed
+        overlay.elapsed = 0
+        overlay.stopHint = HotkeyCenter.shared.combo(for: .outputRecording)?.display ?? ""
+        overlay.onDevice = false
+        OverlayController.shared.show()
+        installEscapeMonitors()
+
+        do {
+            try await outputCapture.start()
+        } catch {
+            handleFailure(mySession)
+            return
+        }
+        guard mySession == sessionId else { return }
+        outputCaptureStart = Date()
+        overlay.phase = .recording
+        startElapsedTimer()
+    }
+
+    private func notifyScreenRecordingNeeded() async {
+        let center = UNUserNotificationCenter.current()
+        _ = try? await center.requestAuthorization(options: [.alert])
+        let content = UNMutableNotificationContent()
+        content.title = "Whisperio"
+        content.body = "Grant Screen Recording permission to capture system audio, then restart " +
+            "Whisperio — macOS only applies this permission after a relaunch."
+        let request = UNNotificationRequest(identifier: "whisperio.systemaudio.permission",
+                                            content: content, trigger: nil)
+        try? await center.add(request)
+    }
+
     private func stopAndFinish() async {
         let mySession = sessionId
         let action: MacHotkeyAction
         if case .recording(let a) = state { action = a } else { return }
+
+        if action == .outputRecording {
+            await stopOutputRecordingAndFinish(session: mySession)
+            return
+        }
 
         state = .transcribing
         removeEscapeMonitors()
@@ -136,6 +206,48 @@ final class MacDictationSession: ObservableObject {
             await runCommand(instruction: trimmed, session: mySession)
         } else {
             await pasteAndFinish(text: trimmed, thenEnter: action == .dictateAndSend, session: mySession)
+        }
+    }
+
+    /// Stops the system-audio capture, transcribes the recorded file through the settings'
+    /// configured provider chain (same `AudioClip` + `ProviderChain.transcribe` API DetailView's
+    /// retranscribe uses — mobile/WhisperioApp/Sources/WhisperioApp/DetailView.swift:283-294),
+    /// and auto-pastes the result like normal dictation.
+    private func stopOutputRecordingAndFinish(session: Int) async {
+        state = .transcribing
+        removeEscapeMonitors()
+        stopElapsedTimer()
+        OverlayModel.shared.phase = .transcribing
+        startTranscribeTimeout(for: session)
+
+        let duration = outputCaptureStart.map { Date().timeIntervalSince($0) } ?? 0
+        outputCaptureStart = nil
+        let url = await outputCapture.stop()
+        transcribeTimeoutTask?.cancel()
+        guard session == sessionId else { return } // stale — cancelled/timed out already
+
+        defer { if let url { try? FileManager.default.removeItem(at: url) } }
+
+        guard let url, let data = try? Data(contentsOf: url) else {
+            await finishSession(session, showDone: false)
+            return
+        }
+
+        let clip = AudioClip(data: data, filename: url.lastPathComponent, duration: duration)
+        let chain = settings.makeChain()
+        switch await chain.transcribe(clip) {
+        case .success(let transcript):
+            guard session == sessionId else { return }
+            let trimmed = transcript.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmed.isEmpty {
+                await finishSession(session, showDone: false)
+            } else {
+                await pasteAndFinish(text: trimmed, thenEnter: false, session: session)
+            }
+        case .failure:
+            guard session == sessionId else { return }
+            NSSound.beep()
+            await finishSession(session, showDone: false)
         }
     }
 
@@ -217,6 +329,8 @@ final class MacDictationSession: ObservableObject {
         state = .idle
         removeEscapeMonitors()
         stopElapsedTimer()
+        outputCaptureStart = nil
+        Task { await outputCapture.cancel() }
         OverlayController.shared.hide()
         NSSound.beep()
     }
@@ -287,6 +401,7 @@ final class MacDictationSession: ObservableObject {
         case .dictation: return .dictation
         case .dictateAndSend: return .dictateAndSend
         case .command: return .command
+        case .outputRecording: return .outputRecording
         }
     }
 

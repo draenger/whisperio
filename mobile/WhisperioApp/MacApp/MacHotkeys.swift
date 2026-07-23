@@ -18,6 +18,7 @@ enum MacHotkeyAction: String, CaseIterable {
     case dictation
     case dictateAndSend
     case command
+    case outputRecording
 }
 
 // Global hotkey registration/dispatch for the native Mac app, mirroring Electron's
@@ -42,6 +43,7 @@ final class HotkeyCenter: ObservableObject {
         .dictation: 1,
         .dictateAndSend: 2,
         .command: 3,
+        .outputRecording: 4,
     ]
     private var actionForId: [UInt32: MacHotkeyAction] {
         Dictionary(uniqueKeysWithValues: idForAction.map { ($1, $0) })
@@ -64,7 +66,7 @@ final class HotkeyCenter: ObservableObject {
             return KeyCombo(keyCode: UInt32(kVK_Space), carbonModifiers: ctrlShift, display: "⌃⇧Space")
         case .command:
             return KeyCombo(keyCode: UInt32(kVK_ANSI_C), carbonModifiers: ctrlShift, display: "⌃⇧C")
-        case .dictateAndSend:
+        case .dictateAndSend, .outputRecording:
             return nil
         }
     }
