@@ -575,6 +575,7 @@ export function SettingsForm(): ReactElement {
   // Hotkeys
   const [dictationHotkey, setDictationHotkey] = useState('')
   const [dictateAndSendHotkey, setDictateAndSendHotkey] = useState('')
+  const [commandHotkey, setCommandHotkey] = useState('')
   const [outputRecordingHotkey, setOutputRecordingHotkey] = useState('')
 
   // --- Load settings ---
@@ -605,6 +606,7 @@ export function SettingsForm(): ReactElement {
       setLaunchAtStartup(settings.launchAtStartup ?? true)
       setDictationHotkey(settings.dictationHotkey ?? '')
       setDictateAndSendHotkey(settings.dictateAndSendHotkey ?? '')
+      setCommandHotkey(settings.commandHotkey ?? '')
       setInputDeviceId(settings.inputDeviceId ?? '')
       setOutputDeviceId(settings.outputDeviceId ?? '')
       setSaveRecordings(settings.saveRecordings ?? true)
@@ -691,6 +693,7 @@ export function SettingsForm(): ReactElement {
       launchAtStartup,
       dictationHotkey,
       dictateAndSendHotkey,
+      commandHotkey,
       inputDeviceId,
       outputDeviceId,
       saveRecordings,
@@ -729,7 +732,7 @@ export function SettingsForm(): ReactElement {
     groqApiKey, deepgramApiKey, assemblyaiApiKey, mistralApiKey,
     sttApiKey, transcriptionLanguage, prompt,
     vocabulary, removedDefaultVocabulary, aiPostProcessing, launchAtStartup, dictationHotkey,
-    dictateAndSendHotkey, inputDeviceId, outputDeviceId, saveRecordings,
+    dictateAndSendHotkey, commandHotkey, inputDeviceId, outputDeviceId, saveRecordings,
     outputRecordingHotkey, cleanupEnabled, cleanupMode, cleanupAuto, cleanupTemplates,
     aiProvider, aiBaseUrl, aiModel, anthropicApiKey,
     contextAwareTone, toneMap, windowTitlePermissionEnabled
@@ -971,6 +974,8 @@ export function SettingsForm(): ReactElement {
                       setDictationHotkey={setDictationHotkey}
                       dictateAndSendHotkey={dictateAndSendHotkey}
                       setDictateAndSendHotkey={setDictateAndSendHotkey}
+                      commandHotkey={commandHotkey}
+                      setCommandHotkey={setCommandHotkey}
                       outputRecordingHotkey={outputRecordingHotkey}
                       setOutputRecordingHotkey={setOutputRecordingHotkey}
                       s={s}
@@ -2051,7 +2056,7 @@ function AudioTab({
 
 /* ─── Tab: Hotkeys ─── */
 
-type HotkeyField = 'dictation' | 'send' | 'output'
+type HotkeyField = 'dictation' | 'send' | 'command' | 'output'
 
 /** Renders a "Ctrl+Shift+Space" accelerator as individual keycaps, or a muted
  * "Not set" when empty — ported from docs/design/wz-parts.jsx's Keycaps(). */
@@ -2185,6 +2190,7 @@ function HotkeyInput({
 function HotkeysTab({
   dictationHotkey, setDictationHotkey,
   dictateAndSendHotkey, setDictateAndSendHotkey,
+  commandHotkey, setCommandHotkey,
   outputRecordingHotkey, setOutputRecordingHotkey,
   s, theme
 }: {
@@ -2192,6 +2198,8 @@ function HotkeysTab({
   setDictationHotkey: (v: string) => void
   dictateAndSendHotkey: string
   setDictateAndSendHotkey: (v: string) => void
+  commandHotkey: string
+  setCommandHotkey: (v: string) => void
   outputRecordingHotkey: string
   setOutputRecordingHotkey: (v: string) => void
   s: ReturnType<typeof makeStyles>
@@ -2212,13 +2220,15 @@ function HotkeysTab({
         ? setDictationHotkey
         : recordingField === 'send'
           ? setDictateAndSendHotkey
-          : setOutputRecordingHotkey
+          : recordingField === 'command'
+            ? setCommandHotkey
+            : setOutputRecordingHotkey
       setter(combo)
     }
     setRecordingField(null)
     setLiveKeys('')
     window.api.settings.resumeHotkeys()
-  }, [recordingField, setDictationHotkey, setDictateAndSendHotkey, setOutputRecordingHotkey])
+  }, [recordingField, setDictationHotkey, setDictateAndSendHotkey, setCommandHotkey, setOutputRecordingHotkey])
 
   useEffect(() => {
     if (!recordingField) return
@@ -2324,6 +2334,18 @@ function HotkeysTab({
           onStartRecording={() => startRecording('send')}
           onCancelRecording={() => stopRecording()}
           onClear={() => setDictateAndSendHotkey('')}
+          theme={theme}
+        />
+
+        <HotkeyInput
+          label="Command Mode Hotkey"
+          value={commandHotkey}
+          placeholder="Ctrl+Shift+C (default)"
+          isRecording={recordingField === 'command'}
+          liveKeys={recordingField === 'command' ? liveKeys : ''}
+          onStartRecording={() => startRecording('command')}
+          onCancelRecording={() => stopRecording()}
+          onClear={() => setCommandHotkey('')}
           theme={theme}
         />
 

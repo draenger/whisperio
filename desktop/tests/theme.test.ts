@@ -37,7 +37,8 @@ const THEME_KEYS: (keyof Theme)[] = [
   'dangerGlow',
   'success',
   'successGlow',
-  'shadow'
+  'shadow',
+  'e1'
 ]
 
 // STEP0 theming wiring: every Theme field is a var(--wsp-*) reference into
@@ -66,10 +67,11 @@ const EXPECTED_VAR: Record<keyof Theme, string> = {
   dangerGlow: 'var(--wsp-danger-glow)',
   success: 'var(--wsp-success)',
   successGlow: 'var(--wsp-success-glow)',
-  shadow: 'var(--wsp-shadow)'
+  shadow: 'var(--wsp-shadow)',
+  e1: 'var(--wsp-e1)'
 }
 
-const VAR_LIKE = /^var\(--wsp-[a-z-]+\)$/
+const VAR_LIKE = /^var\(--wsp-[a-z0-9-]+\)$/
 
 describe('theme constants', () => {
   describe('ACCENTS palette map', () => {

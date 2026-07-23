@@ -96,6 +96,7 @@ export interface AppSettings {
   launchAtStartup: boolean
   dictationHotkey: string
   dictateAndSendHotkey: string
+  commandHotkey: string
   theme: 'dark' | 'light'
   accentColor: 'graphite' | 'blue' | 'teal' | 'emerald' | 'amber'
   inputDeviceId: string
