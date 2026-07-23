@@ -322,21 +322,30 @@ struct SettingsView: View {
             VStack(spacing: 0) {
                 WHeader(title: selectedCategory?.title ?? "Settings",
                         onBack: selectedCategory == nil ? onBack : { selectedCategory = nil })
-                ScrollView(showsIndicators: false) {
-                    VStack(alignment: .leading, spacing: 22) {
-                        if let selectedCategory {
-                            categoryView(selectedCategory)
-                        } else {
-                            hubView
+                ScrollViewReader { proxy in
+                    ScrollView(showsIndicators: false) {
+                        VStack(alignment: .leading, spacing: 22) {
+                            // Top anchor for the page-swap scroll reset below.
+                            Color.clear.frame(height: 1).id("wz.settings.top")
+                            if let selectedCategory {
+                                categoryView(selectedCategory)
+                            } else {
+                                hubView
+                            }
                         }
+                        .padding(.horizontal, 16).padding(.top, 6).padding(.bottom, 28)
+                        .animation(.easeInOut(duration: 0.2), value: selectedCategory)
                     }
-                    .padding(.horizontal, 16).padding(.top, 6).padding(.bottom, 28)
-                    .animation(.easeInOut(duration: 0.2), value: selectedCategory)
+                    // Reset to the top on hub <-> category swaps WITHOUT re-identifying the
+                    // ScrollView: destroying the platform scroll view mid-animation (the
+                    // previous .id() approach) is the kind of same-transaction teardown
+                    // SwiftUI can trap on for some OS builds, and it was the only
+                    // Settings-entry-path structural change in build 68. scrollTo on a
+                    // stable anchor resets the offset with the hierarchy intact.
+                    .onChange(of: selectedCategory) { _, _ in
+                        proxy.scrollTo("wz.settings.top", anchor: .top)
+                    }
                 }
-                // Fresh identity per page so the hub <-> category swap starts at the top.
-                // Must sit on the ScrollView itself — re-identifying only the content keeps
-                // the old contentOffset (verified empirically on the iOS 26.5 simulator).
-                .id(selectedCategory?.id ?? "hub")
             }
         }
         .sheet(item: Binding(get: { consentProvider.map { ConsentTarget(id: $0) } },
@@ -438,6 +447,7 @@ struct SettingsView: View {
                 .font(WZFont.mono(11)).foregroundStyle(t.faint).lineSpacing(3)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.leading, 4)
+            intelligenceSection
         }
     }
 
@@ -449,6 +459,10 @@ struct SettingsView: View {
         connectionRow(id, title, sub, icon)
         if openConnection == id {
             providerConfig(id)
+                // Explicit per-provider identity: switching the open provider is then an
+                // update of one stable subtree, not a cross-position remove+insert of
+                // SecureField editing sessions (a SwiftUI focus-teardown trap candidate).
+                .id("wz.providerConfig.\(id.rawValue)")
                 .transition(.opacity.combined(with: .move(edge: .top)))
         }
     }
@@ -587,6 +601,148 @@ struct SettingsView: View {
             SectionLabel(text: "Model").padding(.leading, 4)
             FlowLayout(spacing: 7) {
                 ForEach(choices, id: \.id) { choice in
+                    let on = effective == choice.id
+                    Button { selection.wrappedValue = choice.id } label: {
+                        Text(choice.name)
+                            .font(WZFont.mono(11.5, .semibold))
+                            .foregroundStyle(on ? t.accentLite : t.muted)
+                            .padding(.horizontal, 12).padding(.vertical, 7)
+                            .background(on ? t.accent.opacity(0.16) : t.surfaceUp, in: Capsule())
+                            .overlay(Capsule().stroke(on ? t.hair : t.line, lineWidth: 1))
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+        .padding(.top, 2)
+    }
+
+    // MARK: - Intelligence (text-LLM backend)
+
+    /// What `.auto` resolves to right now — the same availability checks
+    /// `SettingsStore.makeChatClient()` runs, surfaced so the Auto chip says honestly which
+    /// backend would serve instead of a vague "automatic".
+    private var autoIntelligenceResolution: String {
+        let s = settings.settings
+        let openAIReady = s.cloudConsentGranted && !s.openAIKey.trimmingCharacters(in: .whitespaces).isEmpty
+        if openAIReady { return "OpenAI" }
+        return AppleIntelligenceService.isAvailableNow ? "Apple Intelligence" : "not configured"
+    }
+
+    /// The backend that would actually serve — the explicit pick, or `.auto`'s resolution.
+    /// Drives whether the OpenAI chat-model chips are shown. A pinned-but-unavailable Apple
+    /// Intelligence pick stays `.appleIntelligence` here even though `makeChatClient()` falls
+    /// back to the unconfigured OpenAI path — showing OpenAI's model chips for it would be
+    /// dishonest; the unavailable state is surfaced on the chip itself instead.
+    private var effectiveIntelligenceProvider: IntelligenceProvider {
+        let s = settings.settings
+        switch s.intelligenceProvider {
+        case .openAI, .appleIntelligence:
+            return s.intelligenceProvider
+        case .auto:
+            let openAIReady = s.cloudConsentGranted && !s.openAIKey.trimmingCharacters(in: .whitespaces).isEmpty
+            return !openAIReady && AppleIntelligenceService.isAvailableNow ? .appleIntelligence : .openAI
+        }
+    }
+
+    // Chat-model choices for the OpenAI intelligence backend — real, currently-documented
+    // chat model ids (verified July 2026). STT models live in engineModelChoices above; this
+    // one value is shared by rewrites, command mode and journal summaries (see chatModel).
+    private static let chatModelChoices: [(id: String, name: String)] = [
+        ("gpt-4o-mini", "4o mini · fast"),
+        ("gpt-4o", "4o"),
+        ("gpt-4.1-mini", "4.1 mini"),
+    ]
+
+    /// Display-level selection for the chat-model chips — the effectiveModelID idiom: the
+    /// stored value when it names a chip, otherwise the gpt-4o-mini default highlighted
+    /// (storage stays untouched until the user actually taps a chip).
+    private var effectiveChatModelID: String {
+        let stored = settings.settings.chatModel.trimmingCharacters(in: .whitespaces)
+        return Self.chatModelChoices.contains(where: { $0.id == stored }) ? stored : "gpt-4o-mini"
+    }
+
+    private var intelligenceSection: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            SettGroup(title: "Intelligence") {
+                VStack(alignment: .leading, spacing: 16) {
+                    intelligenceProviderPicker
+                    if effectiveIntelligenceProvider == .openAI {
+                        chatModelPicker
+                    }
+                }
+                .padding(.vertical, 14)
+            }
+            Text("Speech-to-text uses the model order above. Intelligence powers rewrites, command mode and journal summaries.")
+                .font(WZFont.mono(11)).foregroundStyle(t.faint).lineSpacing(3)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.leading, 4)
+        }
+    }
+
+    private func intelligenceProviderName(_ p: IntelligenceProvider) -> String {
+        switch p {
+        case .auto: return "Auto"
+        case .appleIntelligence: return "Apple Intelligence"
+        case .openAI: return "OpenAI"
+        }
+    }
+
+    /// Honest per-chip status line: Auto names what it currently resolves to; Apple
+    /// Intelligence reports real FoundationModels availability (still selectable when
+    /// unavailable — the pick persists and lights up on a capable device).
+    private func intelligenceProviderSub(_ p: IntelligenceProvider) -> String {
+        switch p {
+        case .auto: return "currently \(autoIntelligenceResolution)"
+        case .appleIntelligence:
+            return AppleIntelligenceService.isAvailableNow ? "on-device" : "unavailable on this device"
+        case .openAI: return "cloud · API key"
+        }
+    }
+
+    private func setIntelligenceProvider(_ p: IntelligenceProvider) {
+        var s = settings.settings
+        s.intelligenceProvider = p
+        settings.settings = s
+    }
+
+    // Provider chips — modelPicker's capsule language with a second, smaller status line
+    // per chip (the honesty carrier: what Auto resolves to / whether on-device is available).
+    private var intelligenceProviderPicker: some View {
+        let selected = settings.settings.intelligenceProvider
+        return VStack(alignment: .leading, spacing: 7) {
+            SectionLabel(text: "Provider").padding(.leading, 4)
+            FlowLayout(spacing: 7) {
+                ForEach(IntelligenceProvider.allCases, id: \.self) { choice in
+                    let on = selected == choice
+                    Button { setIntelligenceProvider(choice) } label: {
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(intelligenceProviderName(choice))
+                                .font(WZFont.mono(11.5, .semibold))
+                                .foregroundStyle(on ? t.accentLite : t.muted)
+                            Text(intelligenceProviderSub(choice))
+                                .font(WZFont.mono(9.5))
+                                .foregroundStyle(on ? t.accentLite.opacity(0.75) : t.faint)
+                        }
+                        .padding(.horizontal, 12).padding(.vertical, 7)
+                        .background(on ? t.accent.opacity(0.16) : t.surfaceUp, in: Capsule())
+                        .overlay(Capsule().stroke(on ? t.hair : t.line, lineWidth: 1))
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+        .padding(.top, 2)
+    }
+
+    // Chat-model chips — same capsule language as modelPicker, bound to the shared chatModel.
+    private var chatModelPicker: some View {
+        let selection = binding(\.chatModel)
+        let effective = effectiveChatModelID
+        return VStack(alignment: .leading, spacing: 7) {
+            SectionLabel(text: "Chat model").padding(.leading, 4)
+            FlowLayout(spacing: 7) {
+                ForEach(Self.chatModelChoices, id: \.id) { choice in
                     let on = effective == choice.id
                     Button { selection.wrappedValue = choice.id } label: {
                         Text(choice.name)
@@ -1361,6 +1517,15 @@ struct SettingsView: View {
 
     @MainActor
     private func refreshCloudAccountStatus() async {
+        // CKContainer(identifier:) raises an uncatchable NSException (instant process
+        // death) when the installed binary's entitlements don't match the container —
+        // probe the cheap signal first so a broken registration degrades to a label
+        // instead of killing the app from a diagnostics page.
+        guard FileManager.default.ubiquityIdentityToken != nil else {
+            cloudStatus = .noAccount
+            cloudAccountRecordIDText = "No iCloud account (or iCloud Drive off)"
+            return
+        }
         let container = CKContainer(identifier: RecordingSyncStore.cloudKitContainerID)
         do {
             let status = try await container.accountStatus()

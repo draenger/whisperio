@@ -132,11 +132,18 @@ struct ModelsView: View {
         if #available(iOS 26.0, macOS 26.0, *) {
             switch AppleIntelligenceService.availability {
             case .available:
-                // Mirrors makeChatClient()'s own gate (SettingsStore.swift): an explicit,
-                // configured OpenAI key is explicit user intent and stays preferred.
-                let openAIReady = settings.settings.cloudConsentGranted &&
-                    !settings.settings.openAIKey.trimmingCharacters(in: .whitespaces).isEmpty
-                return openAIReady ? .ready : .active
+                // Mirrors makeChatClient()'s own gate (SettingsStore.swift), including the
+                // explicit intelligenceProvider pin: pinned OpenAI never serves via Apple
+                // Intelligence; pinned Apple Intelligence always does when available; .auto
+                // prefers a configured OpenAI key as explicit user intent.
+                switch settings.settings.intelligenceProvider {
+                case .openAI: return .ready
+                case .appleIntelligence: return .active
+                case .auto:
+                    let openAIReady = settings.settings.cloudConsentGranted &&
+                        !settings.settings.openAIKey.trimmingCharacters(in: .whitespaces).isEmpty
+                    return openAIReady ? .ready : .active
+                }
             case .unavailable(let reason):
                 switch reason {
                 case .deviceNotEligible: return .deviceNotEligible

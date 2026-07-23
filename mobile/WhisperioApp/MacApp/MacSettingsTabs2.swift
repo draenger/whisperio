@@ -53,6 +53,46 @@ struct MacProvidersTab: View {
                 }
             }
 
+            MacSettingsSection(
+                title: "Intelligence",
+                hint: "Speech-to-text uses the provider chain above. Intelligence powers rewrites, command mode and journal summaries."
+            ) {
+                HStack(alignment: .top, spacing: 14) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Provider").font(WZFont.ui(14, .medium)).foregroundStyle(t.text)
+                        Text(intelligenceStatus).font(WZFont.ui(11.5)).foregroundStyle(t.muted)
+                    }
+                    Spacer(minLength: 20)
+                    Picker("Intelligence provider", selection: intelligenceBinding) {
+                        ForEach(IntelligenceProvider.allCases, id: \.self) { provider in
+                            Text(intelligenceLabel(provider)).tag(provider)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    .labelsHidden()
+                    .fixedSize()
+                }
+                if !effectiveIntelligenceIsApple {
+                    Divider().overlay(t.line)
+                    HStack(alignment: .top, spacing: 14) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Chat model").font(WZFont.ui(14, .medium)).foregroundStyle(t.text)
+                            Text("The OpenAI model intelligence requests run on.")
+                                .font(WZFont.ui(11.5)).foregroundStyle(t.muted)
+                        }
+                        Spacer(minLength: 20)
+                        Picker("Chat model", selection: chatModelBinding) {
+                            ForEach(chatModelChoices, id: \.self) { model in
+                                Text(model).tag(model)
+                            }
+                        }
+                        .pickerStyle(.menu)
+                        .labelsHidden()
+                        .fixedSize()
+                    }
+                }
+            }
+
             MacSettingsSection(title: "Transcription Language") {
                 HStack(alignment: .top, spacing: 14) {
                     VStack(alignment: .leading, spacing: 2) {
@@ -169,6 +209,84 @@ struct MacProvidersTab: View {
         case .replicate: return settings.settings.replicateKey
         default: return ""
         }
+    }
+
+    // MARK: - Intelligence (LLM backend — separate axis from the STT chain above)
+
+    /// Mirrors SettingsStore.makeChatClient's OpenAI gate (consent + non-blank key) so this UI
+    /// never claims a readiness the factory wouldn't grant.
+    private var openAIIntelligenceReady: Bool {
+        settings.settings.cloudConsentGranted &&
+            !settings.settings.openAIKey.trimmingCharacters(in: .whitespaces).isEmpty
+    }
+
+    /// True exactly when makeChatClient would serve via Apple Intelligence for the current
+    /// selection — every other combination lands on the OpenAI path (configured or honestly not),
+    /// which is when the chat-model picker matters.
+    private var effectiveIntelligenceIsApple: Bool {
+        switch settings.settings.intelligenceProvider {
+        case .openAI: return false
+        // Pinned Apple Intelligence hides the OpenAI chat-model picker even when the runtime
+        // is unavailable — makeChatClient deliberately strips the key in that state, so
+        // showing OpenAI model chips would imply the cloud serves (mirrors the iOS choice;
+        // the status line below carries the "unavailable" honesty).
+        case .appleIntelligence: return true
+        case .auto: return !openAIIntelligenceReady && AppleIntelligenceService.isAvailableNow
+        }
+    }
+
+    // isAvailableNow already wraps the #if canImport(FoundationModels) + #available(26.0) pair
+    // from AppleIntelligenceService — false on any SDK/OS/device that can't actually serve.
+    private func intelligenceLabel(_ provider: IntelligenceProvider) -> String {
+        switch provider {
+        case .auto: return "Auto"
+        case .appleIntelligence:
+            return AppleIntelligenceService.isAvailableNow
+                ? "Apple Intelligence" : "Apple Intelligence (unavailable)"
+        case .openAI: return "OpenAI"
+        }
+    }
+
+    private var intelligenceStatus: String {
+        if effectiveIntelligenceIsApple {
+            return AppleIntelligenceService.isAvailableNow
+                ? "On-device — requests never leave this Mac"
+                : "Unavailable on this Mac — intelligence features are off until you switch provider"
+        }
+        switch settings.settings.intelligenceProvider {
+        case .appleIntelligence: return "Unavailable on this Mac — intelligence features are off"
+        case .openAI:
+            return openAIIntelligenceReady
+                ? "OpenAI — key configured" : "Needs an OpenAI API key and cloud consent"
+        case .auto:
+            return openAIIntelligenceReady
+                ? "OpenAI — key configured"
+                : "No backend ready — add an OpenAI key or enable Apple Intelligence"
+        }
+    }
+
+    private var intelligenceBinding: Binding<IntelligenceProvider> {
+        Binding(get: { settings.settings.intelligenceProvider },
+                set: { var s = settings.settings; s.intelligenceProvider = $0; settings.settings = s })
+    }
+
+    /// Blank chatModel means the gpt-4o-mini default everywhere else — surface it as selected.
+    private var chatModelBinding: Binding<String> {
+        Binding(
+            get: {
+                let m = settings.settings.chatModel.trimmingCharacters(in: .whitespaces)
+                return m.isEmpty ? "gpt-4o-mini" : m
+            },
+            set: { var s = settings.settings; s.chatModel = $0; settings.settings = s }
+        )
+    }
+
+    /// A hand-typed model outside the stock three stays visible (and selected) rather than
+    /// rendering an empty picker — switching away is a real, intentional overwrite.
+    private var chatModelChoices: [String] {
+        let base = ["gpt-4o-mini", "gpt-4o", "gpt-4.1-mini"]
+        let current = chatModelBinding.wrappedValue
+        return base.contains(current) ? base : base + [current]
     }
 
     @ViewBuilder

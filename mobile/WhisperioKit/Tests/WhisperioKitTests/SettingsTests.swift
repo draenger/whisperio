@@ -203,6 +203,43 @@ import Foundation
         #expect(decoded.selectedModel(for: .elevenLabs) == "scribe_v2")
     }
 
+    // MARK: - Intelligence provider
+
+    @Test func intelligenceProviderDefaultsToAutoPreservingExistingBehavior() {
+        // `.auto` is exactly today's shipped makeChatClient resolution — the default must
+        // stay there so existing users see zero behavior change until they explicitly pin.
+        let s = WhisperioSettings()
+        #expect(s.intelligenceProvider == .auto)
+        #expect(s.chatModel == "gpt-4o-mini")
+    }
+
+    @Test func intelligenceProviderRoundTrips() throws {
+        for provider in IntelligenceProvider.allCases {
+            let original = WhisperioSettings(intelligenceProvider: provider)
+            let data = try JSONEncoder().encode(original)
+            let decoded = try JSONDecoder().decode(WhisperioSettings.self, from: data)
+            #expect(decoded == original)
+            #expect(decoded.intelligenceProvider == provider)
+        }
+    }
+
+    // A legacy blob persisted before the field existed still decodes, falling back to .auto —
+    // same tolerant-decode contract as every other field.
+    @Test func legacyBlobWithoutIntelligenceProviderFallsBackToAuto() throws {
+        let legacy = Data(#"{"openAIKey": "x"}"#.utf8)
+        let decoded = try JSONDecoder().decode(WhisperioSettings.self, from: legacy)
+        #expect(decoded.intelligenceProvider == .auto)
+    }
+
+    // An unknown raw value (a future build's provider) falls back instead of throwing the
+    // whole blob away — same unknown-raw-value tolerance as syncMode/digestSourceMode.
+    @Test func unknownIntelligenceProviderRawValueFallsBackToAuto() throws {
+        let future = Data(#"{"intelligenceProvider": "gemini", "openAIKey": "x"}"#.utf8)
+        let decoded = try JSONDecoder().decode(WhisperioSettings.self, from: future)
+        #expect(decoded.intelligenceProvider == .auto)
+        #expect(decoded.openAIKey == "x")
+    }
+
     // MARK: - Categorize (R7)
 
     @Test func autoCategorizeDefaultsToTruePreservingExistingBehavior() {

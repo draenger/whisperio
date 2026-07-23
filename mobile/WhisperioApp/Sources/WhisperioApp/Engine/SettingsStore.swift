@@ -227,25 +227,32 @@ final class SettingsStore: ObservableObject {
         return .elevenLabs
     }
 
-    // Build the text-LLM client for rewrite (render presets) + journaling. OpenAI stays
-    // preferred whenever it's actually configured (an explicit pasted key is explicit intent —
-    // zero behavior change for existing cloud users). When OpenAI isn't configured, Apple
-    // Intelligence serves instead if the on-device model is available on this device right
-    // now — unblocking digest/categorization/rewrites for zero-key users with no network call
-    // and no consent gate (it never leaves the device). When neither is available, the existing
-    // honest empty/failure path is unchanged: callers see an unconfigured OpenAIChatClient and
-    // skip/surface accordingly.
+    // Build the text-LLM client for rewrite (render presets) + journaling, honoring the
+    // user's explicit Intelligence provider pick. `.auto` keeps the shipped resolution:
+    // OpenAI stays preferred whenever it's actually configured (an explicit pasted key is
+    // explicit intent — zero behavior change for existing cloud users); when it isn't, Apple
+    // Intelligence serves instead if the on-device model is available right now — no network
+    // call and no consent gate (it never leaves the device). An explicit pick pins that
+    // backend: `.openAI` always builds the OpenAI client (unconfigured when consent/key is
+    // missing — callers already surface that honestly); `.appleIntelligence` runs on-device
+    // when the runtime check passes, else falls back to the same honest unconfigured-OpenAI
+    // path (never crashes on an older OS, never silently substitutes the cloud).
     func makeChatClient() -> ChatLLM {
         let s = settings
         let openAIReady = s.cloudConsentGranted && !s.openAIKey.trimmingCharacters(in: .whitespaces).isEmpty
-        if !openAIReady {
+        let wantsAppleIntelligence = s.intelligenceProvider == .appleIntelligence
+            || (s.intelligenceProvider == .auto && !openAIReady)
+        if wantsAppleIntelligence {
             #if canImport(FoundationModels)
             if #available(iOS 26.0, macOS 26.0, *), AppleIntelligenceService.isAvailable {
                 return AppleIntelligenceChatClient()
             }
             #endif
         }
-        return OpenAIChatClient(apiKey: openAIReady ? s.openAIKey : "", baseURL: s.openAIBaseURL)
+        // A pinned-but-unavailable Apple Intelligence pick must stay unconfigured — never
+        // silently swap to the keyed cloud client the user explicitly opted out of.
+        let key = openAIReady && s.intelligenceProvider != .appleIntelligence ? s.openAIKey : ""
+        return OpenAIChatClient(apiKey: key, baseURL: s.openAIBaseURL)
     }
 
     // Build the runner that applies a rewrite (render) preset to a transcript. Wraps the shared
