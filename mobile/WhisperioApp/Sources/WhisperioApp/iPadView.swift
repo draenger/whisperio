@@ -22,6 +22,12 @@ struct iPadSplitView: View {
     @AppStorage("wz.split.dark") private var splitDark = true
     private var t: WZTheme { .of(splitDark) }
     @EnvironmentObject private var settings: SettingsStore
+#if os(macOS)
+    // Proper SwiftUI action to open the native Settings scene — the old
+    // `NSApp.sendAction("showSettingsWindow:")` selector is unreliable on macOS 26 (the gear
+    // silently did nothing), whereas `openSettings` is the supported API since macOS 14.
+    @Environment(\.openSettings) private var openSettings
+#endif
     // Both real entry points (AppShell.swift RootView and WhisperioMacApp.swift) already inject
     // RecordingsStore above this view, so this is safe; Gallery's `iPadHost` never sets
     // `wzLiveJournal`, so this is only ever read behind `liveJournal` guards below.
@@ -159,10 +165,9 @@ struct iPadSplitView: View {
     private var settingsGear: some View {
         Button(action: {
             #if os(macOS)
-            // The Mac target has a native Settings (⌘,) window (MacSettingsShell) — SettingsLink
-            // only works from a scene-scoped view, so from this plain view we ask AppKit to open
-            // it directly via the standard `showSettingsWindow:` first-responder action.
-            NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+            // The Mac target has a native Settings (⌘,) window (MacSettingsShell); open it via
+            // the supported SwiftUI action rather than a private first-responder selector.
+            openSettings()
             #else
             withAnimation(.easeInOut(duration: 0.2)) { showSettingsSheet = true }
             #endif

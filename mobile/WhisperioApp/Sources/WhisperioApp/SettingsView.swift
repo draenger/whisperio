@@ -14,6 +14,11 @@ import AppKit
 struct SettingsView: View {
     @Environment(\.wz) private var t
     @Environment(\.openURL) private var openURL
+#if os(macOS)
+    // Supported way to open the native Settings scene (macOS 14+); the private
+    // `showSettingsWindow:` selector no longer fires reliably on macOS 26.
+    @Environment(\.openSettings) private var openSettings
+#endif
     @EnvironmentObject private var settings: SettingsStore
     @EnvironmentObject private var recordings: RecordingsStore
     @EnvironmentObject private var digests: DigestStore
@@ -1629,7 +1634,7 @@ struct SettingsView: View {
                 SettRow(icon: "zap", label: "Global hotkeys",
                         sub: "Dictate anywhere with a system-wide shortcut",
                         last: true,
-                        onTap: { NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil) })
+                        onTap: { openSettings() })
                 #endif
             }
 
