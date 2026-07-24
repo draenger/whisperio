@@ -48,7 +48,10 @@ public enum DigestSourceMode: String, Codable, Sendable, CaseIterable {
 /// what else is configured, surfacing "not configured"/"unavailable" honestly instead of
 /// silently substituting the other.
 public enum IntelligenceProvider: String, Codable, CaseIterable, Sendable {
-    case auto, appleIntelligence, openAI
+    /// `.localModel` pins the on-device downloadable LLM ("Intelligence") — a local GGUF run via
+    /// llama.cpp — so devices without Apple Intelligence still get local rewrites/summaries/command
+    /// mode without any audio or text leaving the device (see `WhisperioSettings.localLLMModel`).
+    case auto, appleIntelligence, openAI, localModel
 }
 
 public enum SyncMode: String, Codable, Sendable, CaseIterable {
@@ -178,6 +181,11 @@ public struct WhisperioSettings: Codable, Sendable, Equatable {
     /// Chat model for the text-LLM (rewrite render presets + journaling summary) — one
     /// configurable value both flows share, ported from the desktop's 'gpt-4o-mini' default.
     public var chatModel: String
+    /// The selected on-device downloadable LLM ("Intelligence") model id — one of the
+    /// local GGUF models the user has downloaded (mirrors `localWhisperModel`, but for the
+    /// text-LLM served when `intelligenceProvider == .localModel`). Empty means "none selected".
+    /// Not a secret — it's a model id, so no Keychain scrubbing needed.
+    public var localLLMModel: String
     /// Which backend serves the text-LLM. Defaults to `.auto` — today's shipped resolution —
     /// so existing users see no change until they explicitly pin one (see `IntelligenceProvider`).
     public var intelligenceProvider: IntelligenceProvider
@@ -301,6 +309,7 @@ public struct WhisperioSettings: Codable, Sendable, Equatable {
         selfHostedModel: String = "",
         localWhisperModel: String = "openai_whisper-base",
         chatModel: String = "gpt-4o-mini",
+        localLLMModel: String = "",
         intelligenceProvider: IntelligenceProvider = .auto,
         language: String = "auto",
         preferredLanguages: [String] = [],
@@ -359,6 +368,7 @@ public struct WhisperioSettings: Codable, Sendable, Equatable {
         self.selfHostedModel = selfHostedModel
         self.localWhisperModel = localWhisperModel
         self.chatModel = chatModel
+        self.localLLMModel = localLLMModel
         self.intelligenceProvider = intelligenceProvider
         self.language = language
         self.preferredLanguages = preferredLanguages
@@ -445,6 +455,7 @@ public struct WhisperioSettings: Codable, Sendable, Equatable {
         selfHostedModel = try c.decodeIfPresent(String.self, forKey: .selfHostedModel) ?? d.selfHostedModel
         localWhisperModel = try c.decodeIfPresent(String.self, forKey: .localWhisperModel) ?? d.localWhisperModel
         chatModel = try c.decodeIfPresent(String.self, forKey: .chatModel) ?? d.chatModel
+        localLLMModel = try c.decodeIfPresent(String.self, forKey: .localLLMModel) ?? d.localLLMModel
         // Same unknown-raw-value tolerance as syncMode below — both "missing" and
         // "unrecognized" (a future build's provider) fall back to .auto.
         intelligenceProvider = (try? c.decodeIfPresent(IntelligenceProvider.self, forKey: .intelligenceProvider)) ?? d.intelligenceProvider

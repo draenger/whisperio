@@ -16,9 +16,13 @@ struct ModelsView: View {
     @Environment(\.wz) private var t
     @EnvironmentObject private var settings: SettingsStore
     @EnvironmentObject private var models: LocalWhisperModelManager
+    // On-device LLM ("Intelligence") download/progress state — a process-wide singleton, so it's
+    // observed here without needing an environment injection AppShell doesn't do for it.
+    @StateObject private var llmModels = LocalLLMModelManager.shared
     var onBack: () -> Void
 
     @State private var pendingRemove: LocalWhisperModel?
+    @State private var pendingLLMRemove: LocalLLMModel?
 
     /// Design order (M_MODELS: whisper-s, whisper-b, whisper-t — "Higher accuracy" first,
     /// "Fastest" last), independent of `LocalWhisperModel`'s own `CaseIterable` declaration
@@ -36,6 +40,7 @@ struct ModelsView: View {
                     VStack(alignment: .leading, spacing: 16) {
                         privacyBanner
                         modelsGroup
+                        intelligenceModelsGroup
                         appleEngineGroup
                     }
                     .padding(.horizontal, 16).padding(.top, 6).padding(.bottom, 28)
@@ -45,13 +50,23 @@ struct ModelsView: View {
         // Re-scan disk state on appear — a model downloaded in a prior session, or removed
         // via Files.app, must show correctly without relaunching (LocalWhisperModelManager's
         // own doc comment on refreshFromDisk()).
-        .onAppear { models.refreshFromDisk() }
+        .onAppear {
+            models.refreshFromDisk()
+            llmModels.refreshFromDisk()
+        }
         .alert("Download failed",
                isPresented: Binding(get: { models.lastError != nil },
                                     set: { if !$0 { models.lastError = nil } })) {
             Button("OK", role: .cancel) { models.lastError = nil }
         } message: {
             Text(models.lastError ?? "")
+        }
+        .alert("Download failed",
+               isPresented: Binding(get: { llmModels.lastError != nil },
+                                    set: { if !$0 { llmModels.lastError = nil } })) {
+            Button("OK", role: .cancel) { llmModels.lastError = nil }
+        } message: {
+            Text(llmModels.lastError ?? "")
         }
         .confirmationDialog("Remove this model? You’ll need to download it again to use it.",
                              isPresented: Binding(get: { pendingRemove != nil },
@@ -61,6 +76,15 @@ struct ModelsView: View {
                 Button("Remove", role: .destructive) { removeModel(variant) }
             }
             Button("Cancel", role: .cancel) { pendingRemove = nil }
+        }
+        .confirmationDialog("Remove this model? You’ll need to download it again to use it.",
+                             isPresented: Binding(get: { pendingLLMRemove != nil },
+                                                  set: { if !$0 { pendingLLMRemove = nil } }),
+                             titleVisibility: .visible) {
+            if let model = pendingLLMRemove {
+                Button("Remove", role: .destructive) { removeLLM(model) }
+            }
+            Button("Cancel", role: .cancel) { pendingLLMRemove = nil }
         }
     }
 
@@ -138,6 +162,9 @@ struct ModelsView: View {
                 // prefers a configured OpenAI key as explicit user intent.
                 switch settings.settings.intelligenceProvider {
                 case .openAI: return .ready
+                // A pinned on-device LLM is the chosen intelligence backend — Apple Intelligence
+                // is available here but not the one serving, i.e. ready, not active.
+                case .localModel: return .ready
                 case .appleIntelligence: return .active
                 case .auto:
                     let openAIReady = settings.settings.cloudConsentGranted &&
@@ -278,6 +305,111 @@ struct ModelsView: View {
             .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous).stroke(t.line, lineWidth: 1))
     }
 
+    // MARK: - On-device intelligence (downloadable LLMs)
+
+    // Downloadable local text LLMs ("Intelligence") for devices without Apple Intelligence —
+    // rewrites, command mode and journal summaries run entirely on-device off a GGUF. Mirrors the
+    // Whisper rows above: real download/progress/on-disk-size state from `LocalLLMModelManager`,
+    // never a fabricated percentage or size. The whole catalog is listed (not just the RAM-eligible
+    // subset) so a model this device can't load is shown honestly as gated rather than vanishing.
+
+    /// Catalog ids whose quant this device's physical RAM can actually load — the manager's own
+    /// gate. Everything else is rendered but marked unavailable with a RAM note.
+    private var availableLLMIDs: Set<String> {
+        Set(llmModels.availableModels.map(\.id))
+    }
+
+    private var intelligenceModelsGroup: some View {
+        let available = availableLLMIDs
+        return VStack(alignment: .leading, spacing: 6) {
+            SettGroup(title: "On-device intelligence") {
+                ForEach(Array(LocalLLMCatalog.all.enumerated()), id: \.element.id) { index, model in
+                    llmRow(model, available: available.contains(model.id),
+                           last: index == LocalLLMCatalog.all.count - 1)
+                }
+            }
+            Text("Downloadable local models for rewrites, command mode and journal summaries — no cloud, no Apple Intelligence needed. Pick one here, then set “Local model” as your Intelligence provider in Settings.")
+                .font(WZFont.mono(11)).foregroundStyle(t.faint).lineSpacing(3)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.leading, 4)
+        }
+    }
+
+    private func llmRow(_ model: LocalLLMModel, available: Bool, last: Bool) -> some View {
+        let state = llmModels.state[model.id] ?? .notStarted
+        return SettRow(icon: "spark", label: model.name,
+                       sub: llmSubLabel(model, state, available: available), last: last) {
+            llmTrailing(model, state, available: available)
+        }
+    }
+
+    /// "<blurb> · <size>" — estimate before download, real on-disk size once installed, live
+    /// percentage while downloading. A RAM-gated model instead states the requirement honestly.
+    private func llmSubLabel(_ model: LocalLLMModel,
+                             _ state: LocalLLMModelManager.DownloadState, available: Bool) -> String {
+        guard available else {
+            return "\(model.blurb) · needs \(model.minRAMGB) GB RAM"
+        }
+        switch state {
+        case .notStarted, .failed:
+            return "\(model.blurb) · ~\(byteString(model.approximateDownloadSizeBytes))"
+        case .downloading(let fraction):
+            return "\(model.blurb) · \(Int((fraction * 100).rounded()))% downloaded"
+        case .installed:
+            let bytes = llmModels.onDiskSizeBytes(model.id) ?? model.approximateDownloadSizeBytes
+            return "\(model.blurb) · \(byteString(bytes))"
+        }
+    }
+
+    @ViewBuilder private func llmTrailing(_ model: LocalLLMModel,
+                                          _ state: LocalLLMModelManager.DownloadState, available: Bool) -> some View {
+        if !available {
+            tagPill("Needs \(model.minRAMGB) GB")
+        } else {
+            switch state {
+            case .notStarted:
+                llmGetButton(model)
+            case .downloading(let fraction):
+                // LocalLLMModelManager exposes no cancel hook (its URLSession download task isn't
+                // retained for cancellation), so — unlike the Whisper row — there is no ✕ button:
+                // show live progress only rather than a control that can't do anything.
+                Text("\(Int((fraction * 100).rounded()))%")
+                    .font(WZFont.mono(11)).foregroundStyle(t.accentLite)
+            case .failed:
+                llmGetButton(model, title: "Retry")
+            case .installed:
+                if isLLMActive(model) {
+                    HStack(spacing: 6) {
+                        Circle().fill(t.green).frame(width: 7, height: 7)
+                        Text("Active").font(WZFont.mono(11, .semibold)).foregroundStyle(t.green)
+                    }
+                } else {
+                    HStack(spacing: 8) {
+                        Button { useLLM(model) } label: { pill("Use") }.buttonStyle(.plain)
+                        Button { pendingLLMRemove = model } label: {
+                            WIcon("trash", size: 13).foregroundStyle(t.muted)
+                                .frame(width: 26, height: 26)
+                                .background(t.surfaceUp, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                                .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(t.line, lineWidth: 1))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+        }
+    }
+
+    private func llmGetButton(_ model: LocalLLMModel, title: String = "Get") -> some View {
+        Button { startLLMDownload(model) } label: {
+            Text(title)
+                .font(WZFont.ui(12, .semibold)).foregroundStyle(t.accentLite)
+                .padding(.horizontal, 12).padding(.vertical, 5)
+                .background(t.accent.opacity(0.14), in: Capsule())
+                .overlay(Capsule().stroke(t.hair, lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+    }
+
     // Apple's own "use the network when the on-device model isn't available" behavior —
     // parented under Models here (design's modelsList page), not Transcription.
     private var appleEngineGroup: some View {
@@ -340,6 +472,54 @@ struct ModelsView: View {
         // no longer exists on disk. Fall back to Apple Speech honestly rather than silently
         // relying on fallback-chain behavior the user may not have enabled.
         if wasActive { useApple() }
+    }
+
+    // MARK: - On-device intelligence actions
+
+    /// Whether `model` is the on-device LLM currently serving intelligence — provider pinned to
+    /// `.localModel` AND this exact model selected. A model that's merely selected while the
+    /// provider is on OpenAI/Apple is not "Active"; tapping Use makes it so (mirrors the Whisper
+    /// row's "Use" = "use this now", not merely "remember this choice").
+    private func isLLMActive(_ model: LocalLLMModel) -> Bool {
+        settings.settings.intelligenceProvider == .localModel
+            && settings.settings.localLLMModel == model.id
+    }
+
+    /// Pin this local model AND switch Intelligence to it — the same promote-and-pin the Whisper
+    /// row's `useModel` does, so the radio selection also becomes the active backend.
+    private func useLLM(_ model: LocalLLMModel) {
+        var s = settings.settings
+        s.localLLMModel = model.id
+        s.intelligenceProvider = .localModel
+        settings.settings = s
+    }
+
+    private func startLLMDownload(_ model: LocalLLMModel) {
+        // `download(_:)` records real failures onto `llmModels.lastError` (bound to the alert
+        // above) and rethrows — the `try?` only silences the unhandled-error warning; the failure
+        // is already surfaced honestly.
+        Task { try? await llmModels.download(model) }
+    }
+
+    private func removeLLM(_ model: LocalLLMModel) {
+        let wasActive = isLLMActive(model)
+        do {
+            try llmModels.remove(model.id)
+        } catch {
+            // remove(_:) doesn't set lastError itself — surface a real removal failure through the
+            // same alert rather than swallowing it.
+            llmModels.lastError = error.localizedDescription
+        }
+        pendingLLMRemove = nil
+        // A removed-but-still-selected local model would leave Intelligence pinned to a GGUF that's
+        // gone from disk (makeChatClient would fall through to the unconfigured OpenAI dead-end).
+        // Revert to Auto honestly instead.
+        if wasActive {
+            var s = settings.settings
+            s.intelligenceProvider = .auto
+            s.localLLMModel = ""
+            settings.settings = s
+        }
     }
 
     private func boolBinding(_ keyPath: WritableKeyPath<WhisperioSettings, Bool>) -> Binding<Bool> {

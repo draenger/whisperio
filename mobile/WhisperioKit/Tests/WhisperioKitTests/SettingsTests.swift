@@ -240,6 +240,42 @@ import Foundation
         #expect(decoded.openAIKey == "x")
     }
 
+    // The on-device downloadable LLM provider — its raw value must stay "localModel" so a
+    // pinned choice round-trips across builds, and it must be enumerable for the picker UI.
+    @Test func localModelProviderRawValueAndCaseIterable() {
+        #expect(IntelligenceProvider.localModel.rawValue == "localModel")
+        #expect(IntelligenceProvider.allCases.contains(.localModel))
+    }
+
+    // MARK: - localLLMModel (on-device downloadable LLM selection)
+
+    @Test func localLLMModelDefaultsEmpty() {
+        // Empty means "no on-device LLM selected yet" — the user must download+pick one, so a
+        // fresh install must never silently claim a local model is configured.
+        let s = WhisperioSettings()
+        #expect(s.localLLMModel.isEmpty)
+    }
+
+    @Test func localLLMModelRoundTrips() throws {
+        let original = WhisperioSettings(localLLMModel: "llama-3.2-1b-instruct-q4",
+                                         intelligenceProvider: .localModel)
+        let data = try JSONEncoder().encode(original)
+        let decoded = try JSONDecoder().decode(WhisperioSettings.self, from: data)
+        #expect(decoded == original)
+        #expect(decoded.localLLMModel == "llama-3.2-1b-instruct-q4")
+        #expect(decoded.intelligenceProvider == .localModel)
+    }
+
+    // A blob persisted before localLLMModel existed (missing key entirely) still decodes,
+    // falling back to empty — same tolerant-decode contract as every other field.
+    @Test func legacyBlobWithoutLocalLLMModelFallsBackToEmpty() throws {
+        let legacy = Data(#"{"openAIKey": "x"}"#.utf8)
+        let decoded = try JSONDecoder().decode(WhisperioSettings.self, from: legacy)
+        #expect(decoded.localLLMModel.isEmpty)
+        // ...and an unknown intelligenceProvider raw in the same old-shaped blob still lands on .auto.
+        #expect(decoded.intelligenceProvider == .auto)
+    }
+
     // MARK: - Categorize (R7)
 
     @Test func autoCategorizeDefaultsToTruePreservingExistingBehavior() {

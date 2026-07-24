@@ -72,7 +72,7 @@ struct MacProvidersTab: View {
                     .labelsHidden()
                     .fixedSize()
                 }
-                if !effectiveIntelligenceIsApple {
+                if showsChatModelPicker {
                     Divider().overlay(t.line)
                     HStack(alignment: .top, spacing: 14) {
                         VStack(alignment: .leading, spacing: 2) {
@@ -89,6 +89,33 @@ struct MacProvidersTab: View {
                         .pickerStyle(.menu)
                         .labelsHidden()
                         .fixedSize()
+                    }
+                }
+                if settings.settings.intelligenceProvider == .localModel {
+                    Divider().overlay(t.line)
+                    HStack(alignment: .top, spacing: 14) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Local model").font(WZFont.ui(14, .medium)).foregroundStyle(t.text)
+                            Text(localModelHint)
+                                .font(WZFont.ui(11.5)).foregroundStyle(t.muted)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        Spacer(minLength: 20)
+                        // No bulk Mac download UI — models are fetched from the Models screen on
+                        // iPhone/iPad; here we only pick among whatever is already on this Mac's disk.
+                        if downloadedLocalModels.isEmpty {
+                            Text("None downloaded")
+                                .font(WZFont.ui(12.5)).foregroundStyle(t.faint)
+                        } else {
+                            Picker("Local model", selection: localLLMModelBinding) {
+                                ForEach(downloadedLocalModels) { model in
+                                    Text(model.name).tag(model.id)
+                                }
+                            }
+                            .pickerStyle(.menu)
+                            .labelsHidden()
+                            .fixedSize()
+                        }
                     }
                 }
             }
@@ -232,6 +259,10 @@ struct MacProvidersTab: View {
         // the status line below carries the "unavailable" honesty).
         case .appleIntelligence: return true
         case .auto: return !openAIIntelligenceReady && AppleIntelligenceService.isAvailableNow
+        // The local on-device LLM is its own path — never Apple. Returning false routes the
+        // section to the downloaded-model picker below (not the OpenAI chat-model picker),
+        // gated by `showsChatModelPicker`.
+        case .localModel: return false
         }
     }
 
@@ -244,6 +275,7 @@ struct MacProvidersTab: View {
             return AppleIntelligenceService.isAvailableNow
                 ? "Apple Intelligence" : "Apple Intelligence (unavailable)"
         case .openAI: return "OpenAI"
+        case .localModel: return "Local model"
         }
     }
 
@@ -262,6 +294,7 @@ struct MacProvidersTab: View {
             return openAIIntelligenceReady
                 ? "OpenAI — key configured"
                 : "No backend ready — add an OpenAI key or enable Apple Intelligence"
+        case .localModel: return localModelStatus
         }
     }
 
@@ -287,6 +320,56 @@ struct MacProvidersTab: View {
         let base = ["gpt-4o-mini", "gpt-4o", "gpt-4.1-mini"]
         let current = chatModelBinding.wrappedValue
         return base.contains(current) ? base : base + [current]
+    }
+
+    // MARK: - Local on-device LLM ("Intelligence") — the .localModel path
+
+    /// The OpenAI chat-model picker belongs only to the cloud path — hidden for Apple
+    /// Intelligence (its status line carries the honesty) and for the local model, which shows
+    /// its own downloaded-model picker below instead.
+    private var showsChatModelPicker: Bool {
+        !effectiveIntelligenceIsApple && settings.settings.intelligenceProvider != .localModel
+    }
+
+    /// Downloaded on-device LLMs this Mac can actually load — the picker's only choices. Reads
+    /// real on-disk truth via `LocalLLMModelStore`, never a fabricated "installed" state, so an
+    /// empty list is honest: nothing was downloaded here (there is no Mac download flow).
+    private var downloadedLocalModels: [LocalLLMModel] {
+        LocalLLMModelManager.shared.availableModels
+            .filter { LocalLLMModelManager.shared.isDownloaded($0.id) }
+    }
+
+    /// Highlight the stored model when it is genuinely downloaded, otherwise the first
+    /// downloaded one — display only (storage stays untouched until the user picks), mirroring
+    /// the OpenAI chat-model picker's effective-id idiom above.
+    private var effectiveLocalModelID: String {
+        let stored = settings.settings.localLLMModel
+        let downloaded = downloadedLocalModels
+        return downloaded.contains(where: { $0.id == stored }) ? stored : (downloaded.first?.id ?? "")
+    }
+
+    private var localLLMModelBinding: Binding<String> {
+        Binding(get: { effectiveLocalModelID },
+                set: { var s = settings.settings; s.localLLMModel = $0; settings.settings = s })
+    }
+
+    /// Honest subtitle for the Local model row — points downloads at iOS when this Mac has none,
+    /// since there is no bulk download UI here.
+    private var localModelHint: String {
+        downloadedLocalModels.isEmpty
+            ? "Download models from the Models screen on iPhone or iPad — they appear here once on this Mac."
+            : "The on-device model intelligence requests run on — nothing leaves this Mac."
+    }
+
+    /// Honest provider-status line for the .localModel pick, reflecting real download state.
+    private var localModelStatus: String {
+        let downloaded = downloadedLocalModels
+        if downloaded.isEmpty {
+            return "No models downloaded on this Mac — download one on iPhone or iPad first"
+        }
+        return downloaded.contains(where: { $0.id == settings.settings.localLLMModel })
+            ? "On-device — requests never leave this Mac"
+            : "Pick a downloaded model below"
     }
 
     @ViewBuilder

@@ -645,7 +645,12 @@ struct SettingsView: View {
         let s = settings.settings
         let openAIReady = s.cloudConsentGranted && !s.openAIKey.trimmingCharacters(in: .whitespaces).isEmpty
         if openAIReady { return "OpenAI" }
-        return AppleIntelligenceService.isAvailableNow ? "Apple Intelligence" : "not configured"
+        if AppleIntelligenceService.isAvailableNow { return "Apple Intelligence" }
+        // makeChatClient()'s last on-device rung: a downloaded local model beats "not configured".
+        if LocalLLMModelStore.isDownloaded(s.localLLMModel) {
+            return LocalLLMCatalog.model(id: s.localLLMModel)?.name ?? "Local model"
+        }
+        return "not configured"
     }
 
     /// The backend that would actually serve — the explicit pick, or `.auto`'s resolution.
@@ -656,11 +661,18 @@ struct SettingsView: View {
     private var effectiveIntelligenceProvider: IntelligenceProvider {
         let s = settings.settings
         switch s.intelligenceProvider {
-        case .openAI, .appleIntelligence:
+        case .openAI, .appleIntelligence, .localModel:
             return s.intelligenceProvider
         case .auto:
+            // Mirror makeChatClient()'s auto precedence: a configured OpenAI key wins first, then
+            // on-device Apple Intelligence, then a downloaded local model, else the (unconfigured)
+            // OpenAI dead-end. Resolving to .localModel here keeps the OpenAI chat-model chips from
+            // showing when auto would actually serve on-device.
             let openAIReady = s.cloudConsentGranted && !s.openAIKey.trimmingCharacters(in: .whitespaces).isEmpty
-            return !openAIReady && AppleIntelligenceService.isAvailableNow ? .appleIntelligence : .openAI
+            if openAIReady { return .openAI }
+            if AppleIntelligenceService.isAvailableNow { return .appleIntelligence }
+            if LocalLLMModelStore.isDownloaded(s.localLLMModel) { return .localModel }
+            return .openAI
         }
     }
 
@@ -704,7 +716,17 @@ struct SettingsView: View {
         case .auto: return "Auto"
         case .appleIntelligence: return "Apple Intelligence"
         case .openAI: return "OpenAI"
+        case .localModel: return "Local model"
         }
+    }
+
+    /// Display name of the currently-pinned on-device LLM when its GGUF is actually on disk, else
+    /// nil (the chip then tells the user to download one) — never claims a model is ready when it
+    /// isn't downloaded.
+    private var selectedLocalLLMName: String? {
+        let id = settings.settings.localLLMModel
+        guard !id.isEmpty, LocalLLMModelStore.isDownloaded(id) else { return nil }
+        return LocalLLMCatalog.model(id: id)?.name ?? id
     }
 
     /// Honest per-chip status line: Auto names what it currently resolves to; Apple
@@ -716,6 +738,9 @@ struct SettingsView: View {
         case .appleIntelligence:
             return AppleIntelligenceService.isAvailableNow ? "on-device" : "unavailable on this device"
         case .openAI: return "cloud · API key"
+        case .localModel:
+            // The pinned + downloaded model's name, or an honest pointer to where you get one.
+            return selectedLocalLLMName ?? "download in Manage models"
         }
     }
 

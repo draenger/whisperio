@@ -228,18 +228,33 @@ final class SettingsStore: ObservableObject {
     }
 
     // Build the text-LLM client for rewrite (render presets) + journaling, honoring the
-    // user's explicit Intelligence provider pick. `.auto` keeps the shipped resolution:
-    // OpenAI stays preferred whenever it's actually configured (an explicit pasted key is
-    // explicit intent — zero behavior change for existing cloud users); when it isn't, Apple
-    // Intelligence serves instead if the on-device model is available right now — no network
-    // call and no consent gate (it never leaves the device). An explicit pick pins that
-    // backend: `.openAI` always builds the OpenAI client (unconfigured when consent/key is
-    // missing — callers already surface that honestly); `.appleIntelligence` runs on-device
-    // when the runtime check passes, else falls back to the same honest unconfigured-OpenAI
-    // path (never crashes on an older OS, never silently substitutes the cloud).
+    // user's explicit Intelligence provider pick. `.auto` keeps the shipped resolution, now
+    // with an on-device local model slotted in before the unconfigured dead end: configured
+    // OpenAI stays preferred whenever it's actually keyed (an explicit pasted key is explicit
+    // intent — zero behavior change for existing cloud users); when it isn't, Apple
+    // Intelligence serves if its on-device model is available right now (no network call, no
+    // consent gate — it never leaves the device); when that's unavailable too, a downloaded
+    // local GGUF ("Intelligence") serves so a device without Apple Intelligence still gets
+    // local rewrites/summaries/command-mode; only then does it settle on the honest
+    // unconfigured-OpenAI path. An explicit pick pins that backend: `.openAI` always builds
+    // the OpenAI client (unconfigured when consent/key is missing — callers already surface
+    // that honestly); `.appleIntelligence` runs on-device when the runtime check passes;
+    // `.localModel` runs the downloaded GGUF; each of the on-device picks falls back to the
+    // same honest unconfigured-OpenAI path when its backend isn't ready (never crashes on an
+    // older OS or a not-downloaded model, never silently substitutes the cloud the user opted
+    // out of).
     func makeChatClient() -> ChatLLM {
         let s = settings
         let openAIReady = s.cloudConsentGranted && !s.openAIKey.trimmingCharacters(in: .whitespaces).isEmpty
+
+        // Explicit local-model pick: run the on-device GGUF only when it's actually downloaded;
+        // otherwise fall through to the honest unconfigured path below (never the keyed cloud the
+        // user didn't pick, never a crash on a not-downloaded model).
+        if s.intelligenceProvider == .localModel,
+           LocalLLMModelManager.shared.isDownloaded(s.localLLMModel) {
+            return LocalLLMChatClient(modelID: s.localLLMModel)
+        }
+
         let wantsAppleIntelligence = s.intelligenceProvider == .appleIntelligence
             || (s.intelligenceProvider == .auto && !openAIReady)
         if wantsAppleIntelligence {
@@ -249,9 +264,22 @@ final class SettingsStore: ObservableObject {
             }
             #endif
         }
-        // A pinned-but-unavailable Apple Intelligence pick must stay unconfigured — never
-        // silently swap to the keyed cloud client the user explicitly opted out of.
-        let key = openAIReady && s.intelligenceProvider != .appleIntelligence ? s.openAIKey : ""
+
+        // `.auto` last on-device rung, reached only when no OpenAI key is configured and Apple
+        // Intelligence isn't available: a downloaded local model beats the unconfigured-OpenAI
+        // dead end. (Guarded on !openAIReady so a configured key still wins first.)
+        if s.intelligenceProvider == .auto, !openAIReady,
+           LocalLLMModelManager.shared.isDownloaded(s.localLLMModel) {
+            return LocalLLMChatClient(modelID: s.localLLMModel)
+        }
+
+        // A pinned-but-unavailable Apple Intelligence or local-model pick must stay unconfigured —
+        // never silently swap to the keyed cloud client the user explicitly opted out of. Only
+        // `.auto` (with a configured key) and an explicit `.openAI` pick carry the real key.
+        let usesKeyedOpenAI = openAIReady
+            && s.intelligenceProvider != .appleIntelligence
+            && s.intelligenceProvider != .localModel
+        let key = usesKeyedOpenAI ? s.openAIKey : ""
         return OpenAIChatClient(apiKey: key, baseURL: s.openAIBaseURL)
     }
 
