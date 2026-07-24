@@ -286,3 +286,14 @@ User: Apple Intelligence isn't on every device → add downloadable local LLMs s
 Framework decision: MLX is a DEAD END here (WhisperKit 0.18 hard-pins swift-transformers 1.1.x; no mlx-swift-examples version overlaps — proven by resolution failure). Pivoted to **LLM.swift v1.8.0** (github.com/eastriverlee/LLM.swift) = llama.cpp/GGUF binary-xcframework wrapper, no swift-transformers, coexists with WhisperKit (proven via a scratch coexistence package that built green). Wired into WhisperioApp(iOS)+WhisperioMac pbxproj only (never the extensions), product "LLM", upToNextMajor 1.8.0.
 Feature: WhisperioKit IntelligenceProvider gains .localModel + WhisperioSettings.localLLMModel (selected id); LocalLLMCatalog (Qwen2.5 0.5B/1.5B/3B ChatML + Llama-3.2-1B) with per-device RAM gating; LocalLLMModelManager (URLSession GGUF download → Application Support, progress/remove, mirrors LocalWhisperModelManager); LocalLLMChatClient: ChatLLM renders the full chat prompt via the template + caches the loaded LLM in a dedicated actor (LocalLLMEngineCache); makeChatClient priority OpenAI→AppleIntelligence→downloaded local model→unconfigured. UI: ModelsView "On-device intelligence" download section + SettingsView intelligence "Local model" chip (type-erased — no SettingsView stack-overflow regression) + Mac Providers-tab Intelligence "Local model" picker.
 Gates: Kit tests + iOS + Mac builds green; app launches with llama.cpp linked. CAVEAT: actual generation quality/speed/memory + GGUF download-URL correctness are only verifiable on a real device — ships to TestFlight for user validation.
+
+## wz3 redesign — native wave (2026-07-24, build 74)
+Delta-add from the Claude Design project (labs were A/B/C pickers; implementer chose C & B).
+- NEW InUseChip.swift + InUseNowPanel: "In use now" panel at top of ModelsView showing active STT
+  engine + resolved LLM (intelligence) provider as two branded minimal-flat chips (style C) with
+  on-device(green)/cloud(amber) badge — real state (primaryProvider + intelligenceProvider/local model).
+- HomeView RecRow restyled to variant B (text-first): title first (2-line), meta line below with
+  inline source glyph + category + app·when·dur + engine badge, copy as a quiet ghost glyph. Swipe-
+  delete arbitration + copy-on-card handlers preserved byte-for-byte.
+- Mac Providers/Intelligence tab: self-contained "In use now" STT+LLM summary rows.
+Gates: iOS + Mac builds green, WhisperioKit 238 tests. (Electron redesign is a separate wave.)

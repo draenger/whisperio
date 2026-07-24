@@ -57,6 +57,8 @@ struct MacProvidersTab: View {
                 title: "Intelligence",
                 hint: "Speech-to-text uses the provider chain above. Intelligence powers rewrites, command mode and journal summaries."
             ) {
+                inUseSummary
+                Divider().overlay(t.line)
                 HStack(alignment: .top, spacing: 14) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Provider").font(WZFont.ui(14, .medium)).foregroundStyle(t.text)
@@ -236,6 +238,110 @@ struct MacProvidersTab: View {
         case .replicate: return settings.settings.replicateKey
         default: return ""
         }
+    }
+
+    // MARK: - "In use now" summary (wz3 in-use chip, native Mac idiom — REDESIGN.md §1/§4)
+
+    // Two compact rows at the top of the Intelligence section naming the live STT engine and the
+    // resolved intelligence (LLM) backend, each with an on-device (green) / cloud (amber) tag.
+    // Self-contained on purpose — deliberately NOT the iOS InUseChip (a peer-file type): both rows
+    // read REAL resolved state so the summary can never claim a backend that wouldn't actually run.
+
+    private enum InUseBadge { case onDevice, cloud, off }
+
+    private var inUseSummary: some View {
+        let stt = inUseSTT
+        let llm = inUseLLM
+        return VStack(alignment: .leading, spacing: 10) {
+            Text("IN USE NOW")
+                .font(WZFont.mono(9, .semibold)).tracking(0.8)
+                .foregroundStyle(t.faint)
+            inUseRow(eyebrow: "SPEECH → TEXT (STT)", provider: stt.provider,
+                     model: stt.model, badge: stt.onDevice ? .onDevice : .cloud)
+            Divider().overlay(t.line)
+            inUseRow(eyebrow: "LANGUAGE MODEL (LLM)", provider: llm.provider,
+                     model: llm.model, badge: llm.badge)
+        }
+    }
+
+    private func inUseRow(eyebrow: String, provider: String, model: String, badge: InUseBadge) -> some View {
+        HStack(alignment: .center, spacing: 12) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(eyebrow)
+                    .font(WZFont.mono(9, .semibold)).tracking(0.8).foregroundStyle(t.faint)
+                Text(provider).font(WZFont.ui(14, .semibold)).foregroundStyle(t.text)
+                Text(model).font(WZFont.mono(10.5)).foregroundStyle(t.muted)
+            }
+            Spacer(minLength: 12)
+            inUseBadgeView(badge)
+        }
+    }
+
+    private func inUseBadgeView(_ badge: InUseBadge) -> some View {
+        let label: String
+        let color: Color
+        switch badge {
+        case .onDevice: label = "on-device"; color = t.green
+        case .cloud:    label = "cloud";     color = t.amber
+        case .off:      label = "not set";   color = t.faint
+        }
+        return HStack(spacing: 5) {
+            Circle().fill(color).frame(width: 6, height: 6)
+            Text(label).font(WZFont.mono(9, .semibold)).foregroundStyle(color)
+        }
+        .padding(.horizontal, 8).padding(.vertical, 3)
+        .background(color.opacity(0.12), in: Capsule())
+        .overlay(Capsule().stroke(color.opacity(0.28), lineWidth: 1))
+    }
+
+    /// The engine + model the primary STT slot actually runs with (slot 0 of the chain) —
+    /// `.onDevice`/`.localWhisper` resolve to friendly on-device names, cloud engines to their
+    /// resolved model (empty = the provider's own default).
+    private var inUseSTT: (provider: String, model: String, onDevice: Bool) {
+        let slot = slots.first ?? ProviderSlot(provider: .onDevice)
+        let resolved = settings.settings.resolvedModel(for: slot)
+        let model: String
+        switch slot.provider {
+        case .onDevice:
+            model = "Apple Speech"
+        case .localWhisper:
+            model = LocalWhisperModel(rawValue: resolved)?.displayName
+                ?? (resolved.isEmpty ? "Whisper" : resolved)
+        default:
+            model = resolved.isEmpty ? "Provider default" : resolved
+        }
+        return (slot.provider.displayName, model, !settings.settings.isCloud(slot.provider))
+    }
+
+    /// Exactly what `makeChatClient` would serve for the current selection — same resolution order
+    /// (explicit local pick → Apple Intelligence → auto's local rung → keyed OpenAI → the honest
+    /// unconfigured dead-end) so this row never over-claims a backend the factory wouldn't build.
+    private var inUseLLM: (provider: String, model: String, badge: InUseBadge) {
+        let s = settings.settings
+        let localDownloaded = LocalLLMModelManager.shared.isDownloaded(s.localLLMModel)
+        if s.intelligenceProvider == .localModel, localDownloaded {
+            return ("Local model", localLLMName(s.localLLMModel), .onDevice)
+        }
+        let wantsApple = s.intelligenceProvider == .appleIntelligence
+            || (s.intelligenceProvider == .auto && !openAIIntelligenceReady)
+        if wantsApple, AppleIntelligenceService.isAvailableNow {
+            return ("Apple Intelligence", "On-device model", .onDevice)
+        }
+        if s.intelligenceProvider == .auto, !openAIIntelligenceReady, localDownloaded {
+            return ("Local model", localLLMName(s.localLLMModel), .onDevice)
+        }
+        let usesKeyedOpenAI = openAIIntelligenceReady
+            && s.intelligenceProvider != .appleIntelligence
+            && s.intelligenceProvider != .localModel
+        if usesKeyedOpenAI {
+            let m = s.chatModel.trimmingCharacters(in: .whitespaces)
+            return ("OpenAI", m.isEmpty ? "gpt-4o-mini" : m, .cloud)
+        }
+        return ("Not set", "No intelligence backend configured", .off)
+    }
+
+    private func localLLMName(_ id: String) -> String {
+        LocalLLMCatalog.model(id: id)?.name ?? (id.isEmpty ? "Local model" : id)
     }
 
     // MARK: - Intelligence (LLM backend — separate axis from the STT chain above)

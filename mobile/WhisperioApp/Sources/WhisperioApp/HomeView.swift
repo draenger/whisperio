@@ -432,11 +432,12 @@ struct HomeView: View {
     }
 }
 
-// A recording row (port of RecRow — variant D "eyebrow"): meta strip on top with a small
-// source glyph, title beneath. Double-tap copies the transcript (centered "Copied" pill for
-// ~1.3s); swiping left slides the row open to −88 and reveals an 80pt red Delete action
-// behind it — snaps open past halfway, and a tap while open just closes it again. The
-// trailing copy button of the previous variant is gone: double-tap replaced it.
+// A recording row (RecRow — wz3 variant B "text-first"): title leads (2-line clamp) with a
+// quiet ghost copy glyph pinned to its trailing edge, then a faint meta line beneath (inline
+// source glyph · category dot+label · app · when · dur · engine badge). Double-tap still copies
+// the transcript (centered "Copied" pill for ~1.3s) and the ghost glyph does the same; swiping
+// left slides the row open to −88 and reveals an 80pt red Delete action behind it — snaps open
+// past halfway, and a tap while open just closes it again.
 struct RecRow: View {
     @Environment(\.wz) private var t
     let r: DemoRecording
@@ -467,11 +468,25 @@ struct RecRow: View {
     }
 
     private var rowContent: some View {
-        VStack(alignment: .leading, spacing: 5) {
+        VStack(alignment: .leading, spacing: 6) {
+            // Title leads; the copy glyph is a quiet ghost (no boxed tile) pinned to the title's
+            // trailing edge and top-aligned so it tracks the first line of a 2-line title. Its own
+            // Button owns its taps — the row's tap/double-tap/swipe arbitration stays untouched.
+            HStack(alignment: .top, spacing: 10) {
+                Text(r.title).font(WZFont.ui(14.5, .medium)).foregroundStyle(t.text)
+                    .lineLimit(2).multilineTextAlignment(.leading).lineSpacing(3)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                Button(action: copyTranscript) {
+                    WIcon("copy", size: 15, weight: .regular)
+                        .foregroundStyle(t.faint)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Copy transcript")
+            }
+
             HStack(spacing: 7) {
-                WIcon(r.srcIcon, size: 12, weight: .regular).foregroundStyle(t.accentLite)
-                Text(r.when); Text("·"); Text(r.dur)
-                Spacer(minLength: 0)
+                WIcon(r.srcIcon, size: 12, weight: .regular).foregroundStyle(t.faint)
                 if let category {
                     let hue = category.hue(t)
                     HStack(spacing: 5) {
@@ -480,13 +495,13 @@ struct RecRow: View {
                     }
                     .foregroundStyle(hue)
                 }
+                Text("\(r.app) · \(r.when) · \(r.dur)")
+                    .lineLimit(1).truncationMode(.tail)
+                Spacer(minLength: 6)
                 WIcon(r.engine == "cloud" ? "cloud" : "lock", size: 11, weight: .regular)
                     .foregroundStyle(r.engine == "cloud" ? t.amber : t.green)
             }
             .font(WZFont.mono(10)).foregroundStyle(t.faint)
-
-            Text(r.title).font(WZFont.ui(14.5, .medium)).foregroundStyle(t.text)
-                .lineLimit(2).multilineTextAlignment(.leading).lineSpacing(3)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 16).padding(.vertical, 11)

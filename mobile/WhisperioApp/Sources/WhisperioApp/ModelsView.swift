@@ -32,12 +32,99 @@ struct ModelsView: View {
     private var engine: ProviderID { settings.settings.primaryProvider }
     private var isCloudActive: Bool { settings.settings.isCloud(engine) }
 
+    // MARK: - "In use now" panel (wz3 §1)
+
+    // The two active engines as stacked chips at the top of the list — REAL state, never a mock:
+    // STT resolves from the primary provider + its model, LLM mirrors makeChatClient()'s own
+    // resolution so the panel names the backend that would actually serve a request. Kept as one
+    // shallow computed view (chips are pure presentation types in InUseChip.swift).
+    private var inUseNowPanel: some View {
+        InUseNowPanel(stt: sttChip, llm: llmChip)
+    }
+
+    private var sttChip: InUseChip {
+        let s = settings.settings
+        let id = s.primaryProvider
+        let slot = s.modelOrder.first ?? ProviderSlot(provider: id)
+        let model: String
+        switch id {
+        case .onDevice:
+            model = "Apple Speech"
+        case .localWhisper:
+            let raw = s.resolvedModel(for: slot)
+            model = LocalWhisperModel(rawValue: raw)?.displayName ?? (raw.isEmpty ? "Whisper" : raw)
+        default:
+            let raw = s.resolvedModel(for: slot)
+            model = raw.isEmpty ? cloudDefaultModel(id) : raw
+        }
+        return InUseChip(eyebrow: "Speech → text (STT)", provider: id.displayName,
+                         model: model, isCloud: s.isCloud(id), icon: s.isCloud(id) ? "cloud" : "cpu")
+    }
+
+    /// Built-in default model name for a cloud engine whose per-engine model is unset — mirrors
+    /// SettingsView.slotModelLabel's defaults so the two screens name the same thing.
+    private func cloudDefaultModel(_ id: ProviderID) -> String {
+        switch id {
+        case .openAI: return "whisper-1"
+        case .elevenLabs: return "Scribe"
+        default: return "Default model"
+        }
+    }
+
+    private var llmChip: InUseChip {
+        let r = resolvedLLM(settings.settings)
+        return InUseChip(eyebrow: "Language model (LLM)", provider: r.provider,
+                         model: r.model, isCloud: r.isCloud, icon: r.isCloud ? "cloud" : "spark")
+    }
+
+    /// Resolve the intelligence backend the way `SettingsStore.makeChatClient()` does, but for
+    /// display: which provider/model would actually serve, and whether it's on-device or cloud.
+    private func resolvedLLM(_ s: WhisperioSettings) -> (provider: String, model: String, isCloud: Bool) {
+        let openAIReady = s.cloudConsentGranted
+            && !s.openAIKey.trimmingCharacters(in: .whitespaces).isEmpty
+
+        // Explicit local-model pick — name the selected GGUF (whether or not it's on disk yet, so
+        // the panel matches the Intelligence picker's selection; the model line states download state).
+        if s.intelligenceProvider == .localModel {
+            if let m = LocalLLMCatalog.model(id: s.localLLMModel) {
+                return (m.name, llmModels.isDownloaded(m.id) ? "On-device · local model"
+                                                            : "On-device · not downloaded", false)
+            }
+            return ("Not set — tap to choose", "Pick a local model below", false)
+        }
+
+        // Apple Intelligence when it would actually serve (pinned, or auto with no OpenAI key) AND
+        // it's genuinely available on this device right now.
+        let wantsApple = s.intelligenceProvider == .appleIntelligence
+            || (s.intelligenceProvider == .auto && !openAIReady)
+        if wantsApple, AppleIntelligenceService.isAvailableNow {
+            return ("Apple Intelligence", "On-device · Foundation Models", false)
+        }
+
+        // Auto's last on-device rung: a downloaded local model beats the unconfigured-OpenAI dead end.
+        if s.intelligenceProvider == .auto, !openAIReady,
+           let m = LocalLLMCatalog.model(id: s.localLLMModel), llmModels.isDownloaded(m.id) {
+            return (m.name, "On-device · local model", false)
+        }
+
+        // Keyed OpenAI — an explicit .openAI pick, or .auto with a configured key.
+        if openAIReady, s.intelligenceProvider != .appleIntelligence,
+           s.intelligenceProvider != .localModel {
+            let id = s.chatModel.trimmingCharacters(in: .whitespaces)
+            return ("OpenAI", id.isEmpty ? "gpt-4o-mini" : id, true)
+        }
+
+        // Nothing resolves to a working backend — honest, not a fabricated "ready".
+        return ("Not set — tap to choose", "Apple Intelligence, OpenAI or a local model", false)
+    }
+
     var body: some View {
         ScreenScaffold {
             VStack(spacing: 0) {
                 WHeader(title: "On-device models", onBack: onBack)
                 ScrollView(showsIndicators: false) {
                     VStack(alignment: .leading, spacing: 16) {
+                        inUseNowPanel
                         privacyBanner
                         modelsGroup
                         intelligenceModelsGroup
