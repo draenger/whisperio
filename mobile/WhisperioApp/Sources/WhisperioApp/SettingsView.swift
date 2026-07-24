@@ -330,10 +330,17 @@ struct SettingsView: View {
                         VStack(alignment: .leading, spacing: 22) {
                             // Top anchor for the page-swap scroll reset below.
                             Color.clear.frame(height: 1).id("wz.settings.top")
+                            // Type-erase both branches. The `if/else` otherwise bakes BOTH the
+                            // hub's and the (7-way) category switch's full generic types into
+                            // this body's concrete type; that type grew deep enough by build 68
+                            // (accordion + ScrollViewReader + intelligence section) that the
+                            // Swift runtime's mangled-name type instantiation recurses past the
+                            // 1MB main-thread stack ON DEVICE and SIGSEGVs on the stack guard —
+                            // invisible on the simulator, whose main thread gets an 8MB stack.
                             if let selectedCategory {
                                 categoryView(selectedCategory)
                             } else {
-                                hubView
+                                AnyView(hubView)
                             }
                         }
                         .padding(.horizontal, 16).padding(.top, 6).padding(.bottom, 28)
@@ -409,7 +416,11 @@ struct SettingsView: View {
 
     private var modelCategory: some View {
         VStack(alignment: .leading, spacing: 16) {
-            modelOrderSection
+            // The heaviest sub-sections (reorderable order list, the 8 expandable connector
+            // accordions, the intelligence picker) are each type-erased so `modelCategory`'s
+            // own instantiated type stays shallow — same 1MB-device-stack reason as the body
+            // branch above, since navigating INTO Models re-instantiates this view's type.
+            AnyView(modelOrderSection)
             SettGroup(title: "On-device models") {
                 SettRow(icon: "download", label: "Manage on-device models",
                         sub: "Download, update or remove Apple Speech + Whisper", last: true,
@@ -436,7 +447,7 @@ struct SettingsView: View {
                 }
             }
             .padding(.leading, 4)
-            VStack(spacing: 10) {
+            AnyView(VStack(spacing: 10) {
                 connectorSection(.openAI, "OpenAI", "Cloud · Whisper API", "globe")
                 connectorSection(.elevenLabs, "ElevenLabs", "Cloud · Scribe", "globe")
                 connectorSection(.replicate, "Replicate", "Cloud · open-source models", "globe")
@@ -445,12 +456,12 @@ struct SettingsView: View {
                 connectorSection(.assemblyAI, "AssemblyAI", "Cloud · Universal, speaker labels", "globe")
                 connectorSection(.mistral, "Mistral", "Cloud · Voxtral, open weights", "globe")
                 connectorSection(.selfHosted, "Self-hosted", "Your server · whisper.cpp / faster-whisper", "server")
-            }
+            })
             Text("Tap a provider to configure its connection and model. Which one is actually used — and in what order — is set above.")
                 .font(WZFont.mono(11)).foregroundStyle(t.faint).lineSpacing(3)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.leading, 4)
-            intelligenceSection
+            AnyView(intelligenceSection)
         }
     }
 
@@ -1668,22 +1679,21 @@ struct SettingsView: View {
     }
 
     @ViewBuilder
-    private func categoryView(_ category: SettingsCategory) -> some View {
+    // Returns AnyView so each category's (individually deep) generic type is erased at this
+    // boundary instead of unioning all seven into one giant `_ConditionalContent` tree baked
+    // into `body` — see the note at the call site. Settings is a cold path, so the AnyView
+    // cost is irrelevant next to not crashing on device.
+    private func categoryView(_ category: SettingsCategory) -> AnyView {
+        // Explicit returns (not a @ViewBuilder switch) so each arm's deep type is erased into
+        // AnyView here rather than unioned into one `_ConditionalContent` tree.
         switch category {
-        case .models:
-            modelCategory
-        case .transcription:
-            transcriptionCategory
-        case .content:
-            contentCategory
-        case .sync:
-            syncCategory
-        case .storage:
-            EmptyView()   // hub row opens StorageView directly
-        case .developer:
-            developerCategory
-        case .system:
-            systemCategory
+        case .models:       return AnyView(modelCategory)
+        case .transcription: return AnyView(transcriptionCategory)
+        case .content:      return AnyView(contentCategory)
+        case .sync:         return AnyView(syncCategory)
+        case .storage:      return AnyView(EmptyView())   // hub row opens StorageView directly
+        case .developer:    return AnyView(developerCategory)
+        case .system:       return AnyView(systemCategory)
         }
     }
 
