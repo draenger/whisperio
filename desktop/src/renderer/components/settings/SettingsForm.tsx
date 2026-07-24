@@ -1307,8 +1307,8 @@ export function SelfhostedSettings({
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px', padding: '8px 10px', borderRadius: '6px', background: theme.bgTertiary }}>
               <div style={{
                 width: '8px', height: '8px', borderRadius: '50%', flexShrink: 0,
-                background: serverStatus.status === 'running' ? '#22c55e' : serverStatus.status === 'starting' ? theme.accent : theme.textMuted,
-                boxShadow: serverStatus.status === 'running' ? '0 0 6px rgba(34,197,94,0.5)' : 'none'
+                background: serverStatus.status === 'running' ? theme.success : serverStatus.status === 'starting' ? theme.accent : theme.textMuted,
+                boxShadow: serverStatus.status === 'running' ? `0 0 6px ${theme.successGlow}` : 'none'
               }} />
               <div style={{ flex: 1, fontSize: '12px' }}>
                 <span style={{ color: theme.text, fontWeight: 500 }}>
@@ -1319,7 +1319,7 @@ export function SelfhostedSettings({
               </div>
               {serverStatus.status === 'running' ? (
                 <button onClick={async () => { await window.api.server.stop(); refresh() }}
-                  style={{ background: 'transparent', border: `1px solid ${theme.border}`, borderRadius: '4px', padding: '3px 8px', fontSize: '10px', color: '#ef4444', cursor: 'pointer', fontFamily: 'IBM Plex Sans, sans-serif' }}>Stop</button>
+                  style={{ background: 'transparent', border: `1px solid ${theme.border}`, borderRadius: '4px', padding: '3px 8px', fontSize: '10px', color: theme.danger, cursor: 'pointer', fontFamily: 'IBM Plex Sans, sans-serif' }}>Stop</button>
               ) : (
                 <select disabled={serverStarting || downloaded.length === 0}
                   onChange={async (e) => {
@@ -2623,10 +2623,10 @@ function SyncTab({ s, theme }: { s: ReturnType<typeof makeStyles>; theme: Theme 
       {message && (
         <div style={{
           ...s.card, padding: '10px 14px', borderRadius: '8px',
-          background: message.kind === 'ok' ? `${theme.success}18` : '#ef444418',
-          border: `1px solid ${message.kind === 'ok' ? theme.success + '55' : '#ef444455'}`
+          background: message.kind === 'ok' ? `color-mix(in srgb, ${theme.success} 9%, transparent)` : `color-mix(in srgb, ${theme.danger} 9%, transparent)`,
+          border: `1px solid ${message.kind === 'ok' ? `color-mix(in srgb, ${theme.success} 33%, transparent)` : `color-mix(in srgb, ${theme.danger} 33%, transparent)`}`
         }}>
-          <span style={{ fontSize: '12.5px', color: message.kind === 'ok' ? theme.success : '#ef4444', fontWeight: 500 }}>
+          <span style={{ fontSize: '12.5px', color: message.kind === 'ok' ? theme.success : theme.danger, fontWeight: 500 }}>
             {message.text}
           </span>
         </div>
@@ -2634,7 +2634,7 @@ function SyncTab({ s, theme }: { s: ReturnType<typeof makeStyles>; theme: Theme 
 
       {!status.vaultAvailable && (
         <div style={s.card}>
-          <span style={{ fontSize: '13px', color: '#ef4444', fontWeight: 600 }}>OS Keychain unavailable</span>
+          <span style={{ fontSize: '13px', color: theme.danger, fontWeight: 600 }}>OS Keychain unavailable</span>
           <span style={s.hint}>
             Secure storage isn’t available on this system, so Whisperio will not sync secrets
             (it refuses to store them unencrypted). Sync is disabled.
@@ -2690,7 +2690,7 @@ function SyncTab({ s, theme }: { s: ReturnType<typeof makeStyles>; theme: Theme 
                 Connected{status.user ? ` as ${status.user}` : ''}
               </span>
               <div style={{ flex: 1 }} />
-              <button onClick={handleDisconnect} style={{ ...btnGhost, color: '#ef4444', padding: '6px 12px', fontSize: '12px' }}>Disconnect</button>
+              <button onClick={handleDisconnect} style={{ ...btnGhost, color: theme.danger, padding: '6px 12px', fontSize: '12px' }}>Disconnect</button>
             </div>
           )}
         </div>

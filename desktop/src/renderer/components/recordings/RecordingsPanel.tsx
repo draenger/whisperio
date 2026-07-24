@@ -357,7 +357,10 @@ export function RecordingsView(): ReactElement {
       case 'failed':
         return { char: '\u2717', color: theme.danger }
       default:
-        return { char: '\u25CC', color: '#eab308' }
+        // Pending/processing \u2192 amber warning token. Mirrors wz-recordings
+        // statusIcon's theme.warning; was a hardcoded #eab308 that couldn't
+        // adapt to light mode. --wsp-warning is theme-aware (dark/light).
+        return { char: '\u25CC', color: 'var(--wsp-warning)' }
     }
   }
 
@@ -1259,7 +1262,9 @@ function CleanupMenu({
             background: theme.bgSecondary,
             border: `1px solid ${theme.border}`,
             borderRadius: 10,
-            boxShadow: '0 12px 28px -12px rgba(0,0,0,.4)',
+            // Dropdown elevation from the shared token (was a hardcoded rgba
+            // shadow) — --wsp-e2 is the popover/menu elevation tier.
+            boxShadow: 'var(--wsp-e2)',
             padding: 6,
             display: 'flex',
             flexDirection: 'column',
@@ -1419,6 +1424,10 @@ function makeStyles(theme: Theme) {
       display: 'flex',
       alignItems: 'center',
       gap: '12px',
+      // Rows are elevated bordered cards in wz-recordings (redesign branch
+      // renders them with theme.e1); the accent border on hover reads against
+      // this baseline elevation.
+      boxShadow: theme.e1,
       transition: 'border-color 0.15s, transform 0.15s, box-shadow 0.15s',
       position: 'relative' as const
     },
@@ -1445,6 +1454,7 @@ function makeStyles(theme: Theme) {
       gap: '10px'
     },
     recordingDate: {
+      fontFamily: "'JetBrains Mono', monospace",
       fontSize: '12px',
       fontWeight: 500,
       color: theme.text

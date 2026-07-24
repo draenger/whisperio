@@ -72,6 +72,24 @@ function OnDeviceBadge(): JSX.Element {
   )
 }
 
+/**
+ * Resolves a --wsp-* token from tokens.css to its concrete value. tokens.css is
+ * loaded in the overlay window (overlay.tsx); the overlay never stamps
+ * data-theme/data-accent, so tokens resolve to their :root (dark/teal) defaults
+ * — matching the intentionally theme-invariant pill. Used for colors handed to
+ * the Ghost mascot's SVG `fill` presentation attribute, where a bare var()
+ * reference isn't a reliable substitution target — so we keep tokens.css as the
+ * single source of truth but pass a concrete color through.
+ */
+function useTokenColor(varName: string, fallback: string): string {
+  const [value, setValue] = useState(fallback)
+  useEffect(() => {
+    const resolved = getComputedStyle(document.documentElement).getPropertyValue(varName).trim()
+    if (resolved) setValue(resolved)
+  }, [varName])
+  return value
+}
+
 export function DictationOverlay(): JSX.Element {
   const [mainState, setMainState] = useState<MainState>('idle')
   const [overlayInfo, setOverlayInfo] = useState<OverlayInfo | null>(null)
@@ -82,6 +100,8 @@ export function DictationOverlay(): JSX.Element {
   const prevMainStateRef = useRef<MainState>('idle')
   const { startRecording, startOutputRecording, stopAndTranscribe, cancelRecording, isRecording, lastWordCount } =
     useDictation()
+  // Lead teal accent, sourced from tokens.css (--wsp-accent) — see useTokenColor.
+  const accentTeal = useTokenColor('--wsp-accent', '#1cc8b4')
 
   // Listen for state changes from main process
   useEffect(() => {
@@ -196,16 +216,23 @@ export function DictationOverlay(): JSX.Element {
 
   // Color scheme based on recording type (Rezme teal for input dictation);
   // command mode gets its own sky accent, distinct from input/output colors.
-  const cmdAccent = '#7cc0fb'
-  const cmdBorder = 'rgba(124, 192, 251, 0.42)'
-  const accentColor = isCommand ? cmdAccent : isOutputRecording ? '#3b82f6' : '#1cc8b4'
-  const dotColor = isOutputRecording ? '#3b82f6' : '#ef4444'
+  // Output-recording blue is a delta-add feature with no --wsp token (REPORT).
+  const OUTPUT_BLUE = '#3b82f6'
+  const cmdAccent = 'var(--wsp-accent-2-light)' // = #7cc0fb (sky)
+  // accentColor feeds the Ghost's SVG fill (recording/transcribing/pasting) AND
+  // the CSS waveform. For teal it is the concrete token value (accentTeal) so it
+  // renders in the SVG presentation attribute; command mode has no ghost, so its
+  // sky var() is only ever consumed in CSS.
+  const accentColor = isCommand ? cmdAccent : isOutputRecording ? OUTPUT_BLUE : accentTeal
+  const dotColor = isOutputRecording ? OUTPUT_BLUE : 'var(--wsp-rec-dot)' // rec = red dot
+  // 0.6-alpha dot glows have no matching --wsp token (danger-glow is .30) — REPORT.
   const dotGlow = isOutputRecording ? 'rgba(59, 130, 246, 0.6)' : 'rgba(239, 68, 68, 0.6)'
   const borderColor = isCommand
-    ? cmdBorder
+    ? 'rgba(124, 192, 251, 0.42)' // sky @ .42 — no token (REPORT)
     : isOutputRecording
-      ? 'rgba(59, 130, 246, 0.3)'
-      : 'rgba(28, 200, 180, 0.3)'
+      ? 'rgba(59, 130, 246, 0.3)' // output blue — no token (REPORT)
+      : 'var(--wsp-pill-border)' // = rgba(28, 200, 180, 0.30)
+  // 0.1-alpha inner-ring shadows have no matching --wsp token (accent-glow is .30) — REPORT.
   const shadowColor = isCommand
     ? 'rgba(124, 192, 251, 0.1)'
     : isOutputRecording
@@ -369,8 +396,8 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: 'center',
     gap: '10px',
     borderRadius: '50px',
-    // --wsp-pill-bg (docs/design/tokens.css) — cool-dark pill, theme-invariant.
-    background: 'rgba(9, 15, 24, 0.94)',
+    // Cool-dark pill, theme-invariant (docs/design/tokens.css).
+    background: 'var(--wsp-pill-bg)',
     backdropFilter: 'blur(20px)',
     cursor: 'default',
     transition: 'opacity 0.2s, padding 0.2s'
@@ -407,11 +434,11 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: '10px',
     fontWeight: 600,
     letterSpacing: '0.06em',
-    color: '#4ade80',
+    color: 'var(--wsp-ondevice-fg)',
     padding: '3px 8px',
     borderRadius: '999px',
-    background: 'rgba(34, 197, 94, 0.10)',
-    border: '1px solid rgba(34, 197, 94, 0.26)'
+    background: 'var(--wsp-ondevice-bg)',
+    border: '1px solid var(--wsp-ondevice-border)'
   },
   commandBadge: {
     display: 'inline-flex',
@@ -421,9 +448,10 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: '10px',
     fontWeight: 700,
     letterSpacing: '0.1em',
-    color: '#7cc0fb',
+    color: 'var(--wsp-accent-2-light)', // = #7cc0fb (sky)
     padding: '3px 8px',
     borderRadius: '999px',
+    // sky @ .12/.32 tints have no --wsp token (no accent-2-light-rgb triplet) — REPORT.
     background: 'rgba(124, 192, 251, 0.12)',
     border: '1px solid rgba(124, 192, 251, 0.32)'
   },
@@ -434,8 +462,8 @@ const styles: Record<string, React.CSSProperties> = {
     width: '16px',
     height: '16px',
     borderRadius: '50%',
-    background: '#22c55e',
-    color: '#04231a'
+    background: 'var(--wsp-success)',
+    color: '#04231a' // dark ink on the green check — no --wsp token (REPORT)
   },
   doneWordCount: {
     fontFamily: "'JetBrains Mono', monospace",
@@ -456,8 +484,8 @@ const styles: Record<string, React.CSSProperties> = {
     bottom: 0,
     width: '26px',
     borderRadius: '2px',
-    // --wsp-progress-gradient: teal -> sky, distinct from the recording red dot.
-    background: 'linear-gradient(90deg, #1cc8b4, #3da2f7)',
+    // Teal -> sky, distinct from the recording red dot (docs/design/tokens.css).
+    background: 'var(--wsp-progress-gradient)',
     animation: 'wzprog 1.1s ease-in-out infinite'
   },
   waveform: {
