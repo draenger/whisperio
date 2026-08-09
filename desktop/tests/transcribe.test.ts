@@ -59,7 +59,25 @@ vi.mock('electron', () => ({
   }
 }))
 
-import { transcribeAudio, cleanupOnDemand, rewriteClipboardForCommand, NotConfiguredError } from '../src/main/transcribe'
+import {
+  transcribeAudio,
+  cleanupOnDemand,
+  rewriteClipboardForCommand,
+  buildCleanupCandidates,
+  __resetCleanupCandidatesCacheForTests,
+  NotConfiguredError
+} from '../src/main/transcribe'
+import type { AppSettings } from '../src/main/settingsManager'
+
+// buildCleanupCandidates() memoizes its candidate chain by a settings
+// fingerprint (see the availability-cache-defeated-per-call fix) so that
+// each LLMProvider's own 30s AvailabilityCache survives across calls. That
+// cache is keyed on real Date.now(), so leaving it populated across
+// unrelated test cases that happen to share a fingerprint could leak
+// availability state between them — reset it before every test here.
+beforeEach(() => {
+  __resetCleanupCandidatesCacheForTests()
+})
 
 describe('transcribeAudio', () => {
   beforeEach(() => {
@@ -222,6 +240,54 @@ describe('transcribeAudio', () => {
     expect(bodyStr.match(/name="keyterms"/g)?.length).toBe(2)
     expect(bodyStr).toContain('foo')
     expect(bodyStr).toContain('bar')
+  })
+})
+
+// Regression test for the "Multipart Content-Disposition fields built from
+// unsanitized filename/prompt/vocab strings" finding: `filename` arrives
+// straight from the renderer over the `dictation:transcribe` IPC handler
+// with no validation, and prompt/vocab-derived fields land in the same
+// hand-built multipart body — a `"` or a raw CR/LF in any of them used to
+// break out of the intended header/field and inject extra headers or
+// multipart parts into the outbound request.
+describe('multipart field sanitization (header/body injection fix)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('escapes a double-quote and strips CR/LF from filename so it cannot break out of the Content-Disposition header or inject extra parts', async () => {
+    mockLoadSettings.mockReturnValue({ openaiApiKey: 'sk-test', transcriptionPrompt: '' })
+    const mockReq = createMockNetRequest(200, JSON.stringify({ text: 'ok' }))
+    mockNetRequest.mockReturnValue(mockReq)
+
+    const maliciousFilename =
+      'evil".webm"\r\nContent-Disposition: form-data; name="hacked"\r\n\r\ninjected-value\r\n--injected-boundary--'
+
+    await transcribeAudio(Buffer.from('audio'), maliciousFilename)
+
+    const bodyStr = (mockReq.write.mock.calls[0][0] as Buffer).toString()
+    // The raw CR/LF sequence must never survive into the body — that's what
+    // would let an attacker-controlled filename open a new header/part.
+    expect(bodyStr).not.toContain('\r\nContent-Disposition: form-data; name="hacked"')
+    expect(bodyStr).not.toContain('name="hacked"')
+    // The literal quote must be escaped, not passed through raw, so it can't
+    // terminate the filename="..." attribute early.
+    expect(bodyStr).toContain('evil\\".webm\\"')
+  })
+
+  it('strips CR/LF from a prompt built from vocabulary before it reaches the multipart body', async () => {
+    mockLoadSettings.mockReturnValue({
+      openaiApiKey: 'sk-test',
+      transcriptionPrompt: 'ctx',
+      customVocabulary: 'term\r\nContent-Disposition: form-data; name="hacked"\r\n\r\ninjected'
+    })
+    const mockReq = createMockNetRequest(200, JSON.stringify({ text: 'ok' }))
+    mockNetRequest.mockReturnValue(mockReq)
+
+    await transcribeAudio(Buffer.from('audio'), 'rec.webm')
+
+    const bodyStr = (mockReq.write.mock.calls[0][0] as Buffer).toString()
+    expect(bodyStr).not.toContain('\r\nContent-Disposition: form-data; name="hacked"')
   })
 })
 
@@ -1137,6 +1203,66 @@ describe('cleanupOnDemand', () => {
 
     expect(result).toEqual({ text: 'raw transcript', ok: false, cleanedWith: 'cleanup disabled' })
     expect(fetchMock).not.toHaveBeenCalled()
+  })
+})
+
+// Regression test for the "LLM provider 30s availability cache is defeated
+// by per-call provider re-instantiation" finding: buildCleanupCandidates()
+// used to construct brand-new LLMProvider instances on every call, so the
+// AvailabilityCache each provider carries (llm/provider.ts) was always
+// empty — every dictation/cleanup paid a fresh live reachability check.
+describe('buildCleanupCandidates caching (availability-cache defeat fix)', () => {
+  beforeEach(() => {
+    __resetCleanupCandidatesCacheForTests()
+  })
+
+  // Minimal AppSettings stub — buildCleanupCandidates only reads a handful
+  // of fields; the rest are irrelevant to candidate construction.
+  function settingsStub(overrides: Partial<AppSettings>): AppSettings {
+    return { openaiApiKey: '', aiProvider: 'openai', ...overrides } as AppSettings
+  }
+
+  it('returns the SAME provider instances across calls with unchanged settings, so their AvailabilityCache persists', () => {
+    const settings = settingsStub({ openaiApiKey: 'sk-test' })
+
+    const first = buildCleanupCandidates(settings)
+    const second = buildCleanupCandidates(settings)
+
+    // Old (buggy) behavior constructed a brand-new array/instances every
+    // call, which meant a brand-new (empty) AvailabilityCache every call too.
+    expect(second).toBe(first)
+    expect(second[0]).toBe(first[0])
+  })
+
+  it('rebuilds fresh provider instances when a relevant setting (e.g. the API key) actually changes', () => {
+    const first = buildCleanupCandidates(settingsStub({ openaiApiKey: 'sk-old' }))
+    const second = buildCleanupCandidates(settingsStub({ openaiApiKey: 'sk-new' }))
+
+    expect(second).not.toBe(first)
+    expect(second[0]).not.toBe(first[0])
+  })
+
+  it('reuses a provider\'s cached available() result across two buildCleanupCandidates() calls instead of re-checking every time', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({}) })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const settings = settingsStub({ openaiApiKey: 'sk-test' })
+
+    const candidatesA = buildCleanupCandidates(settings)
+    await candidatesA[0].available()
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+
+    // Simulates a second dictation/cleanup call re-deriving candidates from
+    // (unchanged) settings, as transcribeAudio()/cleanupOnDemand() do on
+    // every invocation.
+    const candidatesB = buildCleanupCandidates(settings)
+    await candidatesB[0].available()
+
+    // Still 1: the cache lives on the (now-reused) provider instance and the
+    // 30s window hasn't elapsed, so no second reachability check fired.
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+
+    vi.unstubAllGlobals()
   })
 })
 

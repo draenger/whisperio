@@ -240,14 +240,36 @@ public final class RecordingSyncStore: ObservableObject {
         }
     }
 
-    /// Designated init — takes an explicit `ModelConfiguration` so tests can inject an
+    /// Builds the `ModelContainer` for a given configuration. Pulled out as a `nonisolated`
+    /// static function (rather than inlined in the designated init below) so a caller like
+    /// `RecordingsStore.migrateCurrentLibraryToCloud()` can stand up the container — the actual
+    /// blocking CloudKit I/O (schema registration + zone/subscription bootstrap) — off the main
+    /// actor via `Task.detached`, then hand the finished container to
+    /// `init(container:ownStoreURL:isCloudBacked:)`, which does no I/O of its own and is cheap to
+    /// run synchronously on the MainActor.
+    public nonisolated static func buildContainer(configuration: ModelConfiguration) throws -> ModelContainer {
+        try ModelContainer(for: RecordingEntity.self, configurations: configuration)
+    }
+
+    /// Convenience init — takes an explicit `ModelConfiguration` so tests can inject an
     /// in-memory, CloudKit-free store. `isCloudBacked` marks whether the config syncs against
-    /// CloudKit; when true the store observes sync events to drive `isSyncing`.
-    public init(configuration: ModelConfiguration, isCloudBacked: Bool = false) throws {
+    /// CloudKit; when true the store observes sync events to drive `isSyncing`. Builds the
+    /// container synchronously on whatever actor the caller is already on — callers that need
+    /// the container stand-up off the main thread should call `buildContainer` themselves (inside
+    /// `Task.detached`) and use `init(container:ownStoreURL:isCloudBacked:)` instead.
+    public convenience init(configuration: ModelConfiguration, isCloudBacked: Bool = false) throws {
+        let container = try RecordingSyncStore.buildContainer(configuration: configuration)
+        self.init(container: container, ownStoreURL: configuration.url, isCloudBacked: isCloudBacked)
+    }
+
+    /// Designated init — wraps an already-built `ModelContainer`. No I/O of its own, so it's safe
+    /// to call synchronously on the MainActor even when the container itself was built off-actor.
+    public init(container: ModelContainer, ownStoreURL: URL, isCloudBacked: Bool = false) {
         self.isCloudBacked = isCloudBacked
-        // Captured BEFORE the container exists — see `ownStoreURL`'s doc comment.
-        self.ownStoreURL = configuration.url.standardizedFileURL
-        container = try ModelContainer(for: RecordingEntity.self, configurations: configuration)
+        // Captured from the same URL the container was opened with — see `ownStoreURL`'s doc
+        // comment.
+        self.ownStoreURL = ownStoreURL.standardizedFileURL
+        self.container = container
         migrateLegacyJSONIfNeeded()
         reload()
         if isCloudBacked {
@@ -544,11 +566,19 @@ public final class RecordingSyncStore: ObservableObject {
         for entity in matches { context.delete(entity) }
     }
 
-    private func save() {
+    /// Persist pending context changes. Returns whether the save actually succeeded — callers
+    /// that gate a durable side effect on "the write landed" (e.g. `migrateLegacyJSONIfNeeded()`
+    /// setting the one-time migration flag) must check this rather than assume success just
+    /// because `save()` was called; a save failure is already surfaced via `recordError`, so
+    /// callers that don't need the outcome can ignore the return value.
+    @discardableResult
+    private func save() -> Bool {
         do {
             try context.save()
+            return true
         } catch {
             recordError("Failed to save context: \(error.localizedDescription)")
+            return false
         }
     }
 
@@ -565,6 +595,14 @@ public final class RecordingSyncStore: ObservableObject {
     /// CloudKit-backed container later fails to init (e.g. the user signs out of iCloud) the store
     /// falls back to the JSON backend, which must still find the history. The flag — not deleting
     /// the file — is what prevents a re-import.
+    ///
+    /// The flag is set ONLY after `save()` reports success. `context.save()` can fail (disk full,
+    /// CloudKit schema not ready yet, etc.), and if the flag were set unconditionally right after,
+    /// a failed import would never be retried and the imported-but-unsaved rows would vanish with
+    /// the context, silently losing the recording history for good. Leaving the flag unset on
+    /// failure means the next launch retries; `upsert`'s id-keyed dedup keeps that retry
+    /// idempotent, so partially-saved rows from a prior attempt can't be duplicated. Mirrors
+    /// `DigestSyncStore.migrateLegacyJSONIfNeeded()`.
     private func migrateLegacyJSONIfNeeded() {
         let defaults = UserDefaults.standard
         guard !defaults.bool(forKey: RecordingSync.migratedFlagKey) else { return }
@@ -584,7 +622,11 @@ public final class RecordingSyncStore: ObservableObject {
         }
         let legacy = RecordingSync.decodeLegacy(data)
         for r in legacy { upsert(r) }
-        save()
+        guard save() else {
+            // `save()` already called `recordError` — don't mark the migration done so it's
+            // retried on the next launch instead of silently dropping the recording history.
+            return
+        }
 
         // The flag (not deleting the file) prevents re-import; recordings.json stays as the
         // JSON-backend fallback's durable copy.

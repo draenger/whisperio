@@ -257,7 +257,11 @@ export function deleteRecording(id: string): Promise<boolean> {
     // A hard `splice` here could never converge — a stale device would resurrect
     // the row on the next merge (PT-offline-first-lww-sync).
     if (existsSync(entry.filepath)) {
-      unlinkSync(entry.filepath)
+      try {
+        unlinkSync(entry.filepath)
+      } catch {
+        /* best-effort: still tombstone the entry so the delete converges */
+      }
     }
 
     const now = Date.now()
@@ -273,7 +277,11 @@ export function deleteAllRecordings(): Promise<void> {
 
     for (const entry of index.recordings) {
       if (existsSync(entry.filepath)) {
-        unlinkSync(entry.filepath)
+        try {
+          unlinkSync(entry.filepath)
+        } catch {
+          /* best-effort: still drop the index entry so the delete converges */
+        }
       }
     }
 
@@ -300,7 +308,11 @@ export function deleteRecordingsByDate(dateStr: string): Promise<void> {
 
     for (const entry of toDelete) {
       if (existsSync(entry.filepath)) {
-        unlinkSync(entry.filepath)
+        try {
+          unlinkSync(entry.filepath)
+        } catch {
+          /* best-effort: still drop the index entry so the delete converges */
+        }
       }
     }
 

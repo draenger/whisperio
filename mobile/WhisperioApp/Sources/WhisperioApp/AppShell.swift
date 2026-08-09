@@ -107,6 +107,11 @@ struct WZPhoneView: View {
     // the phase changes or the user edits syncMode/syncIntervalMinutes in Settings, so a mode
     // change takes effect immediately without a relaunch — see `SyncGating.nextNudgeInterval`.
     @State private var syncNudgeTimer: Timer?
+    // In-flight guard for runAutoJournaling(): set while a backfillIfNeeded() task is running so
+    // .onAppear and rapid scenePhase == .active cycling (a brief interruption, notification
+    // banner, or App Switcher swipe that doesn't fully background the app) can't fan out
+    // overlapping unstructured tasks racing on the same CloudKit-backed DigestStore/RecordingsStore.
+    @State private var autoJournalingInFlight = false
     // The preset the editor screen is editing (a fresh draft for "new"), and the screen to
     // return to when the editor closes (Settings, or Detail for the Template Builder flow).
     @State private var editorPreset: RewritePreset = RewritePresetCatalog.seeds[0]
@@ -377,13 +382,19 @@ struct WZPhoneView: View {
     // prior days once per day. Runs off the same foreground hook as consumePending().
     private func runAutoJournaling() {
         guard settings.settings.autoDailyDigest else { return }
+        // Skip starting a fresh fan-out while a prior one is still in flight — .onAppear and
+        // every scenePhase == .active transition call this, and without this guard they'd race
+        // overlapping backfillIfNeeded() runs against the same store.
+        guard !autoJournalingInFlight else { return }
         let client = settings.makeChatClient()
         guard client.isConfigured else { return }
         let model = settings.settings.chatModel
+        autoJournalingInFlight = true
         Task {
             await digests.backfillIfNeeded(recordings: recordings, categories: WZCategories.all(with: settings.settings),
                                            using: client, model: model,
                                            promptConfig: digestPrompts.config)
+            await MainActor.run { autoJournalingInFlight = false }
         }
     }
 

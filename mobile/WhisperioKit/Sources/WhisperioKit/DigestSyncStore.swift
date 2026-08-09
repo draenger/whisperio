@@ -98,10 +98,13 @@ public enum DigestSync {
     /// is unit-testable without a running `NSPersistentCloudKitContainer`.
     public static func eventBelongsToStore(storeIdentifier: String, ownStoreIdentifier: String?) -> Bool {
         guard let ownStoreIdentifier else {
-            // Ownership undeterminable (see `ownStoreIdentifier(for:)`) — fail OPEN rather than
-            // silently dropping every event, which would be worse than the imprecise-but-working
-            // status quo this replaces.
-            return true
+            // Ownership undeterminable (see `ownStoreIdentifier(for:)`) — fail CLOSED, mirroring
+            // `RecordingSyncStore.isOwnStoreEvent`: either way we can't prove the event is ours,
+            // so it's rejected rather than assumed to be. Failing open here would let a sibling
+            // store's sync events flip this store's isSyncing/lastImportAt/lastExportAt whenever
+            // ownership can't be resolved — the exact cross-store contamination both stores'
+            // filtering exists to prevent.
+            return false
         }
         return storeIdentifier == ownStoreIdentifier
     }
@@ -197,14 +200,37 @@ public final class DigestSyncStore: ObservableObject {
         try self.init(configuration: config, isCloudBacked: useCloudKit)
     }
 
-    /// Designated init — takes an explicit `ModelConfiguration` so tests can inject an
+    /// Builds the `ModelContainer` for a given configuration. Pulled out as a `nonisolated`
+    /// static function (rather than inlined in the designated init below) so a caller like
+    /// `DigestStore.migrateCurrentLibraryToCloud()` can stand up the container — the actual
+    /// blocking CloudKit I/O (schema registration + zone/subscription bootstrap) — off the main
+    /// actor via `Task.detached`, then hand the finished container to
+    /// `init(container:configuration:isCloudBacked:)`, which does no significant I/O of its own
+    /// and is cheap to run synchronously on the MainActor.
+    public nonisolated static func buildContainer(configuration: ModelConfiguration) throws -> ModelContainer {
+        try ModelContainer(for: DigestEntity.self, configurations: configuration)
+    }
+
+    /// Convenience init — takes an explicit `ModelConfiguration` so tests can inject an
     /// in-memory, CloudKit-free store. `isCloudBacked` marks whether the config syncs against
-    /// CloudKit; when true the store observes sync events to drive `isSyncing`.
-    public init(configuration: ModelConfiguration, isCloudBacked: Bool = false) throws {
+    /// CloudKit; when true the store observes sync events to drive `isSyncing`. Builds the
+    /// container synchronously on whatever actor the caller is already on — callers that need the
+    /// container stand-up off the main thread should call `buildContainer` themselves (inside
+    /// `Task.detached`) and use `init(container:configuration:isCloudBacked:)` instead.
+    public convenience init(configuration: ModelConfiguration, isCloudBacked: Bool = false) throws {
+        let container = try DigestSyncStore.buildContainer(configuration: configuration)
+        self.init(container: container, configuration: configuration, isCloudBacked: isCloudBacked)
+    }
+
+    /// Designated init — wraps an already-built `ModelContainer`. `configuration` is only used
+    /// here to resolve `ownStoreIdentifier` (a cheap on-disk metadata read, not the expensive
+    /// CloudKit stand-up), so this is safe to call synchronously on the MainActor even when the
+    /// container itself was built off-actor.
+    public init(container: ModelContainer, configuration: ModelConfiguration, isCloudBacked: Bool = false) {
         self.isCloudBacked = isCloudBacked
-        container = try ModelContainer(for: DigestEntity.self, configurations: configuration)
-        // Resolved from the same `configuration` right after the container opens the file, so the
-        // on-disk metadata this reads is guaranteed to already exist — see
+        self.container = container
+        // Resolved from the same `configuration` the container was opened with, so the on-disk
+        // metadata this reads is guaranteed to already exist — see
         // `DigestSync.ownStoreIdentifier(for:)`.
         ownStoreIdentifier = DigestSync.ownStoreIdentifier(for: configuration)
         migrateLegacyJSONIfNeeded()

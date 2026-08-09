@@ -90,9 +90,11 @@ struct DigestSyncStoreTests {
     }
 
     // When ownership can't be determined (e.g. an in-memory store with nothing on disk to read),
-    // fail open rather than silently dropping every event.
-    @Test func eventBelongsToStoreFailsOpenWhenOwnIdentifierUnknown() {
-        #expect(DigestSync.eventBelongsToStore(storeIdentifier: "anything", ownStoreIdentifier: nil))
+    // fail closed — mirrors RecordingSyncStore.isOwnStoreEvent, which rejects rather than assumes
+    // ownership when it can't be proven. Regression test for the fail-open bug: previously this
+    // returned true, letting the sibling RecordingSyncStore's events be processed as our own.
+    @Test func eventBelongsToStoreFailsClosedWhenOwnIdentifierUnknown() {
+        #expect(!DigestSync.eventBelongsToStore(storeIdentifier: "anything", ownStoreIdentifier: nil))
     }
 
     // lastWriteAt(for:) prefers summaryGeneratedAt (the real write time) over the journaled day.
@@ -156,6 +158,41 @@ struct DigestSyncStoreTests {
         store.upsert(DailyDigest(id: dayKey, date: base, summary: "second"), modifiedAt: base.addingTimeInterval(10))
         #expect(store.digests.count == 1)
         #expect(store.digests.first?.summary == "second")
+    }
+
+    // Regression guard for the "moveLibraryToCloud blocks the main thread" fix
+    // (FB-whisperio-movelibrarytocloud-blocks-main-thread), mirroring
+    // `RecordingEntityTests.buildContainerRunsOffMainActorAndWrapsIntoWorkingStore`:
+    // `DigestStore.migrateCurrentLibraryToCloud()` only actually moves work off the main thread
+    // if `DigestSyncStore.buildContainer` is genuinely callable off the MainActor and its result
+    // wraps into a fully working store via `init(container:configuration:isCloudBacked:)`. If
+    // `buildContainer` regressed back to being MainActor-isolated, this `Task.detached` call
+    // stops compiling.
+    @available(iOS 17, macOS 14, *)
+    @Test func buildContainerRunsOffMainActorAndWrapsIntoWorkingStore() async throws {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("digestBuildContainerOffMainActor-\(UUID().uuidString).store")
+        defer {
+            for suffix in ["", "-shm", "-wal"] {
+                try? FileManager.default.removeItem(atPath: url.path + suffix)
+            }
+        }
+        let config = ModelConfiguration(url: url)
+
+        // Off-MainActor by construction: `Task.detached` runs its closure on the cooperative
+        // thread pool, never hopping to the main actor. If SwiftData can't stand up a store in
+        // this environment, skip rather than fail (mirrors the in-memory tests above).
+        guard let container = try? await Task.detached(priority: .userInitiated) {
+            try DigestSyncStore.buildContainer(configuration: config)
+        }.value else { return }
+
+        let store = await DigestSyncStore(container: container, configuration: config, isCloudBacked: false)
+        let dayKey = "2026-07-01"
+        let base = Date()
+        await store.upsert(DailyDigest(id: dayKey, date: base, summary: "off-actor"), modifiedAt: base)
+        let digests = await store.digests
+        #expect(digests.count == 1)
+        #expect(digests.first?.summary == "off-actor")
     }
 
     // Last-writer-wins: a stale/out-of-order re-upsert of the same day key (older modifiedAt) must

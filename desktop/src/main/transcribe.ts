@@ -48,6 +48,22 @@ function isDev(): boolean {
   }
 }
 
+// SECURITY: every multipart/form-data body in this file is hand-built (see
+// each *Transcribe() function below) rather than going through a
+// library that quotes/escapes field values — so every value interpolated
+// into a `Content-Disposition` header or a form field (filename, prompt,
+// language, vocabulary/keyterms, ...) MUST go through this first. `filename`
+// in particular arrives from the renderer over the `dictation:transcribe` IPC
+// handler (main/index.ts) with no prior validation, so a `"` or a bare CR/LF
+// there could otherwise break out of `filename="..."` and inject extra
+// headers or multipart parts into the outbound request. Strips CR/LF
+// entirely (there is no legitimate reason a filename/prompt/vocab term needs
+// a raw newline) and escapes `"` per the standard multipart quoted-string
+// convention.
+function sanitizeMultipartField(value: string): string {
+  return value.replace(/[\r\n]+/g, ' ').replace(/"/g, '\\"')
+}
+
 const DEFAULT_OPENAI_BASE = 'https://api.openai.com/v1'
 const ELEVENLABS_STT_URL = 'https://api.elevenlabs.io/v1/speech-to-text'
 const DEFAULT_PROMPT = ''
@@ -90,6 +106,32 @@ const DEFAULT_LOCAL_CLEANUP_MODEL = 'local-model'
 // true` entry in REPLICATE_MODELS (fast, cost-effective instruct model).
 const DEFAULT_REPLICATE_CLEANUP_MODEL = 'meta/meta-llama-3-8b-instruct'
 
+// Memoized candidate chain, keyed by a fingerprint of the settings fields
+// that actually affect which providers get constructed. Each LLMProvider
+// carries its own 30s AvailabilityCache (llm/provider.ts) instance-scoped —
+// that cache is worthless if buildCleanupCandidates() hands back brand-new
+// provider instances on every call, since every dictation/cleanup would then
+// pay a fresh live reachability check. Caching here (and only invalidating
+// when the fingerprint actually changes) lets the AvailabilityCache persist
+// across calls the way it was designed to.
+let cachedCandidates: LLMProvider[] | null = null
+let cachedCandidatesFingerprint: string | null = null
+
+function candidateFingerprint(settings: AppSettings): string {
+  return JSON.stringify({
+    aiProvider: settings.aiProvider ?? '',
+    aiBaseUrl: settings.aiBaseUrl?.trim() || '',
+    aiModel: settings.aiModel?.trim() || '',
+    openaiApiKey: settings.openaiApiKey || '',
+    anthropicApiKey: settings.anthropicApiKey || '',
+    replicateApiKey: settings.replicateApiKey || '',
+    // The local candidate's baseUrl depends on the local model server's
+    // current port — include it so a server restart on a different port
+    // isn't masked by a stale cached candidate.
+    localPort: getServerStatus().port
+  })
+}
+
 /**
  * Build the LLM candidates for transcript cleanup from settings, per the
  * DI contract in llm/provider.ts — this is the ONLY place transcribe.ts
@@ -101,8 +143,17 @@ const DEFAULT_REPLICATE_CLEANUP_MODEL = 'meta/meta-llama-3-8b-instruct'
  * rewriteClipboardForCommand() below can select from the exact same
  * candidate chain as transcript cleanup — one LLM config surface for the
  * whole app, not a separate one for command-mode rewriting.
+ *
+ * Memoized (see cachedCandidates above) so the candidates' AvailabilityCache
+ * instances persist across calls instead of being rebuilt — and their cache
+ * defeated — on every dictation/cleanup invocation.
  */
 export function buildCleanupCandidates(settings: AppSettings): LLMProvider[] {
+  const fingerprint = candidateFingerprint(settings)
+  if (cachedCandidates && cachedCandidatesFingerprint === fingerprint) {
+    return cachedCandidates
+  }
+
   const candidates: LLMProvider[] = []
   const baseUrl = settings.aiBaseUrl?.trim() || ''
   const model = settings.aiModel?.trim() || ''
@@ -156,7 +207,20 @@ export function buildCleanupCandidates(settings: AppSettings): LLMProvider[] {
     })
   )
 
+  cachedCandidates = candidates
+  cachedCandidatesFingerprint = fingerprint
   return candidates
+}
+
+/**
+ * Test-only escape hatch: clear the memoized candidate cache. The cache is
+ * keyed by a settings fingerprint, so it would otherwise leak provider
+ * instances (and their real-clock AvailabilityCache state) across unrelated
+ * test cases that happen to construct the same fingerprint.
+ */
+export function __resetCleanupCandidatesCacheForTests(): void {
+  cachedCandidates = null
+  cachedCandidatesFingerprint = null
 }
 
 // Tied to the dictation cycle, NOT to any single transcribeAudio() call: a
@@ -610,9 +674,13 @@ function whisperTranscribe(apiKey: string, audioBuffer: Buffer, filename: string
   const boundary = `----Whisperio${Date.now()}`
 
   const parts: Buffer[] = []
+  const safeFilename = sanitizeMultipartField(filename)
+  const safeModel = sanitizeMultipartField(model)
+  const safePrompt = sanitizeMultipartField(prompt)
+  const safeLanguage = sanitizeMultipartField(language)
 
   parts.push(Buffer.from(
-    `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="${filename}"\r\nContent-Type: audio/webm\r\n\r\n`
+    `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="${safeFilename}"\r\nContent-Type: audio/webm\r\n\r\n`
   ))
   parts.push(audioBuffer)
   parts.push(Buffer.from('\r\n'))
@@ -620,11 +688,11 @@ function whisperTranscribe(apiKey: string, audioBuffer: Buffer, filename: string
   if (!directUrl) {
     // OpenAI format — send model and prompt
     parts.push(Buffer.from(
-      `--${boundary}\r\nContent-Disposition: form-data; name="model"\r\n\r\n${model}\r\n`
+      `--${boundary}\r\nContent-Disposition: form-data; name="model"\r\n\r\n${safeModel}\r\n`
     ))
     if (prompt) {
       parts.push(Buffer.from(
-        `--${boundary}\r\nContent-Disposition: form-data; name="prompt"\r\n\r\n${prompt}\r\n`
+        `--${boundary}\r\nContent-Disposition: form-data; name="prompt"\r\n\r\n${safePrompt}\r\n`
       ))
     }
   }
@@ -641,7 +709,7 @@ function whisperTranscribe(apiKey: string, audioBuffer: Buffer, filename: string
 
   if (language && language !== 'auto') {
     parts.push(Buffer.from(
-      `--${boundary}\r\nContent-Disposition: form-data; name="language"\r\n\r\n${language}\r\n`
+      `--${boundary}\r\nContent-Disposition: form-data; name="language"\r\n\r\n${safeLanguage}\r\n`
     ))
   }
 
@@ -728,9 +796,11 @@ function whisperTranscribe(apiKey: string, audioBuffer: Buffer, filename: string
 function elevenLabsTranscribe(apiKey: string, audioBuffer: Buffer, filename: string, vocabulary: string, language: string): Promise<string> {
   const boundary = `----Whisperio${Date.now()}`
   const parts: Buffer[] = []
+  const safeFilename = sanitizeMultipartField(filename)
+  const safeLanguage = sanitizeMultipartField(language)
 
   parts.push(Buffer.from(
-    `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="${filename}"\r\nContent-Type: audio/webm\r\n\r\n`
+    `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="${safeFilename}"\r\nContent-Type: audio/webm\r\n\r\n`
   ))
   parts.push(audioBuffer)
   parts.push(Buffer.from('\r\n'))
@@ -741,15 +811,16 @@ function elevenLabsTranscribe(apiKey: string, audioBuffer: Buffer, filename: str
 
   if (language && language !== 'auto') {
     parts.push(Buffer.from(
-      `--${boundary}\r\nContent-Disposition: form-data; name="language_code"\r\n\r\n${language}\r\n`
+      `--${boundary}\r\nContent-Disposition: form-data; name="language_code"\r\n\r\n${safeLanguage}\r\n`
     ))
   }
 
   if (vocabulary) {
     const keyterms = vocabulary.split(',').map((t) => t.trim()).filter(Boolean)
     for (const term of keyterms) {
+      const safeTerm = sanitizeMultipartField(term)
       parts.push(Buffer.from(
-        `--${boundary}\r\nContent-Disposition: form-data; name="keyterms"\r\n\r\n${term}\r\n`
+        `--${boundary}\r\nContent-Disposition: form-data; name="keyterms"\r\n\r\n${safeTerm}\r\n`
       ))
     }
   }
@@ -859,9 +930,11 @@ function elevenLabsTranscribeDiarized(
 ): Promise<DiarizedResult> {
   const boundary = `----Whisperio${Date.now()}`
   const parts: Buffer[] = []
+  const safeFilename = sanitizeMultipartField(filename)
+  const safeLanguage = sanitizeMultipartField(language)
 
   parts.push(Buffer.from(
-    `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="${filename}"\r\nContent-Type: audio/webm\r\n\r\n`
+    `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="${safeFilename}"\r\nContent-Type: audio/webm\r\n\r\n`
   ))
   parts.push(audioBuffer)
   parts.push(Buffer.from('\r\n'))
@@ -875,15 +948,16 @@ function elevenLabsTranscribeDiarized(
 
   if (language && language !== 'auto') {
     parts.push(Buffer.from(
-      `--${boundary}\r\nContent-Disposition: form-data; name="language_code"\r\n\r\n${language}\r\n`
+      `--${boundary}\r\nContent-Disposition: form-data; name="language_code"\r\n\r\n${safeLanguage}\r\n`
     ))
   }
 
   if (vocabulary) {
     const keyterms = vocabulary.split(',').map((t) => t.trim()).filter(Boolean)
     for (const term of keyterms) {
+      const safeTerm = sanitizeMultipartField(term)
       parts.push(Buffer.from(
-        `--${boundary}\r\nContent-Disposition: form-data; name="keyterms"\r\n\r\n${term}\r\n`
+        `--${boundary}\r\nContent-Disposition: form-data; name="keyterms"\r\n\r\n${safeTerm}\r\n`
       ))
     }
   }
@@ -990,9 +1064,11 @@ function openAITranscribeDiarized(
 ): Promise<DiarizedResult> {
   const boundary = `----Whisperio${Date.now()}`
   const parts: Buffer[] = []
+  const safeFilename = sanitizeMultipartField(filename)
+  const safeLanguage = sanitizeMultipartField(language)
 
   parts.push(Buffer.from(
-    `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="${filename}"\r\nContent-Type: audio/webm\r\n\r\n`
+    `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="${safeFilename}"\r\nContent-Type: audio/webm\r\n\r\n`
   ))
   parts.push(audioBuffer)
   parts.push(Buffer.from('\r\n'))
@@ -1006,7 +1082,7 @@ function openAITranscribeDiarized(
 
   if (language && language !== 'auto') {
     parts.push(Buffer.from(
-      `--${boundary}\r\nContent-Disposition: form-data; name="language"\r\n\r\n${language}\r\n`
+      `--${boundary}\r\nContent-Disposition: form-data; name="language"\r\n\r\n${safeLanguage}\r\n`
     ))
   }
 

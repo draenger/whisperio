@@ -170,29 +170,43 @@ final class RecordingsStore: ObservableObject {
         guard iCloudResumeAvailable, !resumeInFlight else { return }
         guard FileManager.default.ubiquityIdentityToken != nil else { return }
         resumeInFlight = true
-        defer { resumeInFlight = false }
-        do {
-            try migrateCurrentLibraryToCloud()
-        } catch {
-            Self.log.error("Auto-resume iCloud sync failed: \(error.localizedDescription)")
+        // The migration below now does its actual blocking work (CloudKit container stand-up)
+        // off the main actor via `Task.detached`, so it has to be awaited from a `Task` here
+        // rather than called synchronously — this closure itself stays synchronous because it's
+        // invoked straight from `MainActor.assumeIsolated` in the notification observer above.
+        Task { @MainActor in
+            do {
+                try await migrateCurrentLibraryToCloud()
+            } catch {
+                Self.log.error("Auto-resume iCloud sync failed: \(error.localizedDescription)")
+            }
+            resumeInFlight = false
+            updateICloudResumeAvailability()
         }
-        updateICloudResumeAvailability()
     }
 
     /// Promote the current library into the iCloud-backed SwiftData store and switch the live
     /// backend over immediately. Callers typically pair this with `settings.storageMode = .iCloud`.
     /// The caller chooses whether to surface the success/failure to the user.
+    ///
+    /// `async` because standing up the CloudKit container (`RecordingSyncStore.buildContainer`)
+    /// is genuine blocking I/O — schema registration plus a zone/subscription bootstrap — that
+    /// would otherwise run atomically on the main thread for the whole migration. It's built in a
+    /// `Task.detached` and only the (cheap) wrapping of the finished container back into a
+    /// `RecordingSyncStore` happens on the MainActor.
     @MainActor
-    func migrateCurrentLibraryToCloud() throws {
+    func migrateCurrentLibraryToCloud() async throws {
         guard #available(iOS 17, macOS 14, *) else { return }
         // Same on-disk file the convenience init opens (`RecordingSync.storeURL()`), not the
         // unnamed-config default — otherwise this migration would collide with
         // `DigestSyncStore`'s cache file on the shared `default.store` path.
-        let cloudConfig = ModelConfiguration(
-            url: try RecordingSync.storeURL(),
-            cloudKitDatabase: .private(RecordingSyncStore.cloudKitContainerID)
-        )
-        let cloudStore = try RecordingSyncStore(configuration: cloudConfig, isCloudBacked: true)
+        let url = try RecordingSync.storeURL()
+        let containerID = RecordingSyncStore.cloudKitContainerID
+        let container = try await Task.detached(priority: .userInitiated) {
+            let cloudConfig = ModelConfiguration(url: url, cloudKitDatabase: .private(containerID))
+            return try RecordingSyncStore.buildContainer(configuration: cloudConfig)
+        }.value
+        let cloudStore = RecordingSyncStore(container: container, ownStoreURL: url, isCloudBacked: true)
         queueSync(.migrate, title: "Library migration",
                   detail: "Moving local library to CloudKit", recordID: nil)
         cloudStore.add(items)

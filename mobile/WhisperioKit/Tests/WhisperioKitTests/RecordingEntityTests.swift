@@ -232,6 +232,44 @@ struct RecordingEntityTests {
         #expect(store.items.isEmpty)
     }
 
+    // Regression guard for the "moveLibraryToCloud blocks the main thread" fix
+    // (FB-whisperio-movelibrarytocloud-blocks-main-thread): `migrateCurrentLibraryToCloud()`
+    // only actually moves work off the main thread if `RecordingSyncStore.buildContainer` is
+    // genuinely callable off the MainActor and its result wraps into a fully working store via
+    // `init(container:ownStoreURL:isCloudBacked:)`. If `buildContainer` regressed back to being
+    // MainActor-isolated (e.g. someone inlines the `ModelContainer(...)` call back into the
+    // designated init instead of keeping it as a free-standing `nonisolated` function), this
+    // `Task.detached` call stops compiling — the strongest guarantee available without an
+    // Instruments/XCTest main-thread-hang harness (unavailable on this platform). The subsequent
+    // assertions confirm the off-actor-built container behaves identically to one built
+    // synchronously via `init(configuration:isCloudBacked:)`.
+    @available(iOS 17, macOS 14, *)
+    @Test func buildContainerRunsOffMainActorAndWrapsIntoWorkingStore() async throws {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("buildContainerOffMainActor-\(UUID().uuidString).store")
+        defer {
+            for suffix in ["", "-shm", "-wal"] {
+                try? FileManager.default.removeItem(atPath: url.path + suffix)
+            }
+        }
+        let config = ModelConfiguration(url: url)
+
+        // Off-MainActor by construction: `Task.detached` runs its closure on the cooperative
+        // thread pool, never hopping to the main actor. If SwiftData can't stand up a store in
+        // this environment, skip rather than fail (mirrors the in-memory tests above).
+        guard let container = try? await Task.detached(priority: .userInitiated) {
+            try RecordingSyncStore.buildContainer(configuration: config)
+        }.value else { return }
+
+        let store = await RecordingSyncStore(container: container, ownStoreURL: url, isCloudBacked: false)
+        let id = UUID()
+        await store.add(Recording(id: id, filename: "a.caf", duration: 1, transcription: "off-actor"))
+        let items = await store.items
+        #expect(items.count == 1)
+        #expect(items.first?.id == id)
+        #expect(items.first?.transcription == "off-actor")
+    }
+
     // Last-writer-wins: a stale/out-of-order re-add of the same id (older `updatedAt`) must NOT
     // clobber a newer stored write, while a genuinely newer write does win.
     @available(iOS 17, macOS 14, *)
@@ -257,5 +295,46 @@ struct RecordingEntityTests {
         store.add(Recording(id: id, filename: "a.caf", duration: 1,
                             transcription: "newest", updatedAt: base.addingTimeInterval(200)))
         #expect(store.items.first?.transcription == "newest")
+    }
+
+    // Regression: a migration whose import succeeds (rows built in the context) but whose
+    // `save()` fails must NOT set `migratedV2` — otherwise the failed write is never retried
+    // and the recording history is gone for good. `allowsSave: false` is SwiftData's own
+    // fault-injection lever for a read-only store, which is what lets this run headlessly (no
+    // real disk-full / CloudKit-schema failure needed) — every `context.save()` on such a
+    // configuration fails, which is exactly the condition this test needs to exercise.
+    // Mirrors DigestSyncStoreTests.migrationDoesNotSetFlagWhenSaveFails.
+    @available(iOS 17, macOS 14, *)
+    @MainActor
+    @Test func migrationDoesNotSetFlagWhenSaveFails() throws {
+        let defaults = UserDefaults.standard
+        let flagKey = RecordingSync.migratedFlagKey
+        let originallySet = defaults.bool(forKey: flagKey)
+        defer { if !originallySet { defaults.removeObject(forKey: flagKey) } }
+        defaults.set(false, forKey: flagKey)
+
+        let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        let jsonURL = docs.appendingPathComponent("recordings.json")
+        let hadExistingFile = FileManager.default.fileExists(atPath: jsonURL.path)
+        var existingBackup: Data?
+        if hadExistingFile { existingBackup = try? Data(contentsOf: jsonURL) }
+        defer {
+            if let existingBackup {
+                try? existingBackup.write(to: jsonURL)
+            } else if !hadExistingFile {
+                try? FileManager.default.removeItem(at: jsonURL)
+            }
+        }
+
+        let seeded = [Recording(id: UUID(), filename: "a.caf", duration: 1, transcription: "seeded")]
+        try JSONEncoder().encode(seeded).write(to: jsonURL)
+
+        let config = ModelConfiguration(isStoredInMemoryOnly: true, allowsSave: false)
+        guard let store = try? RecordingSyncStore(configuration: config) else { return }
+
+        // The import attempt ran, but the store can't persist it — the flag must stay unset so a
+        // later launch (against a writable store) retries the import instead of skipping it.
+        #expect(!defaults.bool(forKey: flagKey))
+        #expect(store.lastErrorMessage != nil)
     }
 }

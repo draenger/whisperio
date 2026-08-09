@@ -85,17 +85,80 @@ function loadStore(): UsageStore {
   }
 }
 
+// Transient rename errors seen on Windows when another process (AV scanner,
+// Explorer, a concurrent reader) briefly holds a lock on the just-written
+// temp file or the destination path right after a prior rename. These are
+// not real failures — the lock clears within milliseconds — so they're worth
+// a few short retries before giving up and falling through to the fail-soft
+// catch in recordLLM/recordSTT.
+const TRANSIENT_RENAME_ERROR_CODES = new Set(['EPERM', 'EBUSY', 'EACCES'])
+const RENAME_RETRY_ATTEMPTS = 5
+const RENAME_RETRY_DELAY_MS = 15
+
+/** Synchronous sleep — saveStore/renameSync are synchronous by design (see
+ * atomic-write comment above), so retrying needs a blocking backoff rather
+ * than an async one that would require threading Promises through every
+ * caller of saveStore(). The delay is short (tens of ms, a handful of
+ * attempts) so the added latency is negligible next to the rename itself. */
+function sleepSync(ms: number): void {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms)
+}
+
+function isTransientRenameError(err: unknown): boolean {
+  return (
+    typeof err === 'object' &&
+    err !== null &&
+    'code' in err &&
+    TRANSIENT_RENAME_ERROR_CODES.has(String((err as { code: unknown }).code))
+  )
+}
+
 /**
  * Atomic write, mirroring settingsManager.saveSettings: serialize to a temp
  * file then rename over the target (atomic on the same volume) so a crash
  * mid-write leaves the previous, valid usage.json intact instead of a
  * truncated one.
+ *
+ * renameSync retries a few times with a short backoff on a transient
+ * Windows file-lock error (EPERM/EBUSY/EACCES) before giving up — without
+ * this, back-to-back saves queued through `enqueue()` above (zero gap
+ * between them by design) can lose an update to a rename that fails once
+ * and is never retried, even though the lock clears a few milliseconds
+ * later. The final attempt's error still propagates to the caller's
+ * fail-soft catch if every retry is exhausted.
  */
 function saveStore(store: UsageStore): void {
   const filePath = getUsagePath()
   const tmpPath = `${filePath}.${process.pid}.${Date.now()}.tmp`
   writeFileSync(tmpPath, JSON.stringify(store, null, 2), 'utf-8')
-  renameSync(tmpPath, filePath)
+
+  for (let attempt = 1; attempt <= RENAME_RETRY_ATTEMPTS; attempt++) {
+    try {
+      renameSync(tmpPath, filePath)
+      return
+    } catch (err) {
+      const isLastAttempt = attempt === RENAME_RETRY_ATTEMPTS
+      if (isLastAttempt || !isTransientRenameError(err)) throw err
+      sleepSync(RENAME_RETRY_DELAY_MS * attempt)
+    }
+  }
+}
+
+// Serializes loadStore -> mutate -> saveStore across overlapping recordLLM/
+// recordSTT calls (mirrors recordingStore.ts's mutationQueue/enqueue
+// pattern). Without this, two calls racing between their own loadStore() and
+// saveStore() clobber each other — the second writer's saveStore overwrites
+// the first writer's in-memory bucket increment with a stale snapshot, so
+// one of the two usage updates is silently lost.
+let mutationQueue: Promise<unknown> = Promise.resolve()
+
+function enqueue<T>(fn: () => T): Promise<T> {
+  const result = mutationQueue.then(() => fn())
+  mutationQueue = result.then(
+    () => undefined,
+    () => undefined
+  )
+  return result
 }
 
 function ensureBucket(store: UsageStore, provider: string, month: string): ProviderMonthlyUsage {
@@ -186,21 +249,23 @@ function estimateLLMCostUsd(opts: RecordLLMOptions): number {
  * runCleanupCore after `provider.complete()` resolves, via the request's
  * `onUsage` callback. Never throws.
  */
-export function recordLLM(opts: RecordLLMOptions): void {
-  try {
-    const store = loadStore()
-    const bucket = ensureBucket(store, opts.provider, monthKey())
-    bucket.requests += 1
-    bucket.inputTokens += opts.inputTokens ?? 0
-    bucket.outputTokens += opts.outputTokens ?? 0
-    bucket.estimatedCostUsd += estimateLLMCostUsd(opts)
-    saveStore(store)
-  } catch (err) {
-    console.error(
-      '[Whisperio] usageTracker.recordLLM failed (non-fatal, usage not recorded):',
-      err instanceof Error ? err.message : String(err)
-    )
-  }
+export function recordLLM(opts: RecordLLMOptions): Promise<void> {
+  return enqueue(() => {
+    try {
+      const store = loadStore()
+      const bucket = ensureBucket(store, opts.provider, monthKey())
+      bucket.requests += 1
+      bucket.inputTokens += opts.inputTokens ?? 0
+      bucket.outputTokens += opts.outputTokens ?? 0
+      bucket.estimatedCostUsd += estimateLLMCostUsd(opts)
+      saveStore(store)
+    } catch (err) {
+      console.error(
+        '[Whisperio] usageTracker.recordLLM failed (non-fatal, usage not recorded):',
+        err instanceof Error ? err.message : String(err)
+      )
+    }
+  })
 }
 
 // ---------------------------------------------------------------------------
@@ -275,22 +340,24 @@ function estimateSTTCost(opts: RecordSTTOptions): { costUsd: number; credits: nu
  * even though their cost is always 0. Called from transcribe.ts after each
  * successful `transcribeWithProvider()`. Never throws.
  */
-export function recordSTT(opts: RecordSTTOptions): void {
-  try {
-    const store = loadStore()
-    const bucket = ensureBucket(store, opts.provider, monthKey())
-    bucket.requests += 1
-    bucket.audioSeconds += Math.max(0, opts.audioSeconds || 0)
-    const { costUsd, credits } = estimateSTTCost(opts)
-    bucket.estimatedCostUsd += costUsd
-    bucket.credits += credits
-    saveStore(store)
-  } catch (err) {
-    console.error(
-      '[Whisperio] usageTracker.recordSTT failed (non-fatal, usage not recorded):',
-      err instanceof Error ? err.message : String(err)
-    )
-  }
+export function recordSTT(opts: RecordSTTOptions): Promise<void> {
+  return enqueue(() => {
+    try {
+      const store = loadStore()
+      const bucket = ensureBucket(store, opts.provider, monthKey())
+      bucket.requests += 1
+      bucket.audioSeconds += Math.max(0, opts.audioSeconds || 0)
+      const { costUsd, credits } = estimateSTTCost(opts)
+      bucket.estimatedCostUsd += costUsd
+      bucket.credits += credits
+      saveStore(store)
+    } catch (err) {
+      console.error(
+        '[Whisperio] usageTracker.recordSTT failed (non-fatal, usage not recorded):',
+        err instanceof Error ? err.message : String(err)
+      )
+    }
+  })
 }
 
 // ---------------------------------------------------------------------------
