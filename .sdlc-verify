@@ -1,0 +1,2 @@
+# Desktop suite = the repo proof
+npm --prefix desktop test
