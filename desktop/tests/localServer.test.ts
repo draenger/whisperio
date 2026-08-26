@@ -438,6 +438,36 @@ describe('localServer', () => {
       // append a second one on top of it.
       expect(updates).toEqual([{ status: 'error', error: 'spawn failed' }])
     })
+
+    // REGRESSION: a stop the USER asked for is not a failure. stopServer()
+    // settles the status to 'stopped', but the kill it performs makes the
+    // still-pending start's process exit — and the exit handler used to
+    // overwrite that honest 'stopped' with 'error' plus a nonsense
+    // 'Server exited with code null' surfaced to the UI.
+    it('reports a stop requested mid-start as stopped, not as an error', async () => {
+      const mod = await freshModule()
+      mockExistsSync.mockReturnValue(true)
+      const proc = makeFakeProc()
+      mockExecFile.mockReturnValue(proc)
+
+      const startP = mod.startServer('model.bin')
+      expect(mod.getServerStatus().status).toBe('starting')
+
+      const updates: Array<{ status: string; error?: string }> = []
+      mod.setServerStatusCallback((s) => updates.push({ status: s.status, error: s.error }))
+
+      // User hits Stop while the model is still loading; the kill makes the
+      // process exit with no code.
+      mod.stopServer()
+      proc.emit('exit', null)
+
+      // The pending start still settles (no hang), but as a stop, not a crash.
+      await expect(startP).rejects.toThrow(/stopped before it finished starting/)
+      expect(mod.getServerStatus().status).toBe('stopped')
+      expect(updates).toEqual([{ status: 'stopped', error: undefined }])
+
+      await retrySuccessfully(mod)
+    })
   })
 
   describe('stopServer', () => {

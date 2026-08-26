@@ -249,6 +249,15 @@ export async function startServer(modelFilename: string): Promise<void> {
         if (serverStatus === 'running') {
           serverStatus = 'stopped'
           emitStatus()
+        } else if (serverStatus === 'stopped') {
+          // stopServer() already settled the status deliberately: the user hit
+          // Stop while the server was still starting, and that kill is what
+          // produced this exit. Falling through to the branch below overwrote
+          // the honest 'stopped' with 'error' and pushed a bogus
+          // `Server exited with code null` to the UI for something the user
+          // asked for. Leave the status alone -- but still settle the pending
+          // startServer() promise so its caller cannot hang forever.
+          if (!started) reject(new Error('Server was stopped before it finished starting.'))
         } else if (!started) {
           serverStatus = 'error'
           emitStatus(`Server exited with code ${code}`)
