@@ -12,6 +12,11 @@ vi.mock('electron', () => ({
 // writeFileSync(tmp) + renameSync(tmp -> final) actually round-trips.
 const fakeFiles = new Map<string, string>()
 
+// When set, renameSync throws this instead of moving the file — lets a test
+// drive the "atomic write failed halfway" path (locked target on Windows,
+// cross-volume userData, full disk).
+let renameFailure: Error | null = null
+
 vi.mock('fs', () => ({
   existsSync: (path: string) => fakeFiles.has(path),
   readFileSync: (path: string) => {
@@ -23,9 +28,14 @@ vi.mock('fs', () => ({
     fakeFiles.set(path, content)
   },
   renameSync: (oldPath: string, newPath: string) => {
+    if (renameFailure) throw renameFailure
     const content = fakeFiles.get(oldPath)
     fakeFiles.delete(oldPath)
     if (content !== undefined) fakeFiles.set(newPath, content)
+  },
+  unlinkSync: (path: string) => {
+    if (!fakeFiles.has(path)) throw new Error(`ENOENT: no such file, unlink '${path}'`)
+    fakeFiles.delete(path)
   }
 }))
 
@@ -43,6 +53,7 @@ const USAGE_PATH = '/mock/userData/usage.json'
 describe('usageTracker', () => {
   beforeEach(() => {
     fakeFiles.clear()
+    renameFailure = null
     vi.clearAllMocks()
   })
 
@@ -216,6 +227,51 @@ describe('usageTracker', () => {
         throw new Error('not running inside Electron')
       })
       expect(() => resetUsage()).not.toThrow()
+    })
+  })
+
+  describe('atomic save cleanup', () => {
+    // join() uses the host separator, so match on the file name rather than a
+    // hardcoded posix path (USAGE_PATH) — these assertions are about *which*
+    // files exist, not where userData lives.
+    const tmpFiles = (): string[] => [...fakeFiles.keys()].filter((f) => f.endsWith('.tmp'))
+    const storeFiles = (): string[] => [...fakeFiles.keys()].filter((f) => f.endsWith('usage.json'))
+
+    it('removes the temp file when renameSync fails, instead of leaking it into userData', () => {
+      renameFailure = new Error('EPERM: operation not permitted, rename')
+      const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+      // Fail-soft contract still holds: the caller sees no throw...
+      expect(() => recordLLM({ provider: 'openai', inputTokens: 1000, outputTokens: 100 })).not.toThrow()
+      // ...the original rename error is what got logged (cleanup didn't mask it)...
+      expect(errSpy).toHaveBeenCalled()
+      expect(String(errSpy.mock.calls[0].join(' '))).toMatch(/EPERM/)
+      // ...and no usage.json.<pid>.<ts>.tmp is left behind.
+      expect(tmpFiles()).toEqual([])
+      expect(storeFiles()).toEqual([])
+
+      errSpy.mockRestore()
+    })
+
+    it('leaves no temp file behind on a successful save either', () => {
+      recordSTT({ provider: 'openai', audioSeconds: 60 })
+      expect(tmpFiles()).toEqual([])
+      expect(storeFiles()).toHaveLength(1)
+      expect([...fakeFiles.keys()]).toHaveLength(1)
+    })
+
+    it('keeps the previous usage.json intact when a later save fails', () => {
+      recordLLM({ provider: 'openai', inputTokens: 1_000_000, outputTokens: 0 })
+      const storePath = storeFiles()[0]
+      const before = fakeFiles.get(storePath)
+
+      renameFailure = new Error('ENOSPC: no space left on device, rename')
+      const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+      recordLLM({ provider: 'openai', inputTokens: 1_000_000, outputTokens: 0 })
+      errSpy.mockRestore()
+
+      expect(fakeFiles.get(storePath)).toBe(before)
+      expect(tmpFiles()).toEqual([])
     })
   })
 

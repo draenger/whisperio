@@ -5,6 +5,10 @@ import { EventEmitter } from 'events'
 
 const testDir = join(tmpdir(), `whisperio-server-test-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`)
 
+// The exact line whisper.cpp's server prints once its HTTP listener is bound —
+// the ONLY output localServer treats as "ready" (see READY_LINE_RE).
+const READY_LINE = 'whisper server listening at http://127.0.0.1:8178\n'
+
 // --- Electron mock ---
 const mockNetRequest = vi.fn()
 vi.mock('electron', () => ({
@@ -166,7 +170,7 @@ describe('localServer', () => {
       mockExecFile.mockReturnValue(proc)
 
       const startP = mod.startServer('model.bin')
-      proc.stdout.emit('data', 'whisper server listening on port')
+      proc.stdout.emit('data', READY_LINE)
       await startP
       expect(mod.getServerStatus().status).toBe('running')
 
@@ -188,7 +192,7 @@ describe('localServer', () => {
       await expect(mod.startServer('model.bin')).rejects.toThrow(/Model not found: model.bin/)
     })
 
-    it('resolves to running on "listening" output and fires the status callback', async () => {
+    it('resolves to running on the whisper-server ready line and fires the status callback', async () => {
       setPlatform('win32')
       const mod = await freshModule()
       mockExistsSync.mockReturnValue(true)
@@ -203,7 +207,7 @@ describe('localServer', () => {
       // before resolution the status should be 'starting'
       expect(mod.getServerStatus().status).toBe('starting')
 
-      proc.stdout.emit('data', 'server is listening')
+      proc.stdout.emit('data', READY_LINE)
       await startP
 
       const status = mod.getServerStatus()
@@ -231,8 +235,56 @@ describe('localServer', () => {
       mockExecFile.mockReturnValue(proc)
 
       const startP = mod.startServer('model.bin')
-      proc.stderr.emit('data', 'model loaded')
-      proc.stdout.emit('data', 'now ready') // ignored, already started
+      proc.stderr.emit('data', READY_LINE)
+      proc.stdout.emit('data', READY_LINE) // ignored, already started
+      await startP
+      expect(mod.getServerStatus().status).toBe('running')
+      mod.stopServer()
+    })
+
+    it('ignores incidental "running"/"ready" chatter and only starts on the real ready line', async () => {
+      setPlatform('win32')
+      const mod = await freshModule()
+      mockExistsSync.mockReturnValue(true)
+      const proc = makeFakeProc()
+      mockExecFile.mockReturnValue(proc)
+
+      let resolved = false
+      const startP = mod.startServer('model.bin').then(() => { resolved = true })
+
+      // Real whisper.cpp startup chatter that the old loose substring check
+      // ('running' / 'ready' / 'listening' anywhere) would have accepted.
+      proc.stderr.emit('data', 'whisper_init_state: kv self size = 12.00 MB\n')
+      proc.stdout.emit('data', 'ggml backend CPU is running\n')
+      proc.stderr.emit('data', 'loading model from C:\models\ready-v3.bin\n')
+      proc.stdout.emit('data', 'warming up: model loaded, not listening yet\n')
+      await new Promise((r) => setImmediate(r))
+
+      expect(resolved).toBe(false)
+      expect(mod.getServerStatus().status).toBe('starting')
+
+      // Now the genuine ready line.
+      proc.stdout.emit('data', READY_LINE)
+      await startP
+      expect(resolved).toBe(true)
+      expect(mod.getServerStatus().status).toBe('running')
+      mod.stopServer()
+    })
+
+    it('matches the ready line even when it is split across stdout chunks', async () => {
+      setPlatform('win32')
+      const mod = await freshModule()
+      mockExistsSync.mockReturnValue(true)
+      const proc = makeFakeProc()
+      mockExecFile.mockReturnValue(proc)
+
+      const startP = mod.startServer('model.bin')
+      // A pipe read can cut the line anywhere — neither half matches alone.
+      proc.stdout.emit('data', 'whisper server list')
+      await new Promise((r) => setImmediate(r))
+      expect(mod.getServerStatus().status).toBe('starting')
+
+      proc.stdout.emit('data', 'ening at http://127.0.0.1:8178\n')
       await startP
       expect(mod.getServerStatus().status).toBe('running')
       mod.stopServer()
@@ -292,7 +344,7 @@ describe('localServer', () => {
       mockExecFile.mockReturnValue(proc)
 
       const startP = mod.startServer('model.bin')
-      proc.stdout.emit('data', 'listening')
+      proc.stdout.emit('data', READY_LINE)
       await startP
       expect(mod.getServerStatus().status).toBe('running')
 
@@ -311,7 +363,7 @@ describe('localServer', () => {
       mockExecFile.mockReturnValue(proc)
 
       const startP = mod.startServer('model.bin')
-      proc.stdout.emit('data', 'listening')
+      proc.stdout.emit('data', READY_LINE)
       await startP
 
       const updates: Array<{ status: string; model: string | null }> = []
@@ -400,28 +452,61 @@ describe('localServer', () => {
       expect(mockUnlinkSync).toHaveBeenCalled()
     })
 
-    it('follows a 302 redirect then downloads', async () => {
-      let call = 0
-      mockNetRequest.mockImplementation(() => {
-        const req = new EventEmitter() as EventEmitter & { end: () => void }
-        req.end = vi.fn(() => {
-          setImmediate(() => {
-            if (call++ === 0) {
-              const redirect = makeResponse(302, { location: 'https://redirected/file.zip' })
-              req.emit('response', redirect)
-            } else {
-              const ok = makeResponse(200)
-              req.emit('response', ok)
-              ok.emit('end')
-            }
-          })
-        })
-        return req
+    it("delegates redirects to net.request({ redirect: 'follow' }) instead of chasing them by hand", async () => {
+      // The GitHub release URL always redirects to a CDN host; Electron's net
+      // stack follows that internally, so 'response' only ever fires for the
+      // final hop. A 3xx reaching the handler means the chain genuinely failed
+      // and must be reported, not re-requested by hand (which used to loop
+      // through downloadFile a second time).
+      wireNet(() => makeResponse(302, { location: 'https://redirected/file.zip' }))
+
+      const mod = await freshModule()
+      await expect(mod.downloadServerBinary()).rejects.toThrow(/HTTP 302/)
+      expect(mockNetRequest).toHaveBeenCalledTimes(1)
+      const [opts] = mockNetRequest.mock.calls[0] as [{ url: string; redirect: string }]
+      expect(opts.redirect).toBe('follow')
+      expect(opts.url).toMatch(/whisper-bin-x64\.zip$/)
+    })
+
+    it('fails loudly when extraction succeeds but the exe never appears', async () => {
+      // powershell's per-entry copy loop exits 0 even when it matched nothing
+      // (e.g. the release archive got a new layout) — the missing exe has to
+      // surface here, not later as an opaque spawn ENOENT.
+      wireNet(() => {
+        const res = makeResponse(200)
+        setImmediate(() => res.emit('end'))
+        return res
+      })
+      mockExistsSync.mockImplementation((path: string) => !String(path).endsWith('whisper-server.exe'))
+
+      const mod = await freshModule()
+      await expect(mod.downloadServerBinary()).rejects.toThrow(
+        /Extraction reported success but whisper-server\.exe is missing/
+      )
+    })
+
+    it('returns the exe path when extraction really did produce the exe', async () => {
+      // Same flow as above, but the exe materializes once powershell has run —
+      // the verification must not reject the legitimate happy path.
+      let extracted = false
+      wireNet(() => {
+        const res = makeResponse(200)
+        setImmediate(() => res.emit('end'))
+        return res
+      })
+      mockExistsSync.mockImplementation((path: string) =>
+        String(path).endsWith('whisper-server.exe') ? extracted : true
+      )
+      mockExecFile.mockImplementation((cmd: string, _args: unknown[], cb?: (err: Error | null) => void) => {
+        if (cmd === 'powershell' && cb) {
+          extracted = true
+          setImmediate(() => cb(null))
+        }
+        return makeFakeProc()
       })
 
       const mod = await freshModule()
       await expect(mod.downloadServerBinary()).resolves.toMatch(/whisper-server\.exe$/)
-      expect(mockNetRequest).toHaveBeenCalledTimes(2)
     })
 
     it('rejects on non-200 status', async () => {
@@ -473,13 +558,14 @@ describe('localServer', () => {
     })
 
     it('startServer downloads the binary when the exe is absent', async () => {
-      // exe absent (triggers download), then model present
+      // exe absent (triggers download) until powershell extracts it, then present
       let exeChecks = 0
+      let extracted = false
       mockExistsSync.mockImplementation((p: string) => {
         const s = String(p)
         if (s.endsWith('whisper-server.exe')) {
           exeChecks++
-          return false // absent -> triggers downloadServerBinary
+          return extracted // absent -> triggers downloadServerBinary
         }
         return true // dir + model present
       })
@@ -499,6 +585,7 @@ describe('localServer', () => {
       const serverProc = makeFakeProc()
       mockExecFile.mockImplementation((cmd: string, _args: unknown[], cb?: (err: Error | null) => void) => {
         if (cmd === 'powershell' && cb) {
+          extracted = true // the extraction really wrote the exe
           setImmediate(() => cb(null))
           return makeFakeProc()
         }
@@ -510,7 +597,7 @@ describe('localServer', () => {
       // give the async download a chance, then signal listening
       await new Promise((r) => setImmediate(r))
       await new Promise((r) => setImmediate(r))
-      serverProc.stdout.emit('data', 'listening')
+      serverProc.stdout.emit('data', READY_LINE)
       await startP
       expect(mod.getServerStatus().status).toBe('running')
       expect(exeChecks).toBeGreaterThan(0)
@@ -530,7 +617,7 @@ describe('localServer', () => {
         mockExecFile.mockReturnValue(proc)
 
         const startP = mod.startServer('model.bin')
-        proc.stdout.emit('data', 'listening')
+        proc.stdout.emit('data', READY_LINE)
         await startP
         expect(mod.getServerStatus().status).toBe('running')
 
@@ -555,7 +642,7 @@ describe('localServer', () => {
         mockExecFile.mockReturnValue(proc)
 
         const startP = mod.startServer('model.bin')
-        proc.stdout.emit('data', 'listening')
+        proc.stdout.emit('data', READY_LINE)
         await startP
 
         // 90s pass (< TTL), then a transcription request resets the idle clock.

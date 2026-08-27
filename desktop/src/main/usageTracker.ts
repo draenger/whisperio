@@ -25,7 +25,7 @@
 //    re-verify against the vendor's own pricing page before relying on them.
 
 import { app } from 'electron'
-import { readFileSync, writeFileSync, existsSync, renameSync } from 'fs'
+import { readFileSync, writeFileSync, existsSync, renameSync, unlinkSync } from 'fs'
 import { join } from 'path'
 import {
   findCatalogModel,
@@ -90,12 +90,28 @@ function loadStore(): UsageStore {
  * file then rename over the target (atomic on the same volume) so a crash
  * mid-write leaves the previous, valid usage.json intact instead of a
  * truncated one.
+ *
+ * If the rename fails (locked target on Windows, cross-volume userData, full
+ * disk) the temp file is removed in a `finally` — otherwise every failed save
+ * would strand a `usage.json.<pid>.<ts>.tmp` next to the real store and slowly
+ * litter userData. The unlink is best-effort and swallowed so it can never
+ * mask the original write/rename error the caller needs to log.
  */
 function saveStore(store: UsageStore): void {
   const filePath = getUsagePath()
   const tmpPath = `${filePath}.${process.pid}.${Date.now()}.tmp`
-  writeFileSync(tmpPath, JSON.stringify(store, null, 2), 'utf-8')
-  renameSync(tmpPath, filePath)
+  let renamed = false
+  try {
+    writeFileSync(tmpPath, JSON.stringify(store, null, 2), 'utf-8')
+    renameSync(tmpPath, filePath)
+    renamed = true
+  } finally {
+    // On success the temp path no longer exists (rename consumed it); only
+    // clean up when it may still be there.
+    if (!renamed) {
+      try { unlinkSync(tmpPath) } catch { /* best-effort */ }
+    }
+  }
 }
 
 function ensureBucket(store: UsageStore, provider: string, month: string): ProviderMonthlyUsage {
