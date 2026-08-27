@@ -589,9 +589,14 @@ describe('isProviderConfigured edges', () => {
     vi.clearAllMocks()
   })
 
-  it('treats openai as configured via openaiBaseUrl even without api key, then fails at key check', async () => {
-    // openai is "configured" by base url, so chain keeps it; but transcribeWithProvider
-    // requires an apiKey for openai provider -> throws missing-key error.
+  // REGRESSION: openaiBaseUrl does NOT configure the 'openai' provider. The
+  // openai branch of transcribeWithProvider() hardcodes api.openai.com and
+  // never reads that setting (it belongs to 'selfhosted'), so counting it as
+  // "configured" kept a guaranteed-to-fail, keyless openai in the chain.
+  it('does not treat openaiBaseUrl alone as a configured openai, but still surfaces the key error when it is the only provider', async () => {
+    // Chain is ['openai'] and nothing in it is configured, so the "keep the
+    // first provider to get a proper error" fallback still reports the real
+    // problem: the missing API key.
     mockLoadSettings.mockReturnValue({
       sttProvider: 'openai',
       openaiApiKey: '',
@@ -601,6 +606,68 @@ describe('isProviderConfigured edges', () => {
     await expect(transcribeAudio(Buffer.from('audio'), 'rec.webm')).rejects.toThrow(
       'No OpenAI API key configured'
     )
+  })
+
+  it('drops a keyless openai from the chain even when openaiBaseUrl is set', async () => {
+    // Both providers fail here, so the surfaced error identifies which one the
+    // chain actually STARTED with. Before the fix openaiBaseUrl made the
+    // keyless openai count as configured, it burned the chain's first hop, and
+    // the user got 'No OpenAI API key configured' instead of the real
+    // ElevenLabs failure.
+    mockLoadSettings.mockReturnValue({
+      providerChain: ['openai', 'elevenlabs'],
+      openaiApiKey: '',
+      openaiBaseUrl: 'http://localhost:9000',
+      elevenlabsApiKey: 'xi-test-key',
+      transcriptionPrompt: '',
+      customVocabulary: ''
+    })
+    mockNetRequest.mockReturnValue(createMockNetRequest(500, '{"error":"boom"}'))
+
+    await expect(transcribeAudio(Buffer.from('audio'), 'rec.webm')).rejects.toThrow(
+      'ElevenLabs API error 500'
+    )
+    // openai never reached the network either — the only call is ElevenLabs'.
+    expect(mockNetRequest).toHaveBeenCalledTimes(1)
+    expect(mockNetRequest.mock.calls[0][0]).toMatchObject({
+      url: 'https://api.elevenlabs.io/v1/speech-to-text'
+    })
+  })
+
+  it('still treats an api key alone as a configured openai (no base url needed)', async () => {
+    mockLoadSettings.mockReturnValue({
+      providerChain: ['openai', 'elevenlabs'],
+      openaiApiKey: 'sk-test',
+      elevenlabsApiKey: 'xi-test-key',
+      transcriptionPrompt: '',
+      customVocabulary: ''
+    })
+    mockNetRequest.mockReturnValue(createMockNetRequest(200, JSON.stringify({ text: 'from openai' })))
+
+    await expect(transcribeAudio(Buffer.from('audio'), 'rec.webm')).resolves.toBe('from openai')
+    expect(mockNetRequest).toHaveBeenCalledTimes(1)
+    expect(mockNetRequest.mock.calls[0][0]).toMatchObject({
+      url: 'https://api.openai.com/v1/audio/transcriptions'
+    })
+  })
+
+  it('still treats openaiBaseUrl alone as a configured SELFHOSTED provider', async () => {
+    // Guard against over-correcting: openaiBaseUrl is the self-hosted server
+    // URL, and 'selfhosted' must keep being configured by it with no api key.
+    mockLoadSettings.mockReturnValue({
+      providerChain: ['openai', 'selfhosted'],
+      openaiApiKey: '',
+      openaiBaseUrl: 'http://127.0.0.1:9000',
+      transcriptionPrompt: '',
+      customVocabulary: ''
+    })
+    mockNetRequest.mockReturnValue(createMockNetRequest(200, JSON.stringify({ text: 'from local' })))
+
+    await expect(transcribeAudio(Buffer.from('audio'), 'rec.webm')).resolves.toBe('from local')
+    expect(mockNetRequest).toHaveBeenCalledTimes(1)
+    expect(mockNetRequest.mock.calls[0][0]).toMatchObject({
+      url: 'http://127.0.0.1:9000/inference'
+    })
   })
 
   it('uses providerChain when set, filtering unconfigured providers', async () => {

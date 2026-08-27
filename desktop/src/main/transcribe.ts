@@ -437,7 +437,15 @@ export async function transcribeAudio(
 }
 
 function isProviderConfigured(settings: AppSettings, provider: ProviderId): boolean {
-  if (provider === 'openai') return !!(settings.openaiApiKey || settings.openaiBaseUrl?.trim())
+  // 'openai' means api.openai.com, full stop: the openai branch of
+  // transcribeWithProvider() hardcodes DEFAULT_OPENAI_BASE and never reads
+  // settings.openaiBaseUrl -- that setting belongs to the 'selfhosted'
+  // provider below. Counting a bare base URL as "configured" here kept a
+  // keyless openai in the fallback chain, so the chain burned its first hop
+  // on a provider guaranteed to throw 'No OpenAI API key configured' instead
+  // of going straight to the next configured provider. The api key is the
+  // only thing this branch actually needs.
+  if (provider === 'openai') return !!settings.openaiApiKey
   if (provider === 'elevenlabs') return !!settings.elevenlabsApiKey
   if (provider === 'selfhosted') return !!settings.openaiBaseUrl?.trim()
   if (provider === 'replicate') return !!settings.replicateApiKey

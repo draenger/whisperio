@@ -44,6 +44,28 @@ function clearIdleSweep(): void {
   }
 }
 
+/**
+ * Repair module state after a start attempt blew up.
+ *
+ * `startServer()` flips `serverStatus` to 'starting' before the slow parts
+ * (binary download, model lookup, spawning the process). Any throw after that
+ * point used to leave the status wedged at 'starting' forever, and since the
+ * start guard rejects on 'starting', every later retry failed with a
+ * misleading 'Server is already running.' Reset to 'error' -- a status the
+ * guard accepts -- so a retry can actually run.
+ *
+ * Guarded on 'starting': the process 'error'/'exit' handlers already settle
+ * the status themselves, so this must not emit a second, duplicate update for
+ * failures they have already handled.
+ */
+function failStart(error: unknown): void {
+  if (serverStatus !== 'starting') return
+  clearIdleSweep()
+  serverProcess = null
+  serverStatus = 'error'
+  emitStatus(error instanceof Error ? error.message : String(error))
+}
+
 function startIdleSweep(): void {
   clearIdleSweep()
   lastUsedAt = Date.now()
@@ -153,97 +175,120 @@ export async function startServer(modelFilename: string): Promise<void> {
     throw new Error('Server is already running.')
   }
 
-  const exePath = getServerExePath()
-  if (!existsSync(exePath)) {
+  // Everything below can flip serverStatus to 'starting'; failStart() makes
+  // sure no failure path leaves it there, so retries are never blocked by a
+  // bogus 'Server is already running.'
+  try {
+    const exePath = getServerExePath()
+    if (!existsSync(exePath)) {
+      serverStatus = 'starting'
+      emitStatus()
+      await downloadServerBinary()
+    }
+
+    const modelPath = join(getModelsDir(), modelFilename)
+    if (!existsSync(modelPath)) {
+      throw new Error(`Model not found: ${modelFilename}`)
+    }
+
     serverStatus = 'starting'
+    serverModel = modelFilename
     emitStatus()
-    await downloadServerBinary()
-  }
 
-  const modelPath = join(getModelsDir(), modelFilename)
-  if (!existsSync(modelPath)) {
-    throw new Error(`Model not found: ${modelFilename}`)
-  }
+    await new Promise<void>((resolve, reject) => {
+      const proc = execFile(exePath, [
+        '-m', modelPath,
+        '--port', String(SERVER_PORT),
+        '--host', '127.0.0.1'
+      ])
 
-  serverStatus = 'starting'
-  serverModel = modelFilename
-  emitStatus()
-
-  return new Promise<void>((resolve, reject) => {
-    const proc = execFile(exePath, [
-      '-m', modelPath,
-      '--port', String(SERVER_PORT),
-      '--host', '127.0.0.1'
-    ])
-
-    serverProcess = proc
-    let started = false
-    let assumeRunningTimer: NodeJS.Timeout | null = null
-    const clearAssumeRunningTimer = (): void => {
-      if (assumeRunningTimer) {
-        clearTimeout(assumeRunningTimer)
-        assumeRunningTimer = null
+      serverProcess = proc
+      let started = false
+      let assumeRunningTimer: NodeJS.Timeout | null = null
+      const clearAssumeRunningTimer = (): void => {
+        if (assumeRunningTimer) {
+          clearTimeout(assumeRunningTimer)
+          assumeRunningTimer = null
+        }
       }
-    }
 
-    const checkOutput = (data: string): void => {
-      console.log(`[whisper-server] ${data}`)
-      if (!started && (
-        data.includes('listening') ||
-        data.includes('model loaded') ||
-        data.includes('HTTP server') ||
-        data.includes('running') ||
-        data.includes('ready')
-      )) {
-        started = true
+      const checkOutput = (data: string): void => {
+        console.log(`[whisper-server] ${data}`)
+        if (!started && (
+          data.includes('listening') ||
+          data.includes('model loaded') ||
+          data.includes('HTTP server') ||
+          data.includes('running') ||
+          data.includes('ready')
+        )) {
+          started = true
+          clearAssumeRunningTimer()
+          serverStatus = 'running'
+          startIdleSweep()
+          emitStatus()
+          resolve()
+        }
+      }
+
+      proc.stdout?.on('data', checkOutput)
+      proc.stderr?.on('data', checkOutput)
+
+      proc.on('error', (err) => {
         clearAssumeRunningTimer()
-        serverStatus = 'running'
-        startIdleSweep()
-        emitStatus()
-        resolve()
-      }
-    }
-
-    proc.stdout?.on('data', checkOutput)
-    proc.stderr?.on('data', checkOutput)
-
-    proc.on('error', (err) => {
-      clearAssumeRunningTimer()
-      clearIdleSweep()
-      serverStatus = 'error'
-      serverProcess = null
-      emitStatus(err.message)
-      if (!started) reject(err)
-    })
-
-    proc.on('exit', (code) => {
-      clearAssumeRunningTimer()
-      clearIdleSweep()
-      serverProcess = null
-      if (serverStatus === 'running') {
-        serverStatus = 'stopped'
-        emitStatus()
-      } else if (!started) {
+        clearIdleSweep()
         serverStatus = 'error'
-        emitStatus(`Server exited with code ${code}`)
-        reject(new Error(`Server exited with code ${code}`))
-      }
-    })
+        serverProcess = null
+        emitStatus(err.message)
+        if (!started) reject(err)
+      })
 
-    // If server doesn't report "listening" in 30s, consider it running anyway.
-    // The handle is cleared on success/error/exit so the timer doesn't leak and
-    // fire stale logic up to 30s after the server already settled.
-    assumeRunningTimer = setTimeout(() => {
-      assumeRunningTimer = null
-      if (!started && serverProcess && !serverProcess.killed) {
-        started = true
-        serverStatus = 'running'
-        startIdleSweep()
-        emitStatus()
-        resolve()
-      }
-    }, 30_000)
-  })
+      proc.on('exit', (code) => {
+        clearAssumeRunningTimer()
+        clearIdleSweep()
+        serverProcess = null
+        if (serverStatus === 'running') {
+          serverStatus = 'stopped'
+          emitStatus()
+        } else if (serverStatus === 'stopped') {
+          // stopServer() already settled the status deliberately: the user hit
+          // Stop while the server was still starting, and that kill is what
+          // produced this exit. Falling through to the branch below overwrote
+          // the honest 'stopped' with 'error' and pushed a bogus
+          // `Server exited with code null` to the UI for something the user
+          // asked for. Leave the status alone -- but still settle the pending
+          // startServer() promise so its caller cannot hang forever.
+          if (!started) reject(new Error('Server was stopped before it finished starting.'))
+        } else if (!started) {
+          serverStatus = 'error'
+          emitStatus(`Server exited with code ${code}`)
+          reject(new Error(`Server exited with code ${code}`))
+        }
+      })
+
+      // If server doesn't report "listening" in 30s, consider it running anyway.
+      // The handle is cleared on success/error/exit so the timer doesn't leak and
+      // fire stale logic up to 30s after the server already settled.
+      assumeRunningTimer = setTimeout(() => {
+        assumeRunningTimer = null
+        if (started) return
+        if (serverProcess && !serverProcess.killed) {
+          started = true
+          serverStatus = 'running'
+          startIdleSweep()
+          emitStatus()
+          resolve()
+          return
+        }
+        // No process left to assume anything about (it died without an 'exit'
+        // event, or was killed mid-start). Settle as a failure instead of
+        // hanging forever with serverStatus pinned to 'starting'.
+        reject(new Error('Server failed to start: the process is no longer running.'))
+      }, 30_000)
+    })
+  } catch (err) {
+    failStart(err)
+    throw err
+  }
 }
 
 export function stopServer(): void {

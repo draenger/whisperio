@@ -302,6 +302,174 @@ describe('localServer', () => {
     })
   })
 
+  // --- REGRESSION (startServer failure paths) ---------------------------
+  // startServer() flips serverStatus to 'starting' BEFORE the slow work (binary
+  // download, model lookup, spawning the process), and its own guard rejects
+  // whenever the status is 'starting'. Any throw after that flip used to pin the
+  // module at 'starting' forever, so every later attempt died with a misleading
+  // 'Server is already running.' — the local server could never be retried
+  // without restarting the app. Each test below drives one failure path and
+  // asserts (a) the status is no longer 'starting' and (b) a retry is accepted.
+  describe('startServer failure paths reset the status so retries work', () => {
+    beforeEach(() => {
+      setPlatform('win32')
+    })
+
+    /** Drive a successful start on `mod` and assert it reached 'running'. */
+    async function retrySuccessfully(mod: LocalServerModule): Promise<void> {
+      mockExistsSync.mockReturnValue(true)
+      const proc = makeFakeProc()
+      mockExecFile.mockReturnValue(proc)
+      const retry = mod.startServer('model.bin')
+      proc.stdout.emit('data', 'listening')
+      await retry
+      expect(mod.getServerStatus().status).toBe('running')
+      mod.stopServer()
+    }
+
+    it('resets after the binary download fails, so the next attempt is not "already running"', async () => {
+      const mod = await freshModule()
+      // exe absent -> the download branch runs (and sets status 'starting')
+      mockExistsSync.mockImplementation((p: string) => !String(p).endsWith('whisper-server.exe'))
+      mockNetRequest.mockImplementation(() => {
+        const req = new EventEmitter() as EventEmitter & { end: () => void }
+        req.end = vi.fn(() => {
+          setImmediate(() => req.emit('error', new Error('network down')))
+        })
+        return req
+      })
+
+      await expect(mod.startServer('model.bin')).rejects.toThrow(/network down/)
+      expect(mod.getServerStatus().status).toBe('error')
+
+      await retrySuccessfully(mod)
+    })
+
+    it('resets when the model is missing after a successful download', async () => {
+      const mod = await freshModule()
+      // exe absent -> download branch; download succeeds; model absent -> throw
+      mockExistsSync.mockImplementation((p: string) => {
+        const s = String(p)
+        return !s.endsWith('whisper-server.exe') && !s.endsWith('model.bin')
+      })
+      mockCreateWriteStream.mockImplementation(() => ({
+        write: vi.fn(() => true),
+        end: vi.fn((cb?: () => void) => cb && cb()),
+        on: vi.fn(),
+        once: vi.fn(),
+        destroy: vi.fn()
+      }))
+      mockNetRequest.mockImplementation(() => {
+        const req = new EventEmitter() as EventEmitter & { end: () => void }
+        req.end = vi.fn(() => {
+          setImmediate(() => {
+            const res = new EventEmitter() as EventEmitter & { statusCode: number; headers: Record<string, unknown> }
+            res.statusCode = 200
+            res.headers = {}
+            req.emit('response', res)
+            res.emit('end')
+          })
+        })
+        return req
+      })
+      // the powershell extract step calls back with no error
+      mockExecFile.mockImplementation((cmd: string, _args: unknown[], cb?: (err: Error | null) => void) => {
+        if (cmd === 'powershell' && cb) setImmediate(() => cb(null))
+        return makeFakeProc()
+      })
+
+      await expect(mod.startServer('model.bin')).rejects.toThrow(/Model not found: model.bin/)
+      expect(mod.getServerStatus().status).toBe('error')
+
+      await retrySuccessfully(mod)
+    })
+
+    it('resets when spawning the process throws synchronously, and reports the reason', async () => {
+      const mod = await freshModule()
+      mockExistsSync.mockReturnValue(true)
+      const updates: Array<{ status: string; error?: string }> = []
+      mod.setServerStatusCallback((s) => updates.push({ status: s.status, error: s.error }))
+      mockExecFile.mockImplementation(() => {
+        throw new Error('spawn EACCES')
+      })
+
+      await expect(mod.startServer('model.bin')).rejects.toThrow(/spawn EACCES/)
+      expect(mod.getServerStatus().status).toBe('error')
+      // the failure is surfaced to the UI, not swallowed
+      expect(updates.at(-1)).toEqual({ status: 'error', error: 'spawn EACCES' })
+
+      await retrySuccessfully(mod)
+    })
+
+    it('rejects instead of hanging at "starting" when the 30s fallback finds no live process', async () => {
+      vi.useFakeTimers()
+      try {
+        const mod = await freshModule()
+        mockExistsSync.mockReturnValue(true)
+        // Process died mid-start without ever emitting 'exit', so nothing else
+        // settles the promise — the 30s fallback is the only escape hatch.
+        const proc = makeFakeProc()
+        proc.killed = true
+        mockExecFile.mockReturnValue(proc)
+
+        const startP = mod.startServer('model.bin')
+        const rejected = expect(startP).rejects.toThrow(/no longer running/)
+        await vi.advanceTimersByTimeAsync(30_000)
+        await rejected
+        expect(mod.getServerStatus().status).toBe('error')
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it('leaves the status alone (no duplicate emit) when the process itself reported the failure', async () => {
+      const mod = await freshModule()
+      mockExistsSync.mockReturnValue(true)
+      const proc = makeFakeProc()
+      mockExecFile.mockReturnValue(proc)
+
+      const startP = mod.startServer('model.bin')
+      const updates: Array<{ status: string; error?: string }> = []
+      mod.setServerStatusCallback((s) => updates.push({ status: s.status, error: s.error }))
+      proc.emit('error', new Error('spawn failed'))
+      await expect(startP).rejects.toThrow(/spawn failed/)
+
+      // exactly one 'error' update — the proc handler's; failStart() must not
+      // append a second one on top of it.
+      expect(updates).toEqual([{ status: 'error', error: 'spawn failed' }])
+    })
+
+    // REGRESSION: a stop the USER asked for is not a failure. stopServer()
+    // settles the status to 'stopped', but the kill it performs makes the
+    // still-pending start's process exit — and the exit handler used to
+    // overwrite that honest 'stopped' with 'error' plus a nonsense
+    // 'Server exited with code null' surfaced to the UI.
+    it('reports a stop requested mid-start as stopped, not as an error', async () => {
+      const mod = await freshModule()
+      mockExistsSync.mockReturnValue(true)
+      const proc = makeFakeProc()
+      mockExecFile.mockReturnValue(proc)
+
+      const startP = mod.startServer('model.bin')
+      expect(mod.getServerStatus().status).toBe('starting')
+
+      const updates: Array<{ status: string; error?: string }> = []
+      mod.setServerStatusCallback((s) => updates.push({ status: s.status, error: s.error }))
+
+      // User hits Stop while the model is still loading; the kill makes the
+      // process exit with no code.
+      mod.stopServer()
+      proc.emit('exit', null)
+
+      // The pending start still settles (no hang), but as a stop, not a crash.
+      await expect(startP).rejects.toThrow(/stopped before it finished starting/)
+      expect(mod.getServerStatus().status).toBe('stopped')
+      expect(updates).toEqual([{ status: 'stopped', error: undefined }])
+
+      await retrySuccessfully(mod)
+    })
+  })
+
   describe('stopServer', () => {
     it('kills the process, clears status/model, and fires the callback', async () => {
       setPlatform('win32')
