@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef, Fragment, type CSSProperties, type ReactElement } from 'react'
 import { useTheme } from '../../ThemeContext'
 import { TitleBar } from '../common/TitleBar'
+import { TranscriptSearch } from './TranscriptSearch'
 import type { Theme } from '../../theme'
 
 // Group-conversation mode (multi-speaker transcription) — mirrors
@@ -98,6 +99,9 @@ export function RecordingsView(): ReactElement {
   const [deleteDayConfirm, setDeleteDayConfirm] = useState<Record<string, boolean>>({})
   const [copiedId, setCopiedId] = useState<string | null>(null)
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  // True while the transcript search box has a query — the results panel then
+  // stands in for the full recordings list (see TranscriptSearch).
+  const [searchActive, setSearchActive] = useState(false)
 
   // On-demand cleanup UI state (v1.4 PR2). `cleanupResults` holds the
   // in-memory result of the most recent "Clean up" call per recording id —
@@ -517,7 +521,17 @@ export function RecordingsView(): ReactElement {
       {/* Recordings list */}
       <div style={s.scrollArea}>
         <div style={s.container}>
-          {recordings.length === 0 ? (
+          {/* Full-text search across every saved transcript. Owns its own
+              query/results state; activating a result reuses this view's
+              existing selection flow (setSelectedId) rather than opening
+              recordings a second way. */}
+          <TranscriptSearch
+            theme={theme}
+            formatDate={formatDate}
+            onOpenRecording={setSelectedId}
+            onActiveChange={setSearchActive}
+          />
+          {searchActive ? null : recordings.length === 0 ? (
             <div style={s.emptyState}>
               <div style={{
                 width: '56px',

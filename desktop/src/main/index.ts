@@ -30,6 +30,7 @@ import {
   getRecordingAudio,
   updateRecording
 } from './recordingStore'
+import { searchTranscripts } from './searchService'
 import {
   getAvailableModels,
   getLocalModels,
@@ -358,6 +359,16 @@ app.whenReady().then(() => {
   ipcMain.handle('recordings:reprocess', (_e, id: string) => reprocessRecording(id))
   ipcMain.handle('recordings:cleanup', (_e, id: string, options: OnDemandCleanupRequest) =>
     handleRecordingsCleanup(id, options)
+  )
+
+  // Full-text search across every saved transcript (searchService.ts). The
+  // payload is a QUERY STRING and nothing else — no path, no id, no record
+  // shape the renderer could steer storage with. A non-string or empty query
+  // resolves to [] rather than throwing: this channel is invoked from a
+  // debounced input, so a transport-level rejection mid-typing would surface
+  // as a spurious error state, and "no query" genuinely means "no results".
+  ipcMain.handle('recordings:search', (_e, query: unknown) =>
+    typeof query === 'string' ? searchTranscripts(query) : []
   )
 
   // Group-conversation mode (multi-speaker recording) IPC. `available`
