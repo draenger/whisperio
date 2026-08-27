@@ -99,9 +99,15 @@ export function RecordingsView(): ReactElement {
   const [deleteDayConfirm, setDeleteDayConfirm] = useState<Record<string, boolean>>({})
   const [copiedId, setCopiedId] = useState<string | null>(null)
   const [selectedId, setSelectedId] = useState<string | null>(null)
-  // True while the transcript search box has a query — the results panel then
-  // stands in for the full recordings list (see TranscriptSearch).
-  const [searchActive, setSearchActive] = useState(false)
+  // The transcript search query lives HERE, not inside TranscriptSearch, because
+  // opening a result renders the recording detail instead of this list — which
+  // unmounts the search box. Held one level up, the query (and with it the
+  // results, re-fetched on remount) is still there when the user comes back,
+  // so checking several matches in turn doesn't mean retyping each time.
+  const [searchQuery, setSearchQuery] = useState('')
+  // While there's a query the results panel stands in for the full recordings
+  // list (see TranscriptSearch).
+  const searchActive = searchQuery.trim().length > 0
 
   // On-demand cleanup UI state (v1.4 PR2). `cleanupResults` holds the
   // in-memory result of the most recent "Clean up" call per recording id —
@@ -529,7 +535,8 @@ export function RecordingsView(): ReactElement {
             theme={theme}
             formatDate={formatDate}
             onOpenRecording={setSelectedId}
-            onActiveChange={setSearchActive}
+            query={searchQuery}
+            onQueryChange={setSearchQuery}
           />
           {searchActive ? null : recordings.length === 0 ? (
             <div style={s.emptyState}>

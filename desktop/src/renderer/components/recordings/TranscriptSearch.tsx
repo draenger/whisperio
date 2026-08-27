@@ -24,6 +24,13 @@ export interface TranscriptSearchProps {
    *  so the host view can swap the recordings list out for the results panel
    *  without this component having to own the list. */
   onActiveChange?: (active: boolean) => void
+  /** Controlled query. Passed together with `onQueryChange` by RecordingsView so
+   *  the text lives above this component and survives it unmounting — opening a
+   *  result swaps the whole list out for the recording detail, and coming back
+   *  must land on the same search rather than an empty box. Omit both and the
+   *  component keeps the query itself. */
+  query?: string
+  onQueryChange?: (query: string) => void
   /** Debounce override — the tests drive this; production uses the default. */
   debounceMs?: number
 }
@@ -33,9 +40,15 @@ export function TranscriptSearch({
   formatDate,
   onOpenRecording,
   onActiveChange,
+  query: controlledQuery,
+  onQueryChange,
   debounceMs
 }: TranscriptSearchProps): ReactElement {
-  const { query, setQuery, clear, results, loading, error, active } = useTranscriptSearch(debounceMs)
+  const { query, setQuery, clear, results, loading, error, active } = useTranscriptSearch({
+    debounceMs,
+    query: controlledQuery,
+    onQueryChange
+  })
   const inputRef = useRef<HTMLInputElement>(null)
   const s = makeStyles(theme)
 

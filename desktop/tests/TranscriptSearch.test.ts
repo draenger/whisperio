@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest'
-import { createElement } from 'react'
+import { createElement, useState, type ReactElement } from 'react'
 import { act, render, cleanup, fireEvent, screen } from '@testing-library/react'
 import { TranscriptSearch } from '../src/renderer/components/recordings/TranscriptSearch'
 import { buildTheme } from '../src/renderer/theme'
@@ -53,8 +53,41 @@ function renderSearch(): { onOpenRecording: ReturnType<typeof vi.fn> } {
   return { onOpenRecording }
 }
 
+/** A stand-in for RecordingsView: it owns the query and can take the search box
+ *  away (what happens for real when a result is opened and the recording detail
+ *  replaces the whole list), then bring it back. */
+function Host({
+  visible,
+  onOpenRecording
+}: {
+  visible: boolean
+  onOpenRecording: (recordingId: string) => void
+}): ReactElement {
+  const [hostQuery, setHostQuery] = useState('')
+  return createElement(
+    'div',
+    null,
+    createElement('span', { 'data-testid': 'host-query' }, hostQuery),
+    visible
+      ? createElement(TranscriptSearch, {
+          theme,
+          formatDate: (ts: number) => `date:${ts}`,
+          onOpenRecording,
+          query: hostQuery,
+          onQueryChange: setHostQuery,
+          debounceMs: DEBOUNCE
+        })
+      : createElement('div', { 'data-testid': 'recording-detail' }, 'detail')
+  )
+}
+
 function type(value: string): void {
   fireEvent.change(screen.getByTestId('transcript-search-input'), { target: { value } })
+}
+
+/** Current text in the search box (no jest-dom matchers in this repo). */
+function queryValue(): string {
+  return (screen.getByTestId('transcript-search-input') as HTMLInputElement).value
 }
 
 async function advance(ms: number): Promise<void> {
@@ -275,5 +308,59 @@ describe('TranscriptSearch — Ctrl+F shortcut', () => {
       window.dispatchEvent(event)
     })
     expect(event.defaultPrevented).toBe(false)
+  })
+})
+
+describe('TranscriptSearch — query owned by the host view', () => {
+  it('renders the host-owned query and reports each keystroke back up', async () => {
+    const search = mockSearch()
+    const onOpenRecording = vi.fn()
+    render(createElement(Host, { visible: true, onOpenRecording }))
+
+    type('ważny')
+    expect(screen.getByTestId('host-query').textContent).toBe('ważny')
+    expect(queryValue()).toBe('ważny')
+
+    await advance(DEBOUNCE)
+    expect(search).toHaveBeenCalledWith('ważny')
+  })
+
+  it('keeps the query and re-runs the search after the box is unmounted and brought back', async () => {
+    const search = mockSearch()
+    const onOpenRecording = vi.fn()
+    const { rerender } = render(createElement(Host, { visible: true, onOpenRecording }))
+
+    type('raport')
+    await advance(DEBOUNCE)
+    expect(search).toHaveBeenCalledTimes(1)
+
+    // Open a result — RecordingsView swaps this whole subtree for the detail.
+    fireEvent.click(screen.getByTestId('search-result-rec-1'))
+    expect(onOpenRecording).toHaveBeenCalledWith('rec-1')
+    rerender(createElement(Host, { visible: false, onOpenRecording }))
+    expect(screen.getByTestId('recording-detail').textContent).toBe('detail')
+    expect(screen.queryByTestId('transcript-search-input')).toBeNull()
+
+    // …and come back. The box is repopulated, not blank.
+    rerender(createElement(Host, { visible: true, onOpenRecording }))
+    expect(queryValue()).toBe('raport')
+
+    await advance(DEBOUNCE)
+    expect(search).toHaveBeenCalledTimes(2)
+    expect(search).toHaveBeenLastCalledWith('raport')
+    expect(screen.getByTestId('search-result-rec-1')).toBeTruthy()
+  })
+
+  it('clears the host-owned query on Escape', async () => {
+    mockSearch()
+    render(createElement(Host, { visible: true, onOpenRecording: vi.fn() }))
+
+    type('kot')
+    await advance(DEBOUNCE)
+    fireEvent.keyDown(screen.getByTestId('transcript-search-input'), { key: 'Escape' })
+
+    expect(screen.getByTestId('host-query').textContent).toBe('')
+    expect(queryValue()).toBe('')
+    expect(screen.queryByTestId('search-results')).toBeNull()
   })
 })

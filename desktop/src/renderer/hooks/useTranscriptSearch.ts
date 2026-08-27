@@ -32,6 +32,19 @@ export interface TranscriptSearchResult {
 
 export const SEARCH_ERROR_MESSAGE = 'Search is unavailable right now.'
 
+export interface TranscriptSearchOptions {
+  /** Debounce override — the tests drive this; production uses the default. */
+  debounceMs?: number
+  /** Controlled query. Supply `query` AND `onQueryChange` to keep the text in
+   *  the CALLER's state, so it survives this hook's owner unmounting — that is
+   *  what lets the recordings view open a result and come back to the same
+   *  search instead of an empty box (RecordingsPanel swaps the whole list out
+   *  for the recording detail, unmounting TranscriptSearch with it). Omit both
+   *  and the hook owns the query itself. */
+  query?: string
+  onQueryChange?: (query: string) => void
+}
+
 export interface TranscriptSearchState {
   query: string
   setQuery: (query: string) => void
@@ -44,8 +57,11 @@ export interface TranscriptSearchState {
   active: boolean
 }
 
-export function useTranscriptSearch(debounceMs: number = SEARCH_DEBOUNCE_MS): TranscriptSearchState {
-  const [query, setQuery] = useState('')
+export function useTranscriptSearch(options: TranscriptSearchOptions = {}): TranscriptSearchState {
+  const { debounceMs = SEARCH_DEBOUNCE_MS, query: controlledQuery, onQueryChange } = options
+  const controlled = typeof controlledQuery === 'string'
+  const [ownQuery, setOwnQuery] = useState('')
+  const query = controlled ? controlledQuery : ownQuery
   const [results, setResults] = useState<TranscriptSearchResult[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -86,7 +102,17 @@ export function useTranscriptSearch(debounceMs: number = SEARCH_DEBOUNCE_MS): Tr
     return () => clearTimeout(timer)
   }, [trimmed, debounceMs])
 
-  const clear = useCallback(() => setQuery(''), [])
+  const setQuery = useCallback(
+    (next: string) => {
+      // In controlled mode the caller's state is the single source of truth —
+      // mirroring it locally too would let the two drift apart.
+      if (!controlled) setOwnQuery(next)
+      onQueryChange?.(next)
+    },
+    [controlled, onQueryChange]
+  )
+
+  const clear = useCallback(() => setQuery(''), [setQuery])
 
   return { query, setQuery, clear, results, loading, error, active: trimmed.length > 0 }
 }
