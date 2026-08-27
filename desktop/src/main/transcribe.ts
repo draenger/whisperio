@@ -456,6 +456,22 @@ function isProviderConfigured(settings: AppSettings, provider: ProviderId): bool
   return false
 }
 
+/**
+ * The `prompt` every prompt-accepting STT provider (openai, selfhosted,
+ * replicate, groq, mistral) sends: the user's transcription prompt with the
+ * active custom vocabulary appended as an exact-spelling hint. Keeping this in
+ * one place means the wording — which providers bias their decoding on — can't
+ * drift between backends. ElevenLabs/Deepgram/AssemblyAI don't take a prompt;
+ * they get the raw vocabulary as keyterms instead (see elevenLabsTranscribe).
+ */
+function buildVocabPrompt(settings: AppSettings): string {
+  const basePrompt = settings.transcriptionPrompt || DEFAULT_PROMPT
+  const vocab = getActiveVocabulary(settings)
+  return vocab
+    ? `${basePrompt}\n\nTechnical terms that may appear (use these exact spellings): ${vocab}`
+    : basePrompt
+}
+
 async function transcribeWithProvider(
   settings: AppSettings,
   provider: ProviderId,
@@ -501,11 +517,7 @@ async function transcribeWithProvider(
       throw err
     }
     const model = settings.whisperModel?.trim() || SELFHOSTED_MODEL
-    const basePrompt = settings.transcriptionPrompt || DEFAULT_PROMPT
-    const vocab = getActiveVocabulary(settings)
-    const prompt = vocab
-      ? `${basePrompt}\n\nTechnical terms that may appear (use these exact spellings): ${vocab}`
-      : basePrompt
+    const prompt = buildVocabPrompt(settings)
     const lang = settings.transcriptionLanguage?.trim() || 'auto'
     // whisper.cpp uses /inference, OpenAI-compatible servers use /v1/audio/transcriptions
     const endpoint = baseUrl.includes('/v1') ? `${baseUrl}/audio/transcriptions` : `${baseUrl}/inference`
@@ -523,11 +535,7 @@ async function transcribeWithProvider(
       throw err
     }
     const model = settings.sttReplicateModel?.trim() || DEFAULT_REPLICATE_MODEL
-    const basePrompt = settings.transcriptionPrompt || DEFAULT_PROMPT
-    const vocab = getActiveVocabulary(settings)
-    const prompt = vocab
-      ? `${basePrompt}\n\nTechnical terms that may appear (use these exact spellings): ${vocab}`
-      : basePrompt
+    const prompt = buildVocabPrompt(settings)
     const lang = settings.transcriptionLanguage?.trim() || 'auto'
     return replicateTranscribe(apiKey, model, audioBuffer, prompt, lang)
   }
@@ -540,11 +548,7 @@ async function transcribeWithProvider(
       throw err
     }
     const model = settings.sttGroqModel?.trim() || ''
-    const basePrompt = settings.transcriptionPrompt || DEFAULT_PROMPT
-    const vocab = getActiveVocabulary(settings)
-    const prompt = vocab
-      ? `${basePrompt}\n\nTechnical terms that may appear (use these exact spellings): ${vocab}`
-      : basePrompt
+    const prompt = buildVocabPrompt(settings)
     const lang = settings.transcriptionLanguage?.trim() || 'auto'
     return groqTranscribe(apiKey, audioBuffer, filename, prompt, model, lang)
   }
@@ -581,11 +585,7 @@ async function transcribeWithProvider(
       throw err
     }
     const model = settings.sttMistralModel?.trim() || ''
-    const basePrompt = settings.transcriptionPrompt || DEFAULT_PROMPT
-    const vocab = getActiveVocabulary(settings)
-    const prompt = vocab
-      ? `${basePrompt}\n\nTechnical terms that may appear (use these exact spellings): ${vocab}`
-      : basePrompt
+    const prompt = buildVocabPrompt(settings)
     const lang = settings.transcriptionLanguage?.trim() || 'auto'
     return mistralTranscribe(apiKey, audioBuffer, filename, prompt, model, lang)
   }
@@ -601,11 +601,7 @@ async function transcribeWithProvider(
   const baseUrl = DEFAULT_OPENAI_BASE
   const model = DEFAULT_MODEL
 
-  const basePrompt = settings.transcriptionPrompt || DEFAULT_PROMPT
-  const vocab = getActiveVocabulary(settings)
-  const prompt = vocab
-    ? `${basePrompt}\n\nTechnical terms that may appear (use these exact spellings): ${vocab}`
-    : basePrompt
+  const prompt = buildVocabPrompt(settings)
 
   const lang = settings.transcriptionLanguage?.trim() || 'auto'
   // AI cleanup (settings.cleanupEnabled/cleanupMode) is applied uniformly to

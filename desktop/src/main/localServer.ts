@@ -16,6 +16,20 @@ const SERVER_PORT = 8178
 const DEFAULT_IDLE_TTL_MS = 15 * 60 * 1000
 const IDLE_SWEEP_INTERVAL_MS = 60 * 1000
 
+// Readiness detection. whisper.cpp's server prints exactly one line once the
+// HTTP listener is actually bound and able to serve /inference:
+//   "whisper server listening at http://127.0.0.1:8178"
+// Match that line and nothing else. The previous check accepted the bare
+// substrings 'running' and 'ready' anywhere in the output, which any startup
+// log line ("ggml backend ... running", a model path containing "ready", a
+// warning about an already-ready cache) could satisfy — flipping the status to
+// 'running' and resolving startServer() before the port accepted connections.
+const READY_LINE_RE = /whisper\s+server\s+listening\s+at\s+https?:\/\/\S+/i
+// stdout/stderr arrive in arbitrary chunks, so the ready line can be split
+// across two 'data' events. Keep a bounded rolling tail so a match can still
+// be found across the seam without the buffer growing with the server's log.
+const READY_TAIL_MAX = 4096
+
 let serverProcess: ChildProcess | null = null
 let serverStatus: 'stopped' | 'starting' | 'running' | 'error' = 'stopped'
 let serverModel: string | null = null
@@ -163,6 +177,20 @@ export async function downloadServerBinary(): Promise<string> {
     })
   })
 
+  // The extraction loop above is best-effort per zip entry: it copies whatever
+  // matches $needed and exits 0 even when it matched nothing. If the release
+  // archive's layout changes (renamed entry, nested folder), powershell would
+  // "succeed" having written no exe, and the failure would only surface later
+  // as an opaque spawn ENOENT from startServer. Verify at the point the file
+  // is supposed to exist and fail loudly with an actionable message.
+  if (!existsSync(exePath)) {
+    throw new Error(
+      `Extraction reported success but whisper-server.exe is missing at ${exePath}. ` +
+        `The whisper.cpp ${WHISPER_CPP_RELEASE} archive layout may have changed — ` +
+        'install whisper-server manually.'
+    )
+  }
+
   return exePath
 }
 
@@ -204,6 +232,7 @@ export async function startServer(modelFilename: string): Promise<void> {
 
       serverProcess = proc
       let started = false
+      let outputTail = ''
       let assumeRunningTimer: NodeJS.Timeout | null = null
       const clearAssumeRunningTimer = (): void => {
         if (assumeRunningTimer) {
@@ -214,20 +243,16 @@ export async function startServer(modelFilename: string): Promise<void> {
 
       const checkOutput = (data: string): void => {
         console.log(`[whisper-server] ${data}`)
-        if (!started && (
-          data.includes('listening') ||
-          data.includes('model loaded') ||
-          data.includes('HTTP server') ||
-          data.includes('running') ||
-          data.includes('ready')
-        )) {
-          started = true
-          clearAssumeRunningTimer()
-          serverStatus = 'running'
-          startIdleSweep()
-          emitStatus()
-          resolve()
-        }
+        if (started) return
+        outputTail = (outputTail + data).slice(-READY_TAIL_MAX)
+        if (!READY_LINE_RE.test(outputTail)) return
+        started = true
+        outputTail = ''
+        clearAssumeRunningTimer()
+        serverStatus = 'running'
+        startIdleSweep()
+        emitStatus()
+        resolve()
       }
 
       proc.stdout?.on('data', checkOutput)
@@ -265,9 +290,11 @@ export async function startServer(modelFilename: string): Promise<void> {
         }
       })
 
-      // If server doesn't report "listening" in 30s, consider it running anyway.
-      // The handle is cleared on success/error/exit so the timer doesn't leak and
-      // fire stale logic up to 30s after the server already settled.
+      // If the server doesn't print its ready line in 30s, consider it running
+      // anyway -- a build that logs differently must not hang startup forever.
+      // The handle is cleared on success/error/exit so the timer doesn't leak;
+      // a timer firing with no live process settles as failure instead of
+      // pinning serverStatus at 'starting' forever.
       assumeRunningTimer = setTimeout(() => {
         assumeRunningTimer = null
         if (started) return
@@ -279,9 +306,6 @@ export async function startServer(modelFilename: string): Promise<void> {
           resolve()
           return
         }
-        // No process left to assume anything about (it died without an 'exit'
-        // event, or was killed mid-start). Settle as a failure instead of
-        // hanging forever with serverStatus pinned to 'starting'.
         reject(new Error('Server failed to start: the process is no longer running.'))
       }, 30_000)
     })
@@ -304,18 +328,14 @@ export function stopServer(): void {
 
 function downloadFile(url: string, destPath: string): Promise<void> {
   return new Promise((resolve, reject) => {
+    // redirect: 'follow' — the GitHub release URL always redirects to a CDN
+    // host, and Electron's net stack chases those internally. The 'response'
+    // event therefore only ever fires for the final hop, so a 3xx here is a
+    // genuine failure (e.g. redirect chain exhausted), not something to follow
+    // by hand.
     const request = net.request({ url, redirect: 'follow' })
 
     request.on('response', (response) => {
-      if (response.statusCode === 302 || response.statusCode === 301) {
-        const location = response.headers['location']
-        const redirectUrl = Array.isArray(location) ? location[0] : location
-        if (redirectUrl) {
-          downloadFile(redirectUrl, destPath).then(resolve).catch(reject)
-          return
-        }
-      }
-
       if (response.statusCode !== 200) {
         reject(new Error(`Download failed: HTTP ${response.statusCode}`))
         return
