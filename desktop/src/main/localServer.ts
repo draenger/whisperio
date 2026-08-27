@@ -154,15 +154,30 @@ export async function startServer(modelFilename: string): Promise<void> {
   }
 
   const exePath = getServerExePath()
-  if (!existsSync(exePath)) {
-    serverStatus = 'starting'
-    emitStatus()
-    await downloadServerBinary()
-  }
-
   const modelPath = join(getModelsDir(), modelFilename)
-  if (!existsSync(modelPath)) {
-    throw new Error(`Model not found: ${modelFilename}`)
+
+  // Everything between the first 'starting' transition and the spawn has to
+  // reset the status on the way out. Previously a failed binary download (or a
+  // missing model discovered right after it) propagated with serverStatus stuck
+  // at 'starting' — and since the guard above rejects both 'running' and
+  // 'starting', every subsequent startServer() call failed with "Server is
+  // already running." The local server stayed unstartable until the app was
+  // restarted, with no way for the user to recover.
+  try {
+    if (!existsSync(exePath)) {
+      serverStatus = 'starting'
+      emitStatus()
+      await downloadServerBinary()
+    }
+
+    if (!existsSync(modelPath)) {
+      throw new Error(`Model not found: ${modelFilename}`)
+    }
+  } catch (err) {
+    serverStatus = 'error'
+    serverModel = null
+    emitStatus(err instanceof Error ? err.message : String(err))
+    throw err
   }
 
   serverStatus = 'starting'

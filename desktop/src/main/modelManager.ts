@@ -1,5 +1,5 @@
 import { app, net } from 'electron'
-import { existsSync, mkdirSync, unlinkSync, readdirSync, statSync, createWriteStream } from 'fs'
+import { existsSync, mkdirSync, unlinkSync, readdirSync, statSync, createWriteStream, renameSync } from 'fs'
 import { join, basename, resolve, sep } from 'path'
 
 export interface ModelInfo {
@@ -88,6 +88,20 @@ const MODELS: ModelInfo[] = [
 const activeDownloads = new Map<string, { abort: () => void }>()
 let progressCallback: ((progress: DownloadProgress) => void) | null = null
 
+/**
+ * Thrown into a download's promise when cancelDownload() stops it. Cancelling
+ * used to leave the caller's promise pending forever (the request 'error'
+ * handler deliberately swallows the post-abort error, and no other path
+ * settled), so the renderer's `await models:download` never returned and the
+ * UI kept showing an in-flight download that no longer existed.
+ */
+export class DownloadCancelledError extends Error {
+  constructor(modelId: string) {
+    super(`Download cancelled: ${modelId}`)
+    this.name = 'DownloadCancelled'
+  }
+}
+
 function getModelsDir(): string {
   const dir = join(app.getPath('userData'), 'models')
   if (!existsSync(dir)) {
@@ -169,10 +183,15 @@ export function downloadModel(modelId: string): Promise<string> {
     const request = net.request({ url: model.url, redirect: 'follow' })
 
     activeDownloads.set(modelId, {
+      // Pre-response cancel: no write stream exists yet, so aborting the
+      // request and dropping any stale temp file is enough — but the promise
+      // still has to be settled, otherwise the awaiting IPC call hangs for the
+      // rest of the app's life.
       abort: () => {
         aborted = true
         request.abort()
         try { unlinkSync(tempPath) } catch { /* ignore */ }
+        reject(new DownloadCancelledError(modelId))
       }
     })
 
@@ -197,7 +216,7 @@ export function downloadModel(modelId: string): Promise<string> {
         return
       }
 
-      handleDownloadResponse(modelId, response, filepath, tempPath, resolve, reject)
+      handleDownloadResponse(modelId, response, filepath, tempPath, resolve, reject, () => { aborted = true; request.abort() })
     })
 
     request.on('error', (err) => {
@@ -215,10 +234,15 @@ function downloadFromUrl(modelId: string, url: string, filepath: string, tempPat
     const request = net.request({ url, redirect: 'follow' })
 
     activeDownloads.set(modelId, {
+      // Pre-response cancel: no write stream exists yet, so aborting the
+      // request and dropping any stale temp file is enough — but the promise
+      // still has to be settled, otherwise the awaiting IPC call hangs for the
+      // rest of the app's life.
       abort: () => {
         aborted = true
         request.abort()
         try { unlinkSync(tempPath) } catch { /* ignore */ }
+        reject(new DownloadCancelledError(modelId))
       }
     })
 
@@ -228,7 +252,7 @@ function downloadFromUrl(modelId: string, url: string, filepath: string, tempPat
         reject(new Error(`Download failed: HTTP ${response.statusCode}`))
         return
       }
-      handleDownloadResponse(modelId, response, filepath, tempPath, resolve, reject)
+      handleDownloadResponse(modelId, response, filepath, tempPath, resolve, reject, () => { aborted = true; request.abort() })
     })
 
     request.on('error', (err) => {
@@ -246,7 +270,10 @@ function handleDownloadResponse(
   filepath: string,
   tempPath: string,
   resolve: (path: string) => void,
-  reject: (err: Error) => void
+  reject: (err: Error) => void,
+  // Aborts the underlying net.request. Supplied so the cancel path registered
+  // below can stop the socket AND tear down the write stream in one step.
+  abortRequest: () => void = () => {}
 ): void {
   const contentLength = response.headers['content-length']
   const totalBytes = contentLength
@@ -273,6 +300,19 @@ function handleDownloadResponse(
     reject(err instanceof Error ? err : new Error(String(err)))
   }
 
+  // Take over cancellation now that a write stream exists. The registration
+  // made before the response arrived only aborted the request and unlinked the
+  // temp file — leaving this stream open (so the unlink silently failed on
+  // Windows and the `.downloading` file leaked) and leaving the promise
+  // unsettled. Routing cancel through fail() destroys the stream first, then
+  // removes the partial file, then rejects.
+  activeDownloads.set(modelId, {
+    abort: () => {
+      abortRequest()
+      fail(new DownloadCancelledError(modelId))
+    }
+  })
+
   writeStream.on('error', fail)
 
   response.on('data', (chunk: Buffer) => {
@@ -298,13 +338,37 @@ function handleDownloadResponse(
 
   response.on('end', () => {
     if (failed) return
+    // VERIFY THE ARTIFACT before promoting it. A connection dropped mid-body
+    // still ends the response cleanly, so without this check a truncated model
+    // was renamed over the real file and reported as a successful download —
+    // leaving a corrupt .bin that whisper-server then fails to load, with
+    // nothing in the UI to suggest the download was at fault.
+    if (totalBytes > 0 && downloadedBytes !== totalBytes) {
+      fail(
+        new Error(
+          `Download incomplete: got ${downloadedBytes} of ${totalBytes} bytes for ${modelId}. ` +
+            'The partial file was discarded; try again.'
+        )
+      )
+      return
+    }
+    if (downloadedBytes === 0) {
+      fail(new Error(`Download produced an empty file for ${modelId}.`))
+      return
+    }
     // Resolve only after the bytes are actually flushed to disk (finish).
     writeStream.end(() => {
       if (failed) return
       activeDownloads.delete(modelId)
       try {
+        // Re-check on-disk size: `end`'s flush callback is the first point at
+        // which a short write (disk filled up between chunks) is observable.
+        const written = statSync(tempPath).size
+        if (written !== downloadedBytes) {
+          fail(new Error(`Download verification failed for ${modelId}: wrote ${written} of ${downloadedBytes} bytes.`))
+          return
+        }
         if (existsSync(filepath)) unlinkSync(filepath)
-        const { renameSync } = require('fs')
         renameSync(tempPath, filepath)
         progressCallback?.({ modelId, percent: 100, downloadedBytes, totalBytes })
         resolve(filepath)
@@ -388,10 +452,15 @@ export function downloadCustomModel(url: string, filename: string): Promise<stri
     const request = net.request({ url, redirect: 'follow' })
 
     activeDownloads.set(customId, {
+      // Pre-response cancel: no write stream exists yet, so aborting the
+      // request and dropping any stale temp file is enough — but the promise
+      // still has to be settled, otherwise the awaiting IPC call hangs for the
+      // rest of the app's life.
       abort: () => {
         aborted = true
         request.abort()
         try { unlinkSync(tempPath) } catch { /* ignore */ }
+        reject(new DownloadCancelledError(customId))
       }
     })
 
@@ -414,7 +483,7 @@ export function downloadCustomModel(url: string, filename: string): Promise<stri
         return
       }
 
-      handleDownloadResponse(customId, response, filepath, tempPath, resolve, reject)
+      handleDownloadResponse(customId, response, filepath, tempPath, resolve, reject, () => { aborted = true; request.abort() })
     })
 
     request.on('error', (err) => {

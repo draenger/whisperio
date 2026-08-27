@@ -27,6 +27,7 @@ import {
   downloadCustomModel,
   cancelDownload,
   setDownloadProgressCallback,
+  DownloadCancelledError,
   type DownloadProgress
 } from '../src/main/modelManager'
 
@@ -244,8 +245,10 @@ describe('modelManager', () => {
       await expect(downloadModel('tiny')).rejects.toThrow('Already downloading: tiny')
 
       // Clean up the dangling download so it doesn't leak into other tests.
+      // Cancelling SETTLES the promise (it used to be left pending forever —
+      // see tests/modelManager-download-integrity.test.ts).
       cancelDownload('tiny')
-      await expect(Promise.race([first, Promise.resolve('pending')])).resolves.toBe('pending')
+      await expect(first).rejects.toBeInstanceOf(DownloadCancelledError)
     })
 
     it('resolves to the final path on the success path and renames the temp file', async () => {
@@ -343,7 +346,7 @@ describe('modelManager', () => {
 
       // Clean up the dangling download so it doesn't leak into other tests.
       cancelDownload('custom:dup.bin')
-      await expect(Promise.race([first, Promise.resolve('pending')])).resolves.toBe('pending')
+      await expect(first).rejects.toBeInstanceOf(DownloadCancelledError)
     })
 
     it('rejects "Download failed: HTTP" when statusCode is not 200', async () => {
@@ -413,8 +416,10 @@ describe('modelManager', () => {
       expect(cancelDownload('tiny')).toBe(true)
       expect(req.abort).toHaveBeenCalled()
 
-      // The pending promise never resolves/rejects (aborted, no response). Ensure no leak.
-      await expect(Promise.race([pending, Promise.resolve('pending')])).resolves.toBe('pending')
+      // Cancelling must SETTLE the download promise. It previously stayed
+      // pending forever, so the renderer's `await models:download` never
+      // returned and the UI kept showing a download that no longer existed.
+      await expect(pending).rejects.toBeInstanceOf(DownloadCancelledError)
     })
   })
 
