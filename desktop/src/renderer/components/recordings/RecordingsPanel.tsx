@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef, Fragment, type CSSProperties, type ReactElement } from 'react'
 import { useTheme } from '../../ThemeContext'
 import { TitleBar } from '../common/TitleBar'
+import { TranscriptSearch } from './TranscriptSearch'
 import type { Theme } from '../../theme'
 
 // Group-conversation mode (multi-speaker transcription) — mirrors
@@ -98,6 +99,15 @@ export function RecordingsView(): ReactElement {
   const [deleteDayConfirm, setDeleteDayConfirm] = useState<Record<string, boolean>>({})
   const [copiedId, setCopiedId] = useState<string | null>(null)
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  // The transcript search query lives HERE, not inside TranscriptSearch, because
+  // opening a result renders the recording detail instead of this list — which
+  // unmounts the search box. Held one level up, the query (and with it the
+  // results, re-fetched on remount) is still there when the user comes back,
+  // so checking several matches in turn doesn't mean retyping each time.
+  const [searchQuery, setSearchQuery] = useState('')
+  // While there's a query the results panel stands in for the full recordings
+  // list (see TranscriptSearch).
+  const searchActive = searchQuery.trim().length > 0
 
   // On-demand cleanup UI state (v1.4 PR2). `cleanupResults` holds the
   // in-memory result of the most recent "Clean up" call per recording id —
@@ -517,7 +527,18 @@ export function RecordingsView(): ReactElement {
       {/* Recordings list */}
       <div style={s.scrollArea}>
         <div style={s.container}>
-          {recordings.length === 0 ? (
+          {/* Full-text search across every saved transcript. Owns its own
+              query/results state; activating a result reuses this view's
+              existing selection flow (setSelectedId) rather than opening
+              recordings a second way. */}
+          <TranscriptSearch
+            theme={theme}
+            formatDate={formatDate}
+            onOpenRecording={setSelectedId}
+            query={searchQuery}
+            onQueryChange={setSearchQuery}
+          />
+          {searchActive ? null : recordings.length === 0 ? (
             <div style={s.emptyState}>
               <div style={{
                 width: '56px',

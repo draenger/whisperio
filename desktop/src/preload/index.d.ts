@@ -181,6 +181,29 @@ export interface CleanupRequestResult {
   cleanedWith: string
 }
 
+/* ─── Full-text transcript search (recordings:search) ───
+ * Renderer-facing mirror of src/main/searchService.ts's result shape. Kept as
+ * its own copy here, same "preload owns its own types" convention as
+ * RecordingEntry/AppSettings above — the renderer bundle must not pull in a
+ * main-process module. Note there is deliberately NO `filepath`: results are
+ * addressed by `recordingId` only. */
+export type SearchSnippetSegment = { type: 'text' | 'match'; value: string }
+
+export interface TranscriptSearchResult {
+  recordingId: string
+  filename: string
+  timestamp: number
+  duration: number
+  provider: string
+  status: 'completed' | 'failed' | 'pending'
+  /** Bounded snippet from the ORIGINAL transcript, pre-split into plain and
+   *  matched segments so the renderer can highlight without any HTML. */
+  snippet: SearchSnippetSegment[]
+  filenameMatched: boolean
+  matchCount: number
+  score: number
+}
+
 export interface RecordingsAPI {
   openWindow: () => void
   list: () => Promise<RecordingEntry[]>
@@ -203,6 +226,10 @@ export interface RecordingsAPI {
   // display name — persists to RecordingEntry.speakerNames and recomputes
   // the labeled `transcription` text server-side.
   renameSpeaker: (id: string, speakerId: string, name: string) => Promise<RecordingEntry | null>
+  /** Full-text search across every saved transcript. Case- and
+   *  diacritics-insensitive (Polish text matches with or without ogonki).
+   *  An empty/whitespace-only query resolves to [] without scanning storage. */
+  search: (query: string) => Promise<TranscriptSearchResult[]>
 }
 
 export interface WhisperioError {
