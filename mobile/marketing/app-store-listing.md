@@ -35,9 +35,10 @@ App id `6781780531` · bundle `ai.whisperio.mobile` · free · no IAP · no acco
 1. **App Privacy** (nutrition labels): App Store Connect → App → App Privacy → "Data Not Collected".
    Whisperio runs no server; audio goes only to a provider the user configured, keys stay in the Keychain,
    iCloud sync uses the user's private CloudKit database. Nothing is collected by the developer or an SDK.
-2. **EU Digital Services Act — trader status**: Business → Agreements / App → Distribution. A free,
-   non-commercial hobby app by an individual → declare **non-trader**. Without this the app is not
-   shown in EU storefronts.
+2. **EU Digital Services Act — trader status**: account-wide (covers Zryw too), switchable any time
+   without a resubmission. Whisperio alone qualifies as **non-trader**; Zryw's subscription forces
+   **trader** for the whole account once it ships. Details + recommendation: `docs/release-runbook.md`
+   §3.6.1. Without a declared status the app is hidden in EU storefronts.
 3. Then on the version page: **Add for Review → Submit**. Release type is currently
    *automatic after approval*; switch to *manual* on the version page if you want to control the day.
 

@@ -166,9 +166,26 @@ across versions; only re-check if you add IAP or change territories.
 
 ### 3.6 ASC web UI only (no public API) — do these by hand
 1. **App Privacy** → "Data Not Collected" (no server, keys in Keychain, iCloud = user's private DB).
-2. **EU DSA trader status** → non-trader (free, non-commercial, individual).
+2. **EU DSA trader status** → see 3.6.1 below. Without a declared status the app is hidden from EU storefronts.
 3. Version page → **Add for Review → Submit**. Release type on the version is *automatic after
    approval*; set *manual* if you want to pick the day.
+
+#### 3.6.1 Trader status (Digital Services Act) — account-wide, switchable any time
+- The status lives on the **developer account** (App Store Connect → Business → the account holder's
+  Digital Services Act section), not on the app. It applies to every app on team `953Q6T2WTB` at once —
+  Whisperio **and Zryw**.
+- **Non-trader** is legitimate only for non-commercial activity: free app, no ads, no IAP, no promotion of a
+  business. Whisperio alone qualifies. **Zryw does not** (Zryw Pro subscription), so the moment Zryw ships
+  the account must be a trader — and Whisperio inherits that automatically.
+- **Switching non-trader → trader** is a settings change, not a resubmission: fill address + phone + email,
+  confirm the phone and e-mail via the codes Apple sends, done; nothing in the app or the version record
+  changes and no new review is triggered. The verified contact details are then shown **publicly** on
+  every EU product page of every app on the account — as an individual that means your own name/address,
+  so use a dedicated phone number and mailbox for it.
+- Trader → non-trader is possible too, but only if nothing on the account monetises.
+- Recommendation: since Zryw forces trader anyway, set trader once and be done for both apps. If you want
+  to postpone handing over contact details until Zryw launches, declare non-trader for Whisperio now and
+  flip later — both are safe for App Review.
 
 ### 3.7 After approval
 - Tag the repo: `git tag ios-v1.4.1-b74 && git push --tags`.
