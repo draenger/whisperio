@@ -149,6 +149,22 @@ final class WatchConnector: NSObject, ObservableObject, WCSessionDelegate {
     private var fileURL: URL?
 
     func activate() {
+        #if DEBUG
+        // Screenshot harness (mobile/marketing/pipeline/capture-watch.sh): launch with
+        // WHISPERIO_WATCH_STAGE=recording|sending|done to render that state without a
+        // paired iPhone. Debug builds only — never compiled into the App Store binary.
+        if let stage = ProcessInfo.processInfo.environment["WHISPERIO_WATCH_STAGE"] {
+            switch stage {
+            case "recording": isRecording = true; status = "Listening… tap to stop"
+            case "sending": status = "Transcribing on iPhone…"
+            case "done":
+                status = "Done · sent to iPhone"
+                transcript = "Book a table for four on Friday at seven."
+            default: break
+            }
+            return
+        }
+        #endif
         guard WCSession.isSupported() else { status = "Watch link unavailable"; return }
         let s = WCSession.default
         s.delegate = self
