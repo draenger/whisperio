@@ -226,6 +226,88 @@ describe('RecordingsPanel — on-demand Clean up action', () => {
     expect(screen.queryByTestId('day-header-2024-03-10')).toBeNull()
   })
 
+  it('shows an inline error and does not close the detail view when deleting a recording rejects', async () => {
+    mockApi({
+      recordings: {
+        delete: vi.fn().mockRejectedValue(new Error('unlink failed'))
+      }
+    })
+
+    render(createElement(RecordingsView))
+    await openDetail()
+
+    fireEvent.click(screen.getByText('Delete'))
+
+    await waitFor(() => expect(screen.getByTestId('recordings-action-error')).toBeTruthy())
+    expect(screen.getByTestId('recordings-action-error').textContent).toMatch(/Failed to delete recording/)
+    // Detail view stays open (selection wasn't cleared) since the delete failed.
+    expect(screen.getByText('Clean up')).toBeTruthy()
+  })
+
+  it('shows an inline error when reprocessing a recording rejects, without an unhandled rejection', async () => {
+    mockApi({
+      recordings: {
+        reprocess: vi.fn().mockRejectedValue(new Error('reprocess failed'))
+      }
+    })
+
+    render(createElement(RecordingsView))
+    await openDetail()
+
+    fireEvent.click(screen.getByText('Re-transcribe'))
+
+    await waitFor(() => expect(screen.getByTestId('recordings-action-error')).toBeTruthy())
+    expect(screen.getByTestId('recordings-action-error').textContent).toMatch(/Failed to reprocess recording/)
+  })
+
+  it('shows an inline error and resets the confirm state when "Delete All" rejects', async () => {
+    mockApi({
+      recordings: {
+        deleteAll: vi.fn().mockRejectedValue(new Error('delete all failed'))
+      }
+    })
+
+    render(createElement(RecordingsView))
+    await waitFor(() => expect(screen.getByText(/we need to finish the report/)).toBeTruthy())
+
+    fireEvent.click(screen.getByText('Delete All'))
+    expect(screen.getByText('Confirm?')).toBeTruthy()
+    fireEvent.click(screen.getByText('Confirm?'))
+
+    await waitFor(() => expect(screen.getByTestId('recordings-action-error')).toBeTruthy())
+    expect(screen.getByTestId('recordings-action-error').textContent).toMatch(/Failed to delete all recordings/)
+    // Confirm state resets back to "Delete All" rather than staying stuck on "Confirm?".
+    expect(screen.getByText('Delete All')).toBeTruthy()
+  })
+
+  it('shows an inline error and resets the day confirm state when "Delete this day" rejects', async () => {
+    const recA = {
+      ...RECORDING,
+      id: 'rec-a',
+      timestamp: new Date(2024, 2, 10, 9, 0, 0).getTime(),
+      transcription: 'first day recording transcript'
+    }
+    mockApi({
+      recordings: {
+        list: vi.fn().mockResolvedValue([recA]),
+        deleteByDate: vi.fn().mockRejectedValue(new Error('day delete failed'))
+      }
+    })
+
+    render(createElement(RecordingsView))
+    await waitFor(() => expect(screen.getByText(/first day recording transcript/)).toBeTruthy())
+
+    const dayHeaderA = screen.getByTestId('day-header-2024-03-10')
+    fireEvent.click(within(dayHeaderA).getByText('Delete this day'))
+    expect(within(dayHeaderA).getByText('Confirm?')).toBeTruthy()
+    fireEvent.click(within(dayHeaderA).getByText('Confirm?'))
+
+    await waitFor(() => expect(screen.getByTestId('recordings-action-error')).toBeTruthy())
+    expect(screen.getByTestId('recordings-action-error').textContent).toMatch(/Failed to delete recordings for that day/)
+    // Confirm state resets back to "Delete this day" rather than staying stuck on "Confirm?".
+    expect(within(dayHeaderA).getByText('Delete this day')).toBeTruthy()
+  })
+
   it('hydrates a persisted cleanedText/cleanedWith from the recording entry without an extra IPC call', async () => {
     const { cleanup: cleanupMock } = mockApi({
       recordings: {

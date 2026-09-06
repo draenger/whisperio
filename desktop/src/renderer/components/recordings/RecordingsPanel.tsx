@@ -108,6 +108,9 @@ export function RecordingsView(): ReactElement {
   // While there's a query the results panel stands in for the full recordings
   // list (see TranscriptSearch).
   const searchActive = searchQuery.trim().length > 0
+  // Surfaces a delete/reprocess IPC rejection instead of letting it become an
+  // unhandled promise rejection with the confirm/loading state left stale.
+  const [actionError, setActionError] = useState<string | null>(null)
 
   // On-demand cleanup UI state (v1.4 PR2). `cleanupResults` holds the
   // in-memory result of the most recent "Clean up" call per recording id —
@@ -221,9 +224,17 @@ export function RecordingsView(): ReactElement {
     setTimeout(() => setCleanedCopiedId(null), 1500)
   }, [])
 
-  const handleDelete = useCallback(async (id: string) => {
-    await window.api.recordings.delete(id)
-    await loadRecordings()
+  const handleDelete = useCallback(async (id: string): Promise<boolean> => {
+    try {
+      setActionError(null)
+      await window.api.recordings.delete(id)
+      await loadRecordings()
+      return true
+    } catch (err) {
+      console.error('[Whisperio] Failed to delete recording:', err)
+      setActionError('Failed to delete recording. Please try again.')
+      return false
+    }
   }, [loadRecordings])
 
   const handleDeleteAll = useCallback(async () => {
@@ -232,9 +243,16 @@ export function RecordingsView(): ReactElement {
       setTimeout(() => setDeleteAllConfirm(false), 3000)
       return
     }
-    await window.api.recordings.deleteAll()
-    setDeleteAllConfirm(false)
-    await loadRecordings()
+    try {
+      setActionError(null)
+      await window.api.recordings.deleteAll()
+      setDeleteAllConfirm(false)
+      await loadRecordings()
+    } catch (err) {
+      console.error('[Whisperio] Failed to delete all recordings:', err)
+      setDeleteAllConfirm(false)
+      setActionError('Failed to delete all recordings. Please try again.')
+    }
   }, [deleteAllConfirm, loadRecordings])
 
   const handleDeleteDay = useCallback(async (dateKey: string) => {
@@ -245,14 +263,27 @@ export function RecordingsView(): ReactElement {
       }, 3000)
       return
     }
-    await window.api.recordings.deleteByDate(dateKey)
-    setDeleteDayConfirm((prev) => ({ ...prev, [dateKey]: false }))
-    await loadRecordings()
+    try {
+      setActionError(null)
+      await window.api.recordings.deleteByDate(dateKey)
+      setDeleteDayConfirm((prev) => ({ ...prev, [dateKey]: false }))
+      await loadRecordings()
+    } catch (err) {
+      console.error('[Whisperio] Failed to delete recordings for day:', dateKey, err)
+      setDeleteDayConfirm((prev) => ({ ...prev, [dateKey]: false }))
+      setActionError('Failed to delete recordings for that day. Please try again.')
+    }
   }, [deleteDayConfirm, loadRecordings])
 
   const handleReprocess = useCallback(async (id: string) => {
-    await window.api.recordings.reprocess(id)
-    await loadRecordings()
+    try {
+      setActionError(null)
+      await window.api.recordings.reprocess(id)
+      await loadRecordings()
+    } catch (err) {
+      console.error('[Whisperio] Failed to reprocess recording:', err)
+      setActionError('Failed to reprocess recording. Please try again.')
+    }
   }, [loadRecordings])
 
   const handleCopy = useCallback(async (id: string, text: string) => {
@@ -393,6 +424,22 @@ export function RecordingsView(): ReactElement {
 
     return (
       <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
+        {actionError && (
+          <div
+            data-testid="recordings-action-error"
+            style={{
+              margin: '14px 14px 0',
+              padding: '8px 12px',
+              borderRadius: 8,
+              fontSize: 12,
+              color: theme.danger,
+              background: 'rgba(239, 68, 68, 0.1)',
+              border: `1px solid ${theme.danger}`
+            }}
+          >
+            {actionError}
+          </div>
+        )}
         <div style={s.scrollArea}>
         <RecordingDetail
           theme={theme}
@@ -403,8 +450,9 @@ export function RecordingsView(): ReactElement {
             copied={copiedId === selectedRec.id}
             onReprocess={() => handleReprocess(selectedRec.id)}
             onDelete={async () => {
-              await handleDelete(selectedRec.id)
-              setSelectedId(null)
+              if (await handleDelete(selectedRec.id)) {
+                setSelectedId(null)
+              }
             }}
             formatDate={formatDate}
             formatDuration={formatDuration}
@@ -523,6 +571,23 @@ export function RecordingsView(): ReactElement {
           )}
         </div>
       </div>
+
+      {actionError && (
+        <div
+          data-testid="recordings-action-error"
+          style={{
+            margin: '0 14px 10px',
+            padding: '8px 12px',
+            borderRadius: 8,
+            fontSize: 12,
+            color: theme.danger,
+            background: 'rgba(239, 68, 68, 0.1)',
+            border: `1px solid ${theme.danger}`
+          }}
+        >
+          {actionError}
+        </div>
+      )}
 
       {/* Recordings list */}
       <div style={s.scrollArea}>

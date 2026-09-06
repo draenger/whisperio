@@ -190,3 +190,45 @@ describe('mistralTranscribe', () => {
     await expect(promise).rejects.toThrow('socket hang up')
   })
 })
+
+// Regression test for the "Multipart Content-Disposition fields built from
+// unsanitized filename/prompt/vocab strings" finding (mirrors the equivalent
+// describe block in tests/transcribe.test.ts): `filename` arrives straight
+// from the renderer over the `dictation:transcribe` IPC handler with no
+// validation, and prompt/language are similarly untrusted — a `"` or a raw
+// CR/LF in any of them used to break out of the intended header/field and
+// inject extra headers or multipart parts into the outbound request.
+describe('multipart field sanitization (header/body injection fix)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('escapes a double-quote and strips CR/LF from filename so it cannot break out of the Content-Disposition header or inject extra parts', async () => {
+    const mockReq = createMockNetRequest(200, JSON.stringify({ text: 'ok' }))
+    mockNetRequest.mockReturnValue(mockReq)
+
+    const maliciousFilename =
+      'evil".webm"\r\nContent-Disposition: form-data; name="hacked"\r\n\r\ninjected-value\r\n--injected-boundary--'
+
+    await mistralTranscribe('mk-test', Buffer.from('audio'), maliciousFilename, '', '', 'auto')
+
+    const bodyStr = (mockReq.write.mock.calls[0][0] as Buffer).toString()
+    expect(bodyStr).not.toContain('\r\nContent-Disposition: form-data; name="hacked"')
+    expect(bodyStr).not.toContain('name="hacked"')
+    expect(bodyStr).toContain('evil\\".webm\\"')
+  })
+
+  it('strips CR/LF from a CR/LF-laden prompt and language before they reach the multipart body', async () => {
+    const mockReq = createMockNetRequest(200, JSON.stringify({ text: 'ok' }))
+    mockNetRequest.mockReturnValue(mockReq)
+
+    const maliciousPrompt = 'term\r\nContent-Disposition: form-data; name="hacked"\r\n\r\ninjected'
+    const maliciousLanguage = 'en\r\nContent-Disposition: form-data; name="hacked2"\r\n\r\ninjected2'
+
+    await mistralTranscribe('mk-test', Buffer.from('audio'), 'rec.webm', maliciousPrompt, '', maliciousLanguage)
+
+    const bodyStr = (mockReq.write.mock.calls[0][0] as Buffer).toString()
+    expect(bodyStr).not.toContain('\r\nContent-Disposition: form-data; name="hacked"')
+    expect(bodyStr).not.toContain('\r\nContent-Disposition: form-data; name="hacked2"')
+  })
+})

@@ -58,6 +58,7 @@ struct SettingsView: View {
     @State private var cloudStatus: CKAccountStatus = .couldNotDetermine
     @State private var cloudAccountRecordIDText = "Checking account ID…"
     @State private var cloudDetailStatusText = "Awaiting sync details…"
+    @State private var isMigratingLibraryToCloud = false  // drives the spinner during moveLibraryToCloud()
 
     private var engine: ProviderID { settings.settings.providerChain.first ?? .onDevice }
 
@@ -242,42 +243,52 @@ struct SettingsView: View {
             toast("Sign in to iCloud in Settings to sync your library")
             return
         }
+        guard !isMigratingLibraryToCloud else { return }  // a migration is already in flight
 
-        let recordingsNeedsMigration = !recordings.isCloudBacked
-        let digestsNeedsMigration = !digests.isCloudBacked
+        // Both `migrateCurrentLibraryToCloud()` calls are `async` and build their CloudKit
+        // container off the main actor (see `RecordingsStore`/`DigestStore`), so this `Task` hop
+        // no longer just defers when the migration starts — it lets it genuinely run without
+        // blocking the UI thread. `isMigratingLibraryToCloud` drives the row/banner spinner for
+        // the (still real, just off-thread) duration of the migration.
+        isMigratingLibraryToCloud = true
+        Task { @MainActor in
+            defer { isMigratingLibraryToCloud = false }
+            let recordingsNeedsMigration = !recordings.isCloudBacked
+            let digestsNeedsMigration = !digests.isCloudBacked
 
-        if recordingsNeedsMigration {
-            do {
-                try recordings.migrateCurrentLibraryToCloud()
-            } catch {
-                toast("Couldn't move library to iCloud")
-                return
+            if recordingsNeedsMigration {
+                do {
+                    try await recordings.migrateCurrentLibraryToCloud()
+                } catch {
+                    toast("Couldn't move library to iCloud")
+                    return
+                }
             }
-        }
 
-        setStorageMode(.iCloud)
-        // Explicit user return to cloud — clear the crash-loop breaker's early-death streak so
-        // the next launch honors this choice instead of pinning local again (see LaunchSentinel).
-        LaunchSentinel.noteManualCloudResume()
+            setStorageMode(.iCloud)
+            // Explicit user return to cloud — clear the crash-loop breaker's early-death streak so
+            // the next launch honors this choice instead of pinning local again (see LaunchSentinel).
+            LaunchSentinel.noteManualCloudResume()
 
-        if digestsNeedsMigration {
-            do {
-                try digests.migrateCurrentLibraryToCloud()
-            } catch {
-                toast("Recordings moved to iCloud, but the journal is still local — retry from the sync banner")
-                return
+            if digestsNeedsMigration {
+                do {
+                    try await digests.migrateCurrentLibraryToCloud()
+                } catch {
+                    toast("Recordings moved to iCloud, but the journal is still local — retry from the sync banner")
+                    return
+                }
             }
-        }
 
-        switch (recordingsNeedsMigration, digestsNeedsMigration) {
-        case (true, true):
-            toast("Library moved to iCloud sync")
-        case (true, false):
-            toast("Recordings moved to iCloud sync")
-        case (false, true):
-            toast("Journal moved to iCloud sync")
-        case (false, false):
-            toast("Already syncing with iCloud")
+            switch (recordingsNeedsMigration, digestsNeedsMigration) {
+            case (true, true):
+                toast("Library moved to iCloud sync")
+            case (true, false):
+                toast("Recordings moved to iCloud sync")
+            case (false, true):
+                toast("Journal moved to iCloud sync")
+            case (false, false):
+                toast("Already syncing with iCloud")
+            }
         }
     }
 
@@ -1276,10 +1287,13 @@ struct SettingsView: View {
         Button(action: moveLibraryToCloud) {
             StateBanner(tone: .warn, icon: "cloud",
                         title: "iCloud sync is paused on this device",
-                        sub: "Storage is set to Auto sync, but this device is local-only right now — recordings and journal entries made here won't reach your other devices until sync resumes.",
-                        action: "Resume iCloud sync")
+                        sub: isMigratingLibraryToCloud
+                            ? "Resuming iCloud sync…"
+                            : "Storage is set to Auto sync, but this device is local-only right now — recordings and journal entries made here won't reach your other devices until sync resumes.",
+                        action: isMigratingLibraryToCloud ? "Resuming…" : "Resume iCloud sync")
         }
         .buttonStyle(.plain)
+        .disabled(isMigratingLibraryToCloud)
     }
 
     private var syncCategory: some View {
@@ -1297,8 +1311,15 @@ struct SettingsView: View {
                                "lock")
                     if settings.settings.storageMode == .onDevice {
                         SettRow(icon: "cloud", label: "Move library to iCloud",
-                                sub: "Copies the current library into iCloud and switches this device to auto sync.",
-                                last: true, onTap: moveLibraryToCloud)
+                                sub: isMigratingLibraryToCloud
+                                    ? "Moving your library into iCloud…"
+                                    : "Copies the current library into iCloud and switches this device to auto sync.",
+                                last: true,
+                                onTap: isMigratingLibraryToCloud ? nil : moveLibraryToCloud) {
+                            if isMigratingLibraryToCloud {
+                                ProgressView().controlSize(.small)
+                            }
+                        }
                     }
                 }
                 Text("Takes effect after you restart Whisperio.")

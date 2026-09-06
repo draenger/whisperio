@@ -165,30 +165,45 @@ final class DigestStore: ObservableObject {
         guard iCloudResumeAvailable, !resumeInFlight else { return }
         guard FileManager.default.ubiquityIdentityToken != nil else { return }
         resumeInFlight = true
-        defer { resumeInFlight = false }
-        do {
-            try migrateCurrentLibraryToCloud()
-        } catch {
-            Self.log.error("Auto-resume iCloud sync failed: \(error.localizedDescription)")
+        // The migration below now does its actual blocking work (CloudKit container stand-up)
+        // off the main actor via `Task.detached`, so it has to be awaited from a `Task` here
+        // rather than called synchronously — this closure itself stays synchronous because it's
+        // invoked straight from `MainActor.assumeIsolated` in the notification observer above.
+        Task { @MainActor in
+            do {
+                try await migrateCurrentLibraryToCloud()
+            } catch {
+                Self.log.error("Auto-resume iCloud sync failed: \(error.localizedDescription)")
+            }
+            resumeInFlight = false
+            updateICloudResumeAvailability()
         }
-        updateICloudResumeAvailability()
     }
 
     /// Promote the current journal into the iCloud-backed SwiftData store and switch the live
     /// backend over immediately. Callers typically pair this with `settings.storageMode = .iCloud`
     /// (and, for the Home library, `RecordingsStore.migrateCurrentLibraryToCloud()` alongside it).
     /// The caller chooses whether to surface success/failure to the user.
+    ///
+    /// `async` because standing up the CloudKit container (`DigestSyncStore.buildContainer`) is
+    /// genuine blocking I/O — schema registration plus a zone/subscription bootstrap — that would
+    /// otherwise run atomically on the main thread for the whole migration. It's built in a
+    /// `Task.detached` and only the (cheap) wrapping of the finished container back into a
+    /// `DigestSyncStore` happens on the MainActor.
     @MainActor
-    func migrateCurrentLibraryToCloud() throws {
+    func migrateCurrentLibraryToCloud() async throws {
         guard #available(iOS 17, macOS 14, *) else { return }
         // Same on-disk file the convenience init opens (`DigestSync.storeURL()`), not the
         // unnamed-config default — otherwise this migration would collide with
         // `RecordingSyncStore`'s cache file on the shared `default.store` path.
-        let cloudConfig = ModelConfiguration(
-            url: try DigestSync.storeURL(),
-            cloudKitDatabase: .private(RecordingSyncStore.cloudKitContainerID)
-        )
-        let cloudStore = try DigestSyncStore(configuration: cloudConfig, isCloudBacked: true)
+        let url = try DigestSync.storeURL()
+        let containerID = RecordingSyncStore.cloudKitContainerID
+        let container = try await Task.detached(priority: .userInitiated) {
+            let cloudConfig = ModelConfiguration(url: url, cloudKitDatabase: .private(containerID))
+            return try DigestSyncStore.buildContainer(configuration: cloudConfig)
+        }.value
+        let cloudConfig = ModelConfiguration(url: url, cloudKitDatabase: .private(containerID))
+        let cloudStore = DigestSyncStore(container: container, configuration: cloudConfig, isCloudBacked: true)
         // Carry each digest's real last-write time (not "now") into the upsert — `upsert`
         // defaults `modifiedAt` to the current instant, which would stamp every migrated digest
         // as freshly written and let a week-old local entry win last-writer-wins over a genuinely
@@ -376,7 +391,6 @@ final class DigestStore: ObservableObject {
         let todayKey = DigestGrouping.dayKey(for: Date(), calendar: calendar)
         // Once/day: bail if we already ran today.
         if UserDefaults.standard.string(forKey: Self.backfillKey) == todayKey { return }
-        UserDefaults.standard.set(todayKey, forKey: Self.backfillKey)
 
         for back in 1...window {
             guard let day = calendar.date(byAdding: .day, value: -back, to: Date()) else { continue }
@@ -394,6 +408,11 @@ final class DigestStore: ObservableObject {
                                 promptConfig: promptConfig, sourceMode: sourceMode,
                                 autoCategorize: autoCategorize)
         }
+
+        // Mark today's run complete only after the loop finishes, so an interrupted run
+        // (process killed/suspended mid-loop) retries the remaining days instead of being
+        // silently skipped for up to `window` days.
+        UserDefaults.standard.set(todayKey, forKey: Self.backfillKey)
     }
 
     /// Erase every daily summary (both backends). Used by Storage & data → Erase all data.

@@ -1,6 +1,6 @@
 import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { join } from 'path'
-import { mkdirSync, rmSync, existsSync, readFileSync } from 'fs'
+import { mkdirSync, rmSync, existsSync, readFileSync, unlinkSync } from 'fs'
 import { tmpdir } from 'os'
 
 const testDir = join(tmpdir(), `whisperio-test-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`)
@@ -10,6 +10,20 @@ vi.mock('electron', () => ({
     getPath: vi.fn(() => testDir)
   }
 }))
+
+// Vitest/Vite's ESM interop makes the real `fs` module's namespace object
+// non-configurable, so `vi.spyOn(fs, 'unlinkSync')` throws "Cannot redefine
+// property" (see https://vitest.dev/guide/browser/#limitations). Re-export
+// `unlinkSync` as a real vi.fn() wrapping the actual implementation so the
+// locked-file regression tests below can override it with
+// `mockImplementationOnce` while every other call still hits the real fs.
+vi.mock('fs', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('fs')>()
+  return {
+    ...actual,
+    unlinkSync: vi.fn(actual.unlinkSync)
+  }
+})
 
 import {
   getRecordingsDir,
@@ -209,6 +223,26 @@ describe('recordingStore', () => {
       await deleteRecording(entry.id)
       expect(await updateRecording(entry.id, { status: 'completed' })).toBeNull()
     })
+
+    // Regression: unlinkSync used to be bare (no try/catch) in this path, unlike
+    // evictToQuota's best-effort pattern. A locked file (AV/backup holding a handle,
+    // or a TOCTOU gap after existsSync) throws EBUSY/EPERM, which used to reject the
+    // whole enqueue()'d mutation before saveIndex ran — the recording would reappear
+    // as if delete never happened. It must still converge (tombstone written).
+    it('still tombstones the entry when unlinkSync throws (locked file)', async () => {
+      const entry = await saveRecording(Buffer.from('data'), { duration: 5, provider: 'openai' })
+      const unlinkSpy = vi.mocked(unlinkSync).mockImplementationOnce(() => {
+        throw new Error('EBUSY: resource busy or locked')
+      })
+
+      const result = await deleteRecording(entry.id)
+
+      expect(result).toBe(true)
+      expect(getRecording(entry.id)).toBeNull()
+      const raw = loadIndex()
+      expect(raw.recordings).toHaveLength(1)
+      expect(raw.recordings[0].deletedAt).toBeGreaterThan(0)
+    })
   })
 
   describe('deleteAllRecordings', () => {
@@ -222,6 +256,21 @@ describe('recordingStore', () => {
       expect(existsSync(entry2.filepath)).toBe(false)
       expect(getRecordings()).toHaveLength(0)
     })
+
+    // Regression: a locked file must not abort the index clear for the rest of
+    // the batch (see deleteRecording's locked-file regression test above).
+    it('still clears the index even when unlinkSync throws for one file (locked file)', async () => {
+      await saveRecording(Buffer.from('a'), { duration: 1, provider: 'openai' })
+      await saveRecording(Buffer.from('b'), { duration: 2, provider: 'openai' })
+      const unlinkSpy = vi.mocked(unlinkSync).mockImplementationOnce(() => {
+        throw new Error('EBUSY: resource busy or locked')
+      })
+
+      await deleteAllRecordings()
+
+      expect(getRecordings()).toHaveLength(0)
+      expect(loadIndex().recordings).toHaveLength(0)
+    })
   })
 
   describe('deleteRecordingsByDate', () => {
@@ -233,6 +282,25 @@ describe('recordingStore', () => {
       await updateRecording(entry1.id, { timestamp: yesterday })
 
       const entry2 = await saveRecording(Buffer.from('b'), { duration: 2, provider: 'openai' })
+
+      await deleteRecordingsByDate('2025-01-15')
+
+      const remaining = getRecordings()
+      expect(remaining).toHaveLength(1)
+      expect(remaining[0].id).toBe(entry2.id)
+    })
+
+    // Regression: a locked file for the matched-date recording must not abort the
+    // rewrite of the index (see deleteRecording's locked-file regression test above).
+    it('still removes the index entry when unlinkSync throws (locked file)', async () => {
+      const entry1 = await saveRecording(Buffer.from('a'), { duration: 1, provider: 'openai' })
+      const yesterday = new Date('2025-01-15T10:00:00Z').getTime()
+      await updateRecording(entry1.id, { timestamp: yesterday })
+      const entry2 = await saveRecording(Buffer.from('b'), { duration: 2, provider: 'openai' })
+
+      const unlinkSpy = vi.mocked(unlinkSync).mockImplementationOnce(() => {
+        throw new Error('EBUSY: resource busy or locked')
+      })
 
       await deleteRecordingsByDate('2025-01-15')
 

@@ -6,7 +6,7 @@ import CoreGraphics
 import WhisperioKit
 
 /// Live on-device dictation — streams partial results while you speak (the concept's
-/// "live recording with on-device partial results", same technique Husar uses). A single
+/// "live recording with on-device partial results", same technique Zryw uses). A single
 /// `AVAudioEngine` tap feeds both the speech recognizer (running transcript) and an audio
 /// file, so the clip can still be saved. iOS on-device only; cloud engines stay file-based.
 ///
@@ -14,7 +14,7 @@ import WhisperioKit
 /// on an arbitrary Speech queue, so all recognition state (`request`/`task`/`committed`/…)
 /// is confined to a private serial `stateQueue`. The `AVAudioEngine` itself (and `fileURL`)
 /// stays main-confined — `start()`/`finish()`/`cancel()` are `@MainActor`. Every `@Published`
-/// mutation hops to main explicitly (mirrors the Husar recognizer).
+/// mutation hops to main explicitly (mirrors the Zryw recognizer).
 final class LiveDictation: ObservableObject, @unchecked Sendable {
     @Published private(set) var transcript: String = ""
     @Published private(set) var level: CGFloat = 0

@@ -25,6 +25,23 @@ function isDev(): boolean {
   }
 }
 
+// SECURITY: this multipart/form-data body is hand-built rather than going
+// through a library that quotes/escapes field values — so every value
+// interpolated into a `Content-Disposition` header or form field (filename,
+// model, prompt, language) MUST go through this first. `filename` in
+// particular arrives from the renderer over the `dictation:transcribe` IPC
+// handler (main/index.ts) with no prior validation, so a `"` or a bare CR/LF
+// there could otherwise break out of `filename="..."` and inject extra
+// headers or multipart parts into the outbound request. Strips CR/LF
+// entirely and escapes `"` per the standard multipart quoted-string
+// convention. Duplicated per-file rather than shared — see transcribe.ts's
+// isDev() doc comment for why (importing it from transcribe.ts here would
+// also create a circular import, since transcribe.ts imports
+// mistralTranscribe from this file).
+function sanitizeMultipartField(value: string): string {
+  return value.replace(/[\r\n]+/g, ' ').replace(/"/g, '\\"')
+}
+
 export function mistralTranscribe(
   apiKey: string,
   audioBuffer: Buffer,
@@ -33,12 +50,13 @@ export function mistralTranscribe(
   model: string,
   language = 'auto'
 ): Promise<string> {
-  const apiModel = model?.trim() || DEFAULT_MISTRAL_MODEL
+  const apiModel = sanitizeMultipartField(model?.trim() || DEFAULT_MISTRAL_MODEL)
+  const safeFilename = sanitizeMultipartField(filename)
   const boundary = `----Whisperio${Date.now()}`
   const parts: Buffer[] = []
 
   parts.push(Buffer.from(
-    `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="${filename}"\r\nContent-Type: audio/webm\r\n\r\n`
+    `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="${safeFilename}"\r\nContent-Type: audio/webm\r\n\r\n`
   ))
   parts.push(audioBuffer)
   parts.push(Buffer.from('\r\n'))
@@ -48,12 +66,12 @@ export function mistralTranscribe(
   ))
   if (prompt) {
     parts.push(Buffer.from(
-      `--${boundary}\r\nContent-Disposition: form-data; name="prompt"\r\n\r\n${prompt}\r\n`
+      `--${boundary}\r\nContent-Disposition: form-data; name="prompt"\r\n\r\n${sanitizeMultipartField(prompt)}\r\n`
     ))
   }
   if (language && language !== 'auto') {
     parts.push(Buffer.from(
-      `--${boundary}\r\nContent-Disposition: form-data; name="language"\r\n\r\n${language}\r\n`
+      `--${boundary}\r\nContent-Disposition: form-data; name="language"\r\n\r\n${sanitizeMultipartField(language)}\r\n`
     ))
   }
 
