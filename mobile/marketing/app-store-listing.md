@@ -46,15 +46,15 @@ App id `6781780531` · bundle `ai.whisperio.mobile` · free · no IAP · no acco
 No Paid Applications Agreement, no banking/tax forms, no IAP review. Only the free Apple Developer
 Program License Agreement (already accepted — builds upload fine).
 
-## Quality gaps worth closing before submit (optional)
+## Screenshot pipeline (done 2026-09-06)
 
-- The iPhone/iPad screenshots are raw July captures: real clock (00:23), **empty Home** ("Nothing
-  captured yet"), no headline overlays, pre-wz3 design. Apple accepts them, but they don't sell the app.
-  Zryw's approach: a DEBUG design harness that seeds demo recordings, `simctl status_bar` override to
-  9:41, then `compose_gen.py` overlays (headline + subcopy per screen). Reusing that pipeline needs a
-  `WHISPERIO_DESIGN_SCREEN` harness in the iOS app first.
-- No Polish localization (Zryw ships en-US + pl). Optional.
-- No app preview video. Optional.
+iPhone 6.9" ×6 and iPad 13" ×4 are now composed marketing shots (headline + subcopy + floating device,
+9:41 clock, deterministic demo library), produced by `pipeline/capture-ios.sh` → `pipeline/compose_ios.py`
+→ `pipeline/asc_screenshots.py --upload --replace`. Story order: Home (hero) · Keyboard/any app ·
+Engines & keys · Journal · Recap · Private by design. Copy lives in `compose_ios.py` → `COPY`.
+
+Still optional: Polish localization (Zryw ships en-US + pl), app preview video, 6.5" set (Apple
+downscales 6.9" for older phones).
 
 ## macOS (Mac App Store) — separate submission, not ready
 

@@ -19,6 +19,7 @@ Standardized repo docs per the apex repo-knowledge-structure standard. This fold
 - [features/daily-digest.md](features/daily-digest.md) — Journal: per-day grouped notes + on-demand AI day summary.
 - [features/rewrite-presets.md](features/rewrite-presets.md) — mobile AI reformatting of a transcript via built-in + user presets.
 - [runbook.md](runbook.md) — run / build / release desktop, ship mobile to TestFlight, CI pipeline, config & secrets.
+- [release-runbook.md](release-runbook.md) — how a release ships, per track: desktop (GitHub Releases), iOS/watchOS (TestFlight → App Store, screenshot + listing pipeline), Mac App Store, rollback.
 - [testing.md](testing.md) — how to run the Vitest suite + coverage gate, Swift package tests, how to add a test.
 - [docs-manifest.json](docs-manifest.json) — what was consolidated, from where, at which commit.
 

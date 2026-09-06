@@ -39,7 +39,13 @@ struct iPadSplitView: View {
     // ("plain") for iPad. Defaults to true so existing callers (Mac, Gallery preview) are unchanged;
     // the real iPad entry point in AppShell.swift passes false.
     var showEngineBar: Bool = true
-    @State private var tab = "library"   // library | journal
+    @State private var tab = {
+        #if DEBUG
+        // Screenshot harness (DesignHarness.swift): land on the Journal tab directly.
+        if DesignHarness.screen == "ipad-journal" { return "journal" }
+        #endif
+        return "library"
+    }()   // library | journal
     @State private var sel: Int?
     @State private var showCloudConsent = false
     @State private var pendingCloudEngine: ProviderID?
@@ -55,7 +61,13 @@ struct iPadSplitView: View {
     // needs the real store).
     @State private var showRecap = false
     // Toolbar-gear Settings sheet — the split shell's own entry (see settingsGear below).
-    @State private var showSettingsSheet = false
+    @State private var showSettingsSheet = {
+        #if DEBUG
+        return DesignHarness.screen == "ipad-settings"
+        #else
+        return false
+        #endif
+    }()
     // Library tab's rows: the real library (mapped through the existing DemoRecording adapter)
     // when the live shell injected a store, otherwise the design's sample rows.
     private var libraryRecordings: [DemoRecording] { liveJournal ? recordings.items.map(DemoRecording.init) : WZSample.recordings }

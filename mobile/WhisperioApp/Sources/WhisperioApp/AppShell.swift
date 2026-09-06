@@ -32,6 +32,9 @@ final class WhisperioAppDelegate: NSObject, UIApplicationDelegate {
 
     func application(_ application: UIApplication,
                       didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
+        #if DEBUG
+        DesignHarness.prepareDefaultsIfActive()   // before Self.sharedRecordings is first touched
+        #endif
         UIApplication.shared.registerForRemoteNotifications()
         // Crash-loop breaker bookkeeping (see LaunchSentinel): this launch counts as survived
         // once it outlives the CloudKit-setup trap window…
@@ -526,6 +529,18 @@ private struct RootView: View {
 #endif
 
     var body: some View {
+        #if DEBUG
+        if let harnessScreen = DesignHarness.screen {
+            DesignHarnessRoot(screen: harnessScreen)
+        } else {
+            gate
+        }
+        #else
+        gate
+        #endif
+    }
+
+    @ViewBuilder private var gate: some View {
         if settings.didCompleteSetup {
             if isPad {
                 // Same wiring WhisperioMacApp.swift uses to make the split view's Journal tab

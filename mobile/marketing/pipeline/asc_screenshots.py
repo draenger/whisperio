@@ -4,10 +4,10 @@
     python3 asc_screenshots.py --dry-run
     python3 asc_screenshots.py --upload
     python3 asc_screenshots.py --upload --only APP_WATCH_SERIES_10
+    python3 asc_screenshots.py --upload --replace          # wipe + re-upload every set
 
 Local layout: mobile/marketing/screenshots/<folder>/<lang>/<file>.png — see SETS.
-The iPhone 6.9"/iPad 13" sets already live in ASC (uploaded 2026-07 from the
-design-harness captures); this script fills whatever is missing.
+iPhone/iPad files are produced by capture-ios.sh + compose_ios.py, watch files by capture-watch.sh.
 """
 import argparse, hashlib, pathlib, time
 
@@ -18,8 +18,8 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent / "screenshots"
 # 6.9" 1320x2868 capture; APP_IPAD_PRO_3GEN_129 accepts 2064x2752;
 # APP_WATCH_SERIES_10 takes 416x496 (Series 10 46mm raw capture).
 SETS = {
-    "APP_IPHONE_67": ("iphone", ["iphone-01-onboarding-welcome.png", "iphone-02-home.png", "iphone-03-settings-providers.png", "iphone-04-journal.png", "iphone-05-capture-anywhere.png"]),
-    "APP_IPAD_PRO_3GEN_129": ("ipad", ["ipad-01-onboarding-welcome.png", "ipad-02-library.png", "ipad-03-settings-providers.png", "ipad-04-journal.png", "ipad-05-capture-anywhere.png"]),
+    "APP_IPHONE_67": ("iphone", ["01-home.png", "02-keyboard.png", "03-models.png", "04-journal.png", "05-recap.png", "06-onboarding.png"]),
+    "APP_IPAD_PRO_3GEN_129": ("ipad", ["01-library.png", "02-journal.png", "03-onboarding.png"]),
     "APP_WATCH_SERIES_10": ("watch", ["watch-01-idle.png", "watch-02-recording.png", "watch-03-done.png"]),
 }
 LANG_FOR_LOCALE = {"en": "en", "pl": "pl"}
@@ -75,6 +75,7 @@ def main():
     ap.add_argument("--upload", action="store_true")
     ap.add_argument("--only", help="restrict to one display type, e.g. APP_WATCH_SERIES_10")
     ap.add_argument("--platform", default="IOS", choices=["IOS", "MAC_OS"])
+    ap.add_argument("--replace", action="store_true", help="delete every screenshot already in the target set(s) before uploading")
     args = ap.parse_args()
     if not (args.dry_run or args.upload):
         ap.error("pass --dry-run or --upload")
@@ -106,6 +107,10 @@ def main():
         return
     for loc, locale, display_type, sets, files in plan:
         set_id = ensure_set(loc["id"], display_type, sets)
+        if args.replace:
+            for old_shot in shots_in(set_id):
+                asc.call("DELETE", f"{asc.API}/appScreenshots/{old_shot['id']}")
+                print(f"  x {locale} {display_type} {old_shot['attributes']['fileName']} (deleted)")
         existing = {s["attributes"]["fileName"] for s in shots_in(set_id)}
         for f in files:
             if f.name in existing:
