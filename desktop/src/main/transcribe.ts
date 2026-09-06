@@ -774,7 +774,20 @@ function whisperTranscribe(apiKey: string, audioBuffer: Buffer, filename: string
         }
         try {
           const data = JSON.parse(responseBody) as TranscribeResult
-          if (isDev()) console.log(`[Whisperio] Transcribed text: "${data.text?.substring(0, 100)}"`)
+          // A 200 whose JSON carries no `text` is a provider-side failure, not
+          // an empty dictation: resolving it would report success, record STT
+          // usage, skip the rest of the provider chain, and hand the caller
+          // `undefined` as the transcript. Reject so the fallback chain in
+          // transcribeAudio() actually gets a turn.
+          if (typeof data.text !== 'string') {
+            const err = new Error(
+              `${directUrl ? 'Self-hosted' : 'OpenAI'} transcription response contained no text (HTTP ${response.statusCode})`
+            )
+            handleTranscriptionError(err, directUrl ? 'selfhosted' : 'openai')
+            settle(reject)(err)
+            return
+          }
+          if (isDev()) console.log(`[Whisperio] Transcribed text: "${data.text.substring(0, 100)}"`)
           settle(resolve)(data.text)
         } catch {
           const err = new Error(`Failed to parse transcription response (HTTP ${response.statusCode})`)
@@ -878,6 +891,16 @@ function elevenLabsTranscribe(apiKey: string, audioBuffer: Buffer, filename: str
         }
         try {
           const data = JSON.parse(responseBody) as TranscribeResult
+          // See whisperTranscribe above: a 200 with no `text` must fail, not
+          // resolve `undefined` as a successful (empty) transcript.
+          if (typeof data.text !== 'string') {
+            const err = new Error(
+              `ElevenLabs transcription response contained no text (HTTP ${response.statusCode})`
+            )
+            handleTranscriptionError(err, 'elevenlabs')
+            settle(reject)(err)
+            return
+          }
           settle(resolve)(data.text)
         } catch {
           const err = new Error(`Failed to parse transcription response (HTTP ${response.statusCode})`)

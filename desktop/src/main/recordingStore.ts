@@ -133,6 +133,18 @@ export function loadIndex(): RecordingIndex {
   }
 }
 
+// Windows hands out a transient EPERM/EBUSY for a rename when another process
+// (Defender/an indexer/a backup agent) still holds the freshly-written temp
+// file open. That window is short, so a couple of immediate retries turn a
+// spurious "failed to save recordings" into a normal save.
+const RENAME_RETRIES = 5
+const TRANSIENT_RENAME_CODES = new Set(['EPERM', 'EBUSY', 'EACCES'])
+
+function isTransientRenameError(err: unknown): boolean {
+  const code = (err as NodeJS.ErrnoException | null)?.code
+  return typeof code === 'string' && TRANSIENT_RENAME_CODES.has(code)
+}
+
 export function saveIndex(index: RecordingIndex): void {
   // Atomic write: serialize to a temp file then rename over the real index.
   // A crash mid-write leaves the previous index intact instead of a truncated
@@ -140,7 +152,21 @@ export function saveIndex(index: RecordingIndex): void {
   const indexPath = getIndexPath()
   const tmpPath = `${indexPath}.${process.pid}.${Date.now()}.tmp`
   writeFileSync(tmpPath, JSON.stringify(index, null, 2), 'utf-8')
-  renameSync(tmpPath, indexPath)
+
+  // The rename can fail (transient Windows lock, disk full, read-only dir).
+  // Whatever the reason, the temp file must not be left behind: saveIndex runs
+  // on EVERY mutation, so a leaked `.tmp` per failure slowly fills the
+  // recordings directory with junk that nothing ever collects.
+  for (let attempt = 0; ; attempt++) {
+    try {
+      renameSync(tmpPath, indexPath)
+      return
+    } catch (err) {
+      if (attempt < RENAME_RETRIES - 1 && isTransientRenameError(err)) continue
+      try { unlinkSync(tmpPath) } catch { /* best-effort cleanup */ }
+      throw err
+    }
+  }
 }
 
 // Serialize every read-modify-write so overlapping IPC mutations (e.g. an
