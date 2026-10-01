@@ -8,7 +8,7 @@ permissions:
   contents: write
 
 # A newer push to `release` cancels an in-progress run for the same ref — no
-# duplicate (expensive) macOS builds piling up and burning Actions minutes.
+# duplicate builds piling up and burning Actions minutes.
 concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: true
@@ -16,7 +16,7 @@ concurrency:
 jobs:
   # Cheap gate (Ubuntu = 1x minutes). Typecheck + tests with coverage thresholds.
   # The expensive build matrix only runs if this passes, so broken code never
-  # reaches the macOS runner (billed at 10x).
+  # reaches the build runners.
   test:
     runs-on: ubuntu-latest
     timeout-minutes: 18
@@ -80,16 +80,12 @@ jobs:
           - os: windows-latest
             platform: win
             timeout: 20
-          - os: macos-latest
-            platform: mac
-            timeout: 25
           - os: ubuntu-latest
             platform: linux
             timeout: 15
 
     runs-on: ${{ matrix.os }}
-    # Hard cap per platform. The macOS cap is the safety net for a hung Apple
-    # notarization — it auto-kills instead of running for hours at 10x billing.
+    # Hard cap per platform so a hung build auto-kills.
     timeout-minutes: ${{ matrix.timeout }}
     defaults:
       run:
@@ -117,29 +113,10 @@ jobs:
       - name: Build Electron app
         run: npm run build
 
-      - name: Prepare macOS notary key
-        if: matrix.platform == 'mac'
-        run: |
-          mkdir -p "$RUNNER_TEMP/notary"
-          # The .p8 is a plain-text PEM key — store it raw (no base64), much less fragile.
-          printf '%s\n' "${{ secrets.APPLE_API_KEY_P8 }}" > "$RUNNER_TEMP/notary/AuthKey.p8"
-          echo "APPLE_API_KEY=$RUNNER_TEMP/notary/AuthKey.p8" >> "$GITHUB_ENV"
-
       - name: Package installer
         run: npx electron-builder --${{ matrix.platform }} --config ../.devops/electron-builder.yml
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # macOS Developer ID signing — only set on the mac runner (a mac .p12 must
-          # never be fed to the Windows/Linux signers).
-          CSC_LINK: ${{ matrix.platform == 'mac' && secrets.CSC_LINK || '' }}
-          CSC_KEY_PASSWORD: ${{ matrix.platform == 'mac' && secrets.CSC_KEY_PASSWORD || '' }}
-          # Notarization via App Store Connect API key (APPLE_API_KEY path set above).
-          # Team ID goes in APPLE_TEAM_ID (electron-builder deprecated notarize.teamId).
-          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
-          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
-          # Team ID is not sensitive (it was already hardcoded in electron-builder.yml).
-          APPLE_TEAM_ID: "953Q6T2WTB"
-
       # Real gate (not just "it compiled"): launch the freshly built AppImage
       # headlessly and confirm the app process survives a few seconds without
       # crashing. Catches missing shared libs / runtime startup crashes that a
@@ -203,21 +180,6 @@ jobs:
           cat "$LOG" || true
           exit 1
 
-      # Diagnostic: report the macOS app's signing state. Non-blocking — a signing
-      # hiccup should never wedge the release.
-      - name: Report macOS code signature (non-blocking)
-        if: matrix.platform == 'mac'
-        run: |
-          for APP in dist/mac/Whisperio.app dist/mac-arm64/Whisperio.app; do
-            [ -d "$APP" ] || continue
-            echo "Checking signature: $APP"
-            if codesign -dv "$APP" 2>&1 && codesign --verify --deep --strict "$APP" 2>&1; then
-              echo "OK: $APP is signed"
-            else
-              echo "::warning::$APP is not code-signed"
-            fi
-          done
-
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -226,12 +188,10 @@ jobs:
           # working-directory — so they're prefixed with desktop/.
           path: |
             desktop/dist/*.exe
-            desktop/dist/*.dmg
             desktop/dist/*.zip
             desktop/dist/*.AppImage
             desktop/dist/*.deb
             desktop/dist/latest.yml
-            desktop/dist/latest-mac.yml
             desktop/dist/latest-linux.yml
 
   release:
@@ -259,11 +219,9 @@ jobs:
           name: Whisperio v${{ steps.version.outputs.version }}
           files: |
             artifacts/**/*.exe
-            artifacts/**/*.dmg
             artifacts/**/*.zip
             artifacts/**/*.AppImage
             artifacts/**/*.deb
             artifacts/**/latest.yml
-            artifacts/**/latest-mac.yml
             artifacts/**/latest-linux.yml
           generate_release_notes: true
