@@ -59,6 +59,7 @@ automate this away; the checklist below is the guardrail.
 | 2026-07-13 | `CD_RecordingEntity` +5 fields (`providerRaw`, `error`, `category`, `render`, `renderPresetID`) | PROMOTED | Imported to Development via `xcrun cktool import-schema` (management token, `--method file`), then Console → Deploy Schema Changes to Production. `cktool import-schema --environment production` is rejected by Apple ("endpoint not applicable") — the Console click is mandatory. |
 | 2026-07-13 | `CD_DigestEntity` (dayKey, date, recordingIDsData, groupsData, summary, summaryGeneratedAt, modifiedAt, entityName) | PROMOTED | Same import + Console deploy as above. Verified by `cktool export-schema --environment production` showing both record types with full field lists. Schema source: `scratchpad` ckdb generated from `CloudKitSchema.swift` field lists. |
 | 2026-07-16 | `CD_RecordingEntity` +2 fields (`segmentsData`, `speakerNamesData` — Conversation mode diarized segments + speaker names, both BYTES) | PROMOTED | Imported to Development via `xcrun cktool import-schema` (management token), Console → Deploy Schema Changes to Production clicked 2026-07-17. Verified by `cktool export-schema --environment production` showing both BYTES fields before the build-42 release. |
+| 2026-10-14 | `CD_RecordingEntity` +1 field (`source` STRING — capture channel "app"/"mic"/"watch"/"keyboard", added to the `@Model` 2026-07-19 in ea3cb9b, missed by the hand-built schema and the parity literal until 2026-10-14) | PENDING | **Build 74 (1.4.1, TestFlight since 2026-07-24) already writes `source`, so on Production every recording export batch fails until this is deployed** — the June failure mode again. Hand-built schema + parity test fixed 2026-10-14; promotion: Console → Development must show `source` on `CD_RecordingEntity` (run a DEBUG build signed into iCloud, or `cktool import-schema` to Development), then Deploy Schema Changes to Production, then verify with `cktool export-schema --environment production` and flip this row. |
 
 ## Release gate — do not ship digest sync while `CD_DigestEntity` is `PENDING`
 
@@ -66,8 +67,10 @@ automate this away; the checklist below is the guardrail.
 to sync through this same CloudKit container, so any TestFlight/App Store build cut while the row
 above says `PENDING` ships digests that silently fail to sync on Production — the exact "digest
 never appears on the other device" bug this checklist exists to prevent. Until the row is flipped
-to `PROMOTED`, treat every release as blocked on digests specifically (recordings still sync fine,
-since `CD_RecordingEntity` is already `PROMOTED`).
+to `PROMOTED`, treat every release as blocked on digests specifically. The same rule applies to
+`CD_RecordingEntity` (a `PENDING` row there means recordings fail to sync on Production — exactly
+the 2026-10-14 `source` row above), so when the gate script is wired in, grep for
+`CD_(Recording|Digest)Entity`, not only the digest type.
 
 This is a preflight check that belongs in `~/.claude/skills/whisperio-release/SKILL.md` /
 `mobile/WhisperioApp/Scripts/release-testflight.sh`, run before the archive step. It isn't wired in
