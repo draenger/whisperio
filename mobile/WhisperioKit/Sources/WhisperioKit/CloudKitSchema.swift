@@ -116,6 +116,7 @@ public enum WhisperioCloudKit {
             attribute("renderPresetID", .stringAttributeType),
             attribute("segmentsData", .binaryDataAttributeType),
             attribute("speakerNamesData", .binaryDataAttributeType),
+            attribute("source", .stringAttributeType),
             attribute("modifiedAt", .dateAttributeType)
         ]
         return entity
