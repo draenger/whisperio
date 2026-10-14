@@ -88,13 +88,20 @@ Two paths — pick by whether the build must carry **CloudKit**:
 
 | | Headless (`whisperio-release` skill / `Scripts/release-testflight.sh`) | Xcode GUI: Product → Archive → Distribute |
 |---|---|---|
-| CloudKit entitlement | **stripped** → app degrades to local store, no cross-device sync | kept |
+| CloudKit entitlement | **kept** since the `WZ AppStore mobile 92ab` profile carries `icloud-container-identifiers` (verified 2026-10-14 on build 75: the exported IPA has `icloud-services = CloudKit`, `aps-environment = production`, the App Group; earlier builds from the pre-iCloud profile were stripped) — check with `codesign -d --entitlements :- Payload/WhisperioApp.app` on an export-only run before uploading | kept |
 | Needs | ASC key `HUMHQQ6DB3`, dist cert + `WZ AppStore …` profiles (manual export signing) | Apple ID session in Xcode |
-| Use for | quick TF builds without sync | **anything shipped to real users / App Store** |
+| Use for | TF and App Store builds (what shipped 75) | fallback when the headless path can't sign |
 
 ```bash
 cd mobile/WhisperioApp && ./Scripts/release-testflight.sh        # headless; run in background, ~10 min
 ```
+macOS native (same build number): archive scheme `WhisperioMac` with the same ASC-key auth flags, then
+`xcodebuild -exportArchive … -exportOptionsPlist Scripts/ExportOptions-Mac.plist` (manual signing with the
+`3rd Party Mac Developer …` certs in `wz-build.keychain` — add it to the search list and unlock it first,
+see memory `mac-testflight-pipeline`). On the shared Mac run both archives through
+`/Volumes/DevDisk/Projects/.zryw-tools/withlock.sh` + `xcb` (one heavy job at a time); build 75 took
+~9 min per platform. TestFlight "what to test" PL/EN goes on the build via `betaBuildLocalizations`
+once `processingState` is `VALID`; the internal group `Dev` has access to all builds automatically.
 Both paths auto-manage the build number against ASC on export (`manageAppVersionAndBuildNumber`).
 `ITSAppUsesNonExemptEncryption = NO` is in the configs, so no export-compliance prompt.
 
