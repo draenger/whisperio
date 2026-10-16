@@ -194,6 +194,16 @@ if (process.argv.includes('--self-test')) {
 const cfg = ascLimits();
 const ios = load();
 const results = gate(ios, cfg);
+// the uploader input (asc_listing.py reads mobile/marketing/listing/*.json) must be exactly the gated text,
+// and must not name the unreleased Mac App Store app (release-runbook 4.1 step 5; Mac only after MAC_OS READY_FOR_SALE)
+for (const loc of LOCALES) {
+  const p = join(repo, 'mobile', 'marketing', 'listing', `${loc}.json`);
+  const up = existsSync(p) ? JSON.parse(readFileSync(p, 'utf8')) : null;
+  const same = !!up && JSON.stringify(up) === JSON.stringify(ios[loc]);
+  results.push({ ok: same, where: `listing/${loc}.json`, rule: 'listing-sync', msg: same ? 'uploader input = gated ASO text' : up ? 'differs from docs/launch/1.4.1/aso (copy the gated file over)' : 'missing (asc_listing.py would skip this locale)' });
+  const mac = up ? Object.values(up).filter((v) => typeof v === 'string' && /\bMac\b|\bmacOS\b/.test(v)) : [];
+  results.push({ ok: !mac.length, where: `listing/${loc}.json`, rule: 'ios-first', msg: mac.length ? `names Mac/macOS before the Mac App Store release: "${mac[0].match(/.{0,40}\b(Mac|macOS)\b.{0,40}/)[0]}"` : 'no Mac/macOS in the iOS listing' });
+}
 let fails = 0;
 for (const r of results) {
   if (!r.ok) fails++;
