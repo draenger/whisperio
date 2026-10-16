@@ -40,7 +40,7 @@ struct MistralProvider: TranscriptionProvider {
         let (data, resp) = try await MultipartBody.uploadSession.data(for: req)
         guard let http = resp as? HTTPURLResponse else { throw Self.err("No response from Mistral.") }
         guard (200..<300).contains(http.statusCode) else {
-            throw Self.err("Mistral error \(http.statusCode): \(String(data: data, encoding: .utf8) ?? "")")
+            throw Self.err("Mistral error: \(ProviderError.userMessage(status: http.statusCode, body: data))")
         }
         struct R: Decodable { let text: String }
         return try JSONDecoder().decode(R.self, from: data).text

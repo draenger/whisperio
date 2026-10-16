@@ -10,6 +10,8 @@ public enum ProviderKeyValidationError: Error, Sendable, Equatable {
     case network(String)
     /// The provider responded, but not with success or an auth failure — carries the status code.
     case unexpected(Int)
+    /// A self-hosted server URL violating `BaseURLPolicy` (e.g. plain http to a public host).
+    case invalidURL(String)
 }
 
 /// Verifies a pasted API key against the provider's own API with a cheap, side-effect-free,
@@ -95,12 +97,11 @@ public enum ProviderKeyValidator {
     /// this is the whole honest check. Accepts a bare host ("localhost:8000") the same way
     /// `SelfHostedProvider` does, defaulting to `http://`.
     private static func validateSelfHostedURL(_ raw: String) -> Result<Void, ProviderKeyValidationError> {
-        var s = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !s.isEmpty else { return .failure(.unexpected(0)) }
-        if !s.contains("://") { s = "http://" + s }
-        guard let url = URL(string: s), url.host != nil, !url.host!.isEmpty else {
-            return .failure(.unexpected(0))
+        // Same rule as the request path: https, or http only for loopback/private hosts.
+        switch BaseURLPolicy.validate(raw, assumeHTTPForBareHost: true) {
+        case .success: return .success(())
+        case .failure(.empty): return .failure(.unexpected(0))
+        case .failure(let e): return .failure(.invalidURL(e.localizedDescription))
         }
-        return .success(())
     }
 }

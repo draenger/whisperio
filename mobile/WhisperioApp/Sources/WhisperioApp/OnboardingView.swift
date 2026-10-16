@@ -1110,6 +1110,8 @@ private struct ProviderConnectSheet: View {
                 error = "That key didn’t verify with \(pick.displayName) — check it and try again."
             case .failure(.network(let msg)):
                 error = "Couldn’t reach \(pick.displayName): \(msg)"
+            case .failure(.invalidURL(let msg)):
+                error = msg
             case .failure(.unexpected(let code)):
                 error = "\(pick.displayName) returned an unexpected response (\(code))."
             }

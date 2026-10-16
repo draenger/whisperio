@@ -511,7 +511,8 @@ final class RecordingsStore: ObservableObject {
     private func saveJSON(to fileURL: URL) {
         do {
             let data = try JSONEncoder().encode(items)
-            try data.write(to: fileURL, options: [.atomic])
+            // UnlessOpen, not .complete: Watch dictations are saved while the phone may be locked.
+            try data.write(to: fileURL, options: [.atomic, FileProtection.unlessOpenWriteOption])
         } catch {
             Self.log.error("Failed to save recordings.json: \(error.localizedDescription)")
         }

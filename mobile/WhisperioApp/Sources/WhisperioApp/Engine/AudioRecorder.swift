@@ -52,6 +52,10 @@ final class AudioRecorder: NSObject, ObservableObject {
             AVNumberOfChannelsKey: 1,
             AVEncoderAudioQualityKey: AVAudioQuality.high.rawValue
         ]
+        // Pre-create with .completeUnlessOpen so the file is protected from its first byte yet
+        // stays writable if the device locks mid-recording (background audio mode).
+        FileManager.default.createFile(atPath: url.path, contents: nil)
+        FileProtection.completeUnlessOpen(url)
         let rec = try AVAudioRecorder(url: url, settings: settings)
         rec.isMeteringEnabled = true
         guard rec.record() else {
@@ -62,6 +66,7 @@ final class AudioRecorder: NSObject, ObservableObject {
                           userInfo: [NSLocalizedDescriptionKey: "Couldn't start recording. Check the microphone isn't in use."])
         }
 
+        FileProtection.completeUnlessOpen(url)
         recorder = rec
         fileURL = url
         startedAt = Date()

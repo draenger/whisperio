@@ -23,7 +23,9 @@ import {
   getEffectiveSettings,
   saveSettingsWithKeys,
   migrateProviderKeysToKeyStore,
-  PROVIDER_KEY_FIELDS
+  PROVIDER_KEY_FIELDS,
+  setSecureStorageWarningListener,
+  _resetSessionKeysForTests
 } from '../src/main/secure/keyAccessor'
 
 const BASE_SETTINGS = {
@@ -40,6 +42,8 @@ const BASE_SETTINGS = {
 describe('keyAccessor', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    _resetSessionKeysForTests()
+    setSecureStorageWarningListener(null)
     mockSaveSettings.mockImplementation((patch: Record<string, unknown>) => ({ ...BASE_SETTINGS, ...patch }))
   })
 
@@ -103,15 +107,50 @@ describe('keyAccessor', () => {
     })
   })
 
-  describe('saveSettingsWithKeys — fallback when encryption unavailable', () => {
-    it('saves key fields to settings.json exactly as before, untouched', () => {
+  describe('saveSettingsWithKeys — FAIL CLOSED when encryption unavailable', () => {
+    it('never writes a new key to settings.json; keeps it in memory and warns the renderer', () => {
       mockIsEncryptionAvailable.mockReturnValue(false)
+      mockLoadSettings.mockReturnValue({ ...BASE_SETTINGS })
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+      const listener = vi.fn()
+      setSecureStorageWarningListener(listener)
 
       const result = saveSettingsWithKeys({ openaiApiKey: 'sk-new', transcriptionPrompt: 'hi' })
 
       expect(mockSetKey).not.toHaveBeenCalled()
-      expect(mockSaveSettings).toHaveBeenCalledWith({ openaiApiKey: 'sk-new', transcriptionPrompt: 'hi' })
+      expect(mockSaveSettings).toHaveBeenCalledWith({ transcriptionPrompt: 'hi' })
       expect(result.openaiApiKey).toBe('sk-new')
+      expect(listener).toHaveBeenCalledWith(expect.stringContaining('kept for this session only'))
+      expect(warn).toHaveBeenCalled()
+      warn.mockRestore()
+    })
+
+    it('serves the session key from getEffectiveSettings but not from disk', () => {
+      mockIsEncryptionAvailable.mockReturnValue(false)
+      mockLoadSettings.mockReturnValue({ ...BASE_SETTINGS })
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+      saveSettingsWithKeys({ openaiApiKey: 'sk-new' })
+      expect(getEffectiveSettings().openaiApiKey).toBe('sk-new')
+      warn.mockRestore()
+    })
+
+    it('does not warn or re-persist an unchanged legacy on-disk key', () => {
+      mockIsEncryptionAvailable.mockReturnValue(false)
+      mockLoadSettings.mockReturnValue({ ...BASE_SETTINGS, openaiApiKey: 'sk-old' })
+      const listener = vi.fn()
+      setSecureStorageWarningListener(listener)
+
+      saveSettingsWithKeys({ openaiApiKey: 'sk-old', transcriptionPrompt: 'x' })
+
+      expect(listener).not.toHaveBeenCalled()
+      expect(mockSaveSettings).toHaveBeenCalledWith({ transcriptionPrompt: 'x' })
+    })
+
+    it('clearing a key still persists the empty value', () => {
+      mockIsEncryptionAvailable.mockReturnValue(false)
+      mockLoadSettings.mockReturnValue({ ...BASE_SETTINGS, openaiApiKey: 'sk-old' })
+      saveSettingsWithKeys({ openaiApiKey: '' })
+      expect(mockSaveSettings).toHaveBeenCalledWith({ openaiApiKey: '' })
     })
   })
 

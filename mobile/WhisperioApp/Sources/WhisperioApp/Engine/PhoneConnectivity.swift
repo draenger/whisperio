@@ -39,7 +39,9 @@ final class PhoneConnectivity: NSObject, ObservableObject, WCSessionDelegate {
                 // durable Audio folder so Detail can play/retranscribe it; off = text-only.
                 let keepAudio = store.settings.keepAudioRecordings
                 if keepAudio {
-                    try? clip.data.write(to: AudioStore.folder.appendingPathComponent(clip.filename))
+                    // Watch clips can arrive while the phone is locked -> UnlessOpen (creatable when locked).
+                    try? clip.data.write(to: AudioStore.folder.appendingPathComponent(clip.filename),
+                                         options: [FileProtection.unlessOpenWriteOption])
                 }
                 let rec = Recording(filename: keepAudio ? clip.filename : "", duration: clip.duration,
                                     status: .completed, provider: tr.provider, transcription: text,
@@ -79,6 +81,7 @@ final class PhoneConnectivity: NSObject, ObservableObject, WCSessionDelegate {
         let tmp = FileManager.default.temporaryDirectory
             .appendingPathComponent("from-watch-\(UUID().uuidString).m4a")
         try? FileManager.default.copyItem(at: file.fileURL, to: tmp)
+        FileProtection.completeUnlessOpen(tmp)
         Task { @MainActor in self.handle(fileURL: tmp) }
     }
 }

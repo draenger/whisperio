@@ -132,6 +132,7 @@ export interface SettingsAPI {
   // informational — used to render an honest hint next to key fields; never
   // gates saving/loading, which always falls back to settings.json.
   keyStorageAvailable: () => Promise<boolean>
+  onSecureStorageWarning: (callback: (message: string) => void) => () => void
 }
 
 export interface RecordingEntry {
@@ -463,6 +464,11 @@ const settingsApi: SettingsAPI = {
   pauseHotkeys: () => ipcRenderer.send('hotkeys:pause'),
   resumeHotkeys: () => ipcRenderer.send('hotkeys:resume'),
   keyStorageAvailable: () => ipcRenderer.invoke('settings:keyStorageAvailable'),
+  onSecureStorageWarning: (callback) => {
+    const handler = (_e: unknown, message: string): void => callback(message)
+    ipcRenderer.on('settings:secure-storage-warning', handler)
+    return () => ipcRenderer.removeListener('settings:secure-storage-warning', handler)
+  },
   onSetTab: (callback) => {
     const handler = (_e: unknown, tab: string): void => callback(tab)
     ipcRenderer.on('settings:set-tab', handler)

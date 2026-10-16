@@ -5,6 +5,7 @@ import { loadSettings, saveSettings } from './settingsManager'
 import {
   getEffectiveSettings,
   saveSettingsWithKeys,
+  setSecureStorageWarningListener,
   migrateProviderKeysToKeyStore
 } from './secure/keyAccessor'
 import { isEncryptionAvailable as isKeyStoreAvailable } from './secure/keyStore'
@@ -246,6 +247,11 @@ app.whenReady().then(() => {
   // module's doc comment. AppSettings' shape is unchanged; the renderer
   // can't tell the difference except that the values it saves may now rest
   // in the key store instead of settings.json.
+  setSecureStorageWarningListener((message) => {
+    for (const w of BrowserWindow.getAllWindows()) {
+      if (!w.isDestroyed()) w.webContents.send('settings:secure-storage-warning', message)
+    }
+  })
   ipcMain.handle('settings:load', () => getEffectiveSettings())
   ipcMain.handle('settings:save', (_event, newSettings) => {
     const saved = saveSettingsWithKeys(newSettings)

@@ -31,7 +31,7 @@ struct AppleSpeechProvider: TranscriptionProvider {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString)
             .appendingPathExtension(ext.isEmpty ? "m4a" : ext)
-        try clip.data.write(to: url)
+        try clip.data.write(to: url, options: [FileProtection.unlessOpenWriteOption])
 
         guard let recognizer = SFSpeechRecognizer(locale: locale), recognizer.isAvailable else {
             try? FileManager.default.removeItem(at: url)

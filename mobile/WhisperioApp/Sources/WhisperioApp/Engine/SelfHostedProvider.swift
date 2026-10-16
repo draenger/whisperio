@@ -20,6 +20,9 @@ struct SelfHostedProvider: TranscriptionProvider {
 
     func transcribe(_ clip: AudioClip) async throws -> String {
         guard let base = Self.normalizedBase(baseURL) else {
+            if case .failure(let e) = BaseURLPolicy.validate(baseURL, assumeHTTPForBareHost: true), e != .empty {
+                throw Self.err("Server URL rejected: \(e.localizedDescription)")
+            }
             throw Self.err("Add your server's URL in Settings before dictating.")
         }
         let url = base.appendingPathComponent("audio/transcriptions")
@@ -43,7 +46,7 @@ struct SelfHostedProvider: TranscriptionProvider {
             throw Self.err("No response from your self-hosted server at \(base.absoluteString).")
         }
         guard (200..<300).contains(http.statusCode) else {
-            throw Self.err("Self-hosted server error \(http.statusCode): \(String(data: data, encoding: .utf8) ?? "")")
+            throw Self.err("Self-hosted server error: \(ProviderError.userMessage(status: http.statusCode, body: data))")
         }
         struct R: Decodable { let text: String }
         return try JSONDecoder().decode(R.self, from: data).text
@@ -54,10 +57,8 @@ struct SelfHostedProvider: TranscriptionProvider {
     /// `audio/transcriptions` resolves the same way it does against OpenAI itself. Returns nil
     /// for anything that doesn't parse to a real host — the honest "not configured" signal.
     static func normalizedBase(_ raw: String) -> URL? {
-        var s = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !s.isEmpty else { return nil }
-        if !s.contains("://") { s = "http://" + s }
-        guard var url = URL(string: s), let host = url.host, !host.isEmpty else { return nil }
+        // https always; http only for loopback/private hosts (BaseURLPolicy) — otherwise nil.
+        guard case .success(var url) = BaseURLPolicy.validate(raw, assumeHTTPForBareHost: true) else { return nil }
         if !url.path.hasSuffix("/v1") {
             url = url.appendingPathComponent("v1")
         }

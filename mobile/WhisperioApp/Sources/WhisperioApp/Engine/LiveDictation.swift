@@ -93,6 +93,8 @@ final class LiveDictation: ObservableObject, @unchecked Sendable {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("whisperio-\(UUID().uuidString).caf")
         let audioFile = try AVAudioFile(forWriting: url, settings: format.settings)
+        // Written while a background-audio session may outlive the lock screen.
+        FileProtection.completeUnlessOpen(url)
         fileURL = url
 
         stateQueue.sync {

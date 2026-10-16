@@ -13,6 +13,10 @@ struct OpenAIChatClient: ChatLLM {
     func complete(messages: [ChatMessage], model: String, temperature: Double) async throws -> String {
         let trimmedBase = baseURL.trimmingCharacters(in: .whitespaces)
         let base = trimmedBase.isEmpty ? "https://api.openai.com/v1" : trimmedBase
+        // https-only (http only for loopback/private hosts) — never send the key/audio in cleartext.
+        if case .failure(let policyError) = BaseURLPolicy.validate(base) {
+            throw Self.err("OpenAI base URL rejected: \(policyError.localizedDescription)")
+        }
         guard let url = URL(string: base + "/chat/completions") else {
             throw Self.err("Invalid OpenAI base URL.")
         }
@@ -33,7 +37,7 @@ struct OpenAIChatClient: ChatLLM {
         let (data, resp) = try await Self.chatSession.data(for: req)
         guard let http = resp as? HTTPURLResponse else { throw Self.err("No response from OpenAI.") }
         guard (200..<300).contains(http.statusCode) else {
-            throw Self.err("OpenAI error \(http.statusCode): \(String(data: data, encoding: .utf8) ?? "")")
+            throw Self.err("OpenAI error: \(ProviderError.userMessage(status: http.statusCode, body: data))")
         }
         struct R: Decodable {
             struct Choice: Decodable { struct Message: Decodable { let content: String }; let message: Message }

@@ -67,7 +67,7 @@ struct ReplicateProvider: TranscriptionProvider {
         let (data, resp) = try await URLSession.shared.data(for: req)
         guard let http = resp as? HTTPURLResponse else { throw Self.err("No response from Replicate.") }
         guard (200..<300).contains(http.statusCode) else {
-            throw Self.err("Replicate error \(http.statusCode): \(String(data: data, encoding: .utf8) ?? "")")
+            throw Self.err("Replicate error: \(ProviderError.userMessage(status: http.statusCode, body: data))")
         }
 
         var prediction = try Self.parse(data)

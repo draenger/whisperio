@@ -511,6 +511,7 @@ struct SettingsView: View {
             case .openAI:
                 keyField("OpenAI API key", binding(\.openAIKey))
                 plainField("Base URL (optional, self-hosted)", "https://api.openai.com/v1", binding(\.openAIBaseURL))
+                baseURLNotice(.openAI, settings.settings.openAIBaseURL)
                 plainField("Model (optional)", "whisper-1", binding(\.whisperModel))
                 Text("Same setting as the chips above — tap a chip or type any newer model id here. Empty means whisper-1.")
                     .font(WZFont.mono(11)).foregroundStyle(t.faint).lineSpacing(3)
@@ -524,6 +525,7 @@ struct SettingsView: View {
             case .mistral: keyField("Mistral API key", binding(\.mistralKey))
             case .selfHosted:
                 plainField("Server URL", "http://192.168.1.20:8080/v1", binding(\.selfHostedURL))
+                baseURLNotice(.selfHosted, settings.settings.selfHostedURL)
                 keyField("Bearer token (optional)", binding(\.selfHostedKey), placeholder: "leave blank if none")
                 plainField("Model", "whisper-large-v3", binding(\.selfHostedModel))
                 // Green "your own server" banner — verbatim design copy, mob-settings.jsx:339-346.
@@ -1906,6 +1908,26 @@ struct SettingsView: View {
                 .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(t.line, lineWidth: 1))
         }
         .padding(.top, 2)
+    }
+
+    /// Inline policy feedback under a base-URL field: the rejection reason (BaseURLPolicy), or —
+    /// for a valid but non-official host — a warning that key and audio go to that server.
+    @ViewBuilder
+    private func baseURLNotice(_ provider: ProviderID, _ raw: String) -> some View {
+        if !raw.trimmingCharacters(in: .whitespaces).isEmpty {
+            switch BaseURLPolicy.validate(raw, assumeHTTPForBareHost: provider == .selfHosted) {
+            case .failure(let error):
+                Text(error.localizedDescription)
+                    .font(WZFont.mono(11)).foregroundStyle(t.red).lineSpacing(3)
+                    .fixedSize(horizontal: false, vertical: true).padding(.leading, 4)
+            case .success(let url):
+                if provider != .selfHosted, !BaseURLPolicy.isOfficialHost(provider: provider, url: url) {
+                    Text("Custom host — your key and audio go to this server, not to \(engineDisplayName(provider)).")
+                        .font(WZFont.mono(11)).foregroundStyle(t.amber).lineSpacing(3)
+                        .fixedSize(horizontal: false, vertical: true).padding(.leading, 4)
+                }
+            }
+        }
     }
 
     private func plainField(_ label: String, _ placeholder: String, _ text: Binding<String>) -> some View {

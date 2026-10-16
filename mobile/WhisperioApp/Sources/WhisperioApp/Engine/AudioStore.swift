@@ -22,6 +22,7 @@ enum AudioStore {
         guard !FileManager.default.fileExists(atPath: dst.path),
               FileManager.default.fileExists(atPath: src.path) else { return }
         try? FileManager.default.moveItem(at: src, to: dst)
+        FileProtection.complete(dst)   // kept clips are only read while unlocked
     }
 
     /// Durable-first lookup; adopts a tmp survivor into the durable folder on the way.
@@ -32,6 +33,7 @@ enum AudioStore {
         let tmp = FileManager.default.temporaryDirectory.appendingPathComponent(filename)
         if FileManager.default.fileExists(atPath: tmp.path) {
             try? FileManager.default.moveItem(at: tmp, to: dst)
+            FileProtection.complete(dst)
             return FileManager.default.fileExists(atPath: dst.path) ? dst : tmp
         }
         return nil

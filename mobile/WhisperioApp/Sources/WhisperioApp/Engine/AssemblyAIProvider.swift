@@ -124,7 +124,7 @@ struct AssemblyAIProvider: DiarizingProvider {
             throw Self.err("No response from AssemblyAI (\(step)).")
         }
         guard (200..<300).contains(http.statusCode) else {
-            throw Self.err("AssemblyAI \(step) error \(http.statusCode): \(String(data: data, encoding: .utf8) ?? "")")
+            throw Self.err("AssemblyAI \(step) error: \(ProviderError.userMessage(status: http.statusCode, body: data))")
         }
         return data
     }
