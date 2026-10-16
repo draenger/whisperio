@@ -1694,6 +1694,16 @@ struct SettingsView: View {
             Text("Whisperio \(appVersion) · on-device")
                 .font(WZFont.mono(11)).foregroundStyle(t.faint)
                 .frame(maxWidth: .infinity, alignment: .center)
+
+            Button {
+                if let url = URL(string: "https://whisperio.danielkasprzyk.com/privacy.html") { openURL(url) }
+            } label: {
+                Text("Privacy Policy")
+                    .font(WZFont.mono(11)).foregroundStyle(t.accent)
+                    .underline()
+                    .frame(maxWidth: .infinity, alignment: .center)
+            }
+            .buttonStyle(.plain)
         }
     }
 
@@ -2034,7 +2044,7 @@ struct CloudConsentSheet: View {
                 Text("Turn on cloud transcription?")
                     .font(WZFont.display(21)).foregroundStyle(t.text).padding(.bottom, 10)
 
-                Text("To use \(name), your audio will leave this device and be sent to \(name)’s servers to be transcribed. That’s the only way a cloud engine can work.")
+                Text("To use \(name), your audio will leave this device and be sent to \(name)’s servers to be transcribed. That’s the only way a cloud engine can work. \(name) handles your audio under its own terms and privacy policy.")
                     .font(WZFont.ui(14.5)).foregroundStyle(t.muted).lineSpacing(4)
                     .fixedSize(horizontal: false, vertical: true).padding(.bottom, 16)
 
