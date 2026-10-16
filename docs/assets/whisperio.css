@@ -32,7 +32,7 @@
   /* text */
   --text:   #ECEBF4;
   --muted:  #9d9bb4;
-  --faint:  #6a6880;
+  --faint:  #8a88a0;
 
   --red:   #f0556b;
   --green: #34d399;
@@ -275,7 +275,7 @@ section { position: relative; z-index: 1; }
 /* terminal */
 .term-body { display: flex; flex-direction: column; justify-content: flex-end; padding: 22px; }
 .term-line { font-size: 12.5px; line-height: 1.7; color: rgba(255,255,255,.5); }
-.t-muted { color: rgba(255,255,255,.3); } .t-green { color: #6ee7b7; } .t-dim { color: rgba(255,255,255,.42); }
+.t-muted { color: rgba(255,255,255,.55); } .t-green { color: #6ee7b7; } .t-dim { color: rgba(255,255,255,.62); }
 .term-hist { margin-bottom: 14px; }
 .typed { display: flex; align-items: baseline; gap: 7px; color: rgba(255,255,255,.85); font-size: 13px; line-height: 1.6; }
 .typed .chev { color: #6ee7b7; font-weight: 700; }
@@ -413,7 +413,7 @@ section { position: relative; z-index: 1; }
 .spot-point { display: flex; gap: 14px; }
 .spot-point .pic { flex-shrink: 0; width: 22px; height: 22px; color: var(--cyan); margin-top: 2px; }
 .spot-point .pic svg { width: 22px; height: 22px; }
-.spot-point h4 { font-family: var(--font-display); font-size: 1.02rem; font-weight: 600; margin-bottom: 3px; }
+.spot-point h3 { font-family: var(--font-display); font-size: 1.02rem; font-weight: 600; margin-bottom: 3px; }
 .spot-point p { font-size: .92rem; color: var(--muted); }
 @media (max-width: 880px) { .spot-grid, .hero-grid { grid-template-columns: 1fr; } }
 

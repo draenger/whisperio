@@ -25,6 +25,8 @@ Last update: 2026-07-14 · **Phase 0 COMPLETE + tone/sync-controls/polish merged
 | **Moat: no-screenshot** | ✅ nothing reads the screen; privacy guardian test lands with tone | n/a | — | |
 | Phase 2 sync-controls | ✅ IMPLEMENTED — branch `feat/mobile-sync-controls` (worktree); `SyncMode` (automatic/onOpen/interval/manual) gates live CloudKit-import publishing + foreground/timer nudges; Home gets a bigger Sync button + timestamp in `.manual`; Settings picker + honest "iOS may still receive changes in the background" copy | ✅ mobile (Kit) | Kit unit ✅ (130/130, 12 new); iOS sim build ✅; reachability ✅ (72/72, 0 orphans) | ON MAIN — ships with mobile build 41 |
 
+> **Status 2026-10-16:** desktop `1.5.0` = `main`, **unreleased** (latest GitHub release is v1.3.0; the release workflow builds Windows + Linux on push to `release`, the macOS leg was removed with the no-macOS-runners rule). Publishing is deferred by the owner; the site reads the live version from GitHub releases.
+
 ## Orphan list (defined-but-unreachable views) — must stay EMPTY
 
 Durable guardians active (orphan = failing test):
