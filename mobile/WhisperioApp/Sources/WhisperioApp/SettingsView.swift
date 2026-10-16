@@ -1695,16 +1695,27 @@ struct SettingsView: View {
                 .font(WZFont.mono(11)).foregroundStyle(t.faint)
                 .frame(maxWidth: .infinity, alignment: .center)
 
-            Button {
-                if let url = URL(string: "https://whisperio.danielkasprzyk.com/privacy.html") { openURL(url) }
-            } label: {
-                Text("Privacy Policy")
-                    .font(WZFont.mono(11)).foregroundStyle(t.accent)
-                    .underline()
-                    .frame(maxWidth: .infinity, alignment: .center)
+            HStack(spacing: 14) {
+                aboutLink("Privacy Policy", "https://whisperio.danielkasprzyk.com/privacy.html")
+                aboutLink("Terms", "https://whisperio.danielkasprzyk.com/terms.html")
+                aboutLink("Support", "https://whisperio.danielkasprzyk.com/support.html")
             }
-            .buttonStyle(.plain)
+            .frame(maxWidth: .infinity, alignment: .center)
+
+            aboutLink("Source: PolyForm Noncommercial", "https://github.com/draenger/whisperio")
+                .frame(maxWidth: .infinity, alignment: .center)
         }
+    }
+
+    private func aboutLink(_ title: String, _ urlString: String) -> some View {
+        Button {
+            if let url = URL(string: urlString) { openURL(url) }
+        } label: {
+            Text(title)
+                .font(WZFont.mono(11)).foregroundStyle(t.accent)
+                .underline()
+        }
+        .buttonStyle(.plain)
     }
 
     private var hubView: some View {

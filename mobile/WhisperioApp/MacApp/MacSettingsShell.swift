@@ -426,6 +426,14 @@ struct MacUpdatesTab: View {
                     Link("Privacy Policy", destination: privacyURL)
                         .font(WZFont.ui(12.5)).foregroundStyle(t.accent)
                 }
+                if let termsURL = URL(string: "https://whisperio.danielkasprzyk.com/terms.html") {
+                    Link("Terms of Use", destination: termsURL)
+                        .font(WZFont.ui(12.5)).foregroundStyle(t.accent)
+                }
+                if let supportURL = URL(string: "https://whisperio.danielkasprzyk.com/support.html") {
+                    Link("Support", destination: supportURL)
+                        .font(WZFont.ui(12.5)).foregroundStyle(t.accent)
+                }
             }
 
             MacSettingsSection(title: "How updates work") {
