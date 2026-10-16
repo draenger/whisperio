@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Privacy Policy — Whisperio</title>
-  <meta name="description" content="Privacy policy for Whisperio — a privacy-first dictation app. No accounts, no telemetry, no data collection by the app itself. Audio is sent only to the speech-to-text provider you configure.">
+  <meta name="description" content="Privacy policy for Whisperio — a privacy-first dictation app for iPhone, iPad, Apple Watch, Mac and desktop. No accounts, no telemetry, no data collection by the app itself. Audio is sent only to the provider you configure, or nowhere with on-device recognition.">
   <meta name="author" content="Daniel Kasprzyk">
   <meta name="robots" content="index, follow">
   <meta name="theme-color" content="#4a8cf7">
@@ -61,15 +61,15 @@
 
     <div class="eyebrow">Legal</div>
     <h1>Privacy Policy</h1>
-    <p class="updated">Last updated: June 17, 2026</p>
+    <p class="updated">Last updated: October 16, 2026</p>
 
     <div class="summary">
-      <p><strong>TL;DR.</strong> Whisperio runs locally on your computer. We — the developers of Whisperio — do not run any server, do not collect any data, and do not see your recordings, transcripts, or settings. Your audio is sent only to the speech-to-text provider <em>you choose</em> in Settings (e.g. OpenAI, ElevenLabs, or your own self-hosted server). No account, no login, no telemetry.</p>
+      <p><strong>TL;DR.</strong> Whisperio runs on your device. We — the developer of Whisperio — do not run any server, do not collect any data, and do not see your recordings, transcripts, or settings. There is no account, no login, no ads, no analytics and no telemetry. Dictation uses Apple's on-device speech recognition by default. If you choose a cloud provider (OpenAI, ElevenLabs, Replicate, Deepgram, AssemblyAI, Groq, Mistral, or a server of your own) and enter <em>your own</em> API key, your audio is sent directly from your device to that provider. Optional iCloud sync uses your private iCloud database, which we cannot read.</p>
     </div>
 
     <h2>1. Who we are</h2>
-    <p>Whisperio is an open-source desktop dictation app developed by Daniel Kasprzyk. The source code is published at <a href="https://github.com/draenger/whisperio" target="_blank" rel="noopener">github.com/draenger/whisperio</a> under the MIT license.</p>
-    <p>This policy describes how the Whisperio desktop application (and its TestFlight beta) handles data on your device. It does not cover the websites or APIs of third-party providers you choose to use through Whisperio.</p>
+    <p>Whisperio is a dictation app developed by Daniel Kasprzyk. It is available as an app for iPhone, iPad, Apple Watch and Mac (App Store, bundle ID <code>ai.whisperio.mobile</code>) and as a desktop app for Windows, macOS and Linux. The source code is published at <a href="https://github.com/draenger/whisperio" target="_blank" rel="noopener">github.com/draenger/whisperio</a> under the PolyForm Noncommercial License 1.0.0 (source-available, not for commercial use).</p>
+    <p>This policy describes how Whisperio handles data on your device and where data goes when you use its optional features. It does not cover the websites or APIs of third-party providers you choose to use through Whisperio.</p>
 
     <h2>2. Data Whisperio does <em>not</em> collect</h2>
     <p>Whisperio has no backend server operated by us. We do not have, see, or store:</p>
@@ -81,51 +81,74 @@
       <li>Your IP address or device identifiers</li>
       <li>Crash reports, usage analytics, or telemetry of any kind</li>
     </ul>
-    <p>There is no account, no login, and no registration. We have no way to contact you or identify you unless you contact us directly.</p>
+    <p>There is no account, no login, and no registration. We use no advertising or tracking SDKs. We have no way to contact you or identify you unless you contact us directly.</p>
 
     <h2>3. Data that stays on your device</h2>
-    <p>The following information is stored locally on your computer only:</p>
+    <p>The following information is stored locally on your device:</p>
     <ul>
-      <li><strong>Settings</strong> — hotkeys, theme, provider choice, custom vocabulary, output preferences. Stored in the app's local config directory.</li>
-      <li><strong>API keys</strong> — keys you enter for OpenAI, ElevenLabs, or other providers. Stored using the operating system's secure credential store (Keychain on macOS, Credential Manager on Windows, libsecret on Linux) where available; otherwise in the app's local config directory.</li>
-      <li><strong>Recording history</strong> — if you enable it, past recordings and their transcripts are stored locally so you can replay or re-transcribe them. You can delete individual entries or clear the entire history at any time from the app.</li>
+      <li><strong>Settings</strong> — hotkeys, theme, provider choice, custom vocabulary, output preferences. Stored in the app's sandbox or local config directory.</li>
+      <li><strong>API keys</strong> — keys you enter for the providers below. On iPhone, iPad, Apple Watch and Mac they are stored in the Apple Keychain, readable only when the device is unlocked and not synced through iCloud Keychain. On the desktop app they are stored in the operating system's secure credential store (Keychain on macOS, Credential Manager on Windows, libsecret on Linux) where available; otherwise in the app's local config directory.</li>
+      <li><strong>Dictation history</strong> — transcripts, notes, optional AI summaries and, if you keep them, the audio recordings. You can delete individual entries, delete all audio, or erase everything from the app (Settings → Storage on iOS).</li>
+      <li><strong>Downloaded local models</strong> — optional speech and language models (Whisper / WhisperKit and GGUF models) that you download inside the app. They are downloaded from Hugging Face (<a href="https://huggingface.co/privacy" target="_blank" rel="noopener">Hugging Face Privacy Policy</a>); that request reveals your IP address to Hugging Face but no audio or text. After download, these models run entirely on your device.</li>
     </ul>
     <p>You can locate and remove this data manually:</p>
     <ul>
-      <li><strong>iOS / iPadOS / Apple Watch</strong>: data lives inside the app's sandbox container — deleting the app from the device removes it completely. Recording history can also be cleared from the in-app Settings.</li>
-      <li><strong>macOS</strong>: <code>~/Library/Application Support/Whisperio</code></li>
+      <li><strong>iOS / iPadOS / Apple Watch</strong>: data lives inside the app's sandbox container — deleting the app from the device removes it completely (API keys in the Keychain are removed with it; if you also used iCloud sync, see section 5).</li>
+      <li><strong>macOS (Mac App Store app)</strong>: inside the app's sandbox container under <code>~/Library/Containers</code>. <strong>macOS (desktop app)</strong>: <code>~/Library/Application Support/Whisperio</code></li>
       <li><strong>Windows</strong>: <code>%APPDATA%\Whisperio</code></li>
       <li><strong>Linux</strong>: <code>~/.config/Whisperio</code></li>
     </ul>
 
     <h2>4. Data sent to third parties</h2>
-    <p>When you press the dictation hotkey, Whisperio sends your recorded audio to the speech-to-text provider you configured in Settings, so the provider can return a transcript. Whisperio does not send your audio anywhere else.</p>
-    <p>Possible destinations (whichever you choose):</p>
+    <h3>4.1 Speech recognition</h3>
     <ul>
-      <li><strong>OpenAI</strong> — see the <a href="https://openai.com/policies/privacy-policy" target="_blank" rel="noopener">OpenAI Privacy Policy</a> and <a href="https://openai.com/policies/api-data-usage-policies" target="_blank" rel="noopener">API Data Usage Policies</a>. By default, OpenAI does not use data submitted through the API to train its models.</li>
-      <li><strong>ElevenLabs</strong> — see the <a href="https://elevenlabs.io/privacy" target="_blank" rel="noopener">ElevenLabs Privacy Policy</a>.</li>
-      <li><strong>A self-hosted or third-party OpenAI-compatible server</strong> (e.g. whisper.cpp, faster-whisper, LocalAI, Ollama, or another provider you point Whisperio at) — data is sent only to the URL you configured. The privacy of that server is governed by whoever operates it (which may be you).</li>
+      <li><strong>Apple speech recognition (default on iPhone, iPad, Apple Watch and Mac).</strong> By default Whisperio asks Apple's Speech framework to recognize speech <em>on the device only</em>; audio does not leave your device. If you turn on "allow online recognition" in Settings, or if a language is not available on-device and you permit it, Apple may process the audio on its servers under <a href="https://www.apple.com/legal/privacy/" target="_blank" rel="noopener">Apple's Privacy Policy</a>. Whisperio itself never receives that audio.</li>
+      <li><strong>Local models</strong> (Whisper / WhisperKit, llama.cpp-based language models) — processed entirely on your device; nothing is sent anywhere.</li>
+      <li><strong>Cloud providers, only if you select one and enter your own API key.</strong> Whisperio then sends your recorded audio directly from your device to that provider, over HTTPS, so it can return a transcript. We are not a party to that exchange and receive no copy. Providers:
+        <ul>
+          <li><strong>OpenAI</strong> — <a href="https://openai.com/policies/privacy-policy" target="_blank" rel="noopener">Privacy Policy</a>, <a href="https://developers.openai.com/api/docs/guides/your-data" target="_blank" rel="noopener">API data controls</a>. OpenAI states that data sent to its API is not used to train its models unless you opt in.</li>
+          <li><strong>ElevenLabs</strong> — <a href="https://elevenlabs.io/privacy-policy" target="_blank" rel="noopener">Privacy Policy</a>. ElevenLabs may use content to train its models unless you opt out in your ElevenLabs account ("Data use" setting).</li>
+          <li><strong>Replicate</strong> — <a href="https://replicate.com/privacy" target="_blank" rel="noopener">Privacy Policy</a> and <a href="https://replicate.com/terms" target="_blank" rel="noopener">Terms</a>. Audio is uploaded to Replicate to be processed by the model you chose.</li>
+          <li><strong>Deepgram</strong> — <a href="https://deepgram.com/privacy" target="_blank" rel="noopener">Privacy Policy</a> and <a href="https://deepgram.com/terms" target="_blank" rel="noopener">Terms</a>. Deepgram may use content to train its models unless you opt out.</li>
+          <li><strong>AssemblyAI</strong> — <a href="https://www.assemblyai.com/legal/privacy-policy" target="_blank" rel="noopener">Privacy Policy</a> and <a href="https://www.assemblyai.com/legal/terms-of-service" target="_blank" rel="noopener">Terms</a>. AssemblyAI may use customer data to train its models unless you opt out.</li>
+          <li><strong>Groq</strong> — <a href="https://groq.com/privacy-policy" target="_blank" rel="noopener">Privacy Policy</a> and <a href="https://console.groq.com/docs/legal/services-agreement" target="_blank" rel="noopener">Services Agreement</a>. Groq states it does not use inputs or outputs to train models.</li>
+          <li><strong>Mistral AI</strong> — <a href="https://legal.mistral.ai/terms" target="_blank" rel="noopener">Legal terms</a>.</li>
+          <li><strong>A self-hosted or third-party OpenAI-compatible server</strong> (e.g. whisper.cpp, faster-whisper, LocalAI, or another provider you point Whisperio at) — data is sent only to the URL you configured. The privacy of that server is governed by whoever operates it (which may be you).</li>
+        </ul>
+        Each provider's own terms and privacy policy apply to data you send it, including whether it is retained or used for training; some of them train on content by default unless you opt out in your own account with them. Check your provider's settings before sending sensitive audio. No cloud provider is used until you select it and enter a key, and the app asks for your consent before first sending audio to a cloud provider.</li>
     </ul>
-    <p>If you optionally enable the AI post-processing step (LLM cleanup of technical terms), your transcript is also sent to the LLM provider you configured for that feature, subject to that provider's privacy policy.</p>
+    <h3>4.2 AI cleanup and summaries (optional)</h3>
+    <p>If you enable the optional AI cleanup, rewrite or daily-summary features, your <em>transcript text</em> (not audio) is sent to the language-model provider you configured for that feature (on iPhone, iPad, Apple Watch and Mac: OpenAI, or an on-device model; on the desktop app also Anthropic and Replicate), subject to that provider's privacy policy (for Anthropic: <a href="https://www.anthropic.com/legal/privacy" target="_blank" rel="noopener">Privacy Policy</a> and <a href="https://www.anthropic.com/legal/commercial-terms" target="_blank" rel="noopener">Commercial Terms</a>, under which Anthropic states it may not train models on customer content). On-device models and Apple Intelligence (where available) process text on your device.</p>
+    <h3>4.3 Sync to GitHub (optional, off by default)</h3>
+    <p>If you turn on "Sync to GitHub" and enter a personal access token, repository and branch, Whisperio uploads your transcripts, journal entries and summaries as Markdown files to <em>your own</em> GitHub repository, directly from your device, under <a href="https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement" target="_blank" rel="noopener">GitHub's privacy statement</a>. If that repository is public, anyone can read the files. The token is stored in the Keychain. Turn the feature off or delete the token to stop; files already uploaded remain in your repository until you delete them there.</p>
+    <h3>4.4 Apple Watch and keyboard</h3>
+    <ul>
+      <li><strong>Apple Watch</strong>: the watch records audio and sends it to your paired iPhone, which transcribes it using the engine you selected (section 4.1). The watch does not contact any provider on its own.</li>
+      <li><strong>Whisperio keyboard</strong>: the keyboard works as a normal keyboard without "Allow Full Access". Full Access is requested only so that the microphone key can hand the recording to the Whisperio app through the shared App Group and, if you selected a cloud provider, reach that provider. Whisperio does not log or transmit what you type, and we receive nothing through the keyboard.</li>
+    </ul>
 
-    <h2>5. Updates and GitHub</h2>
-    <p>Whisperio checks for new releases by contacting GitHub's public release endpoint. This request includes only what a normal HTTPS request reveals (your IP address, user agent, app version) and is handled by GitHub under GitHub's own privacy policy. Whisperio does not transmit any personal data, recordings, or settings during this check.</p>
-    <p>You can disable update checks in Settings.</p>
+    <h2>5. iCloud sync</h2>
+    <p>On iPhone, iPad and Mac, Whisperio can sync your dictation history between your devices using Apple CloudKit, in <em>your private iCloud database</em> (container <code>iCloud.ai.whisperio.mobile</code>). This data is stored by Apple in your iCloud account under <a href="https://www.apple.com/legal/privacy/" target="_blank" rel="noopener">Apple's Privacy Policy</a>; we operate no server in this path and cannot read, access or recover it. Sync is used when you are signed in to iCloud; you can switch Whisperio to on-device-only storage in Settings (storage / sync mode), or disable iCloud for Whisperio in iOS Settings → [your name] → iCloud. API keys are not synced.</p>
+    <p>To delete synced data, use "Erase all data" in the app, or iOS Settings → [your name] → iCloud → Manage Account Storage → Whisperio → Delete Data. Deleting the app alone does not remove data already stored in iCloud.</p>
 
-    <h2>6. TestFlight beta</h2>
-    <p>While Whisperio is distributed through Apple TestFlight, Apple may collect crash logs, device information, and feedback you submit through TestFlight itself. This data flows directly to Apple under <a href="https://www.apple.com/legal/privacy/" target="_blank" rel="noopener">Apple's Privacy Policy</a> and is shown to the Whisperio developer in aggregate form to help fix crashes. Whisperio does not add any analytics SDK of its own.</p>
+    <h2>6. Updates and GitHub (desktop app)</h2>
+    <p>The desktop app checks for new releases by contacting GitHub's public release endpoint. This request includes only what a normal HTTPS request reveals (your IP address, user agent, app version) and is handled by GitHub under GitHub's own privacy policy. Whisperio does not transmit any personal data, recordings, or settings during this check. You can disable update checks in Settings. The iPhone, iPad, Apple Watch and Mac App Store apps do not check for updates themselves; updates come through the App Store.</p>
 
-    <h2>7. Children</h2>
+    <h2>7. Permissions, TestFlight and App Store</h2>
+    <p>On Apple platforms Whisperio asks for access to the <strong>microphone</strong> (to record your voice) and <strong>speech recognition</strong> (for Apple's recognizer). It uses background audio so a dictation in progress can finish when the screen locks, and silent CloudKit notifications for iCloud sync; it sends no push notifications and does not track you across apps or websites. You can withdraw any permission at any time in system Settings.</p>
+    <p>If you install a beta through Apple TestFlight, Apple may collect crash logs, device information, and feedback you submit through TestFlight itself; this flows to Apple under <a href="https://www.apple.com/legal/privacy/" target="_blank" rel="noopener">Apple's Privacy Policy</a> and is shown to the developer in aggregate. Likewise, if you allow Apple to share analytics with developers in your device settings, Apple may provide us anonymous crash and usage statistics. Whisperio does not add any analytics SDK of its own.</p>
+
+    <h2>8. Children</h2>
     <p>Whisperio is not directed at children under 13 and we do not knowingly collect any data from anyone, regardless of age.</p>
 
-    <h2>8. Your rights</h2>
-    <p>Because Whisperio does not store your personal data on any server we control, requests for access, correction, or deletion of personal data under GDPR, CCPA, or similar laws are limited to data held by the third-party providers you configured. Please contact those providers directly to exercise your rights with respect to data they hold.</p>
-    <p>For data stored locally on your device, you have full control: you can view, edit, export, or delete it through the app or by removing the files listed in section 3.</p>
+    <h2>9. Your rights and retention</h2>
+    <p>Because Whisperio does not store your personal data on any server we control, requests for access, correction, or deletion of personal data under GDPR, CCPA, or similar laws are limited to data held by the third-party providers you configured (and by Apple for iCloud). Please contact those providers directly to exercise your rights with respect to data they hold; retention periods are set by them.</p>
+    <p>For data stored on your device, you have full control: you can view, edit, export, or delete it through the app or by removing the files listed in section 3. Data is kept on your device until you delete it or delete the app. You can revoke consent to cloud providers at any time by removing the API key or switching engine in Settings.</p>
 
-    <h2>9. Changes to this policy</h2>
+    <h2>10. Changes to this policy</h2>
     <p>If this policy changes materially, the "Last updated" date at the top will change and a notice will appear in the app's release notes. Older versions are visible in the project's Git history at <a href="https://github.com/draenger/whisperio" target="_blank" rel="noopener">github.com/draenger/whisperio</a>.</p>
 
-    <h2>10. Contact</h2>
+    <h2>11. Contact</h2>
     <p>Questions, concerns, or bug reports about privacy: <a href="mailto:daniel@danielkasprzyk.com">daniel@danielkasprzyk.com</a> or file an issue at <a href="https://github.com/draenger/whisperio/issues" target="_blank" rel="noopener">github.com/draenger/whisperio/issues</a>.</p>
 
   </main>
@@ -144,7 +167,7 @@
         <a href="https://github.com/draenger/whisperio" target="_blank" rel="noopener">GitHub</a>
         <a href="https://github.com/draenger/whisperio/releases" target="_blank" rel="noopener">Releases</a>
       </div>
-      <span class="foot-copy">© 2026 <a href="https://danielkasprzyk.com" target="_blank" rel="noopener">Daniel Kasprzyk</a> · MIT</span>
+      <span class="foot-copy">© 2026 <a href="https://danielkasprzyk.com" target="_blank" rel="noopener">Daniel Kasprzyk</a> · PolyForm Noncommercial</span>
     </div>
   </footer>
 
