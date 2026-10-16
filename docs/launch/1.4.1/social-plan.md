@@ -32,7 +32,7 @@ Link rules:
 2. **Your own AI key.** OpenAI, Groq, Deepgram, AssemblyAI, ElevenLabs, Mistral, Replicate, or a self-hosted OpenAI-compatible URL. Keys stay in the Keychain on that device.
 3. **On-device by default.** Apple's speech recognition runs on the device unless the user allows online recognition. Works with no key.
 4. **No developer server.** Audio goes from the device straight to the chosen provider, or nowhere on-device. History syncs through the user's own private iCloud (transcripts only, no audio), or stays on-device.
-5. **Everywhere you type.** Keyboard, widget, Control Center, Back Tap, Apple Watch. Raw text first, AI cleanup only when you ask.
+5. **Start dictation from anywhere.** Keyboard, widget, Control Center, Back Tap, Apple Watch. Raw text first, AI cleanup only when you ask.
 
 ## 1. Calendar
 
@@ -165,11 +165,13 @@ I run no server. Details: whisperio.danielkasprzyk.com/privacy.html
 
 <!-- limit:280 -->
 ```
-Gdzie trafia nagranie w Whisperio?
+Gdzie trafia nagranie?
 
-• Silnik na urządzeniu: zostaje na urządzeniu
-• Silnik w chmurze: prosto do wybranego dostawcy
-• Historia: Twój prywatny iCloud, same transkrypcje (albo tylko urządzenie)
+• Na urządzeniu: zostaje w telefonie (chyba że włączysz online Apple)
+• Chmura: prosto do wybranego dostawcy
+• Historia: prywatny iCloud, same transkrypcje
+
+Interfejs po angielsku.
 
 Nie mam serwera. Szczegóły: whisperio.danielkasprzyk.com/privacy.html
 ```
@@ -337,7 +339,7 @@ So Whisperio has no backend at all:
 • If you want a cloud model, you bring your own key (OpenAI, Groq, Deepgram, AssemblyAI, ElevenLabs, Mistral, Replicate, or a self-hosted endpoint). Audio goes from your device straight to that provider.
 • History syncs through your own private iCloud database, transcripts only, or stays on the device.
 
-It works where you type: a keyboard extension, a Home Screen widget, Control Center, Back Tap and Apple Watch. Raw text first; AI cleanup and templates only when you ask.
+Start dictation from a keyboard extension, a Home Screen widget, Control Center, Back Tap or Apple Watch. Raw text first; AI cleanup and templates only when you ask.
 
 Free, no in-app purchases. Source available on GitHub (PolyForm Noncommercial).
 
@@ -423,7 +425,7 @@ Dictation on iPhone, iPad and Apple Watch: on-device by default, or bring your o
 
 | Time | Visual (source) | On-screen text EN / PL | Motion |
 |---|---|---|---|
-| 0–4 s | `iphone/en/03-models.png` (device frame only, crop out the headline `Audio never leaves your iPhone`) | "Pick your engine" / „Wybierz silnik” | slow pan down |
+| 0–4 s | plain card with an engine icon (do NOT use `03-models.png` until re-captured: the false `Audio never leaves your iPhone` line is an in-app banner) | "Pick your engine" / „Wybierz silnik” | slow pan down |
 | 4–12 s | plain card (the screenshot shows on-device models, not the cloud list) | "On-device · OpenAI · Groq · Deepgram · …" / „Na urządzeniu · OpenAI · Groq · Deepgram · …” | names appear one by one as text overlays |
 | 12–17 s | plain card | "Your key. Straight to the provider." / „Twój klucz. Prosto do dostawcy.” | type-on text |
 | 17–20 s | logo | "I run no server" / „Nie mam serwera” | fade in |
@@ -459,7 +461,7 @@ Everything you dictate lands in a searchable journal, with an optional AI daily 
 | Time | Visual (source) | On-screen text EN / PL | Motion |
 |---|---|---|---|
 | 0–5 s | plain card with the question (do NOT use `06-onboarding.png` until its `never leaves your iPhone` text is corrected) | "Where does your voice go?" / „Gdzie trafia Twój głos?” | zoom-in |
-| 5–10 s | plain card, phone icon | "On-device: stays on the device" / „Na urządzeniu: zostaje na urządzeniu” | icon pulse |
+| 5–10 s | plain card, phone icon | "On-device: stays on the device (unless you turn on Apple online speech)" / „Na urządzeniu: zostaje w telefonie (chyba że włączysz rozpoznawanie online Apple)” | icon pulse |
 | 10–15 s | plain card, arrow to a cloud icon labelled "your provider" | "Cloud: straight to the provider you chose" / „Chmura: prosto do dostawcy, którego wybrałeś” | arrow draw |
 | 15–20 s | logo | "I run no server" / „Nie mam serwera” | fade in |
 
@@ -467,7 +469,7 @@ Caption:
 
 <!-- limit:2200 -->
 ```
-On-device by default. Cloud only with your own key, straight to the provider you chose. History in your private iCloud, transcripts only. Details on our privacy page (link in bio).
+On-device by default. Cloud only with your own key, straight to the provider you chose. History in your private iCloud, transcripts only. Details on the privacy page (link in bio).
 
 #privacy #iphone #speechtotext
 ```

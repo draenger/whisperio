@@ -36,13 +36,13 @@ Reddit and its mirrors returned 403/502 from this machine on 2026-10-16. Rules m
 | Product Hunt | Tagline ≤ 60, description ≤ 260, gallery 1270×760 (up to 8), thumbnail 240×240. Source: third-party guides (no official spec page found); check the live form | **YES** | Tue–Thu after D+7, 00:01 PT (09:01 CET) | P1–P4 |
 | r/macapps | *Mirror* (2026 "App Pile" megathread): new **dictation / speech-to-text apps** and apps not on the Mac App Store are limited to the monthly megathread; promotion counts toward a 30-day limit (Rule 3); format "PCP": problem, comparison, pricing + link | **Megathread only.** Whisperio is both a dictation app and (on Mac) not yet on the Mac App Store. One comment in the current month's megathread | D+2 | R1 |
 | r/iOSapps | *Mirror* (leadsrover.io, checked 2026-05-30): "Infrequent self-promotion is permitted; however, it is not permitted more than once per developer in 30 days." Developer flair ("Dev - Self Promotion") and a "[FREE]" title tag seen on mirrors | **YES**, once, with dev flair | D+1 | R2 |
-
-> **r/iOSapps, sprawdzić w D-1:** świeży post modów („Post Policy Changes”, ok. 2–3 tygodnie temu wg review 2026-10-16) przenosi promocje i kody do cotygodniowego przypiętego megawątku, gdzie top-level piszą tylko deweloperzy, z obowiązkowym ujawnieniem. Jeśli to obowiązuje: post premierowy idzie do megawątku, bez tagu „[FREE]” (może być czytany jako promocja cenowa).
 | r/apple | *Mirror*, conflicting: one summary says self-promotion only on **Sundays, developers only, self-post**, with an activity requirement; another says only in a dedicated thread | **Only if** the sidebar confirms the Sunday developer slot and the account has prior participation there. Otherwise skip | first Sunday after D0 | R3 |
 | r/productivity | No current rule text found; similar subs ban referral links, several moved promotion to sister subs in 2026 | **Default NO.** Check the sidebar; post only in a designated self-promo thread if one exists | — | (R4 as a comment) |
 | r/SideProject | *Guides*: the most promotion-friendly sub; bare landing-page drops get removed; build story + asking for feedback works | **YES** | D+4 | R4 |
 | Wykop (Mikroblog) | wykop.pl/regulamin: no spam or vote manipulation (pt 5.8); commercial messages must be "easily recognisable" (annex 3 pt 1). Same reading as the Zryw plan, 2026-10-16 | **YES**, a Mikroblog entry opening with "to moja aplikacja" | D+5 | W1 |
 | r/Polska | Official rules not readable (403); the community reacts hard to hidden ads | **Default NO.** Only if the sidebar allows "I made this" posts with disclosure | — | (W2) |
+
+> **r/iOSapps, sprawdzić w D-1:** świeży post modów („Post Policy Changes”, ok. 2–3 tygodnie temu wg review 2026-10-16) przenosi promocje i kody do cotygodniowego przypiętego megawątku, gdzie top-level piszą tylko deweloperzy, z obowiązkowym ujawnieniem. Jeśli to obowiązuje: post premierowy idzie do megawątku, bez tagu „[FREE]” (może być czytany jako promocja cenowa).
 
 ## 2. Texts
 
@@ -65,7 +65,7 @@ Two decisions shaped it:
 
 1. No server of my own. There is no Whisperio account and no backend. By default it uses Apple's on-device speech recognition, so you can try it without any API key. If you want a cloud model, you paste your own key for OpenAI, Groq, Deepgram, AssemblyAI, ElevenLabs, Mistral or Replicate (or point it at a self-hosted OpenAI-compatible URL), and audio goes from your device straight to that provider under their terms. Keys stay in the Keychain on that device.
 
-2. Raw text first, cleanup on demand. Dictation pastes immediately; AI cleanup (grammar, templates, your own instruction) runs only when you ask, with OpenAI or an on-device model.
+2. Raw text first, cleanup on demand. Raw text is ready immediately; AI cleanup (grammar, templates, your own instruction) runs only when you ask, with OpenAI or an on-device model.
 
 The iOS app is free, no in-app purchases. History syncs through your own private iCloud database by default (transcripts only, no audio); you can keep it on the device instead, or also push it to your own GitHub repo. The desktop app (Windows, macOS, Linux) is on GitHub Releases: bring your own key, or run local Whisper models (one click on Windows; on macOS and Linux you install whisper-server yourself).
 
@@ -88,7 +88,7 @@ Free dictation, on-device or with your own AI key
 
 <!-- limit:260 -->
 ```
-Dictate anywhere on iPhone, iPad, Apple Watch and desktop. Apple on-device speech by default, or bring your own key for OpenAI, Groq, Deepgram and more. No account, no subscription, no server of ours: audio goes only to the provider you pick.
+Dictation for iPhone, iPad, Apple Watch and desktop. On iPhone, Apple on-device speech by default, or bring your own key for OpenAI, Groq, Deepgram and more. No account, no subscription, no server of mine: audio goes only to the provider you pick.
 ```
 
 ### P3 — Product Hunt first comment (maker)
@@ -114,7 +114,7 @@ Questions about privacy, providers or the license: ask away, I'll answer all day
 
 1. Hero: `mobile/marketing/screenshots/iphone/en/01-home.png` on the brand background, tagline P1.
 2. "Type with your voice in any app": `02-keyboard.png` **only after the screenshot headline is corrected** (current headline claims text lands where you type from Action Button/Back Tap/Watch, which is false); until then use the device frame without the headline.
-3. "Your engine, your key": `03-models.png` **only after the headline is corrected** (current one says `Audio never leaves your iPhone`); it shows the on-device models screen (Whisper, Qwen), not the cloud provider list.
+3. "Your engine, your key": a plain card with the engine list. Do NOT use `03-models.png` until it is re-captured: the line `Audio never leaves your iPhone` is a banner inside the app UI (reported to workerbee mac), so cropping the headline does not remove it.
 4. "A searchable journal": `04-journal.png`.
 5. "Daily recap (optional)": `05-recap.png`.
 6. Apple Watch: `mobile/marketing/screenshots/watch/en/watch-02-recording.png` + `watch-03-done.png` side by side.

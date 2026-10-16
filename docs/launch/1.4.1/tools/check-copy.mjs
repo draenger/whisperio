@@ -14,6 +14,8 @@
 //   competitors  competitor names (no bashing; answer about Whisperio's model instead).
 //   providers    Anthropic / Claude: the iOS app has no Anthropic client.          NEVER exemptable.
 //   promises     "free forever", ranking superlatives.                              NEVER exemptable.
+//   regulated    medical / legal transcription claims (not validated for that use).
+//   fences       every ``` fence must be closed (an open one would swallow the rest of the file).
 //   placeholders leftover TODO / FIXME / TBD / XXX / lorem / [[...]]. {{PLACEHOLDERS}} (incl. Polish
 //                capitals) are listed as INFO, not failed.
 //   limits       a line `<!-- limit:N -->` (or `limit:N words`) right before a fence caps that fence.
@@ -28,8 +30,8 @@ import { fileURLToPath } from 'node:url';
 
 const RULES = {
   privacy: [
-    /100\s?%\s*(private|offline|secure|local|prywatn\w*)/i, /(completely|fully|totally|absolutely|perfectly) private/i,
-    /nothing (ever )?leaves your (device|phone|mac|iphone)/i, /never leaves your (device|phone|mac|iphone)/i,
+    /100\s*%\s*(private|offline|secure|local|on[- ]?device|prywatn\w*|na urządzeniu)/i, /(completely|fully|totally|absolutely|perfectly) private/i,
+    /nothing (ever )?leaves your (device|phone|mac|iphone|ipad|watch)/i, /never leaves your (device|phone|mac|iphone|ipad|watch)/i,
     /end[- ]to[- ]end/i, /\bE2EE?\b/, /HIPAA/i, /(GDPR|RODO)[- ](compliant|certified|zgodn\w*)/i, /compliant with (GDPR|HIPAA)/i,
     /zgodn\w* z (RODO|GDPR)/i, /no data (is )?(ever )?collected/i, /(we|it) collects? no data/i, /zero data/i, /military[- ]grade/i,
     /unhackable/i, /całkowicie prywatn\w*/i, /w pełni prywatn\w*/i, /nic nie opuszcza/i, /nigdy nie opuszcza/i, /szyfrowani\w* end/i,
@@ -41,7 +43,7 @@ const RULES = {
   regulated: [/medical (transcri|dictat|record)\w*/i, /legal (transcri|dictat)\w*/i, /clinical/i, /\bHIPAA\b/i, /transkrypc\w* (medyczn|prawn|sądow)\w*/i, /dyktowani\w* (medyczn|prawn)\w*/i],
   competitors: [/wispr/i, /superwhisper/i, /macwhisper/i, /\bdragon\b/i, /otter\.?ai/i, /\bdictato\b/i, /\baqua ?voice\b/i, /voiceink/i],
   providers: [/\bAnthropic\b/i, /\bClaude\b/],
-  promises: [/free forever/i, /forever free/i, /za darmo na zawsze/i, /na zawsze za darmo/i, /\bna zawsze\b/i, /always free/i, /free for life/i, /lifetime/i, /dożywotni\w*/i, /bezterminow\w*/i, /world'?s first/i, /pierwsz\w* na świecie/i, /\bbest\b/i, /(?<![#\w])#\s?1\b(?!\.)/, /\bno\.? ?1\b/i,
+  promises: [/free[- ]forever/i, /forever[- ]free/i, /za darmo na zawsze/i, /na zawsze za darmo/i, /\bna zawsze\b/i, /always free/i, /free for life/i, /lifetime/i, /dożywotni\w*/i, /bezterminow\w*/i, /world'?s first/i, /pierwsz\w* na świecie/i, /\bbest\b/i, /(?<![#\w])#\s?1\b(?!\.)/, /\bno\.? ?1\b/i,
     /number one/i, /najlepsz\w*/i, /\b(fastest|most accurate|most private)\b/i, /najszybsz\w*/i, /\bthe only\b/i, /jedyn\w* (taka|aplikacj)/i],
 };
 const EXEMPTABLE = new Set(['privacy', 'license', 'competitors']);
@@ -68,7 +70,7 @@ function parse(lines) {
   return { blocks, inFence, unclosed };
 }
 
-const norm = (t) => t.normalize('NFKC').replace(/[\u2010\u2011\u2012\u2013\u2212]/g, '-').replace(/[\u00a0\u202f\u2007\u2009]/g, ' ');
+const norm = (t) => t.normalize('NFKC').replace(/[\u2010\u2011\u2012\u2013\u2212]/g, '-').replace(/[\u00a0\u202f\u2007\u2009]/g, ' ').replace(/[\u00ad\u200b-\u200d\u2060\ufeff]/g, '');
 // only the two annotation forms are skipped; any other comment line is checked like copy (no hiding copy in comments)
 const ANNOTATION = /^\s*<!--\s*(limit:\d+(\s+words)?|allow:\s*[a-z-]+)\s*-->\s*$/;
 
@@ -147,6 +149,13 @@ if (process.argv.includes('--self-test')) {
     ['100 percent private', fence('100 percent private.'), 'privacy'],
     ["world's first", fence("The world's first BYOK dictation app."), 'promises'],
     ['unclosed fence', '<!-- allow: license -->\n```\nOpen source.\n', 'fences'],
+    ['soft hyphen open\u00adsource', fence('Whisperio is open\u00adsource.'), 'license'],
+    ['zero-width space 100\u200b% private', fence('It is 100\u200b% private.'), 'privacy'],
+    ['non-breaking hyphen free\u2011forever', fence('Free\u2011forever.'), 'promises'],
+    ['two spaces 100  % offline', fence('It is 100  % offline.'), 'privacy'],
+    ['never leaves your iPad', fence('Audio never leaves your iPad.'), 'privacy'],
+    ['nothing leaves your Watch', fence('Nothing leaves your Watch.'), 'privacy'],
+    ['100% on-device', fence('100% on-device.'), 'privacy'],
   ];
   let bad = 0;
   for (const [name, text, rule] of CASES) {
