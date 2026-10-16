@@ -1,11 +1,11 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-appstore-live="false" data-appstore-id="6781780531">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Whisperio — Free Open-Source Dictation App for Windows, macOS, Linux</title>
-  <meta name="description" content="Press a global hotkey, speak, and your words are transcribed and auto-pasted into any app. Cloud (OpenAI, ElevenLabs) or fully offline with local Whisper models. Free and open-source.">
-  <meta name="keywords" content="dictation, speech to text, voice typing, voice dictation, Windows dictation, macOS dictation, Linux dictation, OpenAI Whisper, ElevenLabs, transcription, global hotkey, productivity, open source, offline speech to text, self-hosted, whisper.cpp, local models, privacy, dictation software, free dictation app, auto paste, voice to text">
+  <title>Whisperio — Free Dictation for iPhone, Mac, Windows &amp; Linux</title>
+  <meta name="description" content="Free dictation for iPhone, iPad, Apple Watch, Mac, Windows and Linux. On-device speech, offline local models or your own AI key. No account, no Whisperio server. Source-available.">
+  <meta name="keywords" content="dictation, speech to text, voice typing, voice dictation, Windows dictation, macOS dictation, Linux dictation, OpenAI Whisper, ElevenLabs, transcription, global hotkey, productivity, source available, iPhone dictation, iOS dictation keyboard, Apple Watch dictation, bring your own key, offline speech to text, self-hosted, whisper.cpp, local models, privacy, dictation software, free dictation app, auto paste, voice to text">
   <meta name="author" content="Daniel Kasprzyk">
   <meta name="robots" content="index, follow">
   <meta name="theme-color" content="#4a8cf7">
@@ -15,7 +15,7 @@
   <meta property="og:type" content="website">
   <meta property="og:url" content="https://whisperio.danielkasprzyk.com/">
   <meta property="og:title" content="Whisperio — Free Dictation App with Offline Support">
-  <meta property="og:description" content="Press a hotkey, speak, auto-paste into any app. Cloud or fully offline with local Whisper models. Open-source for Windows, macOS, and Linux.">
+  <meta property="og:description" content="Free dictation for iPhone, iPad, Apple Watch, Mac, Windows and Linux. On-device speech, offline local models or your own AI key. No account, no Whisperio server.">
   <meta property="og:image" content="https://whisperio.danielkasprzyk.com/og-image.png">
   <meta property="og:image:width" content="1024">
   <meta property="og:image:height" content="1024">
@@ -26,7 +26,7 @@
   <!-- Twitter Card -->
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="Whisperio — Free Dictation App with Offline Support">
-  <meta name="twitter:description" content="Press a hotkey, speak, auto-paste. Cloud or offline with local Whisper models. Open-source for Windows, macOS, Linux.">
+  <meta name="twitter:description" content="Free dictation for iPhone, iPad, Apple Watch, Mac, Windows and Linux. On-device speech, local models or your own AI key. No account, no Whisperio server.">
   <meta name="twitter:image" content="https://whisperio.danielkasprzyk.com/og-image.png">
   <meta name="twitter:image:alt" content="Whisperio logo">
   <meta name="twitter:creator" content="@danielkasprzyk">
@@ -35,32 +35,41 @@
   <link rel="apple-touch-icon" href="favicon.png">
 
   <!-- Structured data -->
-  <script type="application/ld+json">
+  <!-- Structured data. The MobileApplication node gets installUrl/downloadUrl only from the App Store flag script
+       at the end of <body> (data-appstore-live on <html>); the App Store URL 404s before release. -->
+  <script type="application/ld+json" id="ld-json">
   {
     "@context": "https://schema.org",
-    "@type": "SoftwareApplication",
-    "name": "Whisperio",
-    "url": "https://whisperio.danielkasprzyk.com/",
-    "description": "Press a global hotkey, speak, and your words are transcribed and auto-pasted into any app. Cloud or fully offline with local Whisper models.",
-    "applicationCategory": "UtilitiesApplication",
-    "operatingSystem": "iOS 26, iPadOS 26, watchOS 26, macOS 26, Windows 10, Windows 11, Linux",
-    "softwareVersion": "1.4.1",
-    "author": {
-      "@type": "Person",
-      "name": "Daniel Kasprzyk",
-      "url": "https://danielkasprzyk.com"
-    },
-    "offers": {
-      "@type": "Offer",
-      "price": "0",
-      "priceCurrency": "USD"
-    },
-    "installUrl": "https://apps.apple.com/app/id6781780531",
-    "downloadUrl": "https://github.com/draenger/whisperio/releases/latest",
-    "softwareHelp": "https://github.com/draenger/whisperio",
-    "license": "https://polyformproject.org/licenses/noncommercial/1.0.0",
-    "screenshot": "https://whisperio.danielkasprzyk.com/og-image.png",
-    "featureList": "Global hotkey dictation, Auto-paste, OpenAI Whisper, ElevenLabs Scribe, Offline local models, Multi-monitor overlay, Recording history, Provider fallback chain"
+    "@graph": [
+      {
+        "@type": "SoftwareApplication",
+        "name": "Whisperio for desktop",
+        "url": "https://whisperio.danielkasprzyk.com/",
+        "description": "Press a global hotkey, speak, and your words are transcribed and auto-pasted into any app. Cloud providers with your own key, or fully offline with local Whisper models.",
+        "applicationCategory": "UtilitiesApplication",
+        "operatingSystem": "Windows 10, Windows 11, macOS 12, Linux",
+        "softwareVersion": "1.5.0",
+        "author": { "@type": "Person", "name": "Daniel Kasprzyk", "url": "https://danielkasprzyk.com" },
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+        "downloadUrl": "https://github.com/draenger/whisperio/releases/latest",
+        "softwareHelp": "https://github.com/draenger/whisperio",
+        "license": "https://polyformproject.org/licenses/noncommercial/1.0.0",
+        "screenshot": "https://whisperio.danielkasprzyk.com/og-image.png",
+        "featureList": "Global hotkey dictation, Auto-paste, OpenAI, ElevenLabs Scribe, Offline local models, Multi-monitor overlay, Recording history, Provider fallback chain"
+      },
+      {
+        "@type": "MobileApplication",
+        "name": "Whisperio",
+        "url": "https://whisperio.danielkasprzyk.com/#ios",
+        "description": "Dictation for iPhone, iPad and Apple Watch: Apple on-device speech recognition by default, downloadable local models, or your own API key for a cloud provider. No account, no Whisperio server.",
+        "applicationCategory": "UtilitiesApplication",
+        "operatingSystem": "iOS 17, iPadOS 17, watchOS 10",
+        "softwareVersion": "1.4.1",
+        "author": { "@type": "Person", "name": "Daniel Kasprzyk", "url": "https://danielkasprzyk.com" },
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+        "license": "https://polyformproject.org/licenses/noncommercial/1.0.0"
+      }
+    ]
   }
   </script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -95,6 +104,7 @@
     </a>
     <div class="nav-links">
       <a href="#features">Features</a>
+      <a href="#ios">iPhone</a>
       <a href="#how">How it works</a>
       <a href="#offline">Offline</a>
       <a href="app.html">App preview</a>
@@ -111,7 +121,7 @@
   <section class="hero wrap" id="top">
     <div class="hero-grid">
       <div class="hero-copy">
-        <span class="eyebrow">Open-source voice dictation</span>
+        <span class="eyebrow">Source-available voice dictation</span>
         <h1>Speak anywhere.<br><span class="g">It types for you.</span></h1>
         <p class="lead">Press a global hotkey, talk, and Whisperio transcribes your speech and pastes it right where your cursor is — in any app. Cloud-fast or fully offline with local Whisper models.</p>
 
@@ -120,8 +130,8 @@
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
             <span id="dl-label">Download free</span>
           </a>
-          <!-- App Store link goes live after the first App Store release -->
-          <a class="btn-ghost" href="https://apps.apple.com/app/id6781780531" target="_blank" rel="noopener">Download on the App Store</a>
+          <!-- App Store: behind data-appstore-live (see docs/release-runbook.md 3.8); a link only once the app is live -->
+          <span class="btn-ghost appstore-badge" data-appstore-badge aria-disabled="true"><span data-appstore-label>Coming soon to the App Store</span></span>
           <a class="btn-ghost" href="https://github.com/draenger/whisperio" target="_blank" rel="noopener">
             <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 .5C5.37.5 0 5.78 0 12.29c0 5.21 3.44 9.63 8.21 11.19.6.11.82-.25.82-.56v-2c-3.34.71-4.04-1.58-4.04-1.58-.55-1.36-1.34-1.73-1.34-1.73-1.09-.73.08-.72.08-.72 1.2.08 1.84 1.22 1.84 1.22 1.07 1.8 2.81 1.28 3.5.98.11-.76.42-1.28.76-1.58-2.67-.3-5.47-1.31-5.47-5.83 0-1.29.47-2.34 1.23-3.16-.12-.3-.53-1.51.12-3.15 0 0 1-.32 3.3 1.21A11.6 11.6 0 0 1 12 6.05c1.02 0 2.05.13 3.01.39 2.3-1.53 3.3-1.21 3.3-1.21.65 1.64.24 2.85.12 3.15.77.82 1.23 1.87 1.23 3.16 0 4.53-2.8 5.52-5.48 5.81.43.37.81 1.1.81 2.22v3.29c0 .31.22.68.83.56A12.02 12.02 0 0 0 24 12.29C24 5.78 18.63.5 12 .5z"/></svg>
             View source
@@ -213,23 +223,83 @@
     </div>
   </div>
 
+  <!-- ════════ iPhone, iPad & Apple Watch (1.4.1) ════════ -->
+  <!-- App Store flag: data-appstore-live on <html>. "false" = badge reads "Coming soon to the App Store" and is not a
+       link; "true" = the script at the end of <body> turns it into a link and adds installUrl to the JSON-LD.
+       Flip procedure: docs/release-runbook.md, "Website App Store flag". -->
+  <section class="sec wrap" id="ios">
+    <div class="sec-head reveal">
+      <span class="eyebrow">New · Whisperio 1.4.1 for iPhone, iPad &amp; Apple Watch</span>
+      <h2>Dictation in your pocket, with your own AI key.</h2>
+      <p>The same idea as the desktop app, built natively for Apple devices. Free, no account, no subscription, and no Whisperio server in the middle.</p>
+    </div>
+
+    <div class="bento">
+      <div class="card col-2 reveal">
+        <span class="tag">On-device by default</span>
+        <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="2" width="14" height="20" rx="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg></span>
+        <h3>Your speech, your device</h3>
+        <p>Out of the box, Whisperio uses Apple's speech recognition on your device. Apple's servers are used only if you turn on online recognition in Settings. If your language isn't available on-device, Whisperio tells you instead of sending audio anywhere (unless you set up a cloud fallback engine yourself). You can also download a local model and transcribe on your device.</p>
+      </div>
+      <div class="card col-2 reveal">
+        <span class="tag">Bring your own key</span>
+        <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.78 7.78 5.5 5.5 0 0 1 7.78-7.78zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg></span>
+        <h3>Your providers, your keys</h3>
+        <p>Add your own API key for OpenAI, ElevenLabs, Deepgram, AssemblyAI, Groq, Mistral or Replicate, or point Whisperio at your own OpenAI-compatible server. Keys stay in this device's Keychain and go only to their own provider. No markup: you pay the provider directly.</p>
+      </div>
+      <div class="card col-2 reveal">
+        <span class="tag">No Whisperio server</span>
+        <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></span>
+        <h3>Nothing in the middle</h3>
+        <p>No account, no analytics, no tracking. Audio goes straight from your device to the provider you chose, or nowhere when you transcribe on-device. Cloud providers handle audio under their own terms, so pick the one you trust.</p>
+      </div>
+      <div class="card col-2 reveal">
+        <span class="tag">Anywhere you type</span>
+        <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="6" width="20" height="12" rx="2"/><line x1="6" y1="10" x2="6.01" y2="10"/><line x1="10" y1="10" x2="10.01" y2="10"/><line x1="14" y1="10" x2="14.01" y2="10"/><line x1="18" y1="10" x2="18.01" y2="10"/><line x1="7" y1="14" x2="17" y2="14"/></svg></span>
+        <h3>Keyboard, widget, Watch</h3>
+        <p>Start dictation from the Whisperio keyboard (the text is inserted when you switch back), the Home Screen widget, Control Center (iOS 18), Back Tap or your Apple Watch. The widget, Control Center and Back Tap give you the text ready to paste; the Watch saves it to your journal.</p>
+      </div>
+      <div class="card col-2 reveal">
+        <span class="tag">iCloud sync</span>
+        <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/></svg></span>
+        <h3>Synced through your iCloud</h3>
+        <p>History syncs between your iPhone and iPad through your private iCloud database: transcripts and metadata, no audio. Sync is on by default; keep everything on this device only in Settings if you prefer.</p>
+      </div>
+      <div class="card col-2 reveal">
+        <span class="tag">Free · English UI</span>
+        <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg></span>
+        <h3>Free, no subscription</h3>
+        <p>No in-app purchases and no subscription. Cloud engines bill you directly through your own key. The app interface is in English; you can dictate in any language your chosen engine supports.</p>
+      </div>
+    </div>
+
+    <div class="cta-row reveal">
+      <span class="btn-dl appstore-badge" data-appstore-badge aria-disabled="true">
+        <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M16.37 1.43c0 1.14-.42 2.2-1.25 3.04-.86.87-1.94 1.38-3.05 1.29-.03-1.1.47-2.24 1.27-3.04.83-.85 2.06-1.35 3.03-1.29zM20.5 17.3c-.55 1.28-.82 1.85-1.53 2.98-1 1.57-2.4 3.52-4.14 3.53-1.55.02-1.95-1-4.05-1-2.1.01-2.54 1.02-4.09 1-1.74-.01-3.07-1.78-4.07-3.35C-.2 15.98-.5 10.82 1.27 8.1 2.53 6.17 4.52 5.04 6.39 5.04c1.9 0 3.1 1.04 4.67 1.04 1.53 0 2.46-1.04 4.66-1.04 1.66 0 3.42.9 4.68 2.47-4.11 2.25-3.44 8.12.1 9.79z"/></svg>
+        <span data-appstore-label>Coming soon to the App Store</span>
+      </span>
+      <a class="btn-ghost" href="privacy.html">Read the privacy policy</a>
+    </div>
+    <div class="free-note">iPhone · iPad · Apple Watch · iOS 17 or later · free · source-available (PolyForm Noncommercial)</div>
+  </section>
+
   <!-- ════════ Features ════════ -->
   <section class="sec wrap" id="features">
     <div class="sec-head reveal">
       <span class="eyebrow">Everything inside</span>
       <h2>One small app, a lot of power.</h2>
-      <p>Whisperio runs quietly in your tray and turns speech into text wherever you need it — with the flexibility to stay fully private.</p>
+      <p>Whisperio runs quietly in your tray and turns speech into text wherever you need it — with the option to keep your audio on your own machine.</p>
     </div>
 
     <div class="bento">
       <div class="card feat reveal">
         <span class="tag">Cloud STT</span>
         <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="22"/></svg></span>
-        <h3>Best-in-class accuracy</h3>
+        <h3>Cloud accuracy, your choice</h3>
         <p>OpenAI gpt-4o-transcribe or ElevenLabs Scribe v2. Build a priority chain — if one provider fails, the next takes over automatically.</p>
       </div>
       <div class="card feat cyan reveal">
-        <span class="tag">100% offline</span>
+        <span class="tag">Fully offline</span>
         <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg></span>
         <h3>Local Whisper models</h3>
         <p>Download GGML models in one click and run a whisper.cpp server straight from the app. Nothing leaves your machine.</p>
@@ -351,7 +421,7 @@
   <section class="wrap">
     <div class="cta reveal">
       <svg class="ghost-bg" viewBox="0 0 1024 1024"><use href="#ghost"></use></svg>
-      <span class="eyebrow center" style="justify-content:center">Free forever</span>
+      <span class="eyebrow center" style="justify-content:center">Free, no account</span>
       <h2 style="margin-top:14px">Start dictating in under a minute.</h2>
       <p>Download, drop in an API key or a local model, set your hotkey, and talk. That's it.</p>
       <div class="cta-row">
@@ -376,6 +446,7 @@
       </a>
       <div class="foot-links">
         <a href="#features">Features</a>
+        <a href="#ios">iPhone</a>
         <a href="#offline">Offline</a>
         <a href="app.html">App preview</a>
         <a href="privacy.html">Privacy</a>
@@ -400,5 +471,27 @@
   </div>
 
   <script src="assets/whisperio-demo.js"></script>
+  <script>
+  /* App Store flag (data-appstore-live on <html>). Off: the badge stays a "Coming soon" label and the store URL is never
+     present as a link, a meta tag or JSON-LD (this script only holds the URL prefix in a branch that does not run).
+     On: badge becomes a link and the MobileApplication JSON-LD node gets installUrl. Crawlers and no-JS visitors only
+     see that after the static flip in docs/release-runbook.md 3.8. */
+  (function () {
+    var h = document.documentElement;
+    if (h.getAttribute('data-appstore-live') !== 'true') return;
+    var url = 'https://apps.apple.com/app/id' + h.getAttribute('data-appstore-id');
+    document.querySelectorAll('[data-appstore-badge]').forEach(function (s) {
+      var a = document.createElement('a');
+      a.className = s.className; a.href = url; a.innerHTML = s.innerHTML;
+      a.querySelector('[data-appstore-label]').textContent = 'Download on the App Store';
+      s.replaceWith(a);
+    });
+    try {
+      var ld = document.getElementById('ld-json'), j = JSON.parse(ld.textContent);
+      j['@graph'].forEach(function (n) { if (n['@type'] === 'MobileApplication') { n.installUrl = url; n.downloadUrl = url; } });
+      ld.textContent = JSON.stringify(j);
+    } catch (e) {}
+  })();
+  </script>
 </body>
 </html>
