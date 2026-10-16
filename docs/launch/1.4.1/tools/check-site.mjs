@@ -34,7 +34,7 @@ const metaContent = (h, attr, name) => {
   return tag ? (tag.match(/content=["']([^"']*)["']/i) || [])[1] : null;
 };
 // the Mac App Store app is not shipped (release-runbook 4): no page may say it is available there
-const CLAIMS = [/Mac\s*\((the )?App Store/i, /Mac App Store app(?!, once released)/i,/open[- ]?source/i, /\bOSS\b/, /\b100\s*%\s*(private|privacy|secure|offline|on[- ]?device|local)/i, /never leaves your (ipad|watch|iphone|mac)/i, /(fully|completely|totally) private/i, /\bforever\b/i,
+const CLAIMS = [/Mac\s*\((the )?App Store/i, /Mac App Store(?! (app|version)?,? ?(once released|is coming))/i,/open[- ]?source/i, /\bOSS\b/, /\b100\s*%\s*(private|privacy|secure|offline|on[- ]?device|local)/i, /never leaves your (ipad|watch|iphone|mac)/i, /(fully|completely|totally) private/i, /\bforever\b/i,
   /best[- ]in[- ]class/i, /\bthe best\b/i, /#\s?1\b/, /\bnumber one\b/i, /never leaves your (device|phone)/i, /end[- ]to[- ]end/i];
 
 export function checkSite(pages, css) {
@@ -55,6 +55,15 @@ export function checkSite(pages, css) {
   const id = (htmlTag.match(/data-appstore-id="([^"]*)"/) || [])[1];
   out(live === 'true' || live === 'false', 'index.html', 'appstore-flag', `data-appstore-live="${live}"`);
   out(id === APP_ID, 'index.html', 'appstore-flag', `data-appstore-id="${id}" (expected ${APP_ID})`);
+  // legal/support pages are static: while OFF none may say the iOS app is available; while ON none may still say 'coming soon'
+  for (const [name, html] of Object.entries(pages)) {
+    if (name === 'index.html') continue;
+    const t = text(html);
+    const avail = /\b(is )?available\b[^.]{0,80}\b(iPhone|iPad|Apple Watch)\b|\b(iPhone|iPad|Apple Watch)\b[^.]{0,60}\(App Store,/i.test(t);
+    const soon = /data-appstore-status/.test(html);
+    if (live === 'false') out(!avail, name, 'appstore-flag', avail ? 'says the iOS app is available while data-appstore-live="false"' : 'no iOS availability claim while OFF');
+    else if (live === 'true') out(!soon, name, 'appstore-flag', soon ? 'still says "coming soon" while data-appstore-live="true" (runbook 3.8 step 4)' : 'no stale coming-soon');
+  }
   // every ld+json block is parsed: a second block must not smuggle an installUrl in
   const lds = ldBlocks(h).map((b) => { try { return JSON.parse(b); } catch { return null; } });
   const ld = lds.length && lds.every(Boolean) ? lds[0] : null;
@@ -128,6 +137,8 @@ function selfTest(pages, css) {
     ['second JSON-LD block with installUrl while OFF', (p) => ({ ...p, 'index.html': p['index.html'].replace('</head>', `<script type="application/ld+json">{"@type":"MobileApplication","installUrl":"x"}</script></head>`) }), 'appstore-flag'],
     ['#ios hidden', (p) => ({ ...p, 'index.html': p['index.html'].replace('id="ios"', 'id="ios" hidden') }), 'ios-section'],
     ['silent-fallback wording back', (p) => ({ ...p, 'index.html': p['index.html'].replace('If your language isn', 'Or your language is not available on-device. If your language isn') }), 'ios-section'],
+    ['iPhone availability on privacy page while OFF', (p) => ({ ...p, 'privacy.html': '<html><body><p>It is available as an app for iPhone, iPad and Apple Watch (App Store, bundle ID x)</p></body></html>' }), 'appstore-flag'],
+    ['available on the Mac App Store', (p) => ({ ...p, 'support.html': '<html><body><p>Download it on the Mac App Store today.</p></body></html>' }), 'claims'],
     ['Mac App Store claim on another page', (p) => ({ ...p, 'terms.html': '<html><body><p>for iPhone and Mac (App Store, bundle ID x)</p></body></html>' }), 'claims'],
     ['Mac in the iCloud line', (p) => ({ ...p, 'index.html': p['index.html'].replace('between your iPhone and iPad', 'between your iPhone, iPad and Mac') }), 'ios-section'],
     ['Anthropic in iPhone section', (p) => ({ ...p, 'index.html': p['index.html'].replace('OpenAI, ElevenLabs, Deepgram', 'Anthropic, OpenAI, ElevenLabs, Deepgram') }), 'ios-section'],
