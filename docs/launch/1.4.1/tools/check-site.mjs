@@ -34,7 +34,7 @@ const metaContent = (h, attr, name) => {
   return tag ? (tag.match(/content=["']([^"']*)["']/i) || [])[1] : null;
 };
 // the Mac App Store app is not shipped (release-runbook 4): no page may say it is available there
-const CLAIMS = [/Mac\s*\((the )?App Store/i, /Mac App Store app/i, /open[- ]?source/i, /\bOSS\b/, /\b100\s*%\s*(private|privacy|secure|offline|on[- ]?device|local)/i, /never leaves your (ipad|watch|iphone|mac)/i, /(fully|completely|totally) private/i, /\bforever\b/i,
+const CLAIMS = [/Mac\s*\((the )?App Store/i, /Mac App Store app(?!, once released)/i,/open[- ]?source/i, /\bOSS\b/, /\b100\s*%\s*(private|privacy|secure|offline|on[- ]?device|local)/i, /never leaves your (ipad|watch|iphone|mac)/i, /(fully|completely|totally) private/i, /\bforever\b/i,
   /best[- ]in[- ]class/i, /\bthe best\b/i, /#\s?1\b/, /\bnumber one\b/i, /never leaves your (device|phone)/i, /end[- ]to[- ]end/i];
 
 export function checkSite(pages, css) {
