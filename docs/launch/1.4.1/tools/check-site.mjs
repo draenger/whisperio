@@ -70,8 +70,11 @@ export function checkSite(pages, css) {
     out(banner == null, 'index.html', 'appstore-flag', banner == null ? 'no apple-itunes-app banner while OFF' : 'apple-itunes-app banner present while OFF');
     const isMob = (n) => [].concat(n['@type']).includes('MobileApplication');
     out(!nodes.some((n) => (isMob(n) && (n.installUrl || n.downloadUrl)) || /apps.apple.com/i.test(String(n.installUrl || '') + String(n.downloadUrl || ''))), 'index.html', 'appstore-flag', 'no installUrl/downloadUrl on any MobileApplication node (nor any App Store URL) while OFF');
-    const badge = (h.match(/<(\w+)\b[^>]*data-appstore-badge[^>]*>[\s\S]*?<\/\1>/) || [])[0] || '';
-    out(/^<span\b/.test(badge) && /Coming soon to the App Store/.test(badge), 'index.html', 'appstore-flag', badge ? 'badge is a non-link "Coming soon" label' : 'no [data-appstore-badge]');
+    // every badge (hero + #ios) must be a non-link "Coming soon" label while OFF
+    const badges = [...h.matchAll(/<(\w+)\b[^>]*data-appstore-badge[^>]*>/g)].map((m) => m[1].toLowerCase());
+    const soon = (h.match(/Coming soon to the App Store/g) || []).length;
+    out(badges.length > 0 && badges.every((t) => t === 'span') && soon >= badges.length, 'index.html', 'appstore-flag',
+      badges.length ? `${badges.length} badge(s): ${badges.join(',')}; "Coming soon" labels: ${soon}` : 'no [data-appstore-badge]');
   } else {
     out(banner === `app-id=${id}`, 'index.html', 'appstore-flag', `apple-itunes-app = "${banner}" (expected app-id=${id})`);
   }
