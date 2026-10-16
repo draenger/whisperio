@@ -1,6 +1,6 @@
 # Whisperio iOS 1.4.1: community launch plan (dev / productivity / Apple + PL)
 
-Scope: the first App Store release of Whisperio for iPhone, iPad and Apple Watch (1.4.1). The desktop app (1.5.0, Windows / macOS / Linux) stays on GitHub Releases; the Mac App Store build is not submitted yet, so no copy here promises it.
+Scope: the first App Store release of Whisperio for iPhone, iPad and Apple Watch (1.4.1). The desktop app (Windows / macOS / Linux) stays on GitHub Releases (publish the current version there before D0; the latest release today is v1.3.0, so no copy names a desktop version); the Mac App Store build is not submitted yet, so no copy here promises it.
 
 Gate: `node docs/launch/1.4.1/tools/check-copy.mjs` (and `--self-test`). Fenced blocks are copy to paste; `<!-- limit:N -->` above a block is the platform limit the gate enforces.
 
@@ -36,6 +36,8 @@ Reddit and its mirrors returned 403/502 from this machine on 2026-10-16. Rules m
 | Product Hunt | Tagline ≤ 60, description ≤ 260, gallery 1270×760 (up to 8), thumbnail 240×240. Source: third-party guides (no official spec page found); check the live form | **YES** | Tue–Thu after D+7, 00:01 PT (09:01 CET) | P1–P4 |
 | r/macapps | *Mirror* (2026 "App Pile" megathread): new **dictation / speech-to-text apps** and apps not on the Mac App Store are limited to the monthly megathread; promotion counts toward a 30-day limit (Rule 3); format "PCP": problem, comparison, pricing + link | **Megathread only.** Whisperio is both a dictation app and (on Mac) not yet on the Mac App Store. One comment in the current month's megathread | D+2 | R1 |
 | r/iOSapps | *Mirror* (leadsrover.io, checked 2026-05-30): "Infrequent self-promotion is permitted; however, it is not permitted more than once per developer in 30 days." Developer flair ("Dev - Self Promotion") and a "[FREE]" title tag seen on mirrors | **YES**, once, with dev flair | D+1 | R2 |
+
+> **r/iOSapps, sprawdzić w D-1:** świeży post modów („Post Policy Changes”, ok. 2–3 tygodnie temu wg review 2026-10-16) przenosi promocje i kody do cotygodniowego przypiętego megawątku, gdzie top-level piszą tylko deweloperzy, z obowiązkowym ujawnieniem. Jeśli to obowiązuje: post premierowy idzie do megawątku, bez tagu „[FREE]” (może być czytany jako promocja cenowa).
 | r/apple | *Mirror*, conflicting: one summary says self-promotion only on **Sundays, developers only, self-post**, with an activity requirement; another says only in a dedicated thread | **Only if** the sidebar confirms the Sunday developer slot and the account has prior participation there. Otherwise skip | first Sunday after D0 | R3 |
 | r/productivity | No current rule text found; similar subs ban referral links, several moved promotion to sister subs in 2026 | **Default NO.** Check the sidebar; post only in a designated self-promo thread if one exists | — | (R4 as a comment) |
 | r/SideProject | *Guides*: the most promotion-friendly sub; bare landing-page drops get removed; build story + asking for feedback works | **YES** | D+4 | R4 |
@@ -48,7 +50,7 @@ Reddit and its mirrors returned 403/502 from this machine on 2026-10-16. Rules m
 
 <!-- limit:80 -->
 ```
-Show HN: Whisperio – free dictation for iPhone and Mac, on-device or your key
+Show HN: Whisperio – free dictation for iPhone, on-device or with your own key
 ```
 
 ### H2 — Show HN text / first comment (maker)
@@ -57,15 +59,15 @@ Show HN: Whisperio – free dictation for iPhone and Mac, on-device or your key
 ```
 Hi HN, I'm the developer.
 
-Whisperio is a dictation app: press a hotkey (desktop) or tap the widget / keyboard / Watch (iPhone), speak, and the text lands where you were typing.
+Whisperio is a dictation app: press a hotkey (desktop) or use the Whisperio keyboard, a widget, Control Center, Back Tap or the Watch (iPhone) and speak. With the keyboard the text is inserted after one swipe back to your app; the widget, Control Center and Back Tap copy it to the clipboard; the Watch saves it to your journal.
 
 Two decisions shaped it:
 
 1. No server of my own. There is no Whisperio account and no backend. By default it uses Apple's on-device speech recognition, so you can try it without any API key. If you want a cloud model, you paste your own key for OpenAI, Groq, Deepgram, AssemblyAI, ElevenLabs, Mistral or Replicate (or point it at a self-hosted OpenAI-compatible URL), and audio goes from your device straight to that provider under their terms. Keys stay in the Keychain on that device.
 
-2. Raw text first, cleanup on demand. Dictation pastes immediately; AI cleanup (grammar, templates, your own instruction) runs only when you ask, with the provider you chose.
+2. Raw text first, cleanup on demand. Dictation pastes immediately; AI cleanup (grammar, templates, your own instruction) runs only when you ask, with OpenAI or an on-device model.
 
-The iOS app is free, no in-app purchases. History can sync through your own private iCloud database (transcripts only, no audio), or stay on the device. The desktop app (Windows, macOS, Linux) is on GitHub Releases and can run local Whisper models fully offline.
+The iOS app is free, no in-app purchases. History syncs through your own private iCloud database by default (transcripts only, no audio); you can keep it on the device instead, or also push it to your own GitHub repo. The desktop app (Windows, macOS, Linux) is on GitHub Releases: bring your own key, or run local Whisper models (one click on Windows; on macOS and Linux you install whisper-server yourself).
 
 The source is available under PolyForm Noncommercial, so you can read exactly how audio and keys are handled.
 
@@ -101,7 +103,7 @@ What's in the iOS app:
 • Keyboard extension, Home Screen widget, Control Center, Back Tap and an Apple Watch trigger
 • Raw text instantly; AI cleanup and templates only when you ask
 • Personal dictionary, journal with categories, optional daily digest
-• History in your private iCloud (transcripts only), or on-device only
+• History in your private iCloud by default (transcripts only), or on-device only
 
 It's free with no in-app purchases; you pay your provider directly, or nothing if you stay on-device.
 
@@ -111,8 +113,8 @@ Questions about privacy, providers or the license: ask away, I'll answer all day
 ### P4 — Product Hunt gallery (1270×760, order)
 
 1. Hero: `mobile/marketing/screenshots/iphone/en/01-home.png` on the brand background, tagline P1.
-2. "Type with your voice in any app": `02-keyboard.png`.
-3. "Your engine, your key": `03-models.png` (provider list + on-device).
+2. "Type with your voice in any app": `02-keyboard.png` **only after the screenshot headline is corrected** (current headline claims text lands where you type from Action Button/Back Tap/Watch, which is false); until then use the device frame without the headline.
+3. "Your engine, your key": `03-models.png` **only after the headline is corrected** (current one says `Audio never leaves your iPhone`); it shows the on-device models screen (Whisper, Qwen), not the cloud provider list.
 4. "A searchable journal": `04-journal.png`.
 5. "Daily recap (optional)": `05-recap.png`.
 6. Apple Watch: `mobile/marketing/screenshots/watch/en/watch-02-recording.png` + `watch-03-done.png` side by side.
@@ -129,7 +131,7 @@ Whisperio (I'm the developer) — dictation for Mac, iPhone, iPad and Apple Watc
 
 Problem: I wanted system-wide dictation without a subscription and without my voice going through the app maker's servers.
 
-How it compares: unlike dictation apps built around their own cloud account or a subscription, Whisperio runs no server at all: on-device by default (Apple speech on iPhone/Mac, local Whisper models on desktop), or you bring your own API key (OpenAI, Groq, Deepgram, AssemblyAI, ElevenLabs, Mistral, Replicate, or a self-hosted OpenAI-compatible URL) and audio goes straight to that provider. Raw text pastes instantly; AI cleanup only when you ask.
+How it compares: unlike dictation apps built around their own cloud account or a subscription, Whisperio runs no server at all: on-device by default on iPhone (Apple speech), or you bring your own API key (OpenAI, Groq, Deepgram, AssemblyAI, ElevenLabs, Mistral, Replicate, or a self-hosted OpenAI-compatible URL) and audio goes straight to that provider. Raw text pastes instantly; AI cleanup only when you ask.
 
 Pricing: free, no in-app purchases. You pay your provider directly, or nothing on-device.
 
@@ -186,7 +188,7 @@ I built a dictation app with no backend at all — here's what that forced me to
 Whisperio started as a desktop hotkey app: press, speak, text gets pasted. This week the iPhone/iPad/Watch version hit the App Store (1.4.1).
 
 The constraint I set: no server of my own, ever. That meant:
-• On-device by default (Apple speech on iOS, local Whisper models on desktop), so a new user needs no key and no account
+• On iPhone, on-device by default (Apple speech), so a new user needs no key and no account
 • "Bring your own key" for cloud models: OpenAI, Groq, Deepgram, AssemblyAI, ElevenLabs, Mistral, Replicate or a self-hosted endpoint; keys live in the Keychain on that device
 • Sync through the user's own private iCloud database instead of a backend (transcripts only)
 • A free app with no in-app purchases, because there's nothing for me to bill for
@@ -205,7 +207,7 @@ What would make you switch your dictation setup?
 ```
 To moja aplikacja, jestem jej jedynym autorem. Wrzucam po opinię.
 
-Whisperio to dyktowanie na iPhone'a, iPada i Apple Watch (plus wersja na Windows, macOS i Linux). Mówisz, tekst ląduje tam, gdzie piszesz: przez własną klawiaturę, widżet, Centrum sterowania albo zegarek.
+Whisperio to dyktowanie na iPhone'a, iPada i Apple Watch (plus wersja na Windows, macOS i Linux). Interfejs jest po angielsku, dyktować można po polsku. Z klawiaturą Whisperio tekst trafia do pola po jednym przesunięciu z powrotem do aplikacji; widżet, Centrum sterowania i stuknięcie w tył telefonu kopiują go do schowka, a zegarek zapisuje w dzienniku.
 
 Założenie: zero mojego serwera.
 • Domyślnie rozpoznawanie mowy Apple na urządzeniu, więc działa bez klucza i bez konta
@@ -235,7 +237,7 @@ Zrobiłem darmową aplikację do dyktowania na iPhone'a, która domyślnie dzia�
 
 <!-- limit:900 -->
 ```
-I run no server and collect nothing — there's no Whisperio account or backend. By default recognition happens on your device with Apple's speech framework (if you turn on online recognition, Apple may process it on their servers). If you pick a cloud provider, audio goes from your device straight to that provider under their terms — so pick one you trust, or stay on-device. History syncs only through your own private iCloud database (transcripts, no audio), and you can keep it on-device only. Full details: https://whisperio.danielkasprzyk.com/privacy.html
+I run no server and collect nothing — there's no Whisperio account or backend. By default recognition happens on your device with Apple's speech framework (if you turn on online recognition, Apple may process it on their servers). If you pick a cloud provider, audio goes from your device straight to that provider under their terms — so pick one you trust, or stay on-device. History syncs through your own private iCloud database by default (transcripts, no audio); you can keep it on-device only, or turn on sync to your own GitHub repo. Full details: https://whisperio.danielkasprzyk.com/privacy.html
 ```
 
 ### A2 — "How do you make money? What's the catch?"
@@ -277,7 +279,7 @@ It depends on language, accent and budget, so Whisperio lets you switch per need
 
 <!-- limit:900 -->
 ```
-Nie mam żadnego serwera i niczego nie zbieram: nie ma konta ani backendu Whisperio. Domyślnie mowa jest rozpoznawana na urządzeniu przez Apple (jeśli włączysz rozpoznawanie online, Apple może przetwarzać ją na swoich serwerach). Jeśli wybierzesz dostawcę w chmurze, nagranie idzie z telefonu prosto do niego, na jego zasadach. Historia synchronizuje się tylko przez Twój prywatny iCloud (transkrypcje, bez nagrań) albo zostaje na urządzeniu. Szczegóły: https://whisperio.danielkasprzyk.com/privacy.html
+Nie mam żadnego serwera i niczego nie zbieram: nie ma konta ani backendu Whisperio. Domyślnie mowa jest rozpoznawana na urządzeniu przez Apple (jeśli włączysz rozpoznawanie online, Apple może przetwarzać ją na swoich serwerach). Jeśli wybierzesz dostawcę w chmurze, nagranie idzie z telefonu prosto do niego, na jego zasadach. Historia domyślnie synchronizuje się przez Twój prywatny iCloud (transkrypcje, bez nagrań); możesz ją zostawić tylko na urządzeniu albo włączyć synchronizację do własnego repozytorium GitHub. Szczegóły: https://whisperio.danielkasprzyk.com/privacy.html
 ```
 
 ## 4. Schedule

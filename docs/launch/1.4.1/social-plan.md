@@ -23,6 +23,9 @@ Link rules:
 - `{{APP_STORE_LINK}}` is `https://apps.apple.com/app/id6781780531`, which returns 404 until the release.
 - The site is `https://whisperio.danielkasprzyk.com`.
 
+
+> **Posty PL:** aplikacja ma interfejs po angielsku. W każdym poście PL, w którym mieści się limit, dopisz „(interfejs po angielsku, dyktujesz po polsku)”; w karuzelach i shortach na ostatniej planszy.
+
 ## 0. Message pillars (one per post, rotate)
 
 1. **Free, no account, no in-app purchases.** You pay your provider directly, or nothing on-device.
@@ -79,7 +82,7 @@ Dyktowanie wszędzie na iPhonie, iPadzie i Apple Watch. Domyślnie na urządzeni
 ```
 Whisperio's keyboard works in any app: Messages, Notes, Slack, mail.
 
-Tap, speak, and the raw text lands right away. Want it cleaned up? Run AI cleanup or a template when you ask, not on every word.
+Tap the mic, speak, swipe back to your app, and the raw text is in the field. Want it cleaned up? Run AI cleanup or a template only when you ask.
 ```
 
 ### S2 — klawiatura (PL)
@@ -88,7 +91,7 @@ Tap, speak, and the raw text lands right away. Want it cleaned up? Run AI cleanu
 ```
 Klawiatura Whisperio działa w każdej aplikacji: Wiadomości, Notatki, Slack, poczta.
 
-Stukasz, mówisz, surowy tekst pojawia się od razu. Chcesz go wygładzić? Porządkowanie przez AI albo szablon uruchamiasz wtedy, kiedy chcesz.
+Stuknij mikrofon, mów, wróć przesunięciem do aplikacji i surowy tekst jest w polu. Chcesz go wygładzić? Porządkowanie przez AI albo szablon uruchamiasz tylko wtedy, kiedy chcesz.
 ```
 
 ### S3 — your own key (EN)
@@ -149,13 +152,13 @@ Whisperio na Apple Watch: stukasz, mówisz, gotowe. Notatka czeka w dzienniku na
 
 <!-- limit:280 -->
 ```
-Where does your audio go in Whisperio?
+Where does your audio go?
 
-• On-device engine: stays on your device
-• Cloud engine: straight to the provider you chose
-• History: your private iCloud, transcripts only (or on-device only)
+• On-device: stays on your phone unless you turn on Apple online speech
+• Cloud: straight to the provider you chose
+• History: private iCloud, transcripts only (or on-device)
 
-I run no server. Details: https://whisperio.danielkasprzyk.com/privacy.html
+I run no server. Details: whisperio.danielkasprzyk.com/privacy.html
 ```
 
 ### S6 — gdzie trafiają dane (PL)
@@ -177,7 +180,7 @@ Nie mam serwera. Szczegóły: whisperio.danielkasprzyk.com/privacy.html
 ```
 Everything you dictate lands in a searchable journal, sorted into categories like Work, Ideas and To-do.
 
-Optional: an AI daily digest of what you said, using the provider you chose.
+Optional: an AI daily digest of what you said, made with OpenAI or an on-device model.
 ```
 
 ### S7 — dziennik i podsumowanie (PL)
@@ -186,7 +189,7 @@ Optional: an AI daily digest of what you said, using the provider you chose.
 ```
 Wszystko, co podyktujesz, trafia do przeszukiwalnego dziennika z kategoriami: Praca, Pomysły, Do zrobienia.
 
-Opcjonalnie: dzienne podsumowanie od AI, przez dostawcę, którego wybrałeś.
+Opcjonalnie: dzienne podsumowanie od AI, przez OpenAI albo model na urządzeniu.
 ```
 
 ### S8 — feedback round-up (EN)
@@ -297,7 +300,7 @@ I run no server and collect nothing. Policy: https://whisperio.danielkasprzyk.co
 
 <!-- limit:500 -->
 ```
-Whisperio also runs on Windows, macOS and Linux: press a global hotkey, speak, and the text is pasted into the app you're in. Cloud or fully offline with local Whisper models.
+Whisperio also runs on Windows, macOS and Linux: press a global hotkey, speak, and the text is pasted into the app you're in. Bring your own key, or run local Whisper models (one click on Windows; on macOS and Linux you install whisper-server yourself).
 
 Downloads (GitHub Releases) and source: https://github.com/draenger/whisperio
 
@@ -402,8 +405,8 @@ Studio cuts them from the existing composed screenshots (`mobile/marketing/scree
 
 | Time | Visual (source) | On-screen text EN / PL | Motion |
 |---|---|---|---|
-| 0–3 s | `iphone/en/01-home.png` | "Talk. It types." / „Mówisz. Pisze.” | zoom-in from 110% to 100% |
-| 3–9 s | `iphone/en/02-keyboard.png` | "Keyboard in any app" / „Klawiatura w każdej aplikacji” | slide up from bottom, highlight pulse on the mic key |
+| 0–3 s | `iphone/en/01-home.png` | "Talk. It types." / „Mówisz. Whisperio pisze.” | zoom-in from 110% to 100% |
+| 3–9 s | `iphone/en/02-keyboard.png` (device frame only, crop out the headline until it is corrected) | "Keyboard in any app" / „Klawiatura w każdej aplikacji” | slide up from bottom, highlight pulse on the mic key |
 | 9–15 s | `watch/en/watch-02-recording.png` → `watch-03-done.png` | "Or from your wrist" / „Albo z nadgarstka” | cross-fade between the two watch frames |
 | 15–20 s | logo on a dark background | "Whisperio · free on the App Store" / „Whisperio · za darmo w App Store” | fade in |
 
@@ -420,10 +423,10 @@ Dictation on iPhone, iPad and Apple Watch: on-device by default, or bring your o
 
 | Time | Visual (source) | On-screen text EN / PL | Motion |
 |---|---|---|---|
-| 0–4 s | `iphone/en/03-models.png` (top) | "Pick your engine" / „Wybierz silnik” | slow pan down |
-| 4–12 s | same, provider list area | "On-device · OpenAI · Groq · Deepgram · …" / „Na urządzeniu · OpenAI · Groq · Deepgram · …” | names appear one by one as text overlays |
+| 0–4 s | `iphone/en/03-models.png` (device frame only, crop out the headline `Audio never leaves your iPhone`) | "Pick your engine" / „Wybierz silnik” | slow pan down |
+| 4–12 s | plain card (the screenshot shows on-device models, not the cloud list) | "On-device · OpenAI · Groq · Deepgram · …" / „Na urządzeniu · OpenAI · Groq · Deepgram · …” | names appear one by one as text overlays |
 | 12–17 s | plain card | "Your key. Straight to the provider." / „Twój klucz. Prosto do dostawcy.” | type-on text |
-| 17–20 s | logo | "No server of ours" / „Bez naszego serwera” | fade in |
+| 17–20 s | logo | "I run no server" / „Nie mam serwera” | fade in |
 
 Caption:
 
@@ -455,10 +458,10 @@ Everything you dictate lands in a searchable journal, with an optional AI daily 
 
 | Time | Visual (source) | On-screen text EN / PL | Motion |
 |---|---|---|---|
-| 0–5 s | `iphone/en/06-onboarding.png` | "Where does your voice go?" / „Gdzie trafia Twój głos?” | zoom-in |
+| 0–5 s | plain card with the question (do NOT use `06-onboarding.png` until its `never leaves your iPhone` text is corrected) | "Where does your voice go?" / „Gdzie trafia Twój głos?” | zoom-in |
 | 5–10 s | plain card, phone icon | "On-device: stays on the device" / „Na urządzeniu: zostaje na urządzeniu” | icon pulse |
 | 10–15 s | plain card, arrow to a cloud icon labelled "your provider" | "Cloud: straight to the provider you chose" / „Chmura: prosto do dostawcy, którego wybrałeś” | arrow draw |
-| 15–20 s | logo | "We run no server" / „Nie mamy serwera” | fade in |
+| 15–20 s | logo | "I run no server" / „Nie mam serwera” | fade in |
 
 Caption:
 

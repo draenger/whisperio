@@ -33,11 +33,15 @@ const RULES = {
     /end[- ]to[- ]end/i, /\bE2EE?\b/, /HIPAA/i, /(GDPR|RODO)[- ](compliant|certified|zgodn\w*)/i, /compliant with (GDPR|HIPAA)/i,
     /zgodn\w* z (RODO|GDPR)/i, /no data (is )?(ever )?collected/i, /(we|it) collects? no data/i, /zero data/i, /military[- ]grade/i,
     /unhackable/i, /całkowicie prywatn\w*/i, /w pełni prywatn\w*/i, /nic nie opuszcza/i, /nigdy nie opuszcza/i, /szyfrowani\w* end/i,
+    /\be2ee?\b/i, /compliant with (the )?(GDPR|HIPAA)/i, /100 ?percent (private|offline|secure)/i, /never leaves (the|this) (device|phone|iphone|ipad|mac)/i,
+    /nothing (ever )?leaves (your|the|this) (device|phone|iphone|ipad|mac)/i, /never (uploaded|sent anywhere)/i,
   ],
-  license: [/open[- ]?source/i, /\bOSS\b/, /\bFOSS\b/, /otwart\w* (kod|źródł)/i],
+  license: [/open[- ]?source/i, /\bOSS\b/, /\bFOSS\b/, /otwart\w* ?(kod|źródł)/i, /otwartoźródłow\w*/i],
+  // not validated for regulated transcription
+  regulated: [/medical (transcri|dictat|record)\w*/i, /legal (transcri|dictat)\w*/i, /clinical/i, /\bHIPAA\b/i, /transkrypc\w* (medyczn|prawn|sądow)\w*/i, /dyktowani\w* (medyczn|prawn)\w*/i],
   competitors: [/wispr/i, /superwhisper/i, /macwhisper/i, /\bdragon\b/i, /otter\.?ai/i, /\bdictato\b/i, /\baqua ?voice\b/i, /voiceink/i],
   providers: [/\bAnthropic\b/i, /\bClaude\b/],
-  promises: [/free forever/i, /forever free/i, /za darmo na zawsze/i, /na zawsze za darmo/i, /\bbest\b/i, /(?<![#\w])#\s?1\b(?!\.)/, /\bno\.? ?1\b/i,
+  promises: [/free forever/i, /forever free/i, /za darmo na zawsze/i, /na zawsze za darmo/i, /\bna zawsze\b/i, /always free/i, /free for life/i, /lifetime/i, /dożywotni\w*/i, /bezterminow\w*/i, /world'?s first/i, /pierwsz\w* na świecie/i, /\bbest\b/i, /(?<![#\w])#\s?1\b(?!\.)/, /\bno\.? ?1\b/i,
     /number one/i, /najlepsz\w*/i, /\b(fastest|most accurate|most private)\b/i, /najszybsz\w*/i, /\bthe only\b/i, /jedyn\w* (taka|aplikacj)/i],
 };
 const EXEMPTABLE = new Set(['privacy', 'license', 'competitors']);
@@ -52,23 +56,30 @@ function parse(lines) {
     if (/^\s*```/.test(lines[i])) {
       if (!open) {
         const ann = [];
-        for (let j = i - 1; j >= 0 && /^\s*<!--.*-->\s*$/.test(lines[j]); j--) ann.push(lines[j]);
+        for (let j = i - 1; j >= 0 && ANNOTATION.test(lines[j]); j--) ann.push(lines[j]);
         const lim = ann.map((a) => a.match(/<!--\s*limit:(\d+)(\s+words)?\s*-->/)).find(Boolean);
         const allow = new Set(ann.map((a) => a.match(/^\s*<!--\s*allow:\s*([a-z-]+)\s*-->\s*$/)).filter(Boolean).map((m) => m[1]).filter((r) => EXEMPTABLE.has(r)));
         open = { start: i + 1, body: [], limit: lim ? +lim[1] : null, words: !!(lim && lim[2]), allow };
       } else { blocks.push(open); open = null; }
     } else if (open) { open.body.push(lines[i]); inFence[i] = open; }
   }
-  return { blocks, inFence };
+  // an unclosed fence would silently swallow the rest of the file (and extend its allow:)
+  const unclosed = blocks.length * 2 !== lines.filter((l) => /^\s*```/.test(l)).length;
+  return { blocks, inFence, unclosed };
 }
 
+const norm = (t) => t.normalize('NFKC').replace(/[\u2010\u2011\u2012\u2013\u2212]/g, '-').replace(/[\u00a0\u202f\u2007\u2009]/g, ' ');
+// only the two annotation forms are skipped; any other comment line is checked like copy (no hiding copy in comments)
+const ANNOTATION = /^\s*<!--\s*(limit:\d+(\s+words)?|allow:\s*[a-z-]+)\s*-->\s*$/;
+
 function checkText(rel, text, out, placeholders) {
-  const lines = text.split(/\r?\n/);
-  const { blocks, inFence } = parse(lines);
+  const lines = norm(text).split(/\r?\n/);
+  const { blocks, inFence, unclosed } = parse(lines);
+  out(!unclosed, rel, 'fences', unclosed ? 'unclosed ``` fence' : 'all fences closed');
   for (const rule of Object.keys(RULES)) {
     const hits = [];
     lines.forEach((raw, i) => {
-      if (/^\s*```/.test(raw) || /^\s*<!--.*-->\s*$/.test(raw)) return;
+      if (/^\s*```/.test(raw) || ANNOTATION.test(raw)) return;
       const b = inFence[i];
       if (b && b.allow.has(rule)) return;
       const l = b ? raw : raw.replace(/`[^`]*`/g, ''); // prose: inline code spans are quotations
@@ -121,13 +132,28 @@ if (process.argv.includes('--self-test')) {
     ['leftover [[...]]', 'Contact: [[KONTAKT]]\n', 'placeholders'],
     ['over limit', fence('x'.repeat(301), '<!-- limit:300 -->'), 'limits'],
     ['over word limit', fence('a b c d e f', '<!-- limit:5 words -->'), 'limits'],
+    // adversarial strings from the Opus review (all passed the first version)
+    ['non-breaking hyphen open\u2011source', fence('Whisperio is open\u2011source.'), 'license'],
+    ['PL otwartoźródłowa', fence('Aplikacja otwartoźródłowa.'), 'license'],
+    ['copy hidden between comments', '<!-- note --> Whisperio is 100% private <!-- end -->\n', 'privacy'],
+    ['medical transcription', fence('Great for medical transcription.'), 'regulated'],
+    ['PL transkrypcja medyczna', fence('Idealne do transkrypcji medycznej.'), 'regulated'],
+    ['always free', fence('Always free.'), 'promises'], ['free for life', fence('Free for life.'), 'promises'],
+    ['PL darmowa na zawsze', fence('Darmowa na zawsze.'), 'promises'],
+    ['never leaves the device', fence('Audio never leaves the device.'), 'privacy'],
+    ['nothing leaves your iPad', fence('Nothing leaves your iPad.'), 'privacy'],
+    ['lowercase e2e', fence('Sync is e2e encrypted.'), 'privacy'],
+    ['compliant with the GDPR', fence('Fully compliant with the GDPR.'), 'privacy'],
+    ['100 percent private', fence('100 percent private.'), 'privacy'],
+    ["world's first", fence("The world's first BYOK dictation app."), 'promises'],
+    ['unclosed fence', '<!-- allow: license -->\n```\nOpen source.\n', 'fences'],
   ];
   let bad = 0;
   for (const [name, text, rule] of CASES) {
     const res = [];
     checkText('fixture', text, (ok, f, r) => res.push({ ok, r }), new Set());
     const fails = res.filter((x) => !x.ok).map((x) => x.r);
-    const ok = rule == null ? fails.length === 0 : fails.includes(rule);
+    const ok = rule == null ? fails.length === 0 : fails.length > 0 && fails.every((r) => r === rule);
     if (!ok) bad++;
     console.log(`${ok ? 'ok  ' : 'MISS'} ${name}${rule ? ' -> ' + rule : ''}${ok ? '' : ' (got: ' + (fails.join(',') || 'nothing') + ')'}`);
   }
