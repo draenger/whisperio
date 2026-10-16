@@ -6,9 +6,10 @@ import Security
 ///
 /// Items are `kSecClassGenericPassword`, accessibility
 /// `WhenUnlockedThisDeviceOnly` — hardware-encrypted, not synced to iCloud, and excluded
-/// from unencrypted iTunes/Finder backups. Used for the OpenAI / ElevenLabs keys.
+/// from unencrypted iTunes/Finder backups. Used for every BYO secret in `WhisperioSettings`
+/// (see `WhisperioSettings.secretFields` — the single list SettingsStore persists through).
 public enum Keychain {
-    public enum Item: String {
+    public enum Item: String, Sendable {
         case openAIKey = "whisperio.key.openai"
         case elevenLabsKey = "whisperio.key.elevenlabs"
         case groqKey = "whisperio.key.groq"
@@ -16,6 +17,8 @@ public enum Keychain {
         case assemblyAIKey = "whisperio.key.assemblyai"
         case mistralKey = "whisperio.key.mistral"
         case githubToken = "whisperio.key.github"
+        case replicateKey = "whisperio.key.replicate"
+        case selfHostedKey = "whisperio.key.selfhosted"
     }
 
     private static let service = "ai.whisperio.mobile.secrets"
