@@ -149,6 +149,9 @@ struct DigestDayView: View {
                     .contextMenu {
                         Button { copy(summary) } label: { Label("Copy", systemImage: "doc.on.doc") }
                     }
+                if seed != "raw" {
+                    AINoticeLabel(engine: settings.chatEngineName)
+                }
                 HStack(spacing: 8) {
                     if seed == "raw" {
                         Text("Stacked verbatim · nothing sent to the cloud")
