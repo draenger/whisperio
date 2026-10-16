@@ -101,7 +101,7 @@
     var windows = [
       { id: 'terminal', phrase: 'add rate limiting to the /api/users endpoint, 100 requests per minute' },
       { id: 'notepad', phrase: 'We agreed to ship the new API by Friday and deprecate the v1 endpoints next quarter.' },
-      { id: 'browser', phrase: 'electron global hotkey dictation app open source' }
+      { id: 'browser', phrase: 'offline dictation app global hotkey' }
     ];
     var wi = 0;
     var steps = [1, 2, 3, 4, 5].map(function (n) { return document.getElementById('step-' + n); });

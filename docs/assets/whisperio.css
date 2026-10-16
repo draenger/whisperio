@@ -500,5 +500,5 @@ body[data-accent="amber"]   { --acc:#f59e0b; --acc-light:#fbbf24; --acc-deep:#d9
 
 /* iPhone section (#ios): one column on phones; App Store badge is a non-link label until the flag is on */
 @media (max-width: 600px) { #ios .bento { grid-template-columns: 1fr; } }
-.appstore-badge[aria-disabled="true"] { cursor: default; opacity: .8; }
-.appstore-badge[aria-disabled="true"]:hover { transform: none; }
+.appstore-badge[aria-disabled="true"] { cursor: default; }
+.appstore-badge[aria-disabled="true"]:hover { transform: none; box-shadow: none; }

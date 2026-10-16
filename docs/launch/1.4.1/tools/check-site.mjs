@@ -22,13 +22,18 @@ import { fileURLToPath } from 'node:url';
 
 const APP_ID = '6781780531';
 const strip = (h) => h.replace(/<script[\s\S]*?<\/script>/gi, ' ').replace(/<style[\s\S]*?<\/style>/gi, ' ').replace(/<!--[\s\S]*?-->/g, ' ');
-const text = (h) => strip(h).replace(/<[^>]+>/g, ' ').replace(/&amp;/g, '&').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ');
+const decode = (s) => s.replace(/&#(\d+);/g, (_, n) => String.fromCodePoint(+n)).replace(/&#x([0-9a-f]+);/gi, (_, n) => String.fromCodePoint(parseInt(n, 16)))
+  .replace(/&quot;/g, '"').replace(/&#39;|&apos;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&');
+const text = (h) => decode(strip(h).replace(/<[^>]+>/g, ' ')).replace(/\s+/g, ' ');
+// every attribute value (alt, title, aria-label, href, content...) decoded: claims and store URLs hide there too
+const attrs = (h) => decode([...strip(h).matchAll(/\s[\w:-]+\s*=\s*("[^"]*"|'[^']*')/g)].map((m) => m[1].slice(1, -1)).join(' '));
+const ldBlocks = (h) => [...h.matchAll(/<script type="application\/ld\+json"[^>]*>([\s\S]*?)<\/script>/gi)].map((m) => m[1]);
 const metas = (h) => [...h.matchAll(/<meta\b[^>]*>/gi)].map((m) => m[0]);
 const metaContent = (h, attr, name) => {
   const tag = metas(h).find((t) => new RegExp(`${attr}=["']${name}["']`, 'i').test(t));
   return tag ? (tag.match(/content=["']([^"']*)["']/i) || [])[1] : null;
 };
-const CLAIMS = [/open[- ]source/i, /\b100\s?%\s*(private|privacy|secure)/i, /(fully|completely|totally) private/i, /\bforever\b/i,
+const CLAIMS = [/open[- ]?source/i, /\bOSS\b/, /\b100\s*%\s*(private|privacy|secure|offline|on[- ]?device|local)/i, /never leaves your (ipad|watch|iphone|mac)/i, /(fully|completely|totally) private/i, /\bforever\b/i,
   /best[- ]in[- ]class/i, /\bthe best\b/i, /#\s?1\b/, /\bnumber one\b/i, /never leaves your (device|phone)/i, /end[- ]to[- ]end/i];
 
 export function checkSite(pages, css) {
@@ -38,7 +43,8 @@ export function checkSite(pages, css) {
     // claims run on visible text AND meta/JSON-LD (what search engines show), everywhere on the site
     const visible = text(html), head = metas(html).join(' ') + ' ' + (html.match(/<title>[\s\S]*?<\/title>/i) || [''])[0];
     const ldText = [...html.matchAll(/<script type="application\/ld\+json"[^>]*>([\s\S]*?)<\/script>/gi)].map((m) => m[1]).join(' ');
-    const claimHits = CLAIMS.filter((re) => re.test(visible) || re.test(head) || re.test(ldText)).map((re) => re.source);
+    const at = attrs(html);
+    const claimHits = CLAIMS.filter((re) => re.test(visible) || re.test(head) || re.test(ldText) || re.test(at)).map((re) => re.source);
     out(!claimHits.length, name, 'claims', claimHits.length ? claimHits.join(' | ') : 'none');
   }
   const h = pages['index.html'];
@@ -48,18 +54,22 @@ export function checkSite(pages, css) {
   const id = (htmlTag.match(/data-appstore-id="([^"]*)"/) || [])[1];
   out(live === 'true' || live === 'false', 'index.html', 'appstore-flag', `data-appstore-live="${live}"`);
   out(id === APP_ID, 'index.html', 'appstore-flag', `data-appstore-id="${id}" (expected ${APP_ID})`);
-  let ld = null;
-  try { ld = JSON.parse((h.match(/<script type="application\/ld\+json"[^>]*>([\s\S]*?)<\/script>/i) || [])[1]); } catch { ld = null; }
-  out(!!ld, 'index.html', 'seo', ld ? 'JSON-LD parses' : 'JSON-LD missing or invalid');
-  const nodes = ld ? (ld['@graph'] || [ld]) : [];
+  // every ld+json block is parsed: a second block must not smuggle an installUrl in
+  const lds = ldBlocks(h).map((b) => { try { return JSON.parse(b); } catch { return null; } });
+  const ld = lds.length && lds.every(Boolean) ? lds[0] : null;
+  out(!!ld, 'index.html', 'seo', ld ? `JSON-LD parses (${lds.length} block(s))` : 'JSON-LD missing or invalid');
+  const nodes = lds.filter(Boolean).flatMap((l) => l['@graph'] || [l]);
   const mob = nodes.find((n) => [].concat(n['@type']).includes('MobileApplication'));
   out(!!(mob && mob.softwareVersion && mob.license), 'index.html', 'seo', mob ? `MobileApplication ${mob.softwareVersion}` : 'no MobileApplication node');
   const banner = metaContent(h, 'name', 'apple-itunes-app');
   if (live !== 'true') {
-    const store = Object.entries(pages).filter(([, x]) => /apps\.apple\.com|itunes\.apple\.com/i.test(strip(x).replace(/<!--[\s\S]*?-->/g, ''))).map(([n]) => n);
+    // visible text, decoded attributes and every JSON-LD block (the inline flag script only holds a URL prefix that never runs)
+    const STORE = /apps\.apple\.com|itunes\.apple\.com/i;
+    const store = Object.entries(pages).filter(([, x]) => STORE.test(text(x)) || STORE.test(attrs(x)) || ldBlocks(x).some((b) => STORE.test(b))).map(([n]) => n);
     out(!store.length, 'site', 'appstore-flag', store.length ? 'App Store URL present while the flag is OFF in ' + store.join(',') : 'no App Store URL while OFF');
     out(banner == null, 'index.html', 'appstore-flag', banner == null ? 'no apple-itunes-app banner while OFF' : 'apple-itunes-app banner present while OFF');
-    out(!(mob && (mob.installUrl || mob.downloadUrl)), 'index.html', 'appstore-flag', 'no installUrl/downloadUrl on MobileApplication while OFF');
+    const isMob = (n) => [].concat(n['@type']).includes('MobileApplication');
+    out(!nodes.some((n) => (isMob(n) && (n.installUrl || n.downloadUrl)) || /apps.apple.com/i.test(String(n.installUrl || '') + String(n.downloadUrl || ''))), 'index.html', 'appstore-flag', 'no installUrl/downloadUrl on any MobileApplication node (nor any App Store URL) while OFF');
     const badge = (h.match(/<(\w+)\b[^>]*data-appstore-badge[^>]*>[\s\S]*?<\/\1>/) || [])[0] || '';
     out(/^<span\b/.test(badge) && /Coming soon to the App Store/.test(badge), 'index.html', 'appstore-flag', badge ? 'badge is a non-link "Coming soon" label' : 'no [data-appstore-badge]');
   } else {
@@ -67,12 +77,15 @@ export function checkSite(pages, css) {
   }
   // iPhone section
   const ios = (h.match(/<section\b[^>]*id="ios"[\s\S]*?<\/section>/) || [])[0] || '';
-  out(!!ios, 'index.html', 'ios-section', ios ? '#ios present' : '#ios missing');
+  out(!!ios && !/<section\b[^>]*id="ios"[^>]*\bhidden\b/.test(ios), 'index.html', 'ios-section', ios ? '#ios present and not hidden' : '#ios missing');
   const it = text(ios);
-  for (const [re, what] of [[/only if you allow online recognition in Settings or your language is not available on-device/, 'Apple online-recognition caveat'],
+  for (const [re, what] of [[/only if you turn on online recognition in Settings/, 'Apple online-recognition caveat'], [/tells you instead of sending audio anywhere/, 'no silent server fallback (AppleSpeechProvider)'],
     [/transcripts and metadata, no audio/, 'iCloud: transcripts and metadata, no audio'], [/interface is in English/, 'English-only UI'],
     [/No account/i, 'no account'], [/(no|No) analytics/, 'no analytics']]) out(re.test(it), 'index.html', 'ios-section', what);
   out(!/anthropic|claude/i.test(it), 'index.html', 'ios-section', 'no Anthropic/Claude in the iPhone section (desktop only)');
+  // facts the code contradicts: silent fallback to Apple servers; Mac App Store app / CloudKit on Mac (not shipped)
+  const wrong = [/or your language is not available on-device/i, /\bMac\b/, /lands where you are (already )?typing/i].filter((re) => re.test(it)).map((re) => re.source);
+  out(!wrong.length, 'index.html', 'ios-section', wrong.length ? 'contradicts the code: ' + wrong.join(' | ') : 'no claim the code contradicts');
   // SEO
   const title = ((h.match(/<title>([\s\S]*?)<\/title>/i) || [])[1] || '').replace(/&amp;/g, '&');
   out(title.length > 0 && title.length <= 65, 'index.html', 'seo', `title ${title.length}/65 chars`);
@@ -101,7 +114,17 @@ function selfTest(pages, css) {
     ['installUrl while OFF', (p) => ({ ...p, 'index.html': p['index.html'].replace('"softwareVersion": "1.4.1",', `"softwareVersion": "1.4.1", "installUrl": "https://apps.apple.com/app/id${APP_ID}",`) }), 'appstore-flag'],
     ['flag ON without banner', (p) => ({ ...p, 'index.html': p['index.html'].replace('data-appstore-live="false"', 'data-appstore-live="true"') }), 'appstore-flag'],
     ['badge became a link while OFF', (p) => ({ ...p, 'index.html': p['index.html'].replace('<span class="btn-dl appstore-badge" data-appstore-badge', '<a class="btn-dl appstore-badge" data-appstore-badge').replace('Coming soon to the App Store</span>\n      </span>', 'Coming soon to the App Store</span>\n      </a>').replace('Coming soon to the App Store</span>\r\n      </span>', 'Coming soon to the App Store</span>\r\n      </a>') }), 'appstore-flag'],
-    ['online-recognition caveat removed', (p) => ({ ...p, 'index.html': p['index.html'].replace('or your language is not available on-device', '') }), 'ios-section'],
+    ['online-recognition caveat removed', (p) => ({ ...p, 'index.html': p['index.html'].replace('only if you turn on online recognition in Settings', 'when needed') }), 'ios-section'],
+    // the 8 adversarial edits from the Opus review
+    ['open-source in an alt attribute', (p) => ({ ...p, 'index.html': p['index.html'].replace('<footer', '<img src="x.png" alt="Open-source dictation"><footer') }), 'claims'],
+    ['100% offline', (p) => ({ ...p, 'index.html': p['index.html'].replace('<footer', '<p>100% offline</p><footer') }), 'claims'],
+    ['Opensource without separator', (p) => ({ ...p, 'index.html': p['index.html'].replace('<footer', '<p>Opensource</p><footer') }), 'claims'],
+    ['store URL in JSON-LD sameAs while OFF', (p) => ({ ...p, 'index.html': p['index.html'].replace('"softwareVersion": "1.4.1",', `"softwareVersion": "1.4.1", "sameAs": "https://apps.apple.com/app/id${APP_ID}",`) }), 'appstore-flag'],
+    ['entity-encoded store href while OFF', (p) => ({ ...p, 'index.html': p['index.html'].replace('<footer', `<a href="https://apps.apple&#46;com/app/id${APP_ID}">x</a><footer`) }), 'appstore-flag'],
+    ['second JSON-LD block with installUrl while OFF', (p) => ({ ...p, 'index.html': p['index.html'].replace('</head>', `<script type="application/ld+json">{"@type":"MobileApplication","installUrl":"x"}</script></head>`) }), 'appstore-flag'],
+    ['#ios hidden', (p) => ({ ...p, 'index.html': p['index.html'].replace('id="ios"', 'id="ios" hidden') }), 'ios-section'],
+    ['silent-fallback wording back', (p) => ({ ...p, 'index.html': p['index.html'].replace('If your language isn', 'Or your language is not available on-device. If your language isn') }), 'ios-section'],
+    ['Mac in the iCloud line', (p) => ({ ...p, 'index.html': p['index.html'].replace('between your iPhone and iPad', 'between your iPhone, iPad and Mac') }), 'ios-section'],
     ['Anthropic in iPhone section', (p) => ({ ...p, 'index.html': p['index.html'].replace('OpenAI, ElevenLabs, Deepgram', 'Anthropic, OpenAI, ElevenLabs, Deepgram') }), 'ios-section'],
     ['second h1', (p) => ({ ...p, 'index.html': p['index.html'].replace('<h2>Dictation in your pocket', '<h1>Dictation in your pocket').replace('own AI key.</h2>', 'own AI key.</h1>') }), 'headings'],
     ['skipped heading', (p) => ({ ...p, 'index.html': p['index.html'].replace('<h2>Dictation in your pocket', '<h4>Dictation in your pocket').replace('own AI key.</h2>', 'own AI key.</h4>') }), 'headings'],

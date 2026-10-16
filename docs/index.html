@@ -236,7 +236,7 @@
         <span class="tag">On-device by default</span>
         <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="2" width="14" height="20" rx="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg></span>
         <h3>Your speech, your device</h3>
-        <p>Out of the box, Whisperio uses Apple's speech recognition on your device. Apple's servers are used only if you allow online recognition in Settings or your language is not available on-device. Want certainty? Download a local model and transcribe on your device.</p>
+        <p>Out of the box, Whisperio uses Apple's speech recognition on your device. Apple's servers are used only if you turn on online recognition in Settings. If your language isn't available on-device, Whisperio tells you instead of sending audio anywhere. You can also download a local model and transcribe on your device.</p>
       </div>
       <div class="card col-2 reveal">
         <span class="tag">Bring your own key</span>
@@ -254,13 +254,13 @@
         <span class="tag">Anywhere you type</span>
         <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="6" width="20" height="12" rx="2"/><line x1="6" y1="10" x2="6.01" y2="10"/><line x1="10" y1="10" x2="10.01" y2="10"/><line x1="14" y1="10" x2="14.01" y2="10"/><line x1="18" y1="10" x2="18.01" y2="10"/><line x1="7" y1="14" x2="17" y2="14"/></svg></span>
         <h3>Keyboard, widget, Watch</h3>
-        <p>Start dictation from the Whisperio keyboard, the Home Screen widget, Control Center, Back Tap or your Apple Watch, and the text lands where you are already typing.</p>
+        <p>Start dictation from the Whisperio keyboard (the text is inserted when you switch back), the Home Screen widget, Control Center (iOS 18), Back Tap or your Apple Watch. The widget, Control Center and Back Tap give you the text ready to paste; the Watch saves it to your journal.</p>
       </div>
       <div class="card col-2 reveal">
         <span class="tag">iCloud sync</span>
         <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/></svg></span>
         <h3>Synced through your iCloud</h3>
-        <p>History syncs between your iPhone, iPad and Mac through your private iCloud database: transcripts and metadata, no audio. Sync is on by default; keep everything on this device only in Settings if you prefer.</p>
+        <p>History syncs between your iPhone and iPad through your private iCloud database: transcripts and metadata, no audio. Sync is on by default; keep everything on this device only in Settings if you prefer.</p>
       </div>
       <div class="card col-2 reveal">
         <span class="tag">Free · English UI</span>
@@ -465,8 +465,10 @@
 
   <script src="assets/whisperio-demo.js"></script>
   <script>
-  /* App Store flag (data-appstore-live on <html>). Off: the badge stays a "Coming soon" label and no store URL is
-     anywhere in the page. On: badge becomes a link and the MobileApplication JSON-LD node gets installUrl. */
+  /* App Store flag (data-appstore-live on <html>). Off: the badge stays a "Coming soon" label and the store URL is never
+     present as a link, a meta tag or JSON-LD (this script only holds the URL prefix in a branch that does not run).
+     On: badge becomes a link and the MobileApplication JSON-LD node gets installUrl. Crawlers and no-JS visitors only
+     see that after the static flip in docs/release-runbook.md 3.8. */
   (function () {
     var h = document.documentElement;
     if (h.getAttribute('data-appstore-live') !== 'true') return;
