@@ -224,6 +224,18 @@ certs/profile) is documented in the `mac-testflight-pipeline` memory + `runbook.
 
 ---
 
+### 4.1 Mac App Store launch day — wording sweep
+Until the macOS 1.4.1 version is live, every public text must speak of the Mac App Store app in the future tense (App Review 2.3: "make sure all your app metadata, including privacy information, your app description, screenshots, and previews accurately reflect the app's core experience"; 2.3.1(a): marketing "content or services that it does not actually offer" is grounds for removal). The desktop Electron app for macOS (dmg in the GitHub release) is a different, already available product and may be called "Mac" in the desktop context.
+Trigger: the `MAC_OS` appStoreVersion in App Store Connect reaches `READY_FOR_SALE` and the product page shows the Mac platform (the `apps.apple.com/app/id6781780531` URL alone is not a signal — the Mac version shares the iOS app id, so it opens as soon as iOS is live). If iOS is not live yet, do §3.8 first or apply the line-71 changes of both sections together. Flip everything in ONE commit:
+1. `docs/index.html`: add the Mac App Store badge/link next to the iOS one (same `data-appstore-*` mechanism as §3.8); title / `description` / `og:description` / `twitter:description` may then say "Mac" for the App Store app as well as the desktop app; JSON-LD `MobileApplication.operatingSystem` adds `macOS 14` (= `MACOSX_DEPLOYMENT_TARGET` in `project.pbxproj`, not the current OS version).
+2. `docs/privacy.html`: meta description (line ~7) "iPhone, iPad and Apple Watch (coming to the App Store) and for desktop…" → "iPhone, iPad, Apple Watch and Mac (App Store) and for desktop…"; §1 (~71) availability sentence → add "and Mac", delete "A Mac App Store version is coming."; §3 API keys (~90) "(and in the Mac App Store app, once released)" → "On iPhone, iPad, Apple Watch and Mac"; §3 paths (~97) "macOS (Mac App Store app, once released)" → "macOS (Mac App Store app)"; §4.1 (~105) "the Mac App Store app, once released, will use the same default" → "default on iPhone, iPad, Apple Watch and Mac"; §4.2 (~121) "and in the Mac App Store app once released" → "iPhone, iPad, Apple Watch and Mac"; §5 (~131) "(and, once released, the Mac App Store app)" → "On iPhone, iPad and Mac". Bump "Last updated".
+3. `docs/terms.html` §1 (~71): same availability sentence as privacy §1, delete "A Mac App Store version is coming.". Bump "Last updated".
+4. `docs/support.html` (~78 and any FAQ answer that says "once released").
+5. `mobile/marketing/listing/en-US.json` (and a PL listing if one exists by then): "Mac" in promotionalText / description ("iPhone, iPad, Mac, and Apple Watch", "syncs across iPhone, iPad, and Mac", "Native Mac app with global hotkeys") is allowed only once the Mac app is live; push with `asc_listing.py --apply`. NOTE 2026-10-16: en-US.json still carries these Mac claims while the Mac app is unreleased — the ASO owner must strip them before the iOS submission (2.3 metadata accuracy).
+6. `docs/PARITY.md` and `mobile/marketing/app-store-listing.md` §"macOS": status lines.
+7. In-app: the About links in `SettingsView` and `MacSettingsShell.swift` are platform-neutral — no change.
+Verification: `grep -nE '\bMac\b|once released|coming soon|is coming' docs/*.html mobile/marketing/listing/*.json` — a person reads the list (desktop "Mac" mentions are legitimate) and confirms no future-tense leftovers; then `node docs/launch/1.4.1/tools/check-site.mjs` → `RESULT: PASS`.
+
 ## 5. Rollback / hotfix
 
 - **Desktop**: GitHub Release → mark the bad release as pre-release or delete its `latest*.yml`; auto-update
