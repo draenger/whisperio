@@ -13,11 +13,15 @@ struct OpenAIChatClient: ChatLLM {
     func complete(messages: [ChatMessage], model: String, temperature: Double) async throws -> String {
         let trimmedBase = baseURL.trimmingCharacters(in: .whitespaces)
         let base = trimmedBase.isEmpty ? "https://api.openai.com/v1" : trimmedBase
-        // https-only (http only for loopback/private hosts) — never send the key/audio in cleartext.
-        if case .failure(let policyError) = BaseURLPolicy.validate(base) {
+        // https-only (http only for loopback/private hosts); the request is built from the
+        // URL the policy validated, not from a second parse of the raw string.
+        let validated: URL
+        switch BaseURLPolicy.validate(base) {
+        case .success(let u): validated = u
+        case .failure(let policyError):
             throw Self.err("OpenAI base URL rejected: \(policyError.localizedDescription)")
         }
-        guard let url = URL(string: base + "/chat/completions") else {
+        guard let url = URL(string: validated.absoluteString + "/chat/completions") else {
             throw Self.err("Invalid OpenAI base URL.")
         }
         var req = URLRequest(url: url)

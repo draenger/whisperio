@@ -18,7 +18,7 @@ public enum ProviderError {
     }
 
     static func extractDetail(_ body: String) -> String {
-        let trimmed = body.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmed = String(body.prefix(8192)).trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return "" }
         if let data = trimmed.data(using: .utf8),
            let obj = try? JSONSerialization.jsonObject(with: data) {
@@ -47,8 +47,10 @@ public enum ProviderError {
             .first(where: { !$0.isEmpty }) ?? ""
         var out = firstLine.replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
         // Never let a credential echoed back by a server reach the UI.
-        out = out.replacingOccurrences(of: "(?i)bearer\\s+\\S+", with: "Bearer ***", options: .regularExpression)
+        out = out.replacingOccurrences(of: "(?i)\\b(bearer|token|basic)\\s+\\S+", with: "$1 ***", options: .regularExpression)
+        out = out.replacingOccurrences(of: "(?i)(api[-_]?key|xi-api-key|authorization)([\"']?\\s*[:=]\\s*[\"']?)[^\\s\"',}]+", with: "$1$2***", options: .regularExpression)
         out = out.replacingOccurrences(of: "\\b(sk|gsk|xi|r8|aai)[-_][A-Za-z0-9_\\-]{8,}", with: "***", options: .regularExpression)
+        out = out.replacingOccurrences(of: "\\b[A-Za-z0-9_\\-]{32,}\\b", with: "***", options: .regularExpression)
         return out
     }
 

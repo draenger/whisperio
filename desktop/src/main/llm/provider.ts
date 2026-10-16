@@ -82,7 +82,11 @@ export function isLocalHost(hostname: string): boolean {
   }
 
   if (host === 'localhost' || host === '::1' || host === '0.0.0.0') return true
-  if (host.endsWith('.local')) return true
+  if (['.local', '.lan', '.home.arpa', '.internal'].some((s) => host.endsWith(s))) return true
+  // Dotless intranet names never resolve on the public internet.
+  if (!host.includes('.') && !host.includes(':')) return true
+  // IPv6 unique-local (fc00::/7) and link-local (fe80::/10)
+  if (host.includes(':')) return /^(fc|fd)/.test(host) || host.startsWith('fe80:')
 
   const ipv4Parts = host.split('.')
   if (ipv4Parts.length === 4 && ipv4Parts.every((p) => /^\d{1,3}$/.test(p))) {
@@ -93,6 +97,7 @@ export function isLocalHost(hostname: string): boolean {
     if (a === 10) return true
     if (a === 192 && b === 168) return true
     if (a === 172 && b >= 16 && b <= 31) return true
+    if (a === 100 && b >= 64 && b <= 127) return true // Tailscale / CGNAT 100.64.0.0/10
     return false
   }
 

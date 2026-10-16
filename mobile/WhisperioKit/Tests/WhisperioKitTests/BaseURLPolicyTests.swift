@@ -17,6 +17,17 @@ import Foundation
         }
     }
 
+    @Test func httpOkForIntranetStyleHosts() {
+        for s in ["http://nas:8080/v1", "http://whisper-box", "http://stt.lan", "http://box.home.arpa",
+                  "http://svc.internal", "http://100.64.0.1", "http://100.127.255.1", "http://[fd12::1]:8080",
+                  "http://[fe80::1]", "http://[fc00::2]"] {
+            guard case .success = BaseURLPolicy.validate(s) else { Issue.record("expected ok: \(s)"); continue }
+        }
+        for s in ["http://100.63.0.1", "http://100.128.0.1", "http://[2001:db8::1]", "http://example.com.lan.evil.com"] {
+            guard case .failure(.insecureHTTP) = BaseURLPolicy.validate(s) else { Issue.record("expected rejection: \(s)"); continue }
+        }
+    }
+
     @Test func httpPublicRejected() {
         for s in ["http://api.openai.com/v1", "http://8.8.8.8", "http://172.32.0.1", "http://172.15.0.1",
                   "http://192.169.1.1", "http://11.0.0.1", "http://example.com"] {

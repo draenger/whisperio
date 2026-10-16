@@ -13,6 +13,14 @@ enum AudioStore {
         return dir
     }
 
+    /// Kept-clip class from `FileProtectionPolicy` (`.complete` only while protected data is
+    /// available; off the main thread we can't ask, so the safe default class is used).
+    private static func protectKept(_ url: URL) {
+        let available = Thread.isMainThread
+            && MainActor.assumeIsolated { FileProtection.isProtectedDataAvailable }
+        FileProtection.apply(.keptClip, to: url, protectedDataAvailable: available)
+    }
+
     /// Move a freshly recorded clip out of tmp into durable storage. Idempotent; a clip
     /// already adopted (or already gone) is left as-is.
     static func persist(_ filename: String) {
@@ -22,7 +30,7 @@ enum AudioStore {
         guard !FileManager.default.fileExists(atPath: dst.path),
               FileManager.default.fileExists(atPath: src.path) else { return }
         try? FileManager.default.moveItem(at: src, to: dst)
-        FileProtection.complete(dst)   // kept clips are only read while unlocked
+        protectKept(dst)   // kept clips are only read while unlocked
     }
 
     /// Durable-first lookup; adopts a tmp survivor into the durable folder on the way.
@@ -33,7 +41,7 @@ enum AudioStore {
         let tmp = FileManager.default.temporaryDirectory.appendingPathComponent(filename)
         if FileManager.default.fileExists(atPath: tmp.path) {
             try? FileManager.default.moveItem(at: tmp, to: dst)
-            FileProtection.complete(dst)
+            protectKept(dst)
             return FileManager.default.fileExists(atPath: dst.path) ? dst : tmp
         }
         return nil

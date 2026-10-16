@@ -155,9 +155,13 @@ export function saveSettingsWithKeys(partial: Partial<AppSettings>): AppSettings
         delete (jsonPatch as Record<string, unknown>)[field] // unchanged legacy value, nothing new to write
         continue
       }
-      sessionKeys.set(field, value)
-      delete (jsonPatch as Record<string, unknown>)[field]
-      sessionOnly = true
+      if (sessionKeys.get(field) !== value) {
+        sessionKeys.set(field, value)
+        sessionOnly = true
+      }
+      // Never persist the new secret; also clear any legacy plaintext copy it replaces.
+      ;(jsonPatch as Record<string, unknown>)[field] = ''
+
     }
     if (sessionOnly) {
       console.warn(

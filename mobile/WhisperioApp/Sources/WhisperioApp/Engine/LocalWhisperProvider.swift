@@ -79,7 +79,7 @@ struct LocalWhisperProvider: TranscriptionProvider {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString)
             .appendingPathExtension(ext.isEmpty ? "m4a" : ext)
-        try clip.data.write(to: url, options: [FileProtection.unlessOpenWriteOption])
+        try clip.data.write(to: url, options: [FileProtection.writeOptionsNonisolated(.tempCopy, available: false)])
         defer { try? FileManager.default.removeItem(at: url) }
 
         let results = try await LocalWhisperInferenceCache.shared.transcribe(

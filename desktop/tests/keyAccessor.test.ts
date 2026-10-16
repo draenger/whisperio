@@ -118,7 +118,7 @@ describe('keyAccessor', () => {
       const result = saveSettingsWithKeys({ openaiApiKey: 'sk-new', transcriptionPrompt: 'hi' })
 
       expect(mockSetKey).not.toHaveBeenCalled()
-      expect(mockSaveSettings).toHaveBeenCalledWith({ transcriptionPrompt: 'hi' })
+      expect(mockSaveSettings).toHaveBeenCalledWith({ openaiApiKey: '', transcriptionPrompt: 'hi' })
       expect(result.openaiApiKey).toBe('sk-new')
       expect(listener).toHaveBeenCalledWith(expect.stringContaining('kept for this session only'))
       expect(warn).toHaveBeenCalled()
@@ -144,6 +144,28 @@ describe('keyAccessor', () => {
 
       expect(listener).not.toHaveBeenCalled()
       expect(mockSaveSettings).toHaveBeenCalledWith({ transcriptionPrompt: 'x' })
+    })
+
+    it('clears the legacy plaintext copy when a new key replaces it (session-only)', () => {
+      mockIsEncryptionAvailable.mockReturnValue(false)
+      mockLoadSettings.mockReturnValue({ ...BASE_SETTINGS, openaiApiKey: 'sk-old' })
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+      const result = saveSettingsWithKeys({ openaiApiKey: 'sk-new' })
+      expect(mockSaveSettings).toHaveBeenCalledWith({ openaiApiKey: '' })
+      expect(result.openaiApiKey).toBe('sk-new')
+      warn.mockRestore()
+    })
+
+    it('does not re-warn when the same session key is saved again', () => {
+      mockIsEncryptionAvailable.mockReturnValue(false)
+      mockLoadSettings.mockReturnValue({ ...BASE_SETTINGS })
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+      const listener = vi.fn()
+      setSecureStorageWarningListener(listener)
+      saveSettingsWithKeys({ openaiApiKey: 'sk-new' })
+      saveSettingsWithKeys({ openaiApiKey: 'sk-new' })
+      expect(listener).toHaveBeenCalledTimes(1)
+      warn.mockRestore()
     })
 
     it('clearing a key still persists the empty value', () => {

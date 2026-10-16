@@ -4,6 +4,9 @@ import os
 import SwiftData
 import WhisperioKit
 import WidgetKit
+#if os(iOS)
+import UIKit
+#endif
 
 // Real, persisted recordings. Prefers the SwiftData + CloudKit-backed RecordingSyncStore
 // (WhisperioKit) so history follows the user across devices; falls back to the legacy JSON
@@ -486,6 +489,17 @@ final class RecordingsStore: ObservableObject {
 
     private static let log = Logger(subsystem: "ai.whisperio", category: "RecordingsStore")
 
+    private var jsonGuard = JSONFallbackGuard()
+    #if os(iOS)
+    private var protectedDataObserver: NSObjectProtocol?
+    #endif
+
+    private func retryJSONLoad() {
+        guard !jsonGuard.saveAllowed, case .json(let url) = backend else { return }
+        jsonGuard.markLoaded()
+        loadJSON(from: url)
+    }
+
     private func loadJSON(from fileURL: URL) {
         // Missing file is the normal first-run path — nothing to report.
         guard FileManager.default.fileExists(atPath: fileURL.path) else { return }
@@ -494,6 +508,17 @@ final class RecordingsStore: ObservableObject {
             data = try Data(contentsOf: fileURL)
         } catch {
             Self.log.error("Failed to read recordings.json: \(error.localizedDescription)")
+            jsonGuard.markLoadFailed()
+            #if os(iOS)
+            if protectedDataObserver == nil {
+                // Typically "locked": retry once protected data becomes available.
+                protectedDataObserver = NotificationCenter.default.addObserver(
+                    forName: UIApplication.protectedDataDidBecomeAvailableNotification,
+                    object: nil, queue: .main) { [weak self] _ in
+                    MainActor.assumeIsolated { self?.retryJSONLoad() }
+                }
+            }
+            #endif
             return
         }
         do {
@@ -509,10 +534,14 @@ final class RecordingsStore: ObservableObject {
     }
 
     private func saveJSON(to fileURL: URL) {
+        // A failed read means `items` may be empty while the file still holds history: never
+        // overwrite it until a retry has loaded it.
+        guard jsonGuard.saveAllowed else { return }
         do {
             let data = try JSONEncoder().encode(items)
-            // UnlessOpen, not .complete: Watch dictations are saved while the phone may be locked.
-            try data.write(to: fileURL, options: [.atomic, FileProtection.unlessOpenWriteOption])
+            // UntilFirstUserAuthentication: Watch dictations are saved (and the file re-read)
+            // while the phone may be locked; .complete/.completeUnlessOpen would fail or lose data.
+            try data.write(to: fileURL, options: [.atomic, FileProtection.writeOptionsNonisolated(.jsonFallback, available: false)])
         } catch {
             Self.log.error("Failed to save recordings.json: \(error.localizedDescription)")
         }

@@ -220,7 +220,9 @@ struct MacProvidersTab: View {
         case .localWhisper: return settings.isEngineReady(.localWhisper) ? "Downloaded" : "Not downloaded"
         case .selfHosted:
             let url = settings.settings.selfHostedURL.trimmingCharacters(in: .whitespaces)
-            return url.isEmpty ? "Add your server URL" : "Connected · \(url)"
+            if url.isEmpty { return "Add your server URL" }
+            if case .failure = BaseURLPolicy.validate(url, assumeHTTPForBareHost: true) { return "Rejected · use https" }
+            return "Connected · \(url)"
         default:
             let key = key(for: id)
             return key.trimmingCharacters(in: .whitespaces).isEmpty ? "Add API key to connect" : "Connected"

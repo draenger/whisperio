@@ -1808,7 +1808,9 @@ struct SettingsView: View {
             return settings.isEngineReady(.localWhisper) ? ("Downloaded", true) : ("Not downloaded", false)
         case .selfHosted:
             let url = settings.settings.selfHostedURL.trimmingCharacters(in: .whitespaces)
-            return url.isEmpty ? ("Add your server URL", false) : ("Connected · \(url)", true)
+            if url.isEmpty { return ("Add your server URL", false) }
+            if case .failure = BaseURLPolicy.validate(url, assumeHTTPForBareHost: true) { return ("Rejected · use https", false) }
+            return ("Connected · \(url)", true)
         case .openAI: key = settings.settings.openAIKey
         case .elevenLabs: key = settings.settings.elevenLabsKey
         case .replicate: key = settings.settings.replicateKey

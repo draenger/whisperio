@@ -53,7 +53,14 @@ public enum BaseURLPolicy {
         var host = hostname.trimmingCharacters(in: .whitespaces).lowercased()
         if host.hasPrefix("[") && host.hasSuffix("]") { host = String(host.dropFirst().dropLast()) }
         if host == "localhost" || host == "::1" || host == "0.0.0.0" { return true }
-        if host.hasSuffix(".local") { return true }
+        for suffix in [".local", ".lan", ".home.arpa", ".internal"] where host.hasSuffix(suffix) { return true }
+        // Dotless intranet names ("nas", "whisper-box") never resolve on the public internet.
+        if !host.contains(".") && !host.contains(":") { return true }
+        // IPv6 unique-local (fc00::/7) and link-local (fe80::/10).
+        if host.contains(":") {
+            if host.hasPrefix("fc") || host.hasPrefix("fd") || host.hasPrefix("fe80:") { return true }
+            return false
+        }
         let parts = host.split(separator: ".", omittingEmptySubsequences: false)
         if parts.count == 4, parts.allSatisfy({ !$0.isEmpty && $0.count <= 3 && $0.allSatisfy(\.isASCII) && $0.allSatisfy(\.isNumber) }) {
             let o = parts.compactMap { Int($0) }
@@ -61,6 +68,7 @@ public enum BaseURLPolicy {
             if o[0] == 127 || o[0] == 10 { return true }
             if o[0] == 192 && o[1] == 168 { return true }
             if o[0] == 172 && (16...31).contains(o[1]) { return true }
+            if o[0] == 100 && (64...127).contains(o[1]) { return true }   // Tailscale / CGNAT 100.64.0.0/10
         }
         return false
     }
