@@ -33,7 +33,8 @@ const metaContent = (h, attr, name) => {
   const tag = metas(h).find((t) => new RegExp(`${attr}=["']${name}["']`, 'i').test(t));
   return tag ? (tag.match(/content=["']([^"']*)["']/i) || [])[1] : null;
 };
-const CLAIMS = [/open[- ]?source/i, /\bOSS\b/, /\b100\s*%\s*(private|privacy|secure|offline|on[- ]?device|local)/i, /never leaves your (ipad|watch|iphone|mac)/i, /(fully|completely|totally) private/i, /\bforever\b/i,
+// the Mac App Store app is not shipped (release-runbook 4): no page may say it is available there
+const CLAIMS = [/Mac\s*\((the )?App Store/i, /Mac App Store app/i, /open[- ]?source/i, /\bOSS\b/, /\b100\s*%\s*(private|privacy|secure|offline|on[- ]?device|local)/i, /never leaves your (ipad|watch|iphone|mac)/i, /(fully|completely|totally) private/i, /\bforever\b/i,
   /best[- ]in[- ]class/i, /\bthe best\b/i, /#\s?1\b/, /\bnumber one\b/i, /never leaves your (device|phone)/i, /end[- ]to[- ]end/i];
 
 export function checkSite(pages, css) {
@@ -127,6 +128,7 @@ function selfTest(pages, css) {
     ['second JSON-LD block with installUrl while OFF', (p) => ({ ...p, 'index.html': p['index.html'].replace('</head>', `<script type="application/ld+json">{"@type":"MobileApplication","installUrl":"x"}</script></head>`) }), 'appstore-flag'],
     ['#ios hidden', (p) => ({ ...p, 'index.html': p['index.html'].replace('id="ios"', 'id="ios" hidden') }), 'ios-section'],
     ['silent-fallback wording back', (p) => ({ ...p, 'index.html': p['index.html'].replace('If your language isn', 'Or your language is not available on-device. If your language isn') }), 'ios-section'],
+    ['Mac App Store claim on another page', (p) => ({ ...p, 'terms.html': '<html><body><p>for iPhone and Mac (App Store, bundle ID x)</p></body></html>' }), 'claims'],
     ['Mac in the iCloud line', (p) => ({ ...p, 'index.html': p['index.html'].replace('between your iPhone and iPad', 'between your iPhone, iPad and Mac') }), 'ios-section'],
     ['Anthropic in iPhone section', (p) => ({ ...p, 'index.html': p['index.html'].replace('OpenAI, ElevenLabs, Deepgram', 'Anthropic, OpenAI, ElevenLabs, Deepgram') }), 'ios-section'],
     ['second h1', (p) => ({ ...p, 'index.html': p['index.html'].replace('<h2>Dictation in your pocket', '<h1>Dictation in your pocket').replace('own AI key.</h2>', 'own AI key.</h1>') }), 'headings'],
