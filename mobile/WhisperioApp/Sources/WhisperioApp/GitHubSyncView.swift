@@ -324,6 +324,6 @@ struct GitHubSyncManifest: Codable, Equatable {
 
     func save() {
         guard let data = try? JSONEncoder().encode(self) else { return }
-        try? data.write(to: Self.fileURL, options: [.atomic])
+        try? data.write(to: Self.fileURL, options: [.atomic, FileProtection.writeOptionsNonisolated(.keptClip, available: true)])
     }
 }

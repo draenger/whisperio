@@ -1,5 +1,6 @@
 import { shell } from 'electron'
 import { loadSettings, saveSettings, type AppSettings } from './settingsManager'
+import { saveSettingsWithKeys } from './secure/keyAccessor'
 import {
   isVaultAvailable,
   sealForRepo,
@@ -235,6 +236,8 @@ export async function pullSecrets(): Promise<SyncResult> {
   for (const k of SECRET_KEYS) {
     if (typeof recovered[k] === 'string') patch[k] = recovered[k]
   }
-  saveSettings(patch)
+  // Recovered provider keys must go through the key accessor (encrypted store / session-only),
+  // never straight into settings.json as plaintext.
+  saveSettingsWithKeys(patch)
   return { ok: true, path: SECRET_PATH, keys: Object.keys(patch) }
 }

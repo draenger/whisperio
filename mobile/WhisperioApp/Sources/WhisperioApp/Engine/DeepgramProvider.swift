@@ -80,7 +80,7 @@ struct DeepgramProvider: DiarizingProvider {
         let (data, resp) = try await MultipartBody.uploadSession.data(for: req)
         guard let http = resp as? HTTPURLResponse else { throw Self.err("No response from Deepgram.") }
         guard (200..<300).contains(http.statusCode) else {
-            throw Self.err("Deepgram error \(http.statusCode): \(String(data: data, encoding: .utf8) ?? "")")
+            throw Self.err("Deepgram error: \(ProviderError.userMessage(status: http.statusCode, body: data))")
         }
         return data
     }

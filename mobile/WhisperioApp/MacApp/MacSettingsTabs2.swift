@@ -220,7 +220,9 @@ struct MacProvidersTab: View {
         case .localWhisper: return settings.isEngineReady(.localWhisper) ? "Downloaded" : "Not downloaded"
         case .selfHosted:
             let url = settings.settings.selfHostedURL.trimmingCharacters(in: .whitespaces)
-            return url.isEmpty ? "Add your server URL" : "Connected · \(url)"
+            if url.isEmpty { return "Add your server URL" }
+            if case .failure = BaseURLPolicy.validate(url, assumeHTTPForBareHost: true) { return "Rejected · use https" }
+            return "Connected · \(url)"
         default:
             let key = key(for: id)
             return key.trimmingCharacters(in: .whitespaces).isEmpty ? "Add API key to connect" : "Connected"
@@ -484,6 +486,7 @@ struct MacProvidersTab: View {
         case .openAI:
             secureField("API Key", binding(\.openAIKey), placeholder: "sk-…")
             plainField("Base URL (optional)", binding(\.openAIBaseURL), placeholder: "https://api.openai.com/v1")
+            baseURLNotice(.openAI, settings.settings.openAIBaseURL)
             plainField("Model (optional)", binding(\.whisperModel), placeholder: "whisper-1")
         case .elevenLabs:
             secureField("API Key", binding(\.elevenLabsKey), placeholder: "xi-…")
@@ -505,6 +508,7 @@ struct MacProvidersTab: View {
             plainField("Model (optional)", binding(\.replicateModel), placeholder: "openai/whisper")
         case .selfHosted:
             plainField("Server URL", binding(\.selfHostedURL), placeholder: "http://localhost:8080/v1")
+            baseURLNotice(.selfHosted, settings.settings.selfHostedURL)
             secureField("Bearer token (optional)", binding(\.selfHostedKey), placeholder: "leave blank if none")
             plainField("Model", binding(\.selfHostedModel), placeholder: "whisper-large-v3")
         case .onDevice:
@@ -523,6 +527,25 @@ struct MacProvidersTab: View {
             SecureField(placeholder, text: text).textFieldStyle(.roundedBorder)
         }
     }
+    /// Inline policy feedback under a base-URL field (rejection reason, or custom-host warning).
+    @ViewBuilder
+    private func baseURLNotice(_ provider: ProviderID, _ raw: String) -> some View {
+        if !raw.trimmingCharacters(in: .whitespaces).isEmpty {
+            switch BaseURLPolicy.validate(raw, assumeHTTPForBareHost: provider == .selfHosted) {
+            case .failure(let error):
+                Text(error.localizedDescription)
+                    .font(WZFont.ui(11.5)).foregroundStyle(t.red)
+                    .fixedSize(horizontal: false, vertical: true)
+            case .success(let url):
+                if provider != .selfHosted, !BaseURLPolicy.isOfficialHost(provider: provider, url: url) {
+                    Text("Custom host — your key and audio go to this server, not to OpenAI.")
+                        .font(WZFont.ui(11.5)).foregroundStyle(t.amber)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+    }
+
     private func plainField(_ label: String, _ text: Binding<String>, placeholder: String) -> some View {
         VStack(alignment: .leading, spacing: 5) {
             Text(label).font(WZFont.ui(12, .medium)).foregroundStyle(t.muted)

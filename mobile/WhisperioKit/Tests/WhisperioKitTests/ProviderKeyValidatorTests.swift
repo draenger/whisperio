@@ -35,4 +35,14 @@ import Testing
         let result = await ProviderKeyValidator.validate(.selfHosted, key: "localhost:8000")
         guard case .success = result else { Issue.record("expected success for a bare host:port"); return }
     }
+
+    @Test func selfHostedRejectsPlainHTTPToAPublicHost() async {
+        let result = await ProviderKeyValidator.validate(.selfHosted, key: "http://example.com:5000")
+        guard case .failure(.invalidURL) = result else { Issue.record("expected invalidURL"); return }
+    }
+
+    @Test func selfHostedAcceptsHTTPSPublicHost() async {
+        let result = await ProviderKeyValidator.validate(.selfHosted, key: "https://stt.example.com")
+        guard case .success = result else { Issue.record("expected success"); return }
+    }
 }

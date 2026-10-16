@@ -21,6 +21,28 @@ export const PROVIDER_KEY_FIELDS = [
 
 export type ProviderKeyField = (typeof PROVIDER_KEY_FIELDS)[number]
 
+export const SECURE_STORAGE_UNAVAILABLE_MESSAGE =
+  'Secure storage unavailable on this system; the key is kept for this session only.'
+
+/**
+ * Fail-closed session store: when OS secure storage is unavailable, newly
+ * entered provider keys are NEVER written to disk. They live here (process
+ * memory) until the app quits.
+ */
+const sessionKeys = new Map<ProviderKeyField, string>()
+
+let secureStorageWarningListener: ((message: string) => void) | null = null
+
+/** Main registers this to forward the warning to the renderer. */
+export function setSecureStorageWarningListener(fn: ((message: string) => void) | null): void {
+  secureStorageWarningListener = fn
+}
+
+/** Test helper. */
+export function _resetSessionKeysForTests(): void {
+  sessionKeys.clear()
+}
+
 /**
  * Read the effective settings: settings.json with the key store overlaid on
  * top for the provider-key fields above (key store wins when it has a value
@@ -30,11 +52,17 @@ export type ProviderKeyField = (typeof PROVIDER_KEY_FIELDS)[number]
  * buildCleanupCandidates) and the `settings:load` IPC handler that feeds the
  * renderer. When OS secure storage is unavailable, or a field was never
  * migrated into it, the settings.json value passes through untouched — the
- * documented fallback, not a bug.
+ * documented fallback for keys that were already on disk; new keys entered
+ * while storage is unavailable are session-only (see saveSettingsWithKeys).
  */
 export function getEffectiveSettings(): AppSettings {
   const settings = loadSettings()
-  if (!isEncryptionAvailable()) return settings
+  if (!isEncryptionAvailable()) {
+    if (sessionKeys.size === 0) return settings
+    const sessionOverlay: Partial<AppSettings> = {}
+    for (const [field, value] of sessionKeys) sessionOverlay[field] = value
+    return { ...settings, ...sessionOverlay }
+  }
   const overlay: Partial<AppSettings> = {}
   for (const field of PROVIDER_KEY_FIELDS) {
     const stored = getKey(field)
@@ -98,6 +126,7 @@ function writeKeyField(field: ProviderKeyField, value: string): boolean {
 export function saveSettingsWithKeys(partial: Partial<AppSettings>): AppSettings {
   const jsonPatch: Partial<AppSettings> = { ...partial }
   if (isEncryptionAvailable()) {
+    sessionKeys.clear()
     for (const field of PROVIDER_KEY_FIELDS) {
       if (!(field in partial)) continue
       const value = (partial[field] as string | undefined) ?? ''
@@ -109,6 +138,39 @@ export function saveSettingsWithKeys(partial: Partial<AppSettings>): AppSettings
       // If routing failed, fall through and let the plaintext value save to
       // settings.json as it always has.
     }
+  }
+  if (!isEncryptionAvailable()) {
+    // FAIL CLOSED: never persist a new secret in plaintext. Keep it in
+    // memory for this session, tell the renderer, and log a warning.
+    const onDisk = loadSettings()
+    let sessionOnly = false
+    for (const field of PROVIDER_KEY_FIELDS) {
+      if (!(field in partial)) continue
+      const value = (partial[field] as string | undefined) ?? ''
+      if (value === '') {
+        sessionKeys.delete(field)
+        continue // clearing is always safe to persist
+      }
+      if (value === (onDisk[field] ?? '')) {
+        delete (jsonPatch as Record<string, unknown>)[field] // unchanged legacy value, nothing new to write
+        continue
+      }
+      if (sessionKeys.get(field) !== value) {
+        sessionKeys.set(field, value)
+        sessionOnly = true
+      }
+      // Never persist the new secret; also clear any legacy plaintext copy it replaces.
+      ;(jsonPatch as Record<string, unknown>)[field] = ''
+
+    }
+    if (sessionOnly) {
+      console.warn(
+        '[Whisperio] OS secure storage unavailable — provider key(s) kept in memory for this session only, not persisted.'
+      )
+      secureStorageWarningListener?.(SECURE_STORAGE_UNAVAILABLE_MESSAGE)
+    }
+    const saved = saveSettings(jsonPatch)
+    return sessionKeys.size === 0 ? saved : { ...saved, ...Object.fromEntries(sessionKeys) }
   }
   return saveSettings(jsonPatch)
 }

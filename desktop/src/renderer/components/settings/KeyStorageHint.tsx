@@ -1,4 +1,4 @@
-import type { CSSProperties, ReactElement } from 'react'
+import { useEffect, useState, type CSSProperties, type ReactElement } from 'react'
 import { useKeyStorageAvailable } from '../../hooks/useKeyStorageAvailable'
 
 /**
@@ -10,12 +10,18 @@ import { useKeyStorageAvailable } from '../../hooks/useKeyStorageAvailable'
  */
 export function KeyStorageHint({ s }: { s: { hint: CSSProperties } }): ReactElement | null {
   const available = useKeyStorageAvailable()
+  const [warning, setWarning] = useState<string | null>(null)
+  useEffect(() => {
+    const api = typeof window !== 'undefined' ? window.api?.settings : undefined
+    return api?.onSecureStorageWarning?.(setWarning)
+  }, [])
+  if (warning) return <span style={{ ...s.hint, color: '#e5484d' }}>{warning}</span>
   if (available === null) return null
   return (
     <span style={s.hint}>
       {available
         ? 'Keys are encrypted with your OS secure storage.'
-        : 'OS secure storage unavailable — keys are stored in the local settings file.'}
+        : 'OS secure storage unavailable — new keys are kept for this session only and are not saved.'}
     </span>
   )
 }

@@ -13,7 +13,15 @@ struct OpenAIChatClient: ChatLLM {
     func complete(messages: [ChatMessage], model: String, temperature: Double) async throws -> String {
         let trimmedBase = baseURL.trimmingCharacters(in: .whitespaces)
         let base = trimmedBase.isEmpty ? "https://api.openai.com/v1" : trimmedBase
-        guard let url = URL(string: base + "/chat/completions") else {
+        // https-only (http only for loopback/private hosts); the request is built from the
+        // URL the policy validated, not from a second parse of the raw string.
+        let validated: URL
+        switch BaseURLPolicy.validate(base) {
+        case .success(let u): validated = u
+        case .failure(let policyError):
+            throw Self.err("OpenAI base URL rejected: \(policyError.localizedDescription)")
+        }
+        guard let url = URL(string: validated.absoluteString + "/chat/completions") else {
             throw Self.err("Invalid OpenAI base URL.")
         }
         var req = URLRequest(url: url)
@@ -33,7 +41,7 @@ struct OpenAIChatClient: ChatLLM {
         let (data, resp) = try await Self.chatSession.data(for: req)
         guard let http = resp as? HTTPURLResponse else { throw Self.err("No response from OpenAI.") }
         guard (200..<300).contains(http.statusCode) else {
-            throw Self.err("OpenAI error \(http.statusCode): \(String(data: data, encoding: .utf8) ?? "")")
+            throw Self.err("OpenAI error: \(ProviderError.userMessage(status: http.statusCode, body: data))")
         }
         struct R: Decodable {
             struct Choice: Decodable { struct Message: Decodable { let content: String }; let message: Message }
