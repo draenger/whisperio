@@ -150,7 +150,7 @@ struct DigestDayView: View {
                         Button { copy(summary) } label: { Label("Copy", systemImage: "doc.on.doc") }
                     }
                 if seed != "raw" {
-                    AINoticeLabel(engine: settings.chatEngineName)
+                    AINoticeLabel(engine: nil)   // stored summaries/rewrites carry no engine record; naming the CURRENTLY configured engine could misattribute older output
                 }
                 HStack(spacing: 8) {
                     if seed == "raw" {
