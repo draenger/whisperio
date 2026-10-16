@@ -1,9 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<!-- NOTE: not referenced by CODE_SIGN_ENTITLEMENTS (see project.pbxproj) — the Release
-     config uses WhisperioMac.entitlements under Automatic signing, same as builds 7-37.
-     Kept here as the reference an App Store manual-export step should copy from, since
-     that path needs aps-environment=production baked in ahead of the distribution flip. -->
+<!-- Referenced by CODE_SIGN_ENTITLEMENTS of the Release configuration (project.pbxproj).
+     Identical to WhisperioMac.entitlements (Debug) except aps-environment=production. -->
 <plist version="1.0">
 <dict>
 	<key>com.apple.developer.aps-environment</key>

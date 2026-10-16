@@ -20,6 +20,7 @@
 		2C0000000000000000000012 /* WhisperKit in Frameworks */ = {isa = PBXBuildFile; productRef = 2C0000000000000000000011 /* WhisperKit */; };
 		2F0000000000000000000012 /* LLM in Frameworks */ = {isa = PBXBuildFile; productRef = 2F0000000000000000000011 /* LLM */; };
 		2F0000000000000000000022 /* LLM in Frameworks */ = {isa = PBXBuildFile; productRef = 2F0000000000000000000021 /* LLM */; };
+		1A0000000000000000000061 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 1A0000000000000000000060 /* PrivacyInfo.xcprivacy */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -80,6 +81,7 @@
 		1B0000000000000000000022 /* WhisperioKeyboard.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = WhisperioKeyboard.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		1C0000000000000000000003 /* WhisperioMac.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = WhisperioMac.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		65DB73B02FE4974400C0E269 /* WhisperioWatch Watch App.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "WhisperioWatch Watch App.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		1A0000000000000000000060 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -201,6 +203,7 @@
 			isa = PBXGroup;
 			children = (
 				1A0000000000000000000009 /* Sources/WhisperioApp */,
+				1A0000000000000000000060 /* PrivacyInfo.xcprivacy */,
 				1A0000000000000000000020 /* Widget */,
 				1B0000000000000000000020 /* Keyboard */,
 				65DB73732FE496B600C0E269 /* WhisperioWatch Watch App */,
@@ -422,6 +425,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				1A0000000000000000000061 /* PrivacyInfo.xcprivacy in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -657,7 +661,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGNING_ALLOWED = YES;
 				CODE_SIGNING_REQUIRED = YES;
-				CODE_SIGN_ENTITLEMENTS = WhisperioApp.entitlements;
+				CODE_SIGN_ENTITLEMENTS = "WhisperioApp-Release.entitlements";
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 75;
@@ -842,7 +846,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
-				CODE_SIGN_ENTITLEMENTS = MacApp/WhisperioMac.entitlements;
+				CODE_SIGN_ENTITLEMENTS = "MacApp/WhisperioMac-Release.entitlements";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 75;
