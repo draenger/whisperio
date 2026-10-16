@@ -227,7 +227,7 @@ struct OnboardingView: View {
             Text("Speak it.\nWhisperio types.")
                 .font(WZFont.display(34, .semibold)).foregroundStyle(t.text)
                 .multilineTextAlignment(.center).lineSpacing(2)
-            Text("Dictate into any app — transcribed on this \(Self.deviceWord), never uploaded.")
+            Text("Dictate into any app. On-device by default — cloud engines only with your own key.")
                 .font(WZFont.ui(15)).foregroundStyle(t.muted)
                 .multilineTextAlignment(.center).lineSpacing(4)
             Spacer()

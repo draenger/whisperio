@@ -180,7 +180,7 @@ struct ModelsView: View {
             WIcon(isCloudActive ? "cloud" : "shield", size: 18).foregroundStyle(isCloudActive ? t.amber : t.green)
             Text(isCloudActive
                  ? "\(engine.displayName) is active. Your audio is sent to its servers to be transcribed."
-                 : "Models run entirely on your device. Audio never leaves your iPhone.")
+                 : "On-device engines are active. With them, audio never leaves your iPhone.")
                 .font(WZFont.ui(13)).foregroundStyle(t.text)
                 .fixedSize(horizontal: false, vertical: true)
         }
