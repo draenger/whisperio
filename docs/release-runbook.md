@@ -196,8 +196,14 @@ across versions; only re-check if you add IAP or change territories.
 
 ### 3.7 After approval
 - Tag the repo: `git tag ios-v1.4.1-b74 && git push --tags`.
-- Website: bump `softwareVersion` in `docs/index.html` JSON-LD; add App Store badge/link.
+- Website: flip the App Store flag (3.8). On later releases bump `softwareVersion` of the `MobileApplication` node in `docs/index.html` JSON-LD.
 - Start the next version in ASC only when the next build is ready (an open version blocks metadata edits on the live one).
+
+### 3.8 Website App Store flag
+The iPhone section (`#ios` in `docs/index.html`) shows "Coming soon to the App Store" as a non-link label until the app is live, because `https://apps.apple.com/app/id6781780531` 404s before release. On release day, once that URL opens in a browser:
+1. In `docs/index.html` set `data-appstore-live="true"` on `<html>` (the id stays in `data-appstore-id`). The inline script at the end of `<body>` turns the badge into a "Download on the App Store" link and adds `installUrl`/`downloadUrl` to the `MobileApplication` JSON-LD.
+2. Add `<meta name="apple-itunes-app" content="app-id=6781780531">` to `<head>` (Safari's smart banner reads it at load, so it can't come from the script).
+3. `node docs/launch/1.4.1/tools/check-site.mjs` must give `RESULT: PASS` (with the flag ON it requires the banner with the same id). Commit to `main`; GitHub Pages deploys it.
 
 ---
 

@@ -413,7 +413,7 @@ section { position: relative; z-index: 1; }
 .spot-point { display: flex; gap: 14px; }
 .spot-point .pic { flex-shrink: 0; width: 22px; height: 22px; color: var(--cyan); margin-top: 2px; }
 .spot-point .pic svg { width: 22px; height: 22px; }
-.spot-point h4 { font-family: var(--font-display); font-size: 1.02rem; font-weight: 600; margin-bottom: 3px; }
+.spot-point h3, .spot-point h4 { font-family: var(--font-display); font-size: 1.02rem; font-weight: 600; margin-bottom: 3px; }
 .spot-point p { font-size: .92rem; color: var(--muted); }
 @media (max-width: 880px) { .spot-grid, .hero-grid { grid-template-columns: 1fr; } }
 
@@ -497,3 +497,8 @@ body[data-accent="amber"]   { --acc:#f59e0b; --acc-light:#fbbf24; --acc-deep:#d9
 /* ghost color */
 .ghost { color: var(--acc-light); }
 .cta .ghost-bg { color: var(--acc); }
+
+/* iPhone section (#ios): one column on phones; App Store badge is a non-link label until the flag is on */
+@media (max-width: 600px) { #ios .bento { grid-template-columns: 1fr; } }
+.appstore-badge[aria-disabled="true"] { cursor: default; opacity: .8; }
+.appstore-badge[aria-disabled="true"]:hover { transform: none; }
