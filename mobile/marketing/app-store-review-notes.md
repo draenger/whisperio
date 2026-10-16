@@ -6,7 +6,7 @@ live in the same script; keep both in sync when editing.
 Sign-in required: **No** (no accounts). Demo account: none.
 
 ```
-Whisperio is a privacy-first dictation app for iPhone, iPad, Apple Watch and Mac. No account, no sign-in, no Whisperio server.
+Whisperio is a privacy-first dictation app for iPhone, iPad and Apple Watch. No account, no sign-in, no Whisperio server.
 
 HOW TO TEST (no API key needed)
 1. Launch the app. The default speech-to-text engine is Apple's ON-DEVICE speech recognition, so dictation works immediately without any key or network.

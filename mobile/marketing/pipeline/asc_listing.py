@@ -26,7 +26,7 @@ def load_texts():
     for f in sorted(LISTING.glob("*.json")):
         if f.name.startswith("_"):
             continue
-        texts[f.stem] = json.loads(f.read_text())
+        texts[f.stem] = json.loads(f.read_text(encoding="utf-8"))
     bad = [(loc, k, len(v)) for loc, t in texts.items() for k, v in t.items() if k in LIMITS and len(v) > LIMITS[k]]
     if bad:
         raise SystemExit("over limit: " + ", ".join(f"{loc}.{k}={n}/{LIMITS[k]}" for loc, k, n in bad))
