@@ -46,11 +46,15 @@ const OVERCLAIM = [
   /100\s?%/, /completely private/, /fully private/, /totally private/, /perfectly private/, /absolute privacy/,
   /(never|nothing) (ever )?leaves? (your|the) (device|phone|iphone|mac)/, /stays on your device,? always/, /always on[- ]device/,
   /end[- ]to[- ]end/, /zero[- ]knowledge/, /hipaa/, /gdpr[- ](compliant|certified)/, /rodo[- ]?(zgodn|certyfik)/, /no data (is )?collected/,
+  /never (uploaded|sent|shared|stored)/, /no data (ever )?leaves/, /stays? on your (device|phone|iphone)(?! only if)/, /never leaves/,
+  /nigdy nie (sa|jest) wysyl/, /nie (sa|jest) wysylan\w* (do chmury|nigdzie)/, /nie wysyla\w* (do chmury|nigdzie)/, /nie opuszcza\w* (telefonu|urzadzenia)/,
   /calkowicie prywatn/, /w pelni prywatn/, /100 ?procent/, /nic nie opuszcza/, /nigdy nie opuszcza/, /zawsze na urzadzeniu/,
   /zgodn\w* z rodo/, /szyfrowani\w* end/, /nie zbiera(my)? zadnych danych/,
 ];
 // License: PolyForm Noncommercial is source-available, not open source (OSI).
-const LICENSE = [/open[- ]source/, /\boss\b/, /\bfoss\b/, /otwart\w* (kod|zrodl)/, /wolne oprogramowanie/, /free software/];
+const LICENSE = [/open[- ]?source/, /\boss\b/, /\bfoss\b/, /otwart\w* ?(kod|zrodl)/, /otwartozrodl/, /wolne oprogramowanie/, /free software/];
+// The Mac App Store version is not shipped yet (release-runbook §4): the iOS listing must not advertise it.
+const NOT_SHIPPED = [/\bmac(os)?\b/, /\bmaca\b/, /\bmakiem\b/, /\bmacu\b/, /global hotkeys/, /skrot\w* (globaln|klawiszow)/];
 // Anthropic / Claude are desktop-only (legal note #3): never in the mobile listing.
 const DESKTOP_ONLY = [/anthropic/, /\bclaude\b/];
 const FOREVER = [/forever/, /na zawsze/, /for life/, /lifetime/, /bezterminow/, /always free/, /zawsze (za darmo|darmow)/];
@@ -59,13 +63,15 @@ const SUPERLATIVE = [/#\s?1\b/, /\bno\.? ?1\b/, /\bbest\b/, /\btop\b/, /number o
 // Medical / legal transcription claims (not validated for that use).
 const REGULATED = [/medical transcri/, /clinical/, /legal transcri/, /court/, /transkrypcj\w* (medyczn|sadow)/, /dokumentacj\w* medyczn/];
 // Third-party names are fine in the description (factual provider list) but not in keywords / name / subtitle (2.3.7).
-const TRADEMARK_KW = [/openai/, /chatgpt/, /\bwhisper\b/, /elevenlabs/, /deepgram/, /assembly/, /groq/, /mistral/, /replicate/, /\bsiri\b/, /\bapple\b/, /google/, /otter/, /dragon/];
+const TRADEMARK_KW = [/open ?ai/, /chatgpt/, /\bgpt/, /gemini/, /alexa/, /copilot/, /notion/, /\bwhisper\b/, /elevenlabs/, /deepgram/, /assembly/, /groq/, /mistral/, /replicate/, /\bsiri\b/, /\bapple\b/, /google/, /otter/, /dragon/];
 const PLACEHOLDER = /\{\{|\bTODO\b|\bTBD\b|\bXXX\b|lorem|\[\[/i;
 const EMOJI = /\p{Extended_Pictographic}/u;
 // Required honest sentences (the cloud caveat and the license), per language.
 const REQUIRED = {
-  'en-US': [[/process your audio under their own terms/, 'cloud-provider caveat'], [/source-available under the polyform noncommercial/i, 'license'], [/only if you allow online recognition/, 'Apple online-recognition caveat']],
-  pl: [[/przetwarzają nagrania na własnych warunkach/, 'cloud-provider caveat'], [/licencji PolyForm Noncommercial/, 'license'], [/Interfejs aplikacji jest po angielsku/, 'English-only UI disclosure'], [/zależy od iOS/, 'on-device language caveat']],
+  'en-US': [[/process your audio under their own terms/, 'cloud-provider caveat'], [/source-available under the polyform noncommercial/i, 'license'],
+    [/only if you turn on Apple online speech/, 'Apple online-speech caveat'], [/shows an estimate/, 'cost is an estimate (ProviderPricing)']],
+  pl: [[/przetwarzają nagrania na własnych warunkach/, 'cloud-provider caveat'], [/licencji PolyForm Noncommercial/, 'license'], [/Interfejs aplikacji jest po angielsku/, 'English-only UI disclosure'],
+    [/tylko wtedy, gdy włączysz rozpoznawanie online Apple/, 'Apple online-speech caveat'], [/zależy od iOS/, 'on-device language caveat'], [/szacunkowy koszt/, 'cost is an estimate (ProviderPricing)']],
 };
 const hits = (list, s) => list.filter((re) => re.test(fold(s))).map((re) => re.source);
 
@@ -105,7 +111,8 @@ function gate(ios, { limits: ASC, required }) {
     out(!overlap.length, where, 'keywords', overlap.length ? 'repeat name/subtitle: ' + overlap.join(',') : 'no repeats of name/subtitle');
     const head = all.filter(([k]) => ['name', 'subtitle', 'keywords'].includes(k));
     per('trademarks', TRADEMARK_KW, 'third-party names in name/subtitle/keywords (2.3.7)', head);
-    out(!/\b(free|darmow|za darmo|gratis)\b/i.test(`${t.name} ${t.subtitle}`), where, 'title', 'no price terms in name/subtitle');
+    out(!/\b(free|gratis)\b|darmow|za darmo|bezplatn/.test(fold(`${t.name} ${t.subtitle}`)), where, 'title', 'no price terms in name/subtitle');
+    per('not-shipped', NOT_SHIPPED, 'Mac app (Mac App Store not shipped yet)');
     per('privacy-overclaim', OVERCLAIM, 'privacy claims beyond privacy.html');
     per('license', LICENSE, '"open source" (PolyForm NC is source-available)');
     per('desktop-only', DESKTOP_ONLY, 'Anthropic/Claude (desktop only)');
@@ -122,7 +129,7 @@ function gate(ios, { limits: ASC, required }) {
   if (ios.pl && ios['en-US']) {
     const b = [bullets(ios.pl.description), bullets(ios['en-US'].description)];
     const s = [sections(ios.pl.description), sections(ios['en-US'].description)];
-    out(JSON.stringify(b) === JSON.stringify([b[0], b[0]]) && s[0] === s[1], 'appstore', 'parity', `sections PL ${s[0]} / EN ${s[1]}, bullets PL ${b[0]} / EN ${b[1]}`);
+    out(JSON.stringify(b[0]) === JSON.stringify(b[1]) && s[0] === s[1], 'appstore', 'parity', `sections PL ${s[0]} / EN ${s[1]}, bullets PL ${b[0]} / EN ${b[1]}`);
   }
   return res;
 }
@@ -144,6 +151,17 @@ if (process.argv.includes('--self-test')) {
     C('en-US', 'Free forever.', 'forever-free'), C('pl', 'Za darmo na zawsze.', 'forever-free'),
     C('en-US', 'The most accurate dictation app.', 'superlatives'), C('pl', 'Najlepsze dyktowanie.', 'superlatives'),
     C('en-US', 'Great for medical transcription.', 'regulated'),
+    // adversarial strings from the Opus review of docs/aso-1.4.1 (all passed the first version)
+    C('en-US', 'Your recordings stay on your iPhone and are never uploaded anywhere.', 'privacy-overclaim'),
+    C('en-US', 'No data leaves your device.', 'privacy-overclaim'),
+    C('pl', 'Twoje nagrania nigdy nie są wysyłane do chmury.', 'privacy-overclaim'),
+    C('en-US', 'Opensource dictation.', 'license'), C('pl', 'Otwartoźródłowy projekt.', 'license'),
+    ['GPT in subtitle', (p) => { p['en-US'].subtitle = 'GPT-4o Voice Typing, Your Key'; }, 'trademarks'],
+    ['Open AI in subtitle', (p) => { p['en-US'].subtitle = 'Voice Typing via Open AI Key'; }, 'trademarks'],
+    ['darmowe in PL name', (p) => { p.pl.name = 'Whisperio – darmowe dyktowanie'; }, 'title'],
+    ['bezpłatne in PL subtitle', (p) => { p.pl.subtitle = 'Bezpłatne dyktowanie'; }, 'title'],
+    C('en-US', 'Native Mac app with global hotkeys.', 'not-shipped'), C('pl', 'Synchronizacja z Makiem.', 'not-shipped'),
+    ['cost estimate caveat removed', (p) => { p['en-US'].description = p['en-US'].description.replace('shows an estimate', 'shows the cost'); }, 'required'],
     C('en-US', 'openai', 'trademarks', 'keywords'), C('pl', 'whisper', 'trademarks', 'keywords'),
     ['name with free', (p) => { p['en-US'].name = 'Whisperio – Free Dictation'; }, 'title'],
     ['keyword with space', (p) => { p['en-US'].keywords = p['en-US'].keywords.replace('memo', 'voice memo'); }, 'keywords'],
@@ -152,7 +170,7 @@ if (process.argv.includes('--self-test')) {
     ['cloud caveat removed', (p) => { p['en-US'].description = p['en-US'].description.replace('process your audio under their own terms', 'are great'); }, 'required'],
     ['English UI disclosure removed', (p) => { p.pl.description = p.pl.description.replace('Interfejs aplikacji jest po angielsku. ', ''); }, 'required'],
     ['privacy link removed', (p) => { p.pl.description = p.pl.description.replace(/https:\/\/whisperio\.danielkasprzyk\.com\/privacy\.html/g, ''); }, 'legal-links'],
-    ['parity broken', (p) => { p.pl.description = p.pl.description.replace('- Własny słownik i słownictwo\n', ''); }, 'parity'],
+    ['parity broken', (p) => { p.pl.description = p.pl.description.replace('- Własny słownik\n', ''); }, 'parity'],
     ['promo over limit', (p) => { p.pl.promotionalText += ' '.repeat(60); }, 'limit'],
     ['placeholder', (p) => { p['en-US'].promotionalText = p['en-US'].promotionalText.slice(0, 120) + ' {{link}}'; }, 'placeholders'],
   ];
