@@ -684,6 +684,7 @@ struct DetailView: View {
                 .font(WZFont.ui(16)).foregroundStyle(t.text).lineSpacing(5)
                 .fixedSize(horizontal: false, vertical: true)
                 .textSelection(.enabled)
+            AINoticeLabel(engine: nil)   // stored summaries/rewrites carry no engine record; naming the CURRENTLY configured engine could misattribute older output
             HStack(spacing: 9) {
                 GhostButton(title: "Copy", icon: "copy") { copy(text) }
                 shareButton(text)

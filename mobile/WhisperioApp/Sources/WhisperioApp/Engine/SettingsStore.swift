@@ -268,6 +268,20 @@ final class SettingsStore: ObservableObject {
     // chat client — so it inherits the same cloud-consent + key gate via `isConfigured` — with
     // the user's configured chat model. Callers guard on `isConfigured` and surface the consent
     // sheet / Settings rather than failing silently.
+    // Display name of the engine `makeChatClient()` currently resolves to, for the AI-generated
+    // notice. Nil when unknown. No persistence: reflects the current configuration.
+    var chatEngineName: String? {
+        let client = makeChatClient()
+        #if canImport(FoundationModels)
+        if #available(iOS 26.0, macOS 26.0, *), client is AppleIntelligenceChatClient {
+            return "Apple Intelligence"
+        }
+        #endif
+        if client is LocalLLMChatClient { return "on-device model" }
+        if client is OpenAIChatClient { return "OpenAI" }
+        return nil
+    }
+
     func makeRewriter() -> Rewriter {
         Rewriter(client: makeChatClient(), model: settings.chatModel)
     }
