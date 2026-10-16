@@ -31,24 +31,18 @@ final class SettingsStore: ObservableObject {
         Self.migrateBuild62PolishSeedRegression(&loaded)
 
         // API secrets live in the Keychain, not in the UserDefaults blob. Prefer the Keychain
-        // copy; fall back to any legacy plaintext key still embedded in the blob (pre-Keychain
-        // installs) so a stored key is never lost across the upgrade.
-        let legacyOpenAI = loaded.openAIKey
-        let legacyEleven = loaded.elevenLabsKey
-        let legacyGitHub = loaded.githubToken
-        loaded.openAIKey = Keychain.get(.openAIKey) ?? legacyOpenAI
-        loaded.elevenLabsKey = Keychain.get(.elevenLabsKey) ?? legacyEleven
-        loaded.groqKey = Keychain.get(.groqKey) ?? loaded.groqKey
-        loaded.deepgramKey = Keychain.get(.deepgramKey) ?? loaded.deepgramKey
-        loaded.assemblyAIKey = Keychain.get(.assemblyAIKey) ?? loaded.assemblyAIKey
-        loaded.mistralKey = Keychain.get(.mistralKey) ?? loaded.mistralKey
-        loaded.githubToken = Keychain.get(.githubToken) ?? legacyGitHub
+        // copy; a secret the Keychain does not have keeps the legacy plaintext value a pre-Keychain
+        // build left in the blob, so nothing is lost across the upgrade. `WhisperioSettings.secretFields`
+        // is the single list of secrets (openAI, elevenLabs, groq, deepgram, assemblyAI, mistral,
+        // replicate, selfHosted, githubToken) — adding a key there is enough.
+        let legacyPlaintext = loaded.plaintextSecretLabels
+        loaded.hydrateSecrets(read: Keychain.get)
         settings = loaded
 
         // Migrate + scrub: if the persisted blob carried a plaintext secret, move it into the
         // Keychain and rewrite the blob without it. (Property observers don't fire in init,
         // so call save() explicitly.)
-        if !legacyOpenAI.isEmpty || !legacyEleven.isEmpty || !legacyGitHub.isEmpty {
+        if !legacyPlaintext.isEmpty {
             save()
         }
     }
@@ -91,21 +85,8 @@ final class SettingsStore: ObservableObject {
         SharedStore.setEngineOnDevice(primary == .onDevice || primary == .localWhisper)
         // Secrets go to the Keychain only; everything else is persisted to UserDefaults with
         // the key fields blanked so no API secret is ever written in plaintext.
-        Keychain.set(settings.openAIKey, for: .openAIKey)
-        Keychain.set(settings.elevenLabsKey, for: .elevenLabsKey)
-        Keychain.set(settings.groqKey, for: .groqKey)
-        Keychain.set(settings.deepgramKey, for: .deepgramKey)
-        Keychain.set(settings.assemblyAIKey, for: .assemblyAIKey)
-        Keychain.set(settings.mistralKey, for: .mistralKey)
-        Keychain.set(settings.githubToken, for: .githubToken)
-        var sanitized = settings
-        sanitized.openAIKey = ""
-        sanitized.elevenLabsKey = ""
-        sanitized.groqKey = ""
-        sanitized.deepgramKey = ""
-        sanitized.assemblyAIKey = ""
-        sanitized.mistralKey = ""
-        sanitized.githubToken = ""
+        settings.persistSecrets { value, item in Keychain.set(value, for: item) }
+        let sanitized = settings.scrubbedOfSecrets()
         if let data = try? JSONEncoder().encode(sanitized) {
             UserDefaults.standard.set(data, forKey: Self.key)
         }
