@@ -54,6 +54,8 @@ const OVERCLAIM = [
 // License: PolyForm Noncommercial is source-available, not open source (OSI).
 const LICENSE = [/open[- ]?source/, /\boss\b/, /\bfoss\b/, /otwart\w* ?(kod|zrodl)/, /otwartozrodl/, /wolne oprogramowanie/, /free software/];
 // The Mac App Store version is not shipped yet (release-runbook §4): the iOS listing must not advertise it.
+// keyboard opens the app and inserts on switch-back; Watch saves to history (KeyboardViewController.swift:7-12, PhoneConnectivity.swift)
+const TRIGGERS = [/straight into the field/, /prosto do pola/, /pastes? (instantly|immediately)/, /wkleja sie od razu/, /lands where you/, /laduje tam, gdzie/];
 const NOT_SHIPPED = [/\bmac(os)?\b/, /\bmaca\b/, /\bmakiem\b/, /\bmacu\b/, /global hotkeys/, /skrot\w* (globaln|klawiszow)/];
 // Anthropic / Claude are desktop-only (legal note #3): never in the mobile listing.
 const DESKTOP_ONLY = [/anthropic/, /\bclaude\b/];
@@ -112,6 +114,7 @@ function gate(ios, { limits: ASC, required }) {
     const head = all.filter(([k]) => ['name', 'subtitle', 'keywords'].includes(k));
     per('trademarks', TRADEMARK_KW, 'third-party names in name/subtitle/keywords (2.3.7)', head);
     out(!/\b(free|gratis)\b|darmow|za darmo|bezplatn/.test(fold(`${t.name} ${t.subtitle}`)), where, 'title', 'no price terms in name/subtitle');
+    per('triggers', TRIGGERS, 'text-insertion claims the code contradicts');
     per('not-shipped', NOT_SHIPPED, 'Mac app (Mac App Store not shipped yet)');
     per('privacy-overclaim', OVERCLAIM, 'privacy claims beyond privacy.html');
     per('license', LICENSE, '"open source" (PolyForm NC is source-available)');
@@ -161,6 +164,7 @@ if (process.argv.includes('--self-test')) {
     ['darmowe in PL name', (p) => { p.pl.name = 'Whisperio – darmowe dyktowanie'; }, 'title'],
     ['bezpłatne in PL subtitle', (p) => { p.pl.subtitle = 'Bezpłatne dyktowanie'; }, 'title'],
     C('en-US', 'Native Mac app with global hotkeys.', 'not-shipped'), C('pl', 'Synchronizacja z Makiem.', 'not-shipped'),
+    C('en-US', 'Text goes straight into the field.', 'triggers'), C('pl', 'Tekst trafia prosto do pola.', 'triggers'),
     ['cost estimate caveat removed', (p) => { p['en-US'].description = p['en-US'].description.replace('shows an estimate', 'shows the cost'); }, 'required'],
     C('en-US', 'openai', 'trademarks', 'keywords'), C('pl', 'whisper', 'trademarks', 'keywords'),
     ['name with free', (p) => { p['en-US'].name = 'Whisperio – Free Dictation'; }, 'title'],
