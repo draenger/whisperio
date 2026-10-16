@@ -55,6 +55,12 @@ export function checkSite(pages, css) {
   const id = (htmlTag.match(/data-appstore-id="([^"]*)"/) || [])[1];
   out(live === 'true' || live === 'false', 'index.html', 'appstore-flag', `data-appstore-live="${live}"`);
   out(id === APP_ID, 'index.html', 'appstore-flag', `data-appstore-id="${id}" (expected ${APP_ID})`);
+  // <title> and description/og/twitter metadata: iOS devices only as 'coming' while OFF; no 'coming' while ON
+  const metaTexts = [(h.match(/<title>([^<]*)<\/title>/) || [])[1] || '', ...[...h.matchAll(/<meta\s+(?:name|property)="(?:description|og:description|og:title|twitter:description|twitter:title)"\s+content="([^"]*)"/g)].map((m) => m[1])];
+  const iosNow = metaTexts.filter((m) => /\b(iPhone|iPad|Apple Watch)\b/.test(m) && !/coming to the App Store/i.test(m));
+  const iosSoon = metaTexts.filter((m) => /coming to the App Store/i.test(m));
+  if (live === 'false') out(!iosNow.length, 'index.html', 'appstore-flag', iosNow.length ? `metadata lists iOS devices as available while OFF: "${iosNow[0].slice(0, 80)}"` : `metadata: iOS only as coming (${metaTexts.length} tags)`);
+  else if (live === 'true') out(!iosSoon.length, 'index.html', 'appstore-flag', iosSoon.length ? 'metadata still says "coming to the App Store" while ON (runbook 3.8 step 5)' : 'metadata updated for release');
   // legal/support pages are static: while OFF none may say the iOS app is available; while ON none may still say 'coming soon'
   for (const [name, html] of Object.entries(pages)) {
     if (name === 'index.html') continue;
@@ -137,6 +143,7 @@ function selfTest(pages, css) {
     ['second JSON-LD block with installUrl while OFF', (p) => ({ ...p, 'index.html': p['index.html'].replace('</head>', `<script type="application/ld+json">{"@type":"MobileApplication","installUrl":"x"}</script></head>`) }), 'appstore-flag'],
     ['#ios hidden', (p) => ({ ...p, 'index.html': p['index.html'].replace('id="ios"', 'id="ios" hidden') }), 'ios-section'],
     ['silent-fallback wording back', (p) => ({ ...p, 'index.html': p['index.html'].replace('If your language isn', 'Or your language is not available on-device. If your language isn') }), 'ios-section'],
+    ['iPhone in <title> while OFF', (p) => ({ ...p, 'index.html': p['index.html'].replace(/<title>[^<]*<\/title>/, '<title>Whisperio for iPhone and Mac</title>') }), 'appstore-flag'],
     ['iPhone availability on privacy page while OFF', (p) => ({ ...p, 'privacy.html': '<html><body><p>It is available as an app for iPhone, iPad and Apple Watch (App Store, bundle ID x)</p></body></html>' }), 'appstore-flag'],
     ['available on the Mac App Store', (p) => ({ ...p, 'support.html': '<html><body><p>Download it on the Mac App Store today.</p></body></html>' }), 'claims'],
     ['Mac App Store claim on another page', (p) => ({ ...p, 'terms.html': '<html><body><p>for iPhone and Mac (App Store, bundle ID x)</p></body></html>' }), 'claims'],

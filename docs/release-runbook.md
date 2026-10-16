@@ -208,7 +208,8 @@ The iPhone section (`#ios` in `docs/index.html`) shows "Coming soon to the App S
    - In the JSON-LD `MobileApplication` node, add `"installUrl"` and `"downloadUrl"` with the same URL.
    - The inline script then has nothing to do, which is fine.
 4. Legal pages: in `docs/privacy.html` and `docs/terms.html` (line ~71) change "for iPhone, iPad and Apple Watch (to be distributed through the App Store, bundle ID …; <span data-appstore-status>coming soon</span>)" to "for iPhone, iPad and Apple Watch (App Store, bundle ID …)". Bump "Last updated" on both.
-5. `node docs/launch/1.4.1/tools/check-site.mjs` must give `RESULT: PASS` (with the flag ON it requires the banner with the same id). Commit to `main`; GitHub Pages deploys it.
+5. Search/share metadata in `docs/index.html` `<head>`: `<title>` → "Whisperio — Free Dictation for iPhone, Mac, Windows &amp; Linux"; in `description`, `og:description` and `twitter:description` replace "Free dictation for Mac, Windows and Linux with your own AI key or offline local models. iPhone, iPad and Apple Watch coming to the App Store." with "Free dictation for iPhone, iPad, Apple Watch, Mac, Windows and Linux. On-device speech, offline local models or your own AI key."
+6. `node docs/launch/1.4.1/tools/check-site.mjs` must give `RESULT: PASS` (with the flag ON it requires the banner with the same id). Commit to `main`; GitHub Pages deploys it.
 
 ---
 
