@@ -422,6 +422,10 @@ struct MacUpdatesTab: View {
                     Spacer()
                     Text("v\(appVersion) (\(appBuild))").font(WZFont.ui(12.5, .medium)).foregroundStyle(t.text)
                 }
+                if let privacyURL = URL(string: "https://whisperio.danielkasprzyk.com/privacy.html") {
+                    Link("Privacy Policy", destination: privacyURL)
+                        .font(WZFont.ui(12.5)).foregroundStyle(t.accent)
+                }
             }
 
             MacSettingsSection(title: "How updates work") {

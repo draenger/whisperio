@@ -628,8 +628,8 @@
 				INFOPLIST_KEY_CFBundleDisplayName = Whisperio;
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
-				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Whisperio records your voice to transcribe it into text.";
-				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Whisperio uses on-device speech recognition to turn your dictation into text.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Whisperio records your voice to transcribe it into text. Audio is sent to a cloud provider only if you choose one in Settings.";
+				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Whisperio uses speech recognition to turn your dictation into text. Recognition runs on your device unless you allow online recognition in Settings.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UIBackgroundModes = "remote-notification";
@@ -668,8 +668,8 @@
 				INFOPLIST_KEY_CFBundleDisplayName = Whisperio;
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
-				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Whisperio records your voice to transcribe it into text.";
-				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Whisperio uses on-device speech recognition to turn your dictation into text.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Whisperio records your voice to transcribe it into text. Audio is sent to a cloud provider only if you choose one in Settings.";
+				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Whisperio uses speech recognition to turn your dictation into text. Recognition runs on your device unless you allow online recognition in Settings.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UIBackgroundModes = "remote-notification";
@@ -820,8 +820,8 @@
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
-				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Whisperio records your voice to transcribe it into text.";
-				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Whisperio uses on-device speech recognition to turn your dictation into text.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Whisperio records your voice to transcribe it into text. Audio is sent to a cloud provider only if you choose one in Settings.";
+				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Whisperio uses speech recognition to turn your dictation into text. Recognition runs on your device unless you allow online recognition in Settings.";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
@@ -854,8 +854,8 @@
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
-				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Whisperio records your voice to transcribe it into text.";
-				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Whisperio uses on-device speech recognition to turn your dictation into text.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Whisperio records your voice to transcribe it into text. Audio is sent to a cloud provider only if you choose one in Settings.";
+				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Whisperio uses speech recognition to turn your dictation into text. Recognition runs on your device unless you allow online recognition in Settings.";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
