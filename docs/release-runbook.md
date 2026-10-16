@@ -224,6 +224,17 @@ certs/profile) is documented in the `mac-testflight-pipeline` memory + `runbook.
 
 ---
 
+### 4.1 Mac App Store launch day — wording sweep
+Until the macOS 1.4.1 version is live, every public text must speak of the Mac App Store app in the future tense (App Review 2.3.1: "your app's functionality should be clear to end users and App Review"; the desktop Electron app for macOS — dmg in the GitHub release — is a different, already available product and may be called "Mac" in the desktop context). On the day `https://apps.apple.com/app/id6781780531?platform=mac` opens, flip all of these in ONE commit and run `node docs/launch/1.4.1/tools/check-site.mjs`:
+1. `docs/index.html`: the §3.8 flag items if not already flipped for iOS; add the Mac App Store badge/link next to the iOS one; title / `description` / `og:description` / `twitter:description` may list "Mac" for the App Store app as well as the desktop app; JSON-LD `MobileApplication.operatingSystem` adds `macOS 14` (deployment target from `project.pbxproj`, not the current OS version).
+2. `docs/privacy.html`: §1 (line ~71) "for iPhone, iPad and Apple Watch (App Store…)" → add "and Mac"; §4.1 (line ~105) Apple speech "the Mac App Store app, once released, will use the same default" → "default on iPhone, iPad, Apple Watch and Mac"; §5 (line ~131) iCloud sync "(and, once released, the Mac App Store app)" → "On iPhone, iPad and Mac"; §3 storage paths already list the Mac App Store container. Bump "Last updated".
+3. `docs/terms.html` §1 (line ~71): same availability sentence as privacy §1. Bump "Last updated".
+4. `docs/support.html`: FAQ answers that say "iPhone/iPad" where the Mac app also applies.
+5. `mobile/marketing/listing/en-US.json` + `pl.json`: the iOS listing may keep "Mac" only once the Mac app is live (promotionalText, description "iPhone, iPad, Mac, and Apple Watch", "syncs across iPhone, iPad, and Mac", "Native Mac app with global hotkeys"); until then launch keeps them Mac-free. Push with `asc_listing.py --apply`.
+6. `docs/PARITY.md` and `mobile/marketing/app-store-listing.md` §"macOS": status lines.
+7. In-app: `SettingsView` About block and `MacSettingsShell` need no change (links are platform-neutral).
+Verification: `grep -nE '\bMac\b|once released|coming soon' docs/*.html mobile/marketing/listing/*.json` must show no future-tense leftovers, then `check-site.mjs` → `RESULT: PASS`.
+
 ## 5. Rollback / hotfix
 
 - **Desktop**: GitHub Release → mark the bad release as pre-release or delete its `latest*.yml`; auto-update
