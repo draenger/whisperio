@@ -43,8 +43,8 @@
     "url": "https://whisperio.danielkasprzyk.com/",
     "description": "Press a global hotkey, speak, and your words are transcribed and auto-pasted into any app. Cloud or fully offline with local Whisper models.",
     "applicationCategory": "UtilitiesApplication",
-    "operatingSystem": "Windows 10, Windows 11, macOS 12, Linux",
-    "softwareVersion": "1.0.0",
+    "operatingSystem": "iOS 26, iPadOS 26, watchOS 26, macOS 26, Windows 10, Windows 11, Linux",
+    "softwareVersion": "1.4.1",
     "author": {
       "@type": "Person",
       "name": "Daniel Kasprzyk",
@@ -55,6 +55,7 @@
       "price": "0",
       "priceCurrency": "USD"
     },
+    "installUrl": "https://apps.apple.com/app/id6781780531",
     "downloadUrl": "https://github.com/draenger/whisperio/releases/latest",
     "softwareHelp": "https://github.com/draenger/whisperio",
     "license": "https://polyformproject.org/licenses/noncommercial/1.0.0",
@@ -106,6 +107,7 @@
   </nav>
 
   <!-- ════════ Hero ════════ -->
+  <main>
   <section class="hero wrap" id="top">
     <div class="hero-grid">
       <div class="hero-copy">
@@ -118,6 +120,8 @@
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
             <span id="dl-label">Download free</span>
           </a>
+          <!-- App Store link goes live after the first App Store release -->
+          <a class="btn-ghost" href="https://apps.apple.com/app/id6781780531" target="_blank" rel="noopener">Download on the App Store</a>
           <a class="btn-ghost" href="https://github.com/draenger/whisperio" target="_blank" rel="noopener">
             <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 .5C5.37.5 0 5.78 0 12.29c0 5.21 3.44 9.63 8.21 11.19.6.11.82-.25.82-.56v-2c-3.34.71-4.04-1.58-4.04-1.58-.55-1.36-1.34-1.73-1.34-1.73-1.09-.73.08-.72.08-.72 1.2.08 1.84 1.22 1.84 1.22 1.07 1.8 2.81 1.28 3.5.98.11-.76.42-1.28.76-1.58-2.67-.3-5.47-1.31-5.47-5.83 0-1.29.47-2.34 1.23-3.16-.12-.3-.53-1.51.12-3.15 0 0 1-.32 3.3 1.21A11.6 11.6 0 0 1 12 6.05c1.02 0 2.05.13 3.01.39 2.3-1.53 3.3-1.21 3.3-1.21.65 1.64.24 2.85.12 3.15.77.82 1.23 1.87 1.23 3.16 0 4.53-2.8 5.52-5.48 5.81.43.37.81 1.1.81 2.22v3.29c0 .31.22.68.83.56A12.02 12.02 0 0 0 24 12.29C24 5.78 18.63.5 12 .5z"/></svg>
             View source
@@ -305,15 +309,15 @@
           <div class="spot-points">
             <div class="spot-point">
               <span class="pic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></span>
-              <div><h4>No cloud, no account</h4><p>Run whisper.cpp, faster-whisper, LocalAI or Ollama. Works with zero internet.</p></div>
+              <div><h3>No cloud, no account</h3><p>Run whisper.cpp, faster-whisper, LocalAI or Ollama. Works with zero internet.</p></div>
             </div>
             <div class="spot-point">
               <span class="pic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span>
-              <div><h4>One-click models</h4><p>Pull GGML models from HuggingFace and start a local server without leaving the app.</p></div>
+              <div><h3>One-click models</h3><p>Pull GGML models from HuggingFace and start a local server without leaving the app.</p></div>
             </div>
             <div class="spot-point">
               <span class="pic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg></span>
-              <div><h4>Smart fallback chain</h4><p>Prefer local, fall back to cloud — or any order you like. Whisperio retries automatically.</p></div>
+              <div><h3>Smart fallback chain</h3><p>Prefer local, fall back to cloud — or any order you like. Whisperio retries automatically.</p></div>
             </div>
           </div>
         </div>
@@ -361,6 +365,8 @@
     </div>
   </section>
 
+  </main>
+
   <!-- ════════ Footer ════════ -->
   <footer class="wrap">
     <div class="foot-grid">
@@ -373,6 +379,8 @@
         <a href="#offline">Offline</a>
         <a href="app.html">App preview</a>
         <a href="privacy.html">Privacy</a>
+        <a href="terms.html">Terms</a>
+        <a href="support.html">Support</a>
         <a href="https://github.com/draenger/whisperio" target="_blank" rel="noopener">GitHub</a>
         <a href="https://github.com/draenger/whisperio/releases" target="_blank" rel="noopener">Releases</a>
         <a href="https://github.com/sponsors/draenger" target="_blank" rel="noopener">Sponsor</a>
