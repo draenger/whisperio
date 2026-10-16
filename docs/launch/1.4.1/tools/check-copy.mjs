@@ -1,71 +1,84 @@
 #!/usr/bin/env node
 // Deterministic copy gate for the Whisperio iOS 1.4.1 launch docs (docs/launch/1.4.1/**/*.md).
-// Adapted from the Zryw launch gate (draenger/zryw docs/launch/1.1/tools/check-copy.mjs).
+// Adapted from the Zryw launch gate (draenger/zryw docs/launch/1.1/tools/check-copy.mjs), with the lessons
+// from its review: rules run on the WHOLE file (tables, FAQ, prose), exemptions are per rule and per block.
 //
-//   node docs/launch/1.4.1/tools/check-copy.mjs [dir]   exit 1 on any FAIL. Offline, read-only, Node >= 18.
-//   node docs/launch/1.4.1/tools/check-copy.mjs --self-test   every planted defect must be caught
+//   node docs/launch/1.4.1/tools/check-copy.mjs [dir]       exit 1 on any FAIL. Offline, read-only, Node >= 18.
+//   node docs/launch/1.4.1/tools/check-copy.mjs --self-test  every planted defect must be caught (and nothing else)
 //
-// Fenced code blocks are the copy meant to be pasted (posts, comments, taglines). Prose around them is
-// guidance and may NAME a banned phrase ("never say 100% private"), so most rules only look inside fences.
 // The upper bound for any privacy claim is docs/privacy.html.
 //
-// Checks, per file:
-//   privacy      absolute privacy / compliance claims that privacy.html does not support (in fences).
+// Rules (whole file, every line):
+//   privacy      absolute privacy / compliance claims that privacy.html does not support.
 //   license      "open source" / "OSS" / "FOSS": Whisperio is source-available (PolyForm Noncommercial).
-//   providers    Anthropic / Claude named in mobile copy (the iOS app has no Anthropic client).
-//   promises     "free forever", ranking superlatives (in fences).
-//   competitors  no competitor names in fences (no bashing; comparisons belong in answers to direct questions).
-//   placeholders leftover TODO / TBD / XXX / lorem anywhere. Intentional {{PLACEHOLDERS}} are INFO only.
+//   competitors  competitor names (no bashing; answer about Whisperio's model instead).
+//   providers    Anthropic / Claude: the iOS app has no Anthropic client.          NEVER exemptable.
+//   promises     "free forever", ranking superlatives.                              NEVER exemptable.
+//   placeholders leftover TODO / FIXME / TBD / XXX / lorem / [[...]]. {{PLACEHOLDERS}} (incl. Polish
+//                capitals) are listed as INFO, not failed.
 //   limits       a line `<!-- limit:N -->` (or `limit:N words`) right before a fence caps that fence.
-// A fenced line that must quote a banned phrase on purpose carries `<!-- allow: <rule> -->` naming the ONE
-// rule it is exempt from (a bare allow exempts nothing).
+//
+// Quoting a banned phrase on purpose (guidance like: never write `100% private`):
+//   * in prose, put it in an inline code span `like this`: code spans are quotations and are not checked;
+//   * a fenced block may be exempted from ONE exemptable rule by a line `<!-- allow: <rule> -->` directly
+//     above the fence (above or below a limit line). Inline markers and bare `<!-- allow -->` exempt nothing.
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const RULES = {
   privacy: [
-    /100\s?%\s*(private|offline|secure|local)/i, /(completely|fully|totally|absolutely|perfectly) private/i,
+    /100\s?%\s*(private|offline|secure|local|prywatn\w*)/i, /(completely|fully|totally|absolutely|perfectly) private/i,
     /nothing (ever )?leaves your (device|phone|mac|iphone)/i, /never leaves your (device|phone|mac|iphone)/i,
     /end[- ]to[- ]end/i, /\bE2EE?\b/, /HIPAA/i, /(GDPR|RODO)[- ](compliant|certified|zgodn\w*)/i, /compliant with (GDPR|HIPAA)/i,
-    /no data (is )?(ever )?collected/i, /(we|it) collects? no data/i, /zero data/i, /military[- ]grade/i, /unhackable/i,
-    /w 100\s?% prywatn\w*/i, /całkowicie prywatn\w*/i, /nic nie opuszcza/i, /nigdy nie opuszcza/i, /szyfrowani\w* end/i,
+    /zgodn\w* z (RODO|GDPR)/i, /no data (is )?(ever )?collected/i, /(we|it) collects? no data/i, /zero data/i, /military[- ]grade/i,
+    /unhackable/i, /całkowicie prywatn\w*/i, /w pełni prywatn\w*/i, /nic nie opuszcza/i, /nigdy nie opuszcza/i, /szyfrowani\w* end/i,
   ],
-  license: [/open[- ]?source/i, /\bOSS\b/, /\bFOSS\b/, /otwart\w* (kod|źródł)/i, /open[- ]?source'?ow\w*/i],
-  providers: [/\bAnthropic\b/i, /\bClaude\b/],
-  promises: [/free forever/i, /forever free/i, /za darmo na zawsze/i, /na zawsze za darmo/i, /\bbest\b/i, /#\s?1\b/, /\bno\.? ?1\b/i,
-    /number one/i, /najlepsz\w*/i, /\b(fastest|most accurate|most private)\b/i, /najszybsz\w*/i, /\bthe only\b/i, /jedyn\w* (taka|aplikacj)/i],
+  license: [/open[- ]?source/i, /\bOSS\b/, /\bFOSS\b/, /otwart\w* (kod|źródł)/i],
   competitors: [/wispr/i, /superwhisper/i, /macwhisper/i, /\bdragon\b/i, /otter\.?ai/i, /\bdictato\b/i, /\baqua ?voice\b/i, /voiceink/i],
+  providers: [/\bAnthropic\b/i, /\bClaude\b/],
+  promises: [/free forever/i, /forever free/i, /za darmo na zawsze/i, /na zawsze za darmo/i, /\bbest\b/i, /(?<![#\w])#\s?1\b(?!\.)/, /\bno\.? ?1\b/i,
+    /number one/i, /najlepsz\w*/i, /\b(fastest|most accurate|most private)\b/i, /najszybsz\w*/i, /\bthe only\b/i, /jedyn\w* (taka|aplikacj)/i],
 };
-const LEFTOVER = /\bTODO\b|\bTBD\b|\bXXX\b|[Ll]orem ipsum/;
+const EXEMPTABLE = new Set(['privacy', 'license', 'competitors']);
+const LEFTOVER = /\bTODO\b|\bFIXME\b|\bTBD\b|\bXXX\b|[Ll]orem ipsum|\[\[[^\]]*\]\]/;
+const PLACEHOLDER = /\{\{([\p{Lu}0-9_ ]+)\}\}/gu;
 
-function blocksOf(lines) {
+function parse(lines) {
+  // fences with the annotation lines directly above them (limit / allow, any order, no blank lines between)
   const blocks = [];
+  const inFence = new Array(lines.length).fill(null);
   for (let i = 0, open = null; i < lines.length; i++) {
     if (/^\s*```/.test(lines[i])) {
       if (!open) {
-        let j = i - 1; while (j >= 0 && !lines[j].trim()) j--;
-        const m = j >= 0 && lines[j].match(/<!--\s*limit:(\d+)(\s+words)?\s*-->/);
-        open = { start: i + 1, body: [], limit: m ? +m[1] : null, words: !!(m && m[2]) };
+        const ann = [];
+        for (let j = i - 1; j >= 0 && /^\s*<!--.*-->\s*$/.test(lines[j]); j--) ann.push(lines[j]);
+        const lim = ann.map((a) => a.match(/<!--\s*limit:(\d+)(\s+words)?\s*-->/)).find(Boolean);
+        const allow = new Set(ann.map((a) => a.match(/^\s*<!--\s*allow:\s*([a-z-]+)\s*-->\s*$/)).filter(Boolean).map((m) => m[1]).filter((r) => EXEMPTABLE.has(r)));
+        open = { start: i + 1, body: [], limit: lim ? +lim[1] : null, words: !!(lim && lim[2]), allow };
       } else { blocks.push(open); open = null; }
-    } else if (open) open.body.push(lines[i]);
+    } else if (open) { open.body.push(lines[i]); inFence[i] = open; }
   }
-  return blocks;
+  return { blocks, inFence };
 }
 
 function checkText(rel, text, out, placeholders) {
   const lines = text.split(/\r?\n/);
-  const blocks = blocksOf(lines);
-  const fenced = blocks.flatMap((b) => b.body.map((l, k) => [l, b.start + k + 1]));
-  for (const rule of ['privacy', 'license', 'providers', 'promises', 'competitors']) {
-    const hits = fenced
-      .filter(([l]) => !new RegExp(`<!--\\s*allow:\\s*${rule}\\s*-->`).test(l))
-      .flatMap(([l, n]) => RULES[rule].map((re) => l.match(re)).filter(Boolean).map((m) => `${n}:"${m[0]}"`));
+  const { blocks, inFence } = parse(lines);
+  for (const rule of Object.keys(RULES)) {
+    const hits = [];
+    lines.forEach((raw, i) => {
+      if (/^\s*```/.test(raw) || /^\s*<!--.*-->\s*$/.test(raw)) return;
+      const b = inFence[i];
+      if (b && b.allow.has(rule)) return;
+      const l = b ? raw : raw.replace(/`[^`]*`/g, ''); // prose: inline code spans are quotations
+      for (const re of RULES[rule]) { const m = l.match(re); if (m) hits.push(`${i + 1}:"${m[0]}"`); }
+    });
     out(!hits.length, rel, rule, hits.length ? hits.join(', ') : 'clean');
   }
-  lines.forEach((l) => { for (const m of l.matchAll(/\{\{([A-Z0-9_ ]+)\}\}/g)) placeholders.add(m[1]); });
+  lines.forEach((l) => { for (const m of l.matchAll(PLACEHOLDER)) placeholders.add(m[1]); });
   const left = lines.map((l, i) => (LEFTOVER.test(l) ? i + 1 : 0)).filter(Boolean);
-  out(!left.length, rel, 'placeholders', left.length ? 'TODO/TBD/XXX/lorem at lines ' + left.join(',') : 'none left over');
+  out(!left.length, rel, 'placeholders', left.length ? 'TODO/FIXME/TBD/XXX/lorem/[[..]] at lines ' + left.join(',') : 'none left over');
   const limited = blocks.filter((b) => b.limit != null);
   const over = limited.map((b) => {
     const t = b.body.join('\n').trim();
@@ -76,26 +89,38 @@ function checkText(rel, text, out, placeholders) {
 }
 
 if (process.argv.includes('--self-test')) {
-  const fence = (s, lim) => `${lim ? `<!-- limit:${lim} -->\n` : ''}\`\`\`\n${s}\n\`\`\`\n`;
+  const fence = (s, ...ann) => `${ann.map((a) => a + '\n').join('')}\`\`\`\n${s}\n\`\`\`\n`;
   const CASES = [
+    // positive: must pass clean
     ['clean copy passes', fence('Free dictation for iPhone. On-device by default, or bring your own API key. We run no server.'), null],
-    ['100% private', fence('Whisperio is 100% private.'), 'privacy'],
-    ['nothing leaves', fence('Nothing ever leaves your iPhone.'), 'privacy'],
-    ['end-to-end', fence('End-to-end encrypted dictation.'), 'privacy'],
+    ['prose may quote banned phrases in code spans', 'Never write `100% private`, `open source` or `free forever`.\n', null],
+    ['allow line above fence exempts its rule', fence('Q: Is it open source? A: No, source-available.', '<!-- allow: license -->'), null],
+    ['allow + limit lines in any order', fence('Not open source.', '<!-- limit:100 -->', '<!-- allow: license -->'), null],
+    ['Polish placeholder is INFO, not a fail', 'Data: {{DATA_PREMIERY}} {{ŁĄCZE}}\n', null],
+    // negative: must be caught by the named rule
+    ['100% private (fence)', fence('Whisperio is 100% private.'), 'privacy'],
+    ['nothing leaves (table row)', '| Pitch | Nothing ever leaves your iPhone. |\n', 'privacy'],
+    ['end-to-end (FAQ prose)', 'A: Yes, it is end-to-end encrypted.\n', 'privacy'],
     ['GDPR compliant', fence('GDPR-compliant by design.'), 'privacy'],
+    ['PL zgodna z RODO', fence('Aplikacja zgodna z RODO.'), 'privacy'],
     ['no data collected', fence('No data collected, ever.'), 'privacy'],
-    ['PL całkowicie prywatna', fence('Całkowicie prywatna aplikacja.'), 'privacy'],
-    ['open source', fence('An open-source dictation app.'), 'license'],
+    ['PL całkowicie prywatna', 'Całkowicie prywatna aplikacja.\n', 'privacy'],
+    ['open source in prose (no code span)', 'Whisperio is open source.\n', 'license'],
     ['PL otwarty kod', fence('Aplikacja na otwartym kodzie źródłowym.'), 'license'],
-    ['Anthropic on mobile', fence('Use OpenAI, Anthropic or Groq.'), 'providers'],
-    ['free forever', fence('Free forever.'), 'promises'],
-    ['superlative', fence('The best dictation app for Mac.'), 'promises'],
+    ['inline allow marker exempts nothing', fence('It is open source. <!-- allow: license -->'), 'license'],
+    ['bare allow exempts nothing', fence('It is open source.', '<!-- allow -->'), 'license'],
+    ['allow for another rule does not exempt', fence('It is open source.', '<!-- allow: privacy -->'), 'license'],
+    ['Anthropic cannot be exempted', fence('Use OpenAI or Anthropic.', '<!-- allow: providers -->'), 'providers'],
+    ['free forever cannot be exempted', fence('Free forever.', '<!-- allow: promises -->'), 'promises'],
+    ['markdown heading "## 1." is not "#1"', '## 1. Where\n', null],
+    ['#1 claim', fence('The #1 dictation app.'), 'promises'],
+    ['superlative in table', '| Tagline | The best dictation app |\n', 'promises'],
     ['competitor', fence('Like Wispr Flow, but free.'), 'competitors'],
     ['leftover TODO', 'TODO: write this\n', 'placeholders'],
-    ['over limit', fence('x'.repeat(301), 300), 'limits'],
-    ['allow names its rule', fence('Q: Is it open source? <!-- allow: license -->'), null],
-    ['bare allow exempts nothing', fence('It is open source. <!-- allow -->'), 'license'],
-    ['prose may name banned phrases', 'Never write "100% private" or "open source".\n', null],
+    ['leftover FIXME', 'FIXME later\n', 'placeholders'],
+    ['leftover [[...]]', 'Contact: [[KONTAKT]]\n', 'placeholders'],
+    ['over limit', fence('x'.repeat(301), '<!-- limit:300 -->'), 'limits'],
+    ['over word limit', fence('a b c d e f', '<!-- limit:5 words -->'), 'limits'],
   ];
   let bad = 0;
   for (const [name, text, rule] of CASES) {
@@ -106,7 +131,12 @@ if (process.argv.includes('--self-test')) {
     if (!ok) bad++;
     console.log(`${ok ? 'ok  ' : 'MISS'} ${name}${rule ? ' -> ' + rule : ''}${ok ? '' : ' (got: ' + (fails.join(',') || 'nothing') + ')'}`);
   }
-  console.log(bad ? `SELF-TEST: FAIL (${bad}/${CASES.length})` : `SELF-TEST: PASS (${CASES.length} cases)`);
+  const ph = new Set();
+  checkText('fixture', 'x {{DATA_PREMIERY}} {{ŁĄCZE}}', () => {}, ph);
+  const phOk = ph.has('ŁĄCZE') && ph.has('DATA_PREMIERY');
+  if (!phOk) bad++;
+  console.log(`${phOk ? 'ok  ' : 'MISS'} Polish capitals collected as placeholders`);
+  console.log(bad ? `SELF-TEST: FAIL (${bad}/${CASES.length + 1})` : `SELF-TEST: PASS (${CASES.length + 1} cases)`);
   process.exit(bad ? 1 : 0);
 }
 

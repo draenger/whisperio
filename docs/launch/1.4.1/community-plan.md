@@ -18,12 +18,12 @@ Placeholders filled on the day: `{{APP_STORE_LINK}}` (`https://apps.apple.com/ap
    - "audio goes from your device straight to the provider you choose, or nowhere when you stay on-device".
 
    Not allowed:
-   - "100% private";
-   - "nothing ever leaves your device", which is false once a cloud provider is chosen, and for Apple's recognizer if online recognition is allowed;
-   - "end-to-end encrypted";
-   - "GDPR/HIPAA compliant";
-   - "no data collected" as an absolute (the App Privacy label decision is still pending).
-6. **License**: Whisperio is **source-available** (PolyForm Noncommercial 1.0.0), **not open source**. If asked, say so plainly (answer A4 below).
+   - `100% private`;
+   - `nothing ever leaves your device`, which is false once a cloud provider is chosen, and for Apple's recognizer if online recognition is allowed;
+   - `end-to-end encrypted`;
+   - `GDPR/HIPAA compliant`;
+   - `no data collected` as an absolute (the App Privacy label decision is still pending).
+6. **License**: Whisperio is **source-available** (PolyForm Noncommercial 1.0.0), **not `open source`**. If asked, say so plainly (answer A4 below).
 7. **No competitor bashing.** If someone asks "how is this different from X", answer about Whisperio's model (free, BYOK, on-device default, no server), not about X.
 
 ## 1. Where, rules, verdict
@@ -252,7 +252,7 @@ There isn't a business model inside the app: it's free with no in-app purchases 
 A subscription would mean running a server that sees your audio and marking up API costs. With your own key, you choose the provider and its privacy terms, you see the real price, and you can switch any time. If you don't want any provider, the on-device engine works with no key at all.
 ```
 
-### A4 — "Is it open source?"
+### A4 — `Is it open source?`
 
 <!-- limit:600 -->
 ```
@@ -266,7 +266,7 @@ Not in the OSI sense. The source is publicly available on GitHub under the PolyF
 There is no Android version. On the Mac, the desktop app (also Windows and Linux) is on GitHub Releases today; a Mac App Store build is in progress but not out yet.
 ```
 
-### A6 — "Which provider is best / most accurate?"
+### A6 — `Which provider is best / most accurate?`
 
 <!-- limit:500 -->
 ```
@@ -302,4 +302,4 @@ Nie mam żadnego serwera i niczego nie zbieram: nie ma konta ani backendu Whispe
 
 ## 6. Note for the docs/ site (lane 1, not this PR)
 
-`docs/index.html` `<title>`, meta description, og/twitter descriptions and keywords say "Open-Source"; the license is PolyForm Noncommercial (source-available). Every community answer above says "source-available", so the site should match before launch.
+`docs/index.html` `<title>`, meta description, og/twitter descriptions and keywords say `Open-Source`; the license is PolyForm Noncommercial (source-available). Every community answer above says "source-available", so the site should match before launch.
