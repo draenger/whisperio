@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" data-appstore-live="false" data-appstore-id="6781780531">
+<html lang="en" data-appstore-live="false" data-appstore-id="6781780531" data-testflight-url="">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -281,6 +281,8 @@
       <a class="btn-ghost" href="privacy.html">Read the privacy policy</a>
     </div>
     <div class="free-note">iPhone · iPad · Apple Watch · iOS 17 or later · free · source-available (PolyForm Noncommercial)</div>
+    <!-- Join the beta: empty by default; filled in only when data-testflight-url on <html> is set (runbook 3.8). -->
+    <div class="cta-row reveal" id="testflight-beta" style="display:none"></div>
   </section>
 
   <!-- ════════ Features ════════ -->
@@ -491,6 +493,19 @@
       j['@graph'].forEach(function (n) { if (n['@type'] === 'MobileApplication') { n.installUrl = url; n.downloadUrl = url; } });
       ld.textContent = JSON.stringify(j);
     } catch (e) {}
+  })();
+  </script>
+  <script>
+  /* TestFlight public link (data-testflight-url on <html>). Empty: nothing is rendered. Non-empty: a "Join the TestFlight beta"
+     link appears in #ios. Flip procedure: docs/release-runbook.md 3.8, "TestFlight public link". */
+  (function () {
+    var u = (document.documentElement.getAttribute('data-testflight-url') || '').trim();
+    var box = document.getElementById('testflight-beta');
+    if (!u || !box || u.indexOf('https://testflight.apple.com/') !== 0) return;
+    var a = document.createElement('a');
+    a.className = 'btn-ghost'; a.href = u; a.rel = 'noopener';
+    a.textContent = 'Join the TestFlight beta';
+    box.appendChild(a); box.style.display = '';
   })();
   </script>
 </body>
