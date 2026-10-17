@@ -97,7 +97,7 @@ Recording at AAC-LC 16 kHz mono 32 kbps ≈ 14 MB/hour. Before upload the client
 - Result: `currentInputConnection.commitText(transcript, 1)`, with a leading space if the char before the cursor is not whitespace. Entry saved to history with `source = keyboard`.
 - No permission / no key → panel shows a single "Open Whisperio to finish setup" button (the IME cannot show the runtime permission dialog).
 - Declares a `voice` subtype (`android:imeSubtypeMode="voice"`) — **best-effort** (AOSP `getShortcutInputMethodsAndSubtypes`; Gboard does not hand off to third-party voice IMEs), not an acceptance criterion. After a commit in voice mode → `switchToPreviousInputMethod()` (API 28+; `InputMethodManager.switchToLastInputMethod` on 26–27).
-- Privacy: never reads or stores typed text.
+- Privacy: never stores or transmits typed text. On device it reads only the field type (password detection) and the single character before the cursor (leading-space rule).
   - Password fields (`TYPE_TEXT_VARIATION_PASSWORD` / `VISIBLE_PASSWORD` / `WEB_PASSWORD` / `NUMBER_PASSWORD`) → **mic disabled**, panel shows "Dictation is off in password fields". A spoken password must never reach a third party.
   - `IME_FLAG_NO_PERSONALIZED_LEARNING` → dictation allowed, transcript committed but **not** saved to history.
 - Focus lost / IME hidden while recording → stop and discard (no background recording).

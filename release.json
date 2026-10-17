@@ -1,0 +1,90 @@
+{
+  "$comment": "Whisperio release manifest - ANDROID ONLY (platforms.android). iOS is managed elsewhere (mobile/, docs/launch/); no iOS manifest exists in this repo, so none is duplicated here. Run: node ~/.claude/skills/release-readiness/tools/check.mjs . --platform android [--offline] [--last-build N]. Paths are relative to the repo root.",
+  "app": "Whisperio",
+  "notes": [
+    "ACCEPTED EXCEPTION - cleartext (CONTRACT 4.3): android/app/src/main/res/xml/network_security_config.xml sets base-config cleartextTrafficPermitted=\"true\" ONLY because a network security config cannot express CIDR ranges and a user-configured self-hosted server often lives at a private IP (192.168.x.x, 10.x.x.x, *.local). The real guard is in :core (android/core/src/main/kotlin/ai/whisperio/core/HttpClients.kt): every official provider uses secureClient (TLS only, no CLEARTEXT connection spec); only a URL that passed BaseUrlPolicy gets localClient (followRedirects=false, network interceptor re-validating every hop), so plain http can never reach a public host. The release-readiness check play-cleartext flags this file by design; it is the one accepted FAIL/WARN and must be justified, not removed.",
+    "NOT APPLICABLE - account deletion: Whisperio has no account, no server and no sign-in, so there is no in-app account-deletion path and no Play 'Delete account URL'. Local data is removed by Settings > Erase all data (AppGraph.eraseAllData). The account-deletion / account-deletion-web checks are expected to be reported as not applicable (the gate has no N/A switch yet).",
+    "FREE app: no IAP, no Play Billing, no ads, no subscriptions - ever (CONTRACT, top). platforms.android.iap is omitted on purpose.",
+    "Reviewer key: demoAccount.envVars holds the NAME of the env var that carries a low-limit reviewer API key. The value goes only into Play Console > App content > App access, never into the repo."
+  ],
+  "legalUrls": {
+    "privacy": "https://whisperio.danielkasprzyk.com/privacy.html",
+    "terms": "https://whisperio.danielkasprzyk.com/terms.html",
+    "support": "https://whisperio.danielkasprzyk.com/support.html"
+  },
+  "platforms": {
+    "android": {
+      "bundleIds": {
+        "phone": "ai.whisperio.mobile"
+      },
+      "versionSources": [
+        {
+          "kind": "properties",
+          "file": "android/app/version.properties",
+          "label": "phone"
+        }
+      ],
+      "consistentBuild": false,
+      "strings": [
+        "android/app/src/main/res/values/strings.xml",
+        "android/app/src/main/res/values-pl/strings.xml"
+      ],
+      "releaseConfigFiles": [
+        "android/app/build.gradle.kts"
+      ],
+      "reviewNotes": {
+        "file": "docs/android/review-notes.md"
+      },
+      "play": {
+        "requiredTargetSdk": 36,
+        "$comment": "Google Play target API requirement (new apps + updates). UPDATE YEARLY after the Aug 31 deadline announcement.",
+        "modules": [
+          {
+            "label": "phone",
+            "buildFile": "android/app/build.gradle.kts",
+            "manifests": [
+              "android/app/src/main/AndroidManifest.xml"
+            ],
+            "sourceDirs": [
+              "android/app/src/main",
+              "android/core/src/main"
+            ]
+          }
+        ],
+        "sourceDirs": [
+          "android/app/src/main",
+          "android/core/src/main"
+        ],
+        "gradleFiles": [
+          "android/gradle/libs.versions.toml",
+          "android/core/build.gradle.kts"
+        ],
+        "dataSafety": {
+          "file": "docs/android/play-data-safety.md"
+        },
+        "listing": {
+          "files": [
+            "android/marketing/play/listing.en.md",
+            "android/marketing/play/listing.pl.md"
+          ],
+          "descriptionMustLink": [
+            "privacy",
+            "terms"
+          ]
+        }
+      }
+    }
+  },
+  "demoAccount": {
+    "envVars": [
+      "WHISPERIO_REVIEW_API_KEY"
+    ],
+    "docsFiles": [
+      "docs/android/review-notes.md"
+    ]
+  },
+  "screenshots": {
+    "config": "android/marketing/screenshots.config.json",
+    "required": false
+  }
+}
