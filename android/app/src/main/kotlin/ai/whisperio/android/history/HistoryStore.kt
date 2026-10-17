@@ -1,0 +1,72 @@
+package ai.whisperio.android.history
+
+import java.io.File
+import kotlinx.coroutines.flow.Flow
+
+/** Persistence port used by the dictation pipeline and UI; the Room implementation is [RoomHistoryStore]. */
+interface HistoryStore {
+    fun observeAll(): Flow<List<Recording>>
+    fun observeRecent(limit: Int): Flow<List<Recording>>
+    fun observe(id: String): Flow<Recording?>
+    suspend fun get(id: String): Recording?
+    suspend fun upsert(recording: Recording)
+    suspend fun setInserted(id: String, inserted: Boolean)
+
+    /** Deletes the row and its audio file. */
+    suspend fun delete(id: String)
+
+    /** rows in recording/transcribing become failed("Interrupted"); returns how many. */
+    suspend fun sweepInterrupted(): Int
+
+    /** Auto-delete by age: removes rows (and audio) created before [cutoffEpochMs]. */
+    suspend fun deleteOlderThan(cutoffEpochMs: Long): Int
+
+    /** Deletes every audio file but keeps the transcripts. */
+    suspend fun deleteAllAudio()
+
+    /** Deletes every row and every audio file. */
+    suspend fun clear()
+
+    companion object {
+        const val INTERRUPTED = "Interrupted"
+    }
+}
+
+class RoomHistoryStore(
+    private val dao: RecordingDao,
+    private val recordingsDir: File,
+) : HistoryStore {
+    override fun observeAll() = dao.observeAll()
+    override fun observeRecent(limit: Int) = dao.observeRecent(limit)
+    override fun observe(id: String) = dao.observe(id)
+    override suspend fun get(id: String) = dao.get(id)
+    override suspend fun upsert(recording: Recording) = dao.upsert(recording)
+    override suspend fun setInserted(id: String, inserted: Boolean) = dao.setInserted(id, inserted)
+
+    override suspend fun delete(id: String) {
+        dao.get(id)?.audioPath?.let { File(it).delete() }
+        dao.delete(id)
+    }
+
+    override suspend fun sweepInterrupted(): Int = dao.sweepInterrupted(HistoryStore.INTERRUPTED)
+
+    override suspend fun deleteOlderThan(cutoffEpochMs: Long): Int {
+        val old = dao.olderThan(cutoffEpochMs)
+        old.forEach { r ->
+            r.audioPath?.let { File(it).delete() }
+            dao.delete(r.id)
+        }
+        return old.size
+    }
+
+    override suspend fun deleteAllAudio() {
+        dao.withAudio().forEach { File(it.audioPath!!).delete() }
+        dao.clearAudioPaths()
+        recordingsDir.listFiles()?.forEach { it.delete() }
+    }
+
+    override suspend fun clear() {
+        dao.deleteAll()
+        recordingsDir.listFiles()?.forEach { it.delete() }
+    }
+}

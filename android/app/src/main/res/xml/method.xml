@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Dictation panel, not a full keyboard. The voice subtype is best-effort (CONTRACT 5). -->
+<input-method xmlns:android="http://schemas.android.com/apk/res/android"
+    android:settingsActivity="ai.whisperio.android.MainActivity"
+    android:supportsSwitchingToNextInputMethod="true">
+    <subtype
+        android:label="@string/ime_subtype_default"
+        android:imeSubtypeMode="keyboard"
+        android:overridesImplicitlyEnabledSubtype="true"
+        android:isAsciiCapable="false" />
+    <subtype
+        android:label="@string/ime_subtype_voice"
+        android:imeSubtypeMode="voice"
+        android:isAsciiCapable="false" />
+</input-method>
