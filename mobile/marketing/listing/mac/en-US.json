@@ -1,0 +1,10 @@
+{
+  "name": "Whisperio – AI Dictation",
+  "subtitle": "Voice Typing, Your Own API Key",
+  "privacyPolicyUrl": "https://whisperio.danielkasprzyk.com/privacy.html",
+  "supportUrl": "https://whisperio.danielkasprzyk.com",
+  "marketingUrl": "https://whisperio.danielkasprzyk.com",
+  "promotionalText": "Dictation for your Mac: press a global hotkey, speak, and the text lands where you type. On-device by default, or bring your own AI key. No account, no server.",
+  "keywords": "speech,text,transcribe,transcription,keyboard,offline,notes,memo,journal,dictate,talk,meeting",
+  "description": "Whisperio turns your voice into text in any Mac app: press a global hotkey, speak, and the transcript is pasted where you're typing.\n\nDICTATE ANYWHERE ON YOUR MAC\nGlobal hotkeys start and stop dictation in any app. \"Dictate & Send\" submits the text right away; Command Mode runs a saved instruction on what you said.\n\nTRANSCRIBE WHAT'S PLAYING\nCapture what your Mac is playing (meetings, calls, videos) and turn it into text. macOS requires the Screen Recording permission for audio capture; Whisperio never reads your screen.\n\nYOUR PROVIDERS, YOUR KEYS\nApple on-device speech recognition by default. Add your own API key for OpenAI, ElevenLabs, Groq, Deepgram, AssemblyAI, Mistral or Replicate, point Whisperio at a self-hosted server, or download a local Whisper model. No Whisperio account, no subscription, no markup on API usage.\n\nAI CLEANUP, ON YOUR TERMS\nRaw dictation pastes instantly. When you want polished text, run on-demand AI cleanup or a saved rewrite template. AI-generated text is marked as such.\n\nPRIVATE BY DESIGN\nNo Whisperio server. Audio goes directly from your Mac to the engine you chose, or stays on the Mac with on-device engines. API keys live in the macOS Keychain.\n\nSTAYS IN SYNC\nOptional iCloud sync keeps your dictation history in step with Whisperio on iPhone and iPad, in your private iCloud database. Audio stays on the device that recorded it.\n\nWhisperio is source-available under the PolyForm Noncommercial license."
+}

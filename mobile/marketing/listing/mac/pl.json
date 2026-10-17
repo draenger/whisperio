@@ -1,0 +1,10 @@
+{
+  "name": "Whisperio – dyktowanie z AI",
+  "subtitle": "Mowa na tekst, Twój klucz API",
+  "privacyPolicyUrl": "https://whisperio.danielkasprzyk.com/privacy.html",
+  "supportUrl": "https://whisperio.danielkasprzyk.com",
+  "marketingUrl": "https://whisperio.danielkasprzyk.com",
+  "promotionalText": "Dyktowanie na Macu: skrót globalny, mówisz, tekst trafia tam, gdzie piszesz. Domyślnie na urządzeniu albo z własnym kluczem AI. Bez konta i serwera.",
+  "keywords": "transkrypcja,klawiatura,notatki,offline,głos,dyktafon,mowy,zamiana,nagrywanie,spotkanie,dziennik",
+  "description": "Whisperio zamienia Twój głos w tekst w każdej aplikacji na Macu: naciskasz skrót globalny, mówisz, a transkrypt trafia tam, gdzie właśnie piszesz.\n\nDYKTUJ WSZĘDZIE NA MACU\nSkróty globalne uruchamiają i zatrzymują dyktowanie w dowolnej aplikacji. „Dyktuj i wyślij” od razu zatwierdza tekst; tryb poleceń wykonuje zapisaną instrukcję na tym, co powiedziałeś.\n\nTRANSKRYBUJ TO, CO SŁYCHAĆ\nPrzechwyć dźwięk odtwarzany na Macu (spotkania, rozmowy, filmy) i zamień go w tekst. macOS wymaga do tego uprawnienia Nagrywanie ekranu; Whisperio nigdy nie czyta zawartości ekranu.\n\nTWOI DOSTAWCY, TWOJE KLUCZE\nDomyślnie rozpoznawanie mowy Apple na urządzeniu. Dodaj własny klucz API do OpenAI, ElevenLabs, Groq, Deepgram, AssemblyAI, Mistral lub Replicate, wskaż własny serwer albo pobierz lokalny model Whisper. Bez konta Whisperio, bez subskrypcji, bez marży na użyciu API.\n\nCZYSZCZENIE AI NA TWOICH WARUNKACH\nSurowe dyktowanie wkleja się natychmiast. Gdy chcesz dopracowany tekst, uruchom czyszczenie AI albo zapisany szablon przepisywania. Tekst wygenerowany przez AI jest tak oznaczony.\n\nPRYWATNOŚĆ W ZAŁOŻENIU\nBez serwera Whisperio. Dźwięk trafia z Twojego Maca prosto do wybranego silnika albo zostaje na Macu przy silnikach na urządzeniu. Klucze API są w pęku kluczy macOS.\n\nZAWSZE ZSYNCHRONIZOWANE\nOpcjonalna synchronizacja iCloud utrzymuje historię dyktowania w zgodzie z Whisperio na iPhonie i iPadzie, w Twojej prywatnej bazie iCloud. Nagrania zostają na urządzeniu, które je zrobiło.\n\nWhisperio jest dostępne w kodzie źródłowym na licencji PolyForm Noncommercial."
+}

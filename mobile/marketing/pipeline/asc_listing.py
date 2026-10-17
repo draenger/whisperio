@@ -21,9 +21,11 @@ INFO_FIELDS = ("name", "subtitle", "privacyPolicyUrl")
 VERSION_FIELDS = ("description", "keywords", "promotionalText", "whatsNew", "supportUrl", "marketingUrl")
 
 
-def load_texts():
+def load_texts(platform="IOS"):
+    """IOS reads listing/<locale>.json; MAC_OS reads listing/mac/<locale>.json when that folder exists (Mac texts differ: hotkeys, system audio)."""
+    folder = LISTING / "mac" if platform == "MAC_OS" and (LISTING / "mac").is_dir() else LISTING
     texts = {}
-    for f in sorted(LISTING.glob("*.json")):
+    for f in sorted(folder.glob("*.json")):
         if f.name.startswith("_"):
             continue
         texts[f.stem] = json.loads(f.read_text(encoding="utf-8"))
@@ -56,7 +58,7 @@ def main():
     args = ap.parse_args()
     if not (args.dry_run or args.apply):
         ap.error("pass --dry-run or --apply")
-    texts = load_texts()
+    texts = load_texts(args.platform)
 
     info = asc.editable_app_info()
     version = asc.editable_version(args.platform)
