@@ -71,7 +71,14 @@
             "privacy",
             "terms"
           ]
+        },
+        "cleartextException": {
+          "file": "android/app/src/main/res/xml/network_security_config.xml",
+          "reason": "NSC cannot express CIDR ranges for user-configured LAN/self-hosted servers; the real guard is :core HttpClients - secureClient is TLS-only for every official provider, localClient only for BaseUrlPolicy-approved private hosts with redirects off and per-hop re-validation (CONTRACT 4.3)."
         }
+      },
+      "accountDeletion": {
+        "notApplicable": "Whisperio has no account and no server: users bring their own provider API key; local data is removed with in-app \"Erase all data\" or uninstall (CONTRACT 8.1)."
       }
     }
   },
