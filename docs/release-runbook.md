@@ -102,6 +102,16 @@ see memory `mac-testflight-pipeline`). On the shared Mac run both archives throu
 `/Volumes/DevDisk/Projects/.zryw-tools/withlock.sh` + `xcb` (one heavy job at a time); build 75 took
 ~9 min per platform. TestFlight "what to test" PL/EN goes on the build via `betaBuildLocalizations`
 once `processingState` is `VALID`; the internal group `Dev` has access to all builds automatically.
+**Preflights (headless script, before the archive):** `Scripts/preflight-cloudkit.sh` refuses to ship when the
+diff vs `origin/main` (override: `WZ_RELEASE_BASE_REF`) touches Recording/Digest entity, sync-store or
+`CloudKitSchema` code while that entity's row in `CLOUDKIT_SCHEMA_PROMOTION.md` is `PENDING`; any other `PENDING`
+row only stops the run until you pass `--allow-pending-schema` (build ships, the schema deploy is what is missing — §2.3).
+`Scripts/preflight-signing.sh` checks that the newest installed profile for each name in `ExportOptions.plist` has
+its certificate in the keychain search list. Pitfall (build 76, 2026-10-16/17): two profile sets shared the same
+names (2026-07-20 → cert in login keychain, 2026-07-23 → cert in `wz-build.keychain-db`); Xcode took the newest
+profile but resolved the certificate by name from another keychain and the export failed. The script now adds
+`wz-build.keychain-db` to the search list (unlocks it only if `WZ_BUILD_KEYCHAIN_PASSWORD` is set) and aborts early,
+listing profile vs local fingerprints. Tests: `Scripts/tests/test-preflight.sh`.
 Both paths auto-manage the build number against ASC on export (`manageAppVersionAndBuildNumber`).
 `ITSAppUsesNonExemptEncryption = NO` is in the configs, so no export-compliance prompt.
 

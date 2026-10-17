@@ -7,16 +7,23 @@
 # Usage:
 #   ./release-testflight.sh              # verify (swift test) → archive → export → upload
 #   ./release-testflight.sh --no-verify  # skip the WhisperioKit test gate
+#   ./release-testflight.sh --allow-pending-schema  # ship despite a PENDING CloudKit promotion row
+# Flags combine. Preflights: preflight-cloudkit.sh (schema promotion), preflight-signing.sh
+# (profile ↔ certificate), both run BEFORE the archive.
 set -euo pipefail
 
 # Fail loud: point at the line that aborted instead of dying silently.
 trap 'echo "✘ release aborted (line $LINENO)" >&2' ERR
 
 # --- Argument validation (reject typos so we never build an unverified IPA by accident) ---
-case "${1:-}" in
-  ""|--no-verify) ;;
-  *) echo "✘ unknown argument: $1 (expected --no-verify or none)" >&2; exit 2 ;;
-esac
+VERIFY=1; ALLOW_PENDING=()
+for arg in "$@"; do
+  case "$arg" in
+    --no-verify) VERIFY=0 ;;
+    --allow-pending-schema) ALLOW_PENDING=(--allow-pending-schema) ;;
+    *) echo "✘ unknown argument: $arg (expected --no-verify and/or --allow-pending-schema)" >&2; exit 2 ;;
+  esac
+done
 
 REPO="$(cd "$(dirname "$0")/../../.." && pwd)"          # …/whisperio
 PROJ="$REPO/mobile/WhisperioApp/WhisperioApp.xcodeproj"
@@ -47,8 +54,33 @@ command -v xcodebuild >/dev/null || { echo "✘ xcodebuild not on PATH (install 
 [ -d "$PROJ" ]        || { echo "✘ Xcode project missing: $PROJ"; exit 1; }
 [ -f "$EXPORT_OPTS" ] || { echo "✘ ExportOptions.plist missing: $EXPORT_OPTS"; exit 1; }
 
+# CloudKit schema promotion gate (refuses to ship a sync change whose Production schema is PENDING)
+"$SCRIPTS/preflight-cloudkit.sh" ${ALLOW_PENDING[@]+"${ALLOW_PENDING[@]}"}
+
+# Signing keychain: the manual-signing distribution certs may live in wz-build.keychain-db, which
+# is not in the default search list. Add it (keeping existing entries) and unlock if possible.
+WZ_KC="$HOME/Library/Keychains/wz-build.keychain-db"
+if [ -f "$WZ_KC" ]; then
+  current=()
+  while IFS= read -r kc; do [ -n "$kc" ] && current+=("$kc"); done \
+    < <(security list-keychains -d user | sed -e 's/^[[:space:]]*"//' -e 's/"$//')
+  found=0
+  for kc in ${current[@]+"${current[@]}"}; do [ "$kc" = "$WZ_KC" ] && found=1; done
+  if [ "$found" -eq 0 ]; then
+    security list-keychains -d user -s ${current[@]+"${current[@]}"} "$WZ_KC"
+    echo "  ✓ added wz-build.keychain-db to the keychain search list"
+  fi
+  if [ -n "${WZ_BUILD_KEYCHAIN_PASSWORD:-}" ]; then
+    security unlock-keychain -p "$WZ_BUILD_KEYCHAIN_PASSWORD" "$WZ_KC" || echo "  ⚠ could not unlock wz-build.keychain-db"
+  else
+    echo "  (hint: export WZ_BUILD_KEYCHAIN_PASSWORD to unlock wz-build.keychain-db — password is in memory note mac-testflight-pipeline)"
+  fi
+fi
+# Newest profile per name must have its certificate in a searched keychain (duplicate-profile pitfall).
+"$SCRIPTS/preflight-signing.sh" "$EXPORT_OPTS"
+
 # 0. Verify the pure core (fast, catches regressions before a slow archive)
-if [[ "${1:-}" != "--no-verify" ]]; then
+if [ "$VERIFY" -eq 1 ]; then
   echo "▸ swift test (WhisperioKit)…"
   command -v swift >/dev/null || { echo "✘ swift not on PATH (needed for the test gate; use --no-verify to skip)"; exit 1; }
   [ -d "$KIT" ]               || { echo "✘ WhisperioKit package missing: $KIT"; exit 1; }

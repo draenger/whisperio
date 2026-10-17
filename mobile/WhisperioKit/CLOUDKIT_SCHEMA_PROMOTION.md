@@ -72,34 +72,12 @@ to `PROMOTED`, treat every release as blocked on digests specifically. The same 
 the 2026-10-14 `source` row above), so when the gate script is wired in, grep for
 `CD_(Recording|Digest)Entity`, not only the digest type.
 
-This is a preflight check that belongs in `~/.claude/skills/whisperio-release/SKILL.md` /
-`mobile/WhisperioApp/Scripts/release-testflight.sh`, run before the archive step. It isn't wired in
-yet — add it there, not here, next time that script is touched:
-
-```bash
-#!/usr/bin/env bash
-# Preflight: refuse to ship if the diff touches digest sync and CD_DigestEntity is still PENDING.
-set -euo pipefail
-repo_root="$(git rev-parse --show-toplevel)"
-promotion_doc="$repo_root/mobile/WhisperioKit/CLOUDKIT_SCHEMA_PROMOTION.md"
-base_ref="${1:-origin/main}"
-
-touches_digest_sync=$(git -C "$repo_root" diff --name-only "$base_ref"...HEAD -- \
-  '*DigestEntity*.swift' '*DigestSyncStore*.swift' '*CloudKitSchema*.swift' | head -1)
-
-if [[ -n "$touches_digest_sync" ]]; then
-  if grep -qE '^\|.*`CD_DigestEntity`.*\|\s*PENDING\s*\|' "$promotion_doc"; then
-    echo "REFUSING TO SHIP: diff touches digest sync and CD_DigestEntity is still PENDING" >&2
-    echo "promotion to Production (see $promotion_doc)." >&2
-    echo "Complete the promotion checklist there and flip the log row to PROMOTED first." >&2
-    exit 1
-  fi
-fi
-```
-
-Even without that script wired in, **do not ship a build that syncs digests while the row above
-reads `PENDING`** — this section exists so the gate can be dropped in mechanically the next time
-someone is in `release-testflight.sh`, without re-deriving the grep from scratch.
+This gate is implemented in `mobile/WhisperioApp/Scripts/preflight-cloudkit.sh` and called by
+`release-testflight.sh` before the archive. It refuses to ship when the diff touches
+`*RecordingEntity*`/`*DigestEntity*`/`*RecordingSyncStore*`/`*DigestSyncStore*`/`*CloudKitSchema*` and the
+matching `CD_(Recording|Digest)Entity` row is `PENDING`; any `PENDING` row also stops the release unless
+`--allow-pending-schema` is passed. Base ref defaults to `origin/main` (override with `WZ_RELEASE_BASE_REF`).
+Tests: `Scripts/tests/test-preflight.sh`.
 
 ## Cross-references
 
