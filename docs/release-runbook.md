@@ -16,6 +16,9 @@ App Group `group.ai.whisperio.mobile`, CloudKit container `iCloud.ai.whisperio.m
 
 ---
 
+
+> **Version decision 2026-10-17:** the first App Store release of the native apps is **1.0.0** (the app was never public; 1.4.x was the TestFlight/internal numbering). ASC version records were renamed 1.4.1 → 1.0.0 on both platforms; `MARKETING_VERSION = 1.0.0`, `CURRENT_PROJECT_VERSION = 77`. Build 76 (1.4.1) stays only as the external beta already in review. The desktop Electron app keeps its own GitHub-release numbering (v1.3.x), unrelated.
+
 ## 0. Before any release — gates
 
 ```bash

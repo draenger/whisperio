@@ -1,4 +1,4 @@
-# Whisperio — App Store release (iOS 1.4.1 / build 74)
+# Whisperio — App Store release (iOS + macOS 1.0.0 / build 77; was 1.4.1 / builds 74–76 before the owner decided on 2026-10-17 that the first public release is 1.0.0)
 
 Mirror of the Zryw process (`~/Projects/husar/marketing/`): listing texts live in
 `listing/<locale>.json`, screenshots in `screenshots/<device>/<lang>/`, and everything is
