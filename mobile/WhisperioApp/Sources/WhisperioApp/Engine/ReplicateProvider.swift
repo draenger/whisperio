@@ -64,7 +64,7 @@ struct ReplicateProvider: TranscriptionProvider {
         let body: [String: Any] = ["input": ["audio": audioRef, "transcription": "plain text"]]
         req.httpBody = try JSONSerialization.data(withJSONObject: body)
 
-        let (data, resp) = try await URLSession.shared.data(for: req)
+        let (data, resp) = try await MultipartBody.uploadSession.data(for: req)
         guard let http = resp as? HTTPURLResponse else { throw Self.err("No response from Replicate.") }
         guard (200..<300).contains(http.statusCode) else {
             throw Self.err("Replicate error: \(ProviderError.userMessage(status: http.statusCode, body: data))")
@@ -157,7 +157,7 @@ struct ReplicateProvider: TranscriptionProvider {
         }
         var req = URLRequest(url: url)
         req.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
-        let (data, resp) = try await URLSession.shared.data(for: req)
+        let (data, resp) = try await MultipartBody.uploadSession.data(for: req)
         guard let http = resp as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
             throw err("Replicate poll error.")
         }

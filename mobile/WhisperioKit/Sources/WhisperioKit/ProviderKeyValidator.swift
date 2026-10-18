@@ -20,6 +20,9 @@ public enum ProviderKeyValidationError: Error, Sendable, Equatable {
 /// OpenAI/ElevenLabs/Deepgram are wired into the onboarding provider sheet today, but every
 /// provider is implemented here so Settings (or a future step) can adopt the same validator.
 public enum ProviderKeyValidator {
+    /// Probe session: real timeouts, and no redirect-following (the key rides in the headers).
+    static let validationSession = NoRedirectSessionDelegate.makeSession(requestTimeout: 30, resourceTimeout: 30)
+
     public static func validate(_ id: ProviderID, key: String) async -> Result<Void, ProviderKeyValidationError> {
         // On-device engines need no key and no network — always valid.
         guard id != .onDevice, id != .localWhisper else { return .success(()) }
@@ -34,7 +37,7 @@ public enum ProviderKeyValidator {
         }
 
         do {
-            let (_, response) = try await URLSession.shared.data(for: request)
+            let (_, response) = try await Self.validationSession.data(for: request)
             guard let http = response as? HTTPURLResponse else { return .failure(.unexpected(0)) }
             switch http.statusCode {
             case 200...299: return .success(())

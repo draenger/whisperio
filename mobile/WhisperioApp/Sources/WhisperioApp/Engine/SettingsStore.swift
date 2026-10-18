@@ -14,6 +14,10 @@ final class SettingsStore: ObservableObject {
         didSet { UserDefaults.standard.set(didCompleteSetup, forKey: Self.setupKey) }
     }
 
+    /// Labels of secrets the Keychain refused to store on the last save (empty = all safe in the
+    /// Keychain). Those values remain in the UserDefaults blob until a later save succeeds.
+    @Published private(set) var keychainWriteFailures: Set<String> = []
+
     private static let key = "whisperio.settings.v1"
     private static let setupKey = "whisperio.setupDone.v1"
 
@@ -85,8 +89,12 @@ final class SettingsStore: ObservableObject {
         SharedStore.setEngineOnDevice(primary == .onDevice || primary == .localWhisper)
         // Secrets go to the Keychain only; everything else is persisted to UserDefaults with
         // the key fields blanked so no API secret is ever written in plaintext.
-        settings.persistSecrets { value, item in Keychain.set(value, for: item) }
-        let sanitized = settings.scrubbedOfSecrets()
+        // If a Keychain write fails the blob copy is the only one left, so that secret is NOT
+        // scrubbed (never lose a key silently) and `keychainWriteFailures` records it for the UI.
+        // The next save retries; once the write succeeds the blob is scrubbed again.
+        let failed = settings.persistSecretsReportingFailures { value, item in Keychain.set(value, for: item) }
+        if failed != keychainWriteFailures { keychainWriteFailures = failed }
+        let sanitized = settings.scrubbedOfSecrets(keeping: failed)
         if let data = try? JSONEncoder().encode(sanitized) {
             UserDefaults.standard.set(data, forKey: Self.key)
         }

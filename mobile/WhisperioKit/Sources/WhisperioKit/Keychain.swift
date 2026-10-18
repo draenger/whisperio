@@ -24,11 +24,18 @@ public enum Keychain {
     private static let service = "ai.whisperio.mobile.secrets"
 
     private static func base(_ item: Item) -> [String: Any] {
-        [
+        var q: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecAttrAccount as String: item.rawValue,
         ]
+        #if os(macOS)
+        // On macOS the accessibility class is only honored by the data-protection keychain; the
+        // legacy login keychain silently ignores it. Used for add/query/delete alike so items
+        // are found where they were written.
+        q[kSecUseDataProtectionKeychain as String] = true
+        #endif
+        return q
     }
 
     /// Store (or replace) a secret. Passing an empty string removes the item — an empty key

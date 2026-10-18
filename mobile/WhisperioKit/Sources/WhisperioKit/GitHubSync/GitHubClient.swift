@@ -20,10 +20,9 @@ public struct GitHubURLSessionTransport: GitHubTransport {
     }
 
     static func makeSession() -> URLSession {
-        let config = URLSessionConfiguration.ephemeral
-        config.timeoutIntervalForRequest = 30    // idle timeout between bytes
-        config.timeoutIntervalForResource = 60   // hard cap for the whole request+response
-        return URLSession(configuration: config)
+        // Never follows redirects: a 3xx must not re-send the Bearer token to another host.
+        NoRedirectSessionDelegate.makeSession(requestTimeout: 30,    // idle timeout between bytes
+                                              resourceTimeout: 60)   // hard cap for the whole request+response
     }
 
     public func send(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {

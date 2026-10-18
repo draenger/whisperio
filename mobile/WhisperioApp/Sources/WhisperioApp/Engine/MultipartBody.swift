@@ -1,4 +1,5 @@
 import Foundation
+import WhisperioKit
 
 // Shared multipart/form-data builder for the cloud transcription providers, so the
 // boundary/field/file framing lives in one place instead of being copy-pasted per provider.
@@ -38,10 +39,9 @@ struct MultipartBody {
     /// Session for provider uploads: audio clips can be large and cell links slow, so give
     /// requests real timeouts instead of URLSession.shared's defaults stalling a transcribe.
     static let uploadSession: URLSession = {
-        let config = URLSessionConfiguration.ephemeral
-        config.timeoutIntervalForRequest = 120    // idle timeout between bytes
-        config.timeoutIntervalForResource = 600   // hard cap for the whole upload+response
-        return URLSession(configuration: config)
+        // Never follows redirects: a 3xx must not re-send the audio + Bearer key to another host.
+        NoRedirectSessionDelegate.makeSession(requestTimeout: 120,    // idle timeout between bytes
+                                              resourceTimeout: 600)   // hard cap for the whole upload+response
     }()
 }
 

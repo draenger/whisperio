@@ -56,10 +56,9 @@ struct OpenAIChatClient: ChatLLM {
     // Dedicated session for chat completions: mirror the desktop 45s timeout+abort guard so a
     // hung chat endpoint (slow proxy / custom baseUrl) can't leave a rewrite/journal call stuck.
     static let chatSession: URLSession = {
-        let config = URLSessionConfiguration.ephemeral
-        config.timeoutIntervalForRequest = 45     // idle timeout between bytes
-        config.timeoutIntervalForResource = 45    // hard cap for the whole request+response
-        return URLSession(configuration: config)
+        // Never follows redirects: a 3xx must not re-send the prompt + Bearer key to another host.
+        NoRedirectSessionDelegate.makeSession(requestTimeout: 45,     // idle timeout between bytes
+                                              resourceTimeout: 45)    // hard cap for the whole request+response
     }()
 
     static func err(_ m: String) -> NSError {

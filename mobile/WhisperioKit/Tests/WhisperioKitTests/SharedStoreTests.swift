@@ -33,4 +33,28 @@ import Foundation
         SharedStore.purgeStalePendingTranscript(maxAge: -1)
         #expect(!SharedStore.hasPendingTranscript)
     }
+
+    @Test func lastInsertedFreshSurvivesStaleIsPurged() {
+        SharedStore.clearAllTranscripts()
+        SharedStore.setLastInsertedTranscript("rewrite me")
+        SharedStore.purgeStaleLastInsertedTranscript(maxAge: 600)
+        #expect(SharedStore.lastInsertedTranscript == "rewrite me")
+        SharedStore.purgeStaleLastInsertedTranscript(maxAge: -1)
+        #expect(SharedStore.lastInsertedTranscript == nil)
+    }
+
+    @Test func purgeStalePendingAlsoPurgesLastInserted() {
+        SharedStore.clearAllTranscripts()
+        SharedStore.setLastInsertedTranscript("old")
+        SharedStore.purgeStalePendingTranscript(maxAge: -1)
+        #expect(SharedStore.lastInsertedTranscript == nil)
+    }
+
+    @Test func clearAllTranscriptsWipesBoth() {
+        SharedStore.setPendingTranscript("p")
+        SharedStore.setLastInsertedTranscript("l")
+        SharedStore.clearAllTranscripts()
+        #expect(!SharedStore.hasPendingTranscript)
+        #expect(SharedStore.lastInsertedTranscript == nil)
+    }
 }

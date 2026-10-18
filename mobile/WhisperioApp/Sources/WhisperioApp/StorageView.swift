@@ -324,6 +324,7 @@ struct StorageView: View {
     private func eraseAll() {
         for r in recordings.items { recordings.delete(r) }
         digests.eraseAll()
+        SharedStore.clearAllTranscripts()   // keyboard hand-off copies in the App Group
         for url in audioFiles() { try? FileManager.default.removeItem(at: url) }
         erased = true
         audioDeletedBytes = nil

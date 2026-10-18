@@ -24,6 +24,7 @@ public enum SharedStore {
         static let pendingTranscript = "kbd.pendingTranscript"
         static let pendingCreatedAt  = "kbd.pendingTranscript.createdAt"
         static let lastInsertedTranscript = "kbd.lastInsertedTranscript"
+        static let lastInsertedCreatedAt  = "kbd.lastInsertedTranscript.createdAt"
         static let appHeartbeat      = "kbd.appHeartbeat"          // app writes; keyboard never needs it
         static let keyboardHeartbeat = "kbd.keyboardHeartbeat"     // keyboard writes; app reads to detect install
         static let swipeBackExplainerShown = "kbd.swipeBackExplainerShown"
@@ -85,16 +86,40 @@ public enum SharedStore {
         d.removeObject(forKey: Key.pendingCreatedAt)
     }
 
+    /// Remembered for the keyboard's immediate rewrite flow only; it shares the pending
+    /// transcript's TTL (`pendingTranscriptMaxAge`) so dictated text is not kept indefinitely.
     public static func setLastInsertedTranscript(_ text: String) {
-        defaults?.set(text, forKey: Key.lastInsertedTranscript)
+        guard let d = defaults else { return }
+        d.set(text, forKey: Key.lastInsertedTranscript)
+        d.set(Date().timeIntervalSince1970, forKey: Key.lastInsertedCreatedAt)
     }
 
+    /// The last inserted transcript while still fresh; a stale (or untimestamped legacy) value is
+    /// purged on read and reported as nil.
     public static var lastInsertedTranscript: String? {
-        defaults?.string(forKey: Key.lastInsertedTranscript)
+        purgeStaleLastInsertedTranscript()
+        return defaults?.string(forKey: Key.lastInsertedTranscript)
     }
 
     public static func clearLastInsertedTranscript() {
-        defaults?.removeObject(forKey: Key.lastInsertedTranscript)
+        guard let d = defaults else { return }
+        d.removeObject(forKey: Key.lastInsertedTranscript)
+        d.removeObject(forKey: Key.lastInsertedCreatedAt)
+    }
+
+    /// Drop the last-inserted transcript once older than `maxAge` (or when it carries no timestamp).
+    public static func purgeStaleLastInsertedTranscript(maxAge: TimeInterval = pendingTranscriptMaxAge) {
+        guard let d = defaults, d.object(forKey: Key.lastInsertedTranscript) != nil else { return }
+        let created = d.double(forKey: Key.lastInsertedCreatedAt)
+        if created <= 0 || Date().timeIntervalSince1970 - created > maxAge {
+            clearLastInsertedTranscript()
+        }
+    }
+
+    /// Wipe every dictated-text copy held in the shared container (Storage -> Erase all data).
+    public static func clearAllTranscripts() {
+        clearPendingTranscript()
+        clearLastInsertedTranscript()
     }
 
     /// Eagerly remove a pending transcript once it is older than `maxAge` (or carries no
@@ -102,6 +127,7 @@ public enum SharedStore {
     /// is still awaiting the user's swipe back to the keyboard is preserved. This is what
     /// bounds the on-disk lifetime instead of relying on a future `consume` that may never come.
     public static func purgeStalePendingTranscript(maxAge: TimeInterval = pendingTranscriptMaxAge) {
+        purgeStaleLastInsertedTranscript(maxAge: maxAge)
         guard let d = defaults, d.object(forKey: Key.pendingTranscript) != nil else { return }
         let created = d.double(forKey: Key.pendingCreatedAt)
         if created <= 0 || Date().timeIntervalSince1970 - created > maxAge {
