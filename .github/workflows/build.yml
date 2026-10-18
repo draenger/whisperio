@@ -114,9 +114,10 @@ jobs:
         run: npm run build
 
       - name: Package installer
-        run: npx electron-builder --${{ matrix.platform }} --config ../.devops/electron-builder.yml
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        # --publish never: the release job below uploads from artifacts. Without it electron-builder's CI default
+        # (onTagOrDraft) would push the unsigned Windows exe + latest.yml into an existing draft and overwrite the
+        # locally signed assets (docs/release-runbook.md 1.4).
+        run: npx electron-builder --${{ matrix.platform }} --config ../.devops/electron-builder.yml --publish never
       # Real gate (not just "it compiled"): launch the freshly built AppImage
       # headlessly and confirm the app process survives a few seconds without
       # crashing. Catches missing shared libs / runtime startup crashes that a

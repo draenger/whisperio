@@ -95,7 +95,7 @@ signtool verify /pa /v dist\Whisperio-Setup-X.Y.Z.exe
 ```
 Then add the signed files to the draft and publish it:
 ```powershell
-gh release upload vX.Y.Z dist\Whisperio-Setup-X.Y.Z.exe dist\latest.yml     # latest.yml sha512 must match the signed file
+gh release upload vX.Y.Z --clobber dist\Whisperio-Setup-X.Y.Z.exe dist\latest.yml     # latest.yml sha512 must match the signed file
 gh release edit vX.Y.Z --draft=false
 ```
 Never export the private key. Modelled on Suzie's `scripts/release-desktop.mjs`.
