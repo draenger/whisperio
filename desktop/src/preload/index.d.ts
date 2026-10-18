@@ -285,12 +285,14 @@ export interface UpdaterState {
   percent?: number
   bytesPerSecond?: number
   error?: string
+  manualDownloadUrl?: string
 }
 
 export interface UpdaterAPI {
   getStatus: () => Promise<UpdaterState>
   check: () => Promise<UpdaterState>
   install: () => Promise<boolean>
+  openReleases: () => Promise<void>
   onStatus: (callback: (state: UpdaterState) => void) => () => void
 }
 

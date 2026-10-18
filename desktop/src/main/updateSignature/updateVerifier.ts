@@ -5,15 +5,24 @@
  * writes on every signed build; returning a string rejects the update (it is not installed).
  */
 
-import { verifyAuthenticode } from './authenticode'
+import { verifyAuthenticode, type SignerPins } from './authenticode'
 
-/** SHA-1 thumbprints of the certificates allowed to sign Whisperio updates (same Daniel Kasprzyk code-signing cert as Jarvis) (CN=Jarvis (Daniel Kasprzyk)). */
-export const PINNED_UPDATE_SIGNERS: readonly string[] = ['2A917C6457B67B928C52413DB00FA34CAAF15206']
+/**
+ * Pinned update signers (CN=Jarvis (Daniel Kasprzyk), valid to 2031-08-06). Primary pins are SHA-256
+ * hashes of the signer's SubjectPublicKeyInfo - a LIST so a new key can be added in a release signed
+ * by the old one before the old cert is retired. The SHA-1 cert thumbprint is a secondary pin.
+ * Compute a pin: scripts/verify-signed-installer.mjs prints it, or
+ * `openssl x509 -in cert.cer -pubkey -noout | openssl pkey -pubin -outform der | openssl dgst -sha256`.
+ */
+export const PINNED_UPDATE_SIGNERS: SignerPins = {
+  spkiSha256: ['3183F4B2FE26039DF691AFE6A63167F7D30CFD078D0110DE66DFF075777FA290'],
+  thumbprints: ['2A917C6457B67B928C52413DB00FA34CAAF15206']
+}
 
 export type VerifyUpdateCodeSignature = (publisherNames: string[], path: string) => Promise<string | null>
 
 export function createUpdateVerifier(
-  pins: readonly string[] = PINNED_UPDATE_SIGNERS,
+  pins: SignerPins = PINNED_UPDATE_SIGNERS,
   log: (msg: string) => void = () => {}
 ): VerifyUpdateCodeSignature {
   return async (_publisherNames, path) => {

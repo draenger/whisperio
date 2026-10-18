@@ -19,6 +19,7 @@
     "typecheck:web": "tsc --noEmit -p tsconfig.web.json",
     "typecheck": "npm run typecheck:node && npm run typecheck:web",
     "build:win": "npm run build && electron-builder --win --config ../.devops/electron-builder.yml",
+    "verify:signed": "node scripts/verify-signed-installer.mjs",
     "build:win:signed": "npm run build && electron-builder --win --config ../.devops/electron-builder.yml -c.win.signtoolOptions.certificateSha1=2A917C6457B67B928C52413DB00FA34CAAF15206 -c.win.signtoolOptions.signingHashAlgorithms=sha256",
     "build:mac": "npm run build && electron-builder --mac --config ../.devops/electron-builder.yml",
     "build:linux": "npm run build && electron-builder --linux --config ../.devops/electron-builder.yml",

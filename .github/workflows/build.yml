@@ -217,11 +217,13 @@ jobs:
         with:
           tag_name: v${{ steps.version.outputs.version }}
           name: Whisperio v${{ steps.version.outputs.version }}
+          # DRAFT, and no Windows installer / latest.yml: CI cannot sign Windows builds, and installed
+          # apps auto-update from latest.yml. The signed .exe + latest.yml are uploaded from
+          # Daniel's PC, then the draft is published (docs/release-runbook.md section 1.4).
+          draft: true
           files: |
-            artifacts/**/*.exe
             artifacts/**/*.zip
             artifacts/**/*.AppImage
             artifacts/**/*.deb
-            artifacts/**/latest.yml
             artifacts/**/latest-linux.yml
           generate_release_notes: true

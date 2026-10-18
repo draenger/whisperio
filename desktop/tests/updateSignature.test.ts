@@ -2,12 +2,14 @@ import { appendFileSync, copyFileSync, mkdtempSync, readFileSync, rmSync, writeF
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { afterAll, describe, expect, it } from 'vitest'
-import { verifyAuthenticode } from '../src/main/updateSignature/authenticode'
-import { createUpdateVerifier } from '../src/main/updateSignature/updateVerifier'
+import { verifyAuthenticode, type SignerPins } from '../src/main/updateSignature/authenticode'
+import { PINNED_UPDATE_SIGNERS, createUpdateVerifier } from '../src/main/updateSignature/updateVerifier'
 
 // Fixtures are signed with a THROWAWAY test cert (never the release cert, so no committed binary is a
 // valid release update). See fixtures/updateSignature/README.md.
-const TEST_PIN = ['F52FCA9BE37A14C24FF516628067F177AF6A7B96']
+const TEST_THUMB = 'F52FCA9BE37A14C24FF516628067F177AF6A7B96'
+const TEST_SPKI = '2D4546D608C512052B381FF6BE79539A3BE4C3261C6109B4CF53366B3BC1EE25'
+const TEST_PIN: SignerPins = { spkiSha256: [TEST_SPKI] }
 const fx = (name: string): string => join(__dirname, 'fixtures', 'updateSignature', name)
 const tmp = mkdtempSync(join(tmpdir(), 'whisperio-authenticode-'))
 afterAll(() => rmSync(tmp, { recursive: true, force: true }))
@@ -25,7 +27,17 @@ function secDir(b: Buffer): number {
 
 describe('verifyAuthenticode', () => {
   it('accepts a sha256 signature by the pinned cert', async () => {
-    expect(await verifyAuthenticode(fx('pinned-sha256.exe'), TEST_PIN)).toEqual({ ok: true, thumbprint: TEST_PIN[0], digest: 'sha256' })
+    expect(await verifyAuthenticode(fx('pinned-sha256.exe'), TEST_PIN)).toEqual({ ok: true, thumbprint: TEST_THUMB, spkiSha256: TEST_SPKI, digest: 'sha256' })
+  })
+
+  it('accepts the secondary thumbprint pin alone, and an SPKI pin in a multi-entry list', async () => {
+    expect((await verifyAuthenticode(fx('pinned-sha256.exe'), { spkiSha256: [], thumbprints: [TEST_THUMB] })).ok).toBe(true)
+    expect((await verifyAuthenticode(fx('pinned-sha256.exe'), { spkiSha256: ['00'.repeat(32), TEST_SPKI.toLowerCase()] })).ok).toBe(true)
+  })
+
+  it('rejects a wrong SPKI pin and an empty pin set', async () => {
+    expect((await verifyAuthenticode(fx('pinned-sha256.exe'), { spkiSha256: ['00'.repeat(32)] })).ok).toBe(false)
+    expect((await verifyAuthenticode(fx('pinned-sha256.exe'), { spkiSha256: [] })).ok).toBe(false)
   })
 
   it('rejects an unsigned file', async () => {
@@ -33,7 +45,7 @@ describe('verifyAuthenticode', () => {
   })
 
   it('rejects a valid signature by a different cert with the same CN as the release cert', async () => {
-    const r = await verifyAuthenticode(fx('foreign-sha256.exe'), ['2A917C6457B67B928C52413DB00FA34CAAF15206'])
+    const r = await verifyAuthenticode(fx('foreign-sha256.exe'), PINNED_UPDATE_SIGNERS)
     expect(r.ok).toBe(false)
     if (!r.ok) expect(r.reason).toMatch(/Jarvis \(Daniel Kasprzyk\)\) is not a pinned publisher/)
   })
@@ -119,8 +131,8 @@ describe('createUpdateVerifier (electron-updater hook)', () => {
   })
 
   it('the production pin is the release cert, not the test cert', async () => {
-    const { PINNED_UPDATE_SIGNERS } = await import('../src/main/updateSignature/updateVerifier')
-    expect(PINNED_UPDATE_SIGNERS).toEqual(['2A917C6457B67B928C52413DB00FA34CAAF15206'])
+    expect(PINNED_UPDATE_SIGNERS.spkiSha256).toEqual(['3183F4B2FE26039DF691AFE6A63167F7D30CFD078D0110DE66DFF075777FA290'])
+    expect(PINNED_UPDATE_SIGNERS.thumbprints).toEqual(['2A917C6457B67B928C52413DB00FA34CAAF15206'])
     expect((await verifyAuthenticode(fx('pinned-sha256.exe'), PINNED_UPDATE_SIGNERS)).ok).toBe(false)
   })
 })

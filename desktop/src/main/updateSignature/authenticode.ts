@@ -2,14 +2,16 @@
  * Authenticode verification in pure Node (no script shell, no native addon): Bitdefender
  * blocks script shells spawned by the app, which is what electron-updater's built-in
  * check does. Trust anchor = a pinned signer-certificate SHA-1 thumbprint, not a CN and
- * not the Windows trust store, so a different cert with the same name is rejected.
+ * not the Windows trust store, so a different cert with the same name is rejected. Pins are
+ * SHA-256 hashes of the signer's SubjectPublicKeyInfo (survives cert renewal with the same key,
+ * and a list allows rotation); the SHA-1 cert thumbprint is accepted as a secondary pin.
  *
  * Checks, all required:
  *  1. PE certificate table present, last in the file, one PKCS#7 SignedData blob;
  *  2. SpcIndirectDataContent digest == Authenticode image hash of the file (sha256+ only);
  *  3. signed attribute messageDigest == hash of the SpcIndirectDataContent;
  *  4. the signer's signature over the signed attributes verifies with the signer cert key;
- *  5. the signer cert's thumbprint is pinned.
+ *  5. the signer cert's SPKI SHA-256 (or, secondarily, its thumbprint) is pinned.
  * Not checked: chain/expiry/timestamps (the pin replaces the chain) and nested signatures.
  */
 
@@ -18,7 +20,18 @@ import { open } from 'fs/promises'
 import { TAG, child, content, encoded, oid, parseDer, type DerNode } from './der'
 import { imageHash, readLayout, readSignature } from './peImage'
 
-export type AuthenticodeResult = { ok: true; thumbprint: string; digest: string } | { ok: false; reason: string }
+export type AuthenticodeResult =
+  | { ok: true; thumbprint: string; spkiSha256: string; digest: string }
+  | { ok: false; reason: string }
+
+export interface SignerPins {
+  /** SHA-256 (hex) of the signer certificate's DER SubjectPublicKeyInfo. */
+  spkiSha256: readonly string[]
+  /** SHA-1 (hex) certificate thumbprints; secondary pin. */
+  thumbprints?: readonly string[]
+}
+
+const normHex = (t: string): string => t.replace(/[^0-9a-f]/gi, '').toUpperCase()
 
 const OID_SIGNED_DATA = '1.2.840.113549.1.7.2'
 const OID_SPC_INDIRECT_DATA = '1.3.6.1.4.1.311.2.1.4'
@@ -51,8 +64,9 @@ function findSignerCert(buf: Uint8Array, certs: DerNode, issuer: Uint8Array, ser
   throw new Error('signer certificate not embedded')
 }
 
-export async function verifyAuthenticode(file: string, pinnedThumbprints: readonly string[]): Promise<AuthenticodeResult> {
-  const pins = pinnedThumbprints.map((t) => t.replace(/[^0-9a-f]/gi, '').toUpperCase())
+export async function verifyAuthenticode(file: string, pinned: SignerPins): Promise<AuthenticodeResult> {
+  const spkiPins = pinned.spkiSha256.map(normHex)
+  const thumbPins = (pinned.thumbprints ?? []).map(normHex)
   let fh: Awaited<ReturnType<typeof open>> | null = null
   try {
     fh = await open(file, 'r')
@@ -106,8 +120,14 @@ export async function verifyAuthenticode(file: string, pinnedThumbprints: readon
 
     // 5. Pinned signer.
     const thumbprint = createHash('sha1').update(certDer).digest('hex').toUpperCase()
-    if (!pins.includes(thumbprint)) return { ok: false, reason: `signer ${thumbprint} (${cert.subject.replace(/\n/g, ', ')}) is not a pinned publisher` }
-    return { ok: true, thumbprint, digest: imageAlg }
+    const spkiSha256 = createHash('sha256')
+      .update(cert.publicKey.export({ type: 'spki', format: 'der' }))
+      .digest('hex')
+      .toUpperCase()
+    if (!spkiPins.includes(spkiSha256) && !thumbPins.includes(thumbprint)) {
+      return { ok: false, reason: `signer ${thumbprint} (${cert.subject.replace(/\n/g, ', ')}) is not a pinned publisher` }
+    }
+    return { ok: true, thumbprint, spkiSha256, digest: imageAlg }
   } catch (e) {
     return { ok: false, reason: e instanceof Error ? e.message : String(e) }
   } finally {

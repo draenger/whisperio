@@ -28,9 +28,10 @@ function UpdateBanner({ state, theme }: { state: UpdaterState | null; theme: The
   const [installing, setInstalling] = useState(false)
 
   if (!state) return null
-  const { status, version, percent, error } = state
+  const { status, version, percent, manualDownloadUrl } = state
   // Never banner an update problem at the user — only progress/ready states.
   if (status === 'idle' || status === 'checking' || status === 'not-available' || status === 'error') return null
+  const manual = status === 'available' && !!manualDownloadUrl
 
   const ready = status === 'downloaded'
   const accent = theme.accent
@@ -39,6 +40,7 @@ function UpdateBanner({ state, theme }: { state: UpdaterState | null; theme: The
   let message = ''
   if (ready) message = `Whisperio ${version} is ready to install.`
   else if (status === 'downloading') message = `Downloading update ${version ? 'v' + version : ''}… ${percent ?? 0}%`
+  else if (manual) message = `Update ${version ? 'v' + version : ''} available — download it from the Releases page.`
   else if (status === 'available') message = `Update ${version ? 'v' + version : ''} found — downloading…`
 
   return (
@@ -57,7 +59,7 @@ function UpdateBanner({ state, theme }: { state: UpdaterState | null; theme: The
       }} />
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontSize: '13px', fontWeight: 600, color: theme.text }}>
-          {ready ? 'Update ready — restart to install' : 'Updating Whisperio'}
+          {ready ? 'Update ready — restart to install' : manual ? 'Update available' : 'Updating Whisperio'}
         </div>
         <div style={{ fontSize: '12px', color: theme.textMuted, marginTop: '1px' }}>{message}</div>
         {status === 'downloading' && (
@@ -76,6 +78,16 @@ function UpdateBanner({ state, theme }: { state: UpdaterState | null; theme: The
             fontFamily: 'IBM Plex Sans, sans-serif', flexShrink: 0, opacity: installing ? 0.6 : 1
           }}
         >{installing ? 'Restarting…' : 'Restart now'}</button>
+      )}
+      {manual && (
+        <button
+          onClick={() => window.api.updater.openReleases()}
+          style={{
+            background: accent, border: 'none', borderRadius: '10px', padding: '8px 16px',
+            fontSize: '12px', fontWeight: 600, color: '#fff', cursor: 'pointer',
+            fontFamily: 'IBM Plex Sans, sans-serif', flexShrink: 0
+          }}
+        >Open Releases</button>
       )}
     </div>
   )
@@ -345,9 +357,15 @@ function UpdatesTab({ state, s, theme }: { state: UpdaterState | null; s: Return
   } else if (checking) {
     headline = 'Checking for updates…'
     detail = 'Contacting the update server.'
+  } else if (status === 'available' && state?.manualDownloadUrl) {
+    headline = 'Update available'
+    detail = `Whisperio ${state.version ?? ''} is available. Automatic install is not supported here — download it from the Releases page.`
   } else if (status === 'available') {
     headline = 'Update found'
     detail = `Whisperio ${state?.version ?? ''} is downloading in the background.`
+  } else if (failed && state?.manualDownloadUrl) {
+    headline = "Update couldn't be verified"
+    detail = state.error ?? 'Download the latest version from the Releases page.'
   } else if (failed) {
     // Never show the raw updater error — keep it calm and non-blocking.
     headline = "Couldn't check right now"
@@ -371,7 +389,16 @@ function UpdatesTab({ state, s, theme }: { state: UpdaterState | null; s: Return
             <div style={{ fontSize: '14px', fontWeight: 600, color: theme.text }}>{headline}</div>
             <div style={{ fontSize: '12.5px', color: theme.textMuted, marginTop: '2px' }}>{detail}</div>
           </div>
-          {ready ? (
+          {state?.manualDownloadUrl && (status === 'available' || failed) ? (
+            <button
+              onClick={() => window.api.updater.openReleases()}
+              style={{
+                background: theme.accent, border: 'none', borderRadius: '8px', padding: '8px 18px',
+                fontSize: '13px', fontWeight: 600, color: '#fff', cursor: 'pointer',
+                fontFamily: 'IBM Plex Sans, sans-serif', flexShrink: 0
+              }}
+            >Open Releases</button>
+          ) : ready ? (
             <button
               onClick={async () => { setInstalling(true); await window.api.updater.install() }}
               disabled={installing}
