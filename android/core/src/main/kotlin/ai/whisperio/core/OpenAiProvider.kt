@@ -22,7 +22,7 @@ class OpenAiProvider(
     override suspend fun transcribe(request: TranscriptionRequest): TranscriptionResult {
         val key = requireKey(id, apiKey)
         val url = baseUrlOrThrow(id, base).child("audio/transcriptions")
-        checkUploadSize(request.audio)
+        ProviderCatalog.info(id).maxUploadBytes?.let { checkUploadSize(request.audio, it) }
         val apiModel = model.trim().ifEmpty { "whisper-1" }
         val text = client.postOpenAiStyle(id, url, key, apiModel, request, sendPrompt = true)
         return TranscriptionResult(text, id, apiModel)

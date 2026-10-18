@@ -33,6 +33,7 @@ class AssemblyAiProvider(
 
     override suspend fun transcribe(request: TranscriptionRequest): TranscriptionResult {
         val key = requireKey(id, apiKey)
+        ProviderCatalog.info(id).maxUploadBytes?.let { checkUploadSize(request.audio, it) }
         val base = baseUrl.toHttpUrlStrict()
         val m = apiModel()
 

@@ -216,4 +216,42 @@ class KeyEnrollmentTest {
         assertEquals(1, checker.calls)
         assertNull(secrets.get(ProviderId.SELFHOSTED))
     }
+
+    @Test fun recheckReportsValidWithoutWriting() = runBlocking {
+        val (e, secrets, checker) = parts(KeyValidation.Valid)
+        secrets.put(ProviderId.GROQ, "gsk-stored")
+        assertEquals(KeyUi.Valid, e.recheck(ProviderId.GROQ))
+        assertEquals(1, checker.calls)
+        assertEquals("gsk-stored", secrets.get(ProviderId.GROQ))
+    }
+
+    @Test fun recheckInvalidKeyIsReportedAndNotDeleted() = runBlocking {
+        val (e, secrets, _) = parts(KeyValidation.InvalidKey)
+        secrets.put(ProviderId.OPENAI, "sk-revoked")
+        assertEquals(KeyUi.Invalid, e.recheck(ProviderId.OPENAI))
+        assertEquals("sk-revoked", secrets.get(ProviderId.OPENAI))
+    }
+
+    @Test fun recheckMapsNetworkAndUnexpectedAndKeepsKey() = runBlocking {
+        val (e1, s1, _) = parts(KeyValidation.Network("offline"))
+        s1.put(ProviderId.MISTRAL, "m-key")
+        assertEquals(KeyUi.Network("offline"), e1.recheck(ProviderId.MISTRAL))
+        assertEquals("m-key", s1.get(ProviderId.MISTRAL))
+        val (e2, s2, _) = parts(KeyValidation.Unexpected(503))
+        s2.put(ProviderId.MISTRAL, "m-key")
+        assertEquals(KeyUi.Unexpected(503), e2.recheck(ProviderId.MISTRAL))
+        assertEquals("m-key", s2.get(ProviderId.MISTRAL))
+    }
+
+    @Test fun recheckWithoutStoredKeyIsInvalidWithoutACall() = runBlocking {
+        val (e, _, checker) = parts(KeyValidation.Valid)
+        assertEquals(KeyUi.Invalid, e.recheck(ProviderId.OPENAI))
+        assertEquals(0, checker.calls)
+    }
+
+    @Test fun recheckSelfHostedWithoutKeyStillChecksTheServer() = runBlocking {
+        val (e, _, checker) = parts(KeyValidation.Valid)
+        assertEquals(KeyUi.Valid, e.recheck(ProviderId.SELFHOSTED))
+        assertEquals(1, checker.calls)
+    }
 }

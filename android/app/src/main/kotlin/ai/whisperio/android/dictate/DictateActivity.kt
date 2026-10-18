@@ -41,7 +41,7 @@ class DictateActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        source = sourceFrom(intent)
+        source = sourceFor(intent?.getStringExtra(EXTRA_SOURCE))
         val controller = graph.dictation
 
         setContent {
@@ -78,7 +78,7 @@ class DictateActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        source = sourceFrom(intent)
+        source = sourceFor(intent?.getStringExtra(EXTRA_SOURCE))
         if (graph.dictation.state.value.let { it is DictationState.Idle || it is DictationState.Done || it is DictationState.Error }) begin()
     }
 
@@ -106,12 +106,13 @@ class DictateActivity : ComponentActivity() {
         }
     }
 
-    private fun sourceFrom(intent: Intent?): RecordingSource =
-        if (intent?.getStringExtra(EXTRA_SOURCE) == "shortcut") RecordingSource.SHORTCUT else RecordingSource.TILE
-
     companion object {
         const val EXTRA_SOURCE = "source"
         const val SESSION_TAG = "dictate-activity"
+
+        /** Intent extra -> source; anything but "shortcut" (tile, null, garbage) is the tile. */
+        internal fun sourceFor(extra: String?): RecordingSource =
+            if (extra == "shortcut") RecordingSource.SHORTCUT else RecordingSource.TILE
 
         private val SETUP_ERRORS = setOf(DictationError.CONSENT_MISSING, DictationError.NO_KEY, DictationError.PERMISSION_MISSING)
     }

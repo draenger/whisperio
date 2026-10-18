@@ -6,6 +6,8 @@ import ai.whisperio.android.settings.KeyUi
 import ai.whisperio.android.ui.common.KeyEntry
 import ai.whisperio.android.ui.common.Languages
 import ai.whisperio.android.ui.common.SectionTitle
+import ai.whisperio.android.ui.common.keyUiText
+import ai.whisperio.android.ui.common.liveStatus
 import ai.whisperio.android.ui.common.providerLabel
 import ai.whisperio.core.ProviderId
 import androidx.compose.foundation.layout.Arrangement
@@ -66,6 +68,8 @@ data class SettingsUiState(
     /** OpenAI base URL is set and is not an official host: show the custom-host warning (CONTRACT 4.3). */
     val customHost: Boolean = false,
     val keyDialog: KeyDialogState? = null,
+    /** Result of the last "Check key" per provider (Validating while in flight). Absent = never checked. */
+    val keyChecks: Map<ProviderId, KeyUi> = emptyMap(),
 )
 
 interface SettingsActions {
@@ -73,6 +77,7 @@ interface SettingsActions {
     fun onModel(id: ProviderId, model: String) {}
     fun onOpenKeyDialog(id: ProviderId) {}
     fun onRemoveKey(id: ProviderId) {}
+    fun onCheckKey(id: ProviderId) {}
     fun onKeyDialogKey(value: String) {}
     fun onKeyDialogUrl(value: String) {}
     fun onKeyDialogSubmit() {}
@@ -122,6 +127,7 @@ fun SettingsScreen(state: SettingsUiState, actions: SettingsActions, modifier: M
                     models = state.models[slot.id].orEmpty(),
                     hasKey = slot.id in state.configured,
                     lost = slot.id in state.lost,
+                    check = state.keyChecks[slot.id] ?: KeyUi.Idle,
                     baseUrl = s.baseUrls[slot.id],
                     customHostWarning = slot.id == ProviderId.OPENAI && state.customHost,
                     actions = actions,
@@ -258,6 +264,7 @@ private fun ProviderCard(
     models: List<String>,
     hasKey: Boolean,
     lost: Boolean,
+    check: KeyUi,
     baseUrl: String?,
     customHostWarning: Boolean,
     actions: SettingsActions,
@@ -299,6 +306,15 @@ private fun ProviderCard(
                     }
                 }
             }
+            val checkMessage = keyUiText(check)
+            if (checkMessage != null) {
+                Text(
+                    checkMessage,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = if (check == KeyUi.Valid) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+                    modifier = Modifier.liveStatus().padding(top = 4.dp),
+                )
+            }
             if (!baseUrl.isNullOrBlank()) {
                 Text(baseUrl, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
@@ -315,6 +331,13 @@ private fun ProviderCard(
                     Text(stringResource(if (hasKey) R.string.key_replace else R.string.key_add))
                 }
                 if (hasKey) {
+                    TextButton(
+                        onClick = { actions.onCheckKey(id) },
+                        enabled = check != KeyUi.Validating,
+                        modifier = Modifier.heightIn(min = 48.dp),
+                    ) {
+                        Text(stringResource(if (check == KeyUi.Validating) R.string.key_checking else R.string.key_check))
+                    }
                     TextButton(onClick = { actions.onRemoveKey(id) }, modifier = Modifier.heightIn(min = 48.dp)) {
                         Text(stringResource(R.string.key_remove))
                     }

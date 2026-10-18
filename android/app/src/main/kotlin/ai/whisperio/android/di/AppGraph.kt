@@ -34,19 +34,37 @@ private val Context.secretsDataStore by preferencesDataStore(name = "secrets")
 
 /** Manual DI (no Hilt, CONTRACT 3). One instance on [ai.whisperio.android.WhisperioApp]. */
 @OptIn(ExperimentalCoroutinesApi::class)
-class AppGraph(private val app: Application) {
+class AppGraph private constructor(private val appOrNull: Application?, private val o: Overrides?) {
+
+    /** Production path: everything is built lazily from the Application. */
+    constructor(app: Application) : this(app, null)
+
+    /** Test seam: injects the collaborators that need real Keystore / files; [app] is then never touched. */
+    internal class Overrides(
+        val appScope: CoroutineScope,
+        val database: AppDatabase,
+        val secrets: SecretStore,
+        val settings: SettingsRepository,
+        val recordingsDir: File,
+        val dictation: DictationController,
+    )
+
+    internal constructor(overrides: Overrides) : this(null, overrides)
+
+    private val app: Application get() = checkNotNull(appOrNull) { "no Application in test graph" }
 
     /** Single-threaded so DictationController state changes are serialised; never cancelled. */
-    val appScope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default.limitedParallelism(1))
+    val appScope: CoroutineScope =
+        o?.appScope ?: CoroutineScope(SupervisorJob() + Dispatchers.Default.limitedParallelism(1))
 
-    val recordingsDir: File by lazy { File(app.filesDir, "recordings") }
+    val recordingsDir: File by lazy { o?.recordingsDir ?: File(app.filesDir, "recordings") }
 
-    val secrets: SecretStore by lazy { KeystoreSecretStore(app.secretsDataStore, AndroidKeystoreCipher()) }
+    val secrets: SecretStore by lazy { o?.secrets ?: KeystoreSecretStore(app.secretsDataStore, AndroidKeystoreCipher()) }
     val catalog: ModelCatalog by lazy { CoreModelCatalog() }
-    val settings: SettingsRepository by lazy { SettingsRepository(app.settingsDataStore, secrets, catalog) }
+    val settings: SettingsRepository by lazy { o?.settings ?: SettingsRepository(app.settingsDataStore, secrets, catalog) }
 
     private val database: AppDatabase by lazy {
-        Room.databaseBuilder(app, AppDatabase::class.java, "whisperio.db").build()
+        o?.database ?: Room.databaseBuilder(app, AppDatabase::class.java, "whisperio.db").build()
     }
     val history: HistoryStore by lazy { RoomHistoryStore(database.recordings(), recordingsDir) }
 
@@ -59,7 +77,7 @@ class AppGraph(private val app: Application) {
         ContextCompat.checkSelfPermission(app, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
 
     val dictation: DictationController by lazy {
-        DictationController(
+        o?.dictation ?: DictationController(
             scope = appScope,
             recorder = MediaRecorderAudioRecorder(app),
             focus = SystemAudioFocusGate(app),

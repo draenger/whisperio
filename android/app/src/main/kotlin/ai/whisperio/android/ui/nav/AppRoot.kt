@@ -118,11 +118,28 @@ private fun OnboardingRoute(g: AppGraph, current: AppSettings) {
         micGranted = g.micGranted()
         keyboardEnabled = isKeyboardEnabled(ctx)
     }
-    val micLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { micGranted = it }
+    val dictation by g.dictation.state.collectAsState()
+    var startAfterMic by remember { mutableStateOf(false) }
+    val micLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        micGranted = granted
+        if (granted && startAfterMic) g.dictation.start(StartOptions(RecordingSource.APP))
+        startAfterMic = false
+    }
+    LifecycleEventEffect(Lifecycle.Event.ON_STOP) {
+        // Same rule as Home: leaving the app ends a try-it recording; a rotation does not.
+        val s = g.dictation.state.value
+        val changing = (ctx as? Activity)?.isChangingConfigurations == true
+        if (!changing && s is DictationState.Recording && s.source == RecordingSource.APP) g.dictation.cancel()
+    }
+    // Leaves nothing behind when the step is left or onboarding ends.
+    fun clearTry() {
+        val s = g.dictation.state.value
+        if (s is DictationState.Recording && s.source == RecordingSource.APP) g.dictation.cancel() else g.dictation.acknowledge()
+    }
 
     val actions = object : OnboardingActions {
         override fun onNext() { stepIndex = (stepIndex + 1).coerceAtMost(OnboardingStep.entries.lastIndex) }
-        override fun onBack() { stepIndex = (stepIndex - 1).coerceAtLeast(0) }
+        override fun onBack() { clearTry(); stepIndex = (stepIndex - 1).coerceAtLeast(0) }
         override fun onConsent(value: Boolean) { scope.launch { g.settings.setConsent(value) } }
         override fun onProvider(id: ProviderId) {
             providerWire = id.wire
@@ -151,7 +168,16 @@ private fun OnboardingRoute(g: AppGraph, current: AppSettings) {
         override fun onGrantMic() { micLauncher.launch(Manifest.permission.RECORD_AUDIO) }
         override fun onOpenKeyboardSettings() { ctx.startActivity(Intent(AndroidSettings.ACTION_INPUT_METHOD_SETTINGS)) }
         override fun onAddTile() { requestAddTile(ctx) }
-        override fun onFinish() { scope.launch { g.settings.setOnboardingDone(true) } }
+        override fun onTryDictate() {
+            if (g.micGranted()) g.dictation.start(StartOptions(RecordingSource.APP))
+            else { startAfterMic = true; micLauncher.launch(Manifest.permission.RECORD_AUDIO) }
+        }
+        override fun onTryStop() = g.dictation.stopAndTranscribe()
+        override fun onTryDismiss() = g.dictation.acknowledge()
+        override fun onFinish() {
+            clearTry()
+            scope.launch { g.settings.setOnboardingDone(true) }
+        }
     }
     OnboardingScreen(
         state = OnboardingState(
@@ -166,6 +192,7 @@ private fun OnboardingRoute(g: AppGraph, current: AppSettings) {
             keyboardEnabled = keyboardEnabled,
             canAddTile = Build.VERSION.SDK_INT >= 33,
             providerReady = provider in configured,
+            dictation = dictation,
         ),
         actions = actions,
     )
@@ -339,6 +366,7 @@ private fun SettingsRoute(g: AppGraph, nav: NavHostController) {
     val configured by g.secrets.configured.collectAsState(initial = emptySet())
     val lost by g.secrets.lost.collectAsState()
     var dialog by remember { mutableStateOf<KeyDialogState?>(null) }
+    var keyChecks by remember { mutableStateOf<Map<ProviderId, KeyUi>>(emptyMap()) }
     val enrollment = remember { KeyEnrollment(g.keyChecker, g.secrets, g.settings) }
     val models = remember { ProviderId.entries.associateWith { g.catalog.models(it) } }
     val openAiUrl = settings.baseUrls[ProviderId.OPENAI]
@@ -351,7 +379,16 @@ private fun SettingsRoute(g: AppGraph, nav: NavHostController) {
         override fun onOpenKeyDialog(id: ProviderId) {
             dialog = KeyDialogState(id, baseUrl = settings.baseUrls[id].orEmpty())
         }
-        override fun onRemoveKey(id: ProviderId) { scope.launch { g.secrets.remove(id) } }
+        override fun onRemoveKey(id: ProviderId) {
+            keyChecks = keyChecks - id
+            scope.launch { g.secrets.remove(id) }
+        }
+        override fun onCheckKey(id: ProviderId) {
+            scope.launch {
+                keyChecks = keyChecks + (id to KeyUi.Validating)
+                keyChecks = keyChecks + (id to enrollment.recheck(id))
+            }
+        }
         override fun onKeyDialogKey(value: String) { dialog = dialog?.copy(key = value, ui = KeyUi.Idle) }
         override fun onKeyDialogUrl(value: String) { dialog = dialog?.copy(baseUrl = value, ui = KeyUi.Idle) }
         override fun onKeyDialogSubmit() {
@@ -385,6 +422,7 @@ private fun SettingsRoute(g: AppGraph, nav: NavHostController) {
                 models = models,
                 customHost = !openAiUrl.isNullOrBlank() && !g.hostPolicy.isOfficialHost(openAiUrl),
                 keyDialog = dialog,
+                keyChecks = keyChecks,
             ),
             actions = actions,
         )

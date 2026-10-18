@@ -86,6 +86,27 @@ class NativeApiProvidersTest {
         assertEquals("x", ElevenLabsProvider("k", "", server.base("/v1"), client).transcribe(TranscriptionRequest(big, "en")).text)
     }
 
+    @Test fun nativeProvidersRejectFilesOverTheirCatalogLimitBeforeUploading() = runBlocking<Unit> {
+        val limit = 100L * 1024 * 1024
+        val big = java.io.File.createTempFile("big", ".m4a").apply {
+            deleteOnExit()
+            java.io.RandomAccessFile(this, "rw").use { it.setLength(limit + 1) }
+        }
+        val providers = listOf(
+            ElevenLabsProvider("k", "", server.base("/v1"), client),
+            DeepgramProvider("k", "", server.base("/v1"), client),
+            AssemblyAiProvider("k", "", server.base("/v2"), client),
+        )
+        for (p in providers) {
+            val e = kotlin.test.assertFailsWith<ProviderError.FileTooLarge>(p.id.wire) {
+                runBlocking { p.transcribe(TranscriptionRequest(big, "en")) }
+            }
+            assertEquals(limit, e.limitBytes, p.id.wire)
+        }
+        assertEquals(0, server.requestCount)
+        big.delete()
+    }
+
     // ---- Deepgram
 
     private val deepgramBody = """{"results":{"channels":[{"alternatives":[{"transcript":"deepgram text"}]}]}}"""

@@ -31,4 +31,15 @@ class ProviderCatalogTest {
         assertTrue(ProviderCatalog.info(ProviderId.DEEPGRAM).modelChips.contains("whisper-cloud"))
         assertEquals("whisper-large", DeepgramProvider("k", "whisper-cloud").apiModel())
     }
+
+    @Test fun uploadLimitsFollowContract() {
+        val mib = 1024L * 1024
+        assertEquals(25 * mib, ProviderCatalog.info(ProviderId.OPENAI).maxUploadBytes)
+        assertEquals(25 * mib, ProviderCatalog.info(ProviderId.GROQ).maxUploadBytes)
+        assertEquals(25 * mib, ProviderCatalog.info(ProviderId.MISTRAL).maxUploadBytes)
+        assertEquals(100 * mib, ProviderCatalog.info(ProviderId.ELEVENLABS).maxUploadBytes)
+        assertEquals(100 * mib, ProviderCatalog.info(ProviderId.DEEPGRAM).maxUploadBytes)
+        assertEquals(100 * mib, ProviderCatalog.info(ProviderId.ASSEMBLYAI).maxUploadBytes)
+        assertEquals(null, ProviderCatalog.info(ProviderId.SELFHOSTED).maxUploadBytes)
+    }
 }
