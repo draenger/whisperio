@@ -24,6 +24,17 @@ final class SettingsStore: ObservableObject {
         settings.isUnsavedSecret(value, failed: keychainWriteFailures)
     }
 
+    /// Storage -> Erase all data: delete every API key / token from the Keychain (all copies, see
+    /// `Keychain.remove`) and clear the in-memory values. Returns true when every removal succeeded.
+    @discardableResult
+    func eraseAllSecrets() -> Bool {
+        var copy = settings
+        let failed = copy.eraseSecrets { Keychain.remove($0) }
+        settings = copy            // didSet -> save(): writes the now-empty values (no-ops on the Keychain)
+        keychainWriteFailures = []
+        return failed.isEmpty
+    }
+
     private static let key = "whisperio.settings.v1"
     private static let setupKey = "whisperio.setupDone.v1"
 

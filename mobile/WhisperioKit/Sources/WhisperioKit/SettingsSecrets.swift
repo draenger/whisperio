@@ -65,6 +65,17 @@ extension WhisperioSettings {
         return failed
     }
 
+    /// Erase-all-data: remove every listed secret via `remove` and blank it in memory. Returns the
+    /// labels whose removal reported failure (those are still blanked in memory).
+    public mutating func eraseSecrets(remove: (Keychain.Item) -> Bool) -> Set<String> {
+        var failed: Set<String> = []
+        for field in Self.secretFields {
+            if !remove(field.item) { failed.insert(field.label) }
+            self[keyPath: field.path] = ""
+        }
+        return failed
+    }
+
     /// True when `value` is a non-empty secret whose Keychain write failed (`failed` = labels).
     public func isUnsavedSecret(_ value: String, failed: Set<String>) -> Bool {
         !value.isEmpty && Self.secretFields.contains { failed.contains($0.label) && self[keyPath: $0.path] == value }

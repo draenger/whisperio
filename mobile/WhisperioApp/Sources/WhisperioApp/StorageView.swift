@@ -325,6 +325,7 @@ struct StorageView: View {
         for r in recordings.items { recordings.delete(r) }
         digests.eraseAll()
         SharedStore.clearAllTranscripts()   // keyboard hand-off copies in the App Group
+        settings.eraseAllSecrets()          // API keys + GitHub token from the Keychain
         for url in audioFiles() { try? FileManager.default.removeItem(at: url) }
         erased = true
         audioDeletedBytes = nil
@@ -353,8 +354,8 @@ struct EraseSheet: View {
 
     private var explainer: String {
         cloudSynced
-            ? "Deletes all transcripts, audio and daily summaries — \(totalLabel). iCloud sync is on, so the deletion also reaches your other devices. GitHub mirrors are not touched. This can’t be undone."
-            : "Deletes all transcripts, audio and daily summaries from this iPhone — \(totalLabel). Synced copies on GitHub are not touched. This can’t be undone."
+            ? "Deletes all transcripts, audio and daily summaries — \(totalLabel). iCloud sync is on, so the deletion also reaches your other devices. GitHub mirrors are not touched. It also removes your saved API keys. This can’t be undone."
+            : "Deletes all transcripts, audio and daily summaries from this iPhone — \(totalLabel). Synced copies on GitHub are not touched. It also removes your saved API keys. This can’t be undone."
     }
 
     var body: some View {

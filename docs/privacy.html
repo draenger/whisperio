@@ -93,7 +93,7 @@
     </ul>
     <p>You can locate and remove this data manually:</p>
     <ul>
-      <li><strong>iOS / iPadOS / Apple Watch</strong>: data lives inside the app's sandbox container — deleting the app from the device removes its sandbox data. API keys in the Keychain may remain on the device after the app is deleted (Apple does not guarantee that Keychain items are removed on uninstall), and "Erase all data" does not remove them, so clear each key field in Settings before deleting the app if you want them gone; if you also used iCloud sync, see section 5).</li>
+      <li><strong>iOS / iPadOS / Apple Watch</strong>: data lives inside the app's sandbox container — deleting the app from the device removes its sandbox data. "Erase all data" also removes your API keys from the Keychain. Keychain items may remain on the device after the app is deleted (Apple does not guarantee they are removed on uninstall), so use "Erase all data" before uninstalling if you want them gone; if you also used iCloud sync, see section 5).</li>
       <li><strong>macOS (Mac App Store app, once released)</strong>: inside the app's sandbox container under <code>~/Library/Containers</code>. <strong>macOS (desktop app)</strong>: <code>~/Library/Application Support/Whisperio</code></li>
       <li><strong>Android</strong>: data lives in the app's private storage, which other apps cannot read. Use "Erase all data" in the app, or uninstall Whisperio, to remove it completely (see section 8).</li>
       <li><strong>Windows</strong>: <code>%APPDATA%\Whisperio</code></li>

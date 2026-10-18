@@ -64,4 +64,18 @@ import Foundation
         #expect(!s.isUnsavedSecret("gsk-ok", failed: failed))
         #expect(!s.isUnsavedSecret("", failed: failed))
     }
+
+    /// Erase all data removes every listed secret from the Keychain and blanks it in memory.
+    @Test func eraseSecretsRemovesEveryListedSecretAndClearsMemory() {
+        var s = WhisperioSettings()
+        for field in WhisperioSettings.secretFields { s[keyPath: field.path] = "secret-\(field.label)" }
+        s.selfHostedURL = "http://192.168.1.10:8000/v1"
+        var removed: [Keychain.Item] = []
+        let failed = s.eraseSecrets { item in removed.append(item); return item != .groqKey }
+        #expect(Set(removed) == Set(WhisperioSettings.secretFields.map(\.item)))
+        #expect(removed.count == WhisperioSettings.secretFields.count)
+        #expect(failed == ["groqKey"])
+        #expect(s.plaintextSecretLabels.isEmpty)
+        #expect(s.selfHostedURL == "http://192.168.1.10:8000/v1", "non-secret settings survive")
+    }
 }
