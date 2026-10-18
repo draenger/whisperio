@@ -1,6 +1,7 @@
 import { autoUpdater } from 'electron-updater'
 import { app, BrowserWindow, Notification } from 'electron'
 import { setUpdateReady } from './tray'
+import { PINNED_UPDATE_SIGNERS, createUpdateVerifier } from './updateSignature/updateVerifier'
 
 export type UpdaterStatus =
   | 'idle'
@@ -115,6 +116,17 @@ export function initAutoUpdater(enabled = true): void {
   // once Authenticode signing is live (see docs/release-runbook.md, "Signed Windows release").
   autoUpdater.autoDownload = true
   autoUpdater.autoInstallOnAppQuit = process.platform === 'darwin'
+
+  // Windows: replace electron-updater's script-shell Get-AuthenticodeSignature check with the
+  // pure-Node verifier pinned to our release cert, so a downloaded installer that is unsigned or
+  // signed by anyone else is rejected (the updater emits 'error'; nothing is installed). The
+  // stock check is skipped entirely when app-update.yml lacks publisherName, so override both.
+  if (process.platform === 'win32' && 'verifyUpdateCodeSignature' in autoUpdater) {
+    const verify = createUpdateVerifier(PINNED_UPDATE_SIGNERS, (m) => console.log(m))
+    ;(autoUpdater as unknown as { verifyUpdateCodeSignature: typeof verify }).verifyUpdateCodeSignature = verify
+    ;(autoUpdater as unknown as { verifySignature: (f: string) => Promise<string | null> }).verifySignature = (f) =>
+      verify([], f)
+  }
 
   autoUpdater.on('checking-for-update', () => {
     setState({ status: 'checking', error: undefined })

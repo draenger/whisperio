@@ -74,6 +74,26 @@ GitHub Release tagged from `package.json`. macOS leg signs + notarizes (secrets 
 If the mac leg hangs on notarization it times out at 25 min and the release job doesn't publish —
 re-run the failed job, don't re-push.
 
+### 1.4 Signed Windows release (local, Daniel's PC only)
+GitHub-hosted runners have no signing cert, so the CI Windows installer is **unsigned**. Installed apps
+(since the update-signature change) verify every downloaded Windows update against the pinned release
+cert (`desktop/src/main/updateSignature/updateVerifier.ts`, thumbprint `2A917C6457B67B928C52413DB00FA34CAAF15206`,
+subject `CN=Jarvis (Daniel Kasprzyk)`, in `Cert:\CurrentUser\My`; sha256 only) and **reject** unsigned or
+foreign-signed installers. So a Windows release only auto-updates if its `Whisperio-Setup-X.Y.Z.exe` was signed locally:
+```powershell
+cd desktop
+npm run typecheck; npm run test:coverage
+npm run build:win:signed        # signs with the store cert (signtool via electron-builder), sha256
+# verify before publishing (needs the Windows SDK signtool):
+signtool verify /pa /v dist\Whisperio-Setup-X.Y.Z.exe      # "Successfully verified", signer thumbprint 2A917C64...
+```
+Then replace the CI-built `Whisperio-Setup-X.Y.Z.exe` and `latest.yml` on the GitHub Release with the signed
+ones (`gh release upload vX.Y.Z dist\Whisperio-Setup-X.Y.Z.exe dist\latest.yml --clobber`; `latest.yml`'s sha512 must
+match the signed file). Never export the private key. Modelled on Suzie's `scripts/release-desktop.mjs`
+(which also automates the verify + feed checks; porting that script is a follow-up).
+Until a release is signed this way: Windows/Linux builds download but do **not** install on quit
+(`autoInstallOnAppQuit` is mac-only); the user installs via the "Update ready" tray item / restart prompt.
+
 ---
 
 ## 2. iOS + watchOS → TestFlight

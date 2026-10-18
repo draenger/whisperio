@@ -172,6 +172,29 @@ describe('autoUpdater', () => {
     })
   })
 
+  describe('update signature verification (win32)', () => {
+    it('installs the pinned Authenticode verifier on win32 only', async () => {
+      const orig = Object.getOwnPropertyDescriptor(process, 'platform')!
+      const au = h.autoUpdater as Record<string, unknown>
+      try {
+        for (const [platform, expected] of [['win32', true], ['linux', false]] as const) {
+          Object.defineProperty(process, 'platform', { value: platform })
+          vi.resetModules()
+          au.verifyUpdateCodeSignature = undefined
+          au.verifySignature = undefined
+          const { initAutoUpdater } = await loadModule()
+          initAutoUpdater(false)
+          expect(typeof au.verifyUpdateCodeSignature === 'function').toBe(expected)
+          expect(typeof au.verifySignature === 'function').toBe(expected)
+        }
+      } finally {
+        Object.defineProperty(process, 'platform', orig)
+        delete au.verifyUpdateCodeSignature
+        delete au.verifySignature
+      }
+    })
+  })
+
   describe('update-check gating (checkForUpdates setting)', () => {
     const TEN_S = 10_000
     const FOUR_H = 4 * 60 * 60 * 1000
