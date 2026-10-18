@@ -1,5 +1,6 @@
 package ai.whisperio.android.dictate
 
+import android.annotation.SuppressLint
 import android.app.PendingIntent
 import android.content.Intent
 import android.os.Build
@@ -22,6 +23,8 @@ class WhisperioTileService : TileService() {
         if (isLocked) unlockAndRun { launchDictate() } else launchDictate()
     }
 
+    // The Intent overload is only reached below API 34 (it throws from 34 on), so the lint error is a false positive.
+    @SuppressLint("StartActivityAndCollapseDeprecated")
     private fun launchDictate() {
         val intent = Intent(this, DictateActivity::class.java)
             .putExtra(DictateActivity.EXTRA_SOURCE, "tile")

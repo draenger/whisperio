@@ -10,6 +10,7 @@ import ai.whisperio.android.ime.ImePanelState
 import ai.whisperio.android.settings.AppSettings
 import ai.whisperio.android.settings.KeyUi
 import ai.whisperio.android.settings.ProviderSlot
+import ai.whisperio.android.ui.common.KeyEntry
 import ai.whisperio.android.ui.history.HistoryDetailActions
 import ai.whisperio.android.ui.history.HistoryDetailScreen
 import ai.whisperio.android.ui.history.HistoryListScreen
@@ -21,7 +22,11 @@ import ai.whisperio.android.ui.settings.SettingsActions
 import ai.whisperio.android.ui.settings.SettingsScreen
 import ai.whisperio.android.ui.settings.SettingsUiState
 import ai.whisperio.core.ProviderId
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.Card
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.test.junit4.createComposeRule
 import org.junit.Rule
 import org.junit.Test
@@ -155,8 +160,15 @@ open class SettingsSnapshotTest {
     fun customHost() = rule.snapshot("settings_custom_host") { SettingsScreen(state(customHost = true), noop) }
 
     @Test @Config(qualifiers = PHONE)
+    // AlertDialog opens a separate window that never idles under Robolectric and that onRoot()
+    // cannot capture, so the dialog body (the same KeyEntry the dialog hosts) is rendered inline.
     fun keyDialog() = rule.snapshot("settings_key_dialog") {
-        SettingsScreen(state(dialog = KeyDialogState(ProviderId.GROQ, key = "gsk_example", ui = KeyUi.Invalid)), noop)
+        Card(Modifier.padding(24.dp)) {
+            KeyEntry(
+                provider = ProviderId.GROQ, key = "gsk_example", baseUrl = "", ui = KeyUi.Invalid,
+                onKeyChange = {}, onBaseUrlChange = {}, onSubmit = {}, modifier = Modifier.padding(24.dp),
+            )
+        }
     }
 }
 

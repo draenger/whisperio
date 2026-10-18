@@ -38,7 +38,7 @@
         <!-- Translucent record-and-copy surface for the Quick Settings tile and the launcher shortcut. -->
         <activity
             android:name=".dictate.DictateActivity"
-            android:exported="true"
+            android:exported="false"
             android:excludeFromRecents="true"
             android:launchMode="singleTask"
             android:resizeableActivity="true"
@@ -47,7 +47,7 @@
 
         <service
             android:name=".ime.WhisperioImeService"
-            android:exported="true"
+            android:exported="false"
             android:label="@string/ime_label"
             android:permission="android.permission.BIND_INPUT_METHOD">
             <intent-filter>

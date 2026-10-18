@@ -11,8 +11,11 @@ import ai.whisperio.core.TranscriptionResult
  * the single place that touches :core implementation classes, so tests substitute fakes and name drift is a
  * one-file fix.
  */
+/** The recording exceeds the provider upload limit (enforced by :core, mapped here so :app never sees core errors). */
+class UploadTooLargeException(message: String?) : Exception(message)
+
 interface Transcriber {
-    /** Throws on failure; the message is already redacted by :core (CONTRACT 4.2). */
+    /** Throws on failure; the message is already redacted by :core (CONTRACT 4.2). Oversize audio throws [UploadTooLargeException]. */
     suspend fun transcribe(req: TranscriptionRequest, settings: ChainSettings): TranscriptionResult
 }
 

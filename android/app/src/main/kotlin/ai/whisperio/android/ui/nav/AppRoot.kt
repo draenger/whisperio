@@ -39,7 +39,7 @@ import android.content.Intent
 import android.graphics.drawable.Icon
 import android.net.Uri
 import android.os.Build
-import android.provider.Settings
+import android.provider.Settings as AndroidSettings
 import android.view.inputmethod.InputMethodManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -69,7 +69,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.vector.ImageVector
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.navigation.NavHostController
@@ -149,7 +149,7 @@ private fun OnboardingRoute(g: AppGraph, current: AppSettings) {
             scope.launch { g.settings.setLanguage(code) }
         }
         override fun onGrantMic() { micLauncher.launch(Manifest.permission.RECORD_AUDIO) }
-        override fun onOpenKeyboardSettings() { ctx.startActivity(Intent(Settings.ACTION_INPUT_METHOD_SETTINGS)) }
+        override fun onOpenKeyboardSettings() { ctx.startActivity(Intent(AndroidSettings.ACTION_INPUT_METHOD_SETTINGS)) }
         override fun onAddTile() { requestAddTile(ctx) }
         override fun onFinish() { scope.launch { g.settings.setOnboardingDone(true) } }
     }

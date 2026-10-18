@@ -37,7 +37,9 @@ class SelfHostedProvider(
         fun normalizedBase(raw: String): HttpUrl? {
             val ok = BaseUrlPolicy.validate(raw, assumeHttpForBareHost = true) as? BaseUrlResult.Ok ?: return null
             val url = ok.url
-            return if (url.encodedPath.trimEnd('/').endsWith("/v1")) url else url.child("v1")
+            val trimmed = url.encodedPath.trimEnd('/')
+            // Existing /v1 (with or without trailing slash) is kept, normalised to no trailing slash.
+            return if (trimmed.endsWith("/v1")) url.newBuilder().encodedPath(trimmed).build() else url.child("v1")
         }
     }
 }

@@ -5,6 +5,7 @@ import ai.whisperio.android.audio.AudioRecorder
 import ai.whisperio.android.audio.Levels
 import ai.whisperio.android.di.TextTidy
 import ai.whisperio.android.di.Transcriber
+import ai.whisperio.android.di.UploadTooLargeException
 import ai.whisperio.android.history.HistoryStore
 import ai.whisperio.android.history.Recording
 import ai.whisperio.android.history.RecordingSource
@@ -12,7 +13,6 @@ import ai.whisperio.android.history.RecordingStatus
 import ai.whisperio.android.settings.AppSettings
 import ai.whisperio.android.settings.SettingsSource
 import ai.whisperio.android.settings.isProviderConfigured
-import ai.whisperio.core.ProviderId
 import ai.whisperio.core.TranscriptionRequest
 import java.io.File
 import java.util.UUID
@@ -276,10 +276,6 @@ class DictationController(
         val rid = if (persist) row.id else null
         try {
             val chain = settings.chain()
-            val first = chain.order.firstOrNull()
-            if (first != null && file.length() > maxUploadBytes(first.id)) {
-                return failTranscription(row, durationMs, DictationError.TOO_LARGE, null, persist, file)
-            }
             val res = transcriber.transcribe(TranscriptionRequest(file, s.language, s.vocabulary), chain)
             var text = res.text.trim()
             if (s.cleanupEnabled && text.isNotEmpty()) text = tidy.tidy(text).trim()
@@ -303,6 +299,9 @@ class DictationController(
             _results.emit(DictationResult(rid, text, src, currentSessionTag))
         } catch (e: CancellationException) {
             throw e
+        } catch (_: UploadTooLargeException) {
+            // The size limit is enforced by :core; the port maps it so the UI keeps its dedicated message.
+            failTranscription(row, durationMs, DictationError.TOO_LARGE, null, persist, file)
         } catch (t: Throwable) {
             failTranscription(row, durationMs, DictationError.PROVIDER, t.message?.take(MAX_ERROR_CHARS), persist, file)
         }
@@ -334,12 +333,6 @@ class DictationController(
 
     private fun fail(error: DictationError) {
         _state.value = DictationState.Error(error)
-    }
-
-    private fun maxUploadBytes(id: ProviderId): Long = when (id) {
-        ProviderId.OPENAI, ProviderId.GROQ, ProviderId.MISTRAL -> 25L * 1024 * 1024
-        ProviderId.SELFHOSTED -> Long.MAX_VALUE
-        else -> 100L * 1024 * 1024
     }
 
     companion object {

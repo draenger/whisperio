@@ -3,9 +3,11 @@ package ai.whisperio.android.di
 import ai.whisperio.core.BaseUrlPolicy
 import ai.whisperio.core.ChainFactory
 import ai.whisperio.core.ChainSettings
+import ai.whisperio.core.HttpClients
 import ai.whisperio.core.KeyValidation
 import ai.whisperio.core.KeyValidator
 import ai.whisperio.core.ProviderCatalog
+import ai.whisperio.core.ProviderError
 import ai.whisperio.core.ProviderId
 import ai.whisperio.core.TextCleaner
 import ai.whisperio.core.TranscriptionRequest
@@ -15,7 +17,13 @@ import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 /** The ONLY file in :app that calls :core implementation classes (everything else uses Api.kt). */
 class CoreTranscriber : Transcriber {
     override suspend fun transcribe(req: TranscriptionRequest, settings: ChainSettings): TranscriptionResult =
-        ChainFactory(settings).makeChain().transcribe(req)
+        try {
+            ChainFactory(settings).makeChain().transcribe(req)
+        } catch (e: ProviderError) {
+            generateSequence<Throwable>(e) { it.cause }.filterIsInstance<ProviderError.FileTooLarge>().firstOrNull()
+                ?.let { throw UploadTooLargeException(it.message) }
+            throw e
+        }
 }
 
 class CoreKeyChecker : KeyChecker {
@@ -23,8 +31,10 @@ class CoreKeyChecker : KeyChecker {
         when {
             // Self-hosted has no vendor key check: core validates the server URL instead.
             id == ProviderId.SELFHOSTED -> KeyValidator().validate(id, baseUrl ?: key.orEmpty())
-            // A custom OpenAI-compatible base URL is checked against that host, not api.openai.com.
-            !baseUrl.isNullOrBlank() -> KeyValidator(baseUrls = mapOf(id to baseUrl)).validate(id, key.orEmpty())
+            // A custom OpenAI-compatible base URL is checked against that host, not api.openai.com. It uses the same
+            // transport as the real provider (DefaultProviders): cleartext only for hosts passing BaseUrlPolicy.
+            !baseUrl.isNullOrBlank() ->
+                KeyValidator(HttpClients.localClient(), mapOf(id to baseUrl)).validate(id, key.orEmpty())
             else -> KeyValidator().validate(id, key.orEmpty())
         }
 }
