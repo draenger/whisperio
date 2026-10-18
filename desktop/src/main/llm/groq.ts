@@ -6,6 +6,7 @@
 // prompt/language, JSON `{ text }` response), just a fixed Groq base URL and
 // Groq's own model catalog. Mirrors mobile/WhisperioApp/Sources/WhisperioApp/Engine/GroqProvider.swift.
 import { net, app } from 'electron'
+import { guardRedirects } from './redirectGuard'
 import { handleTranscriptionError } from '../errorHandler'
 
 const GROQ_STT_URL = 'https://api.groq.com/openai/v1/audio/transcriptions'
@@ -132,6 +133,10 @@ export function groqTranscribe(
       })
     })
 
+    guardRedirects(request, GROQ_STT_URL, (err) => {
+      handleTranscriptionError(err, 'groq')
+      settle(reject)(err)
+    })
     request.on('error', (err: Error) => {
       handleTranscriptionError(err, 'groq')
       settle(reject)(err)

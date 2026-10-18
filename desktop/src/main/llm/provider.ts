@@ -124,7 +124,7 @@ function computeIsLocal(baseUrl: string): boolean {
  * code) is expected to try/catch this and simply omit the provider from
  * its candidate list — `selectProvider` never sees it.
  */
-function assertSecureBaseUrl(baseUrl: string, providerId: string): void {
+export function assertSecureBaseUrl(baseUrl: string, providerId: string): void {
   let parsed: URL
   try {
     parsed = new URL(baseUrl)
@@ -150,7 +150,7 @@ async function checkReachable(
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), timeoutMs)
   try {
-    const response = await fetch(url, { method: 'GET', headers, signal: controller.signal })
+    const response = await fetch(url, { method: 'GET', headers, signal: controller.signal, redirect: 'error' })
     return response.ok
   } catch {
     return false
@@ -241,7 +241,8 @@ export class OpenAICompatibleProvider implements LLMProvider {
       method: 'POST',
       headers,
       body: JSON.stringify(body),
-      signal: req.signal
+      signal: req.signal,
+      redirect: 'error'
     })
 
     if (!response.ok) {
@@ -348,7 +349,8 @@ export class AnthropicProvider implements LLMProvider {
       method: 'POST',
       headers: this.headers(),
       body: JSON.stringify(body),
-      signal: req.signal
+      signal: req.signal,
+      redirect: 'error'
     })
 
     if (!response.ok) {
@@ -471,7 +473,8 @@ export class ReplicateProvider implements LLMProvider {
       method: 'POST',
       headers: this.predictionHeaders(),
       body: JSON.stringify({ input }),
-      signal: req.signal
+      signal: req.signal,
+      redirect: 'error'
     })
 
     if (!response.ok) {

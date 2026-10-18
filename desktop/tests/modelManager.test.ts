@@ -383,6 +383,41 @@ describe('modelManager', () => {
     })
   })
 
+  describe('downloadCustomModel URL security (L5)', () => {
+    it('rejects plain http:// from a public host without making a request', async () => {
+      netRequest.mockClear()
+      await expect(downloadCustomModel('http://example.com/m.bin', 'm.bin')).rejects.toThrow(/insecure http/)
+      expect(netRequest).not.toHaveBeenCalled()
+    })
+
+    it('rejects non-http(s) protocols', async () => {
+      await expect(downloadCustomModel('file:///etc/passwd', 'm.bin')).rejects.toThrow(/Unsupported/)
+      await expect(downloadCustomModel('ftp://example.com/m.bin', 'm.bin')).rejects.toThrow(/Unsupported/)
+    })
+
+    it.each(['http://localhost:8080/m.bin', 'http://192.168.1.20/m.bin', 'http://10.0.0.5/m.bin'])(
+      'still allows http:// for local host %s',
+      async (url) => {
+        const req = makeFakeRequest()
+        netRequest.mockReturnValueOnce(req)
+        const promise = downloadCustomModel(url, 'local.bin')
+        const res = makeFakeResponse(200, { 'content-length': '1' })
+        req.emit('response', res)
+        res.emit('data', Buffer.from('a'))
+        res.emit('end')
+        await expect(promise).resolves.toBe(join(MODELS_DIR, 'local.bin'))
+      }
+    )
+
+    it('rejects a redirect that downgrades to http on a public host', async () => {
+      const req = makeFakeRequest()
+      netRequest.mockReturnValueOnce(req)
+      const promise = downloadCustomModel('https://example.com/r.bin', 'r.bin')
+      req.emit('response', makeFakeResponse(302, { location: 'http://evil.example/r.bin' }))
+      await expect(promise).rejects.toThrow(/insecure http/)
+    })
+  })
+
   describe('handleDownloadResponse error handling', () => {
     it('rejects and cleans up the temp file when the response emits an error mid-stream', async () => {
       const req = makeFakeRequest()
