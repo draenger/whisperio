@@ -95,7 +95,7 @@ internal suspend fun OkHttpClient.executeText(
             body
         }
     } catch (e: IOException) {
-        throw ProviderError.Network(provider, e.message ?: e.javaClass.simpleName)
+        throw ProviderError.Network(provider, ProviderError.redactSecrets(e.message ?: e.javaClass.simpleName))
     }
 
 internal fun parseObject(provider: ProviderId, body: String): JsonObject =

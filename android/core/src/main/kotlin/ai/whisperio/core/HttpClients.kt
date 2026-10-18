@@ -5,6 +5,7 @@ import okhttp3.HttpUrl
 import okhttp3.Interceptor
 import okhttp3.OkHttpClient
 import java.io.IOException
+import java.net.InetAddress
 import java.util.concurrent.TimeUnit
 
 /**
@@ -19,6 +20,9 @@ object HttpClients {
     val secureClient: OkHttpClient by lazy {
         OkHttpClient.Builder()
             .connectionSpecs(listOf(ConnectionSpec.MODERN_TLS, ConnectionSpec.COMPATIBLE_TLS))
+            // Never follow redirects: a cross-host hop would carry provider headers (xi-api-key etc.).
+            .followRedirects(false)
+            .followSslRedirects(false)
             .connectTimeout(15, TimeUnit.SECONDS)
             .readTimeout(120, TimeUnit.SECONDS)
             .writeTimeout(120, TimeUnit.SECONDS)
@@ -39,11 +43,31 @@ object HttpClients {
             .followSslRedirects(false)
             .addNetworkInterceptor(
                 Interceptor { chain ->
-                    assertAllowed(chain.request().url)
+                    val url = chain.request().url
+                    assertAllowed(url)
+                    // Plain-http "local" is judged by name in BaseUrlPolicy; verify the address we
+                    // actually connected to is private (https custom hosts may be public).
+                    if (!url.isHttps) {
+                        val addr = chain.connection()?.route()?.socketAddress?.address
+                        if (addr != null && !isPrivateAddress(addr)) {
+                            throw IOException("Blocked cleartext request to ${url.host}: not a local address")
+                        }
+                    }
                     chain.proceed(chain.request())
                 },
             )
             .build()
+
+    /** Loopback, site-local (10/8, 172.16/12, 192.168/16), link-local, IPv6 ULA fc00::/7, CGNAT 100.64/10. */
+    internal fun isPrivateAddress(a: InetAddress): Boolean {
+        if (a.isLoopbackAddress || a.isSiteLocalAddress || a.isLinkLocalAddress) return true
+        val b = a.address
+        return when (b.size) {
+            4 -> (b[0].toInt() and 0xFF) == 100 && (b[1].toInt() and 0xC0) == 0x40
+            16 -> (b[0].toInt() and 0xFE) == 0xFC
+            else -> false
+        }
+    }
 
     /** Throws [IOException] unless [url] satisfies [BaseUrlPolicy]. */
     internal fun assertAllowed(url: HttpUrl) {

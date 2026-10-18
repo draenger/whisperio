@@ -13,12 +13,14 @@ import ai.whisperio.android.history.RecordingStatus
 import ai.whisperio.android.settings.AppSettings
 import ai.whisperio.android.settings.SettingsSource
 import ai.whisperio.android.settings.isProviderConfigured
+import ai.whisperio.core.ProviderError
 import ai.whisperio.core.TranscriptionRequest
 import java.io.File
 import java.util.UUID
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -104,7 +106,7 @@ class DictationController(
     private var session: Job? = null
     private var stopRequested = false
     private var currentId: String? = null
-    private var currentFile: File? = null
+    @Volatile private var currentFile: File? = null
     private var currentPersist = true
 
     /** The caller tag of the active session (the IME stores the bound field here); null for retries. */
@@ -134,6 +136,29 @@ class DictationController(
             if (id != null && currentPersist) history.delete(id)
             _state.value = DictationState.Idle
         }
+    }
+
+    /** The audio file of the active session, if any (maintenance sweeps must not touch it). */
+    fun activeFile(): File? = currentFile
+
+    /** Id of the history row of the active recording/transcription, null when idle (or no-history mode). */
+    fun activeId(): String? = if (busy && currentPersist) currentId else null
+
+    /**
+     * Hard stop for "Erase all data": in ANY busy state cancels the session job (which cancels the in-flight upload),
+     * waits for it to finish so no later history write can happen, deletes the current file and returns to Idle.
+     * Must be called from [scope] (single-threaded) so it is serialised with every other state change.
+     */
+    suspend fun abortAll() {
+        val job = session
+        session = null
+        job?.cancelAndJoin()
+        recorder.release()
+        focus.abandon()
+        currentFile?.delete()
+        currentFile = null
+        currentId = null
+        _state.value = DictationState.Idle
     }
 
     /** Dismisses a terminal Done / Error state. */
@@ -303,7 +328,7 @@ class DictationController(
             // The size limit is enforced by :core; the port maps it so the UI keeps its dedicated message.
             failTranscription(row, durationMs, DictationError.TOO_LARGE, null, persist, file)
         } catch (t: Throwable) {
-            failTranscription(row, durationMs, DictationError.PROVIDER, t.message?.take(MAX_ERROR_CHARS), persist, file)
+            failTranscription(row, durationMs, DictationError.PROVIDER, t.message?.let { ProviderError.redactSecrets(it) }?.take(MAX_ERROR_CHARS), persist, file)
         }
     }
 
@@ -315,18 +340,18 @@ class DictationController(
         persist: Boolean,
         file: File,
     ) {
+        val keepFile = persist && settings.current().keepAudio
+        if (!keepFile) file.delete()
         if (persist) {
-            // Keep the audio on failure so the user can retry from history.
+            // Keep the audio on failure (only when the user keeps audio) so they can retry from history.
             history.upsert(
                 row.copy(
                     status = RecordingStatus.FAILED,
                     durationMs = durationMs,
                     error = detail ?: error.name,
-                    audioPath = file.path.takeIf { file.exists() },
+                    audioPath = file.path.takeIf { keepFile && file.exists() },
                 ),
             )
-        } else {
-            file.delete()
         }
         _state.value = DictationState.Error(error, detail, if (persist) row.id else null)
     }

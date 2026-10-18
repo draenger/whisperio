@@ -98,6 +98,26 @@ class KeystoreSecretStoreTest : SecretStoreContract() {
         assertEquals("gsk-other", s.get(ProviderId.GROQ))
     }
 
+    @Test fun transientDecryptErrorKeepsCiphertextAndDoesNotMarkLost() = runBlocking {
+        val flaky = object : ai.whisperio.android.security.SecretCipher {
+            var broken = false
+            override fun encrypt(plain: ByteArray) = plain.copyOf()
+            override fun decrypt(blob: ByteArray): ByteArray =
+                if (broken) throw IllegalStateException("keystore busy") else blob.copyOf()
+        }
+        val s = KeystoreSecretStore(
+            PreferenceDataStoreFactory.create(scope = scope) { File(tmp.root, "flaky.preferences_pb") },
+            flaky,
+        )
+        s.put(ProviderId.OPENAI, "sk-secret")
+        flaky.broken = true
+        assertNull(s.get(ProviderId.OPENAI))
+        assertTrue(s.lost.value.isEmpty())
+        assertTrue(ProviderId.OPENAI in s.configured.first())
+        flaky.broken = false
+        assertEquals("sk-secret", s.get(ProviderId.OPENAI))
+    }
+
     @Test fun pastingAgainClearsTheLostFlag() = runBlocking {
         val s = store()
         s.put(ProviderId.OPENAI, "old")

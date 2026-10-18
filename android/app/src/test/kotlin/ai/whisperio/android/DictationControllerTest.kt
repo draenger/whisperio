@@ -296,4 +296,60 @@ class DictationControllerTest {
         assertEquals(1, transcriber.calls.size)
         assertEquals(1, recorder.started)
     }
+
+    @Test fun abortAllDuringTranscribingWritesNothingAfterwards() = runTest {
+        transcriber.latencyMs = 10_000
+        val c = controller()
+        c.start(StartOptions(RecordingSource.APP))
+        runCurrent(); advance(500)
+        c.stopAndTranscribe(); advance(200)
+        assertTrue(c.state.value is DictationState.Transcribing)
+        assertTrue(audioFile("id1").exists())
+
+        c.abortAll()
+        history.clear()
+        assertEquals(DictationState.Idle, c.state.value)
+        assertFalse(audioFile("id1").exists())
+        advance(20_000) // the upload would have finished by now
+        assertTrue(history.rows.value.isEmpty())
+        assertEquals(DictationState.Idle, c.state.value)
+    }
+
+    @Test fun orphanAudioFromProcessDeathIsSweptButLiveFileIsKept() = runTest {
+        val dir = File(tmp.root, "recordings").also { it.mkdirs() }
+        val h = FakeHistory(dir)
+        val orphan = File(dir, "orphan.m4a").also { it.writeBytes(byteArrayOf(1)) }
+        val referenced = File(dir, "kept.m4a").also { it.writeBytes(byteArrayOf(1)) }
+        val live = File(dir, "live.m4a").also { it.writeBytes(byteArrayOf(1)) }
+        h.upsert(Recording(id = "kept", createdAt = 1, durationMs = 1, status = RecordingStatus.FAILED,
+            provider = "openai", model = "m", language = "en", audioPath = referenced.path, source = RecordingSource.APP))
+        assertEquals(1, h.sweepOrphanAudio(live))
+        assertFalse(orphan.exists())
+        assertTrue(referenced.exists())
+        assertTrue(live.exists())
+    }
+
+    @Test fun failureWithKeepAudioOffDeletesFile() = runTest {
+        settings.settings = settings.settings.copy(keepAudio = false)
+        transcriber.failure = IllegalStateException("boom")
+        val c = controller()
+        c.start(StartOptions(RecordingSource.APP))
+        runCurrent(); advance(500)
+        c.stopAndTranscribe(); advance(200)
+        assertTrue(c.state.value is DictationState.Error)
+        assertFalse(audioFile("id1").exists())
+        assertNull(history.rows.value["id1"]!!.audioPath)
+    }
+
+    @Test fun maintenanceSweepSkipsTheLiveRecordingRow() = runTest {
+        val c = controller()
+        c.start(StartOptions(RecordingSource.KEYBOARD))
+        runCurrent(); advance(500)
+        assertEquals("id1", c.activeId())
+        assertEquals(0, history.sweepInterrupted(c.activeId()))
+        assertEquals(RecordingStatus.RECORDING, history.rows.value["id1"]!!.status)
+        c.stopAndTranscribe(); advance(200)
+        assertEquals(RecordingStatus.DONE, history.rows.value["id1"]!!.status)
+        assertNull(c.activeId().takeIf { c.state.value is DictationState.Idle })
+    }
 }

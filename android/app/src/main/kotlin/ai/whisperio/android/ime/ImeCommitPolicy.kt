@@ -6,6 +6,12 @@ import android.view.inputmethod.EditorInfo
 /** Identity of the bound text field: `EditorInfo.fieldId` + `packageName` (CONTRACT 5). */
 data class FieldKey(val fieldId: Int, val packageName: String?)
 
+/**
+ * What a dictation was started in: the monotonic input-session counter (bumped on every new input start and on
+ * finish, so it changes even when two fields share a `fieldId`, as in Compose screens / WebViews) plus the field key.
+ */
+data class InputSession(val counter: Long, val key: FieldKey?)
+
 sealed interface EnterAction {
     /** Insert a newline key press. */
     data object Newline : EnterAction
@@ -59,10 +65,17 @@ object ImeCommitPolicy {
         return if (before != null && !before.isWhitespace()) " $text" else text
     }
 
-    /** Commit only if the very same field is still bound; otherwise the result is saved as "not inserted". */
-    fun canCommit(started: FieldKey?, current: FieldKey?): Boolean =
-        started != null && current != null && started == current
+    /**
+     * Commit only if the input session is unchanged (counter), the bound field is not a password field and the input
+     * view is still shown; otherwise the result stays in history as "not inserted". `fieldId` alone is not trusted.
+     */
+    fun canCommit(started: InputSession?, current: InputSession, currentIsPassword: Boolean, inputViewShown: Boolean): Boolean =
+        started != null &&
+            started.counter == current.counter &&
+            started.key != null && started.key == current.key &&
+            !currentIsPassword &&
+            inputViewShown
 
-    /** Backspace removes the selection if there is one, else one code point before the cursor. */
-    fun backspaceDeletesSelection(selectedText: CharSequence?): Boolean = !selectedText.isNullOrEmpty()
+    /** Backspace removes the selection if there is one (selection tracked via onUpdateSelection), else one code point. */
+    fun backspaceDeletesSelection(selStart: Int, selEnd: Int): Boolean = selStart >= 0 && selEnd >= 0 && selStart != selEnd
 }

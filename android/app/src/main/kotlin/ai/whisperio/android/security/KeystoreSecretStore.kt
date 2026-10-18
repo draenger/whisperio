@@ -2,22 +2,36 @@ package ai.whisperio.android.security
 
 import ai.whisperio.core.ProviderId
 import android.security.keystore.KeyGenParameterSpec
+import android.security.keystore.KeyPermanentlyInvalidatedException
 import android.security.keystore.KeyProperties
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import java.security.KeyStore
+import java.security.UnrecoverableKeyException
 import java.util.Base64
+import javax.crypto.AEADBadTagException
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+
+/**
+ * True only when the stored ciphertext can never be decrypted again (tampered/corrupt, key
+ * invalidated or gone). Anything else (e.g. a transient Keystore/provider error) must not delete the key.
+ */
+internal fun isPermanentDecryptFailure(e: Throwable): Boolean =
+    e is AEADBadTagException ||
+        e is KeyPermanentlyInvalidatedException ||
+        e is UnrecoverableKeyException ||
+        e is IllegalArgumentException // bad base64 / truncated blob
 
 /** Encrypt/decrypt seam so the store logic is testable without an Android Keystore (absent on the JVM). */
 interface SecretCipher {
@@ -38,7 +52,7 @@ class AndroidKeystoreCipher(private val alias: String = ALIAS) : SecretCipher {
 
     override fun decrypt(blob: ByteArray): ByteArray {
         require(blob.size > IV_BYTES) { "blob too short" }
-        val key = loadKey() ?: error("keystore key missing")
+        val key = loadKey() ?: throw UnrecoverableKeyException("keystore key missing")
         val cipher = Cipher.getInstance(TRANSFORMATION)
         cipher.init(Cipher.DECRYPT_MODE, key, GCMParameterSpec(TAG_BITS, blob, 0, IV_BYTES))
         return cipher.doFinal(blob, IV_BYTES, blob.size - IV_BYTES)
@@ -90,7 +104,10 @@ class KeystoreSecretStore(
         val raw = store.data.first()[keyFor(id)] ?: return null
         return try {
             String(cipher.decrypt(Base64.getDecoder().decode(raw)), Charsets.UTF_8)
-        } catch (_: Exception) {
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            if (!isPermanentDecryptFailure(e)) return null // transient: keep the ciphertext
             // Wipe the unreadable ciphertext; never include it (or the key) in anything logged.
             store.edit { it.remove(keyFor(id)) }
             lostState.value = lostState.value + id

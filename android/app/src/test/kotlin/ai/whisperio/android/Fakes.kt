@@ -80,7 +80,7 @@ class FakeSettings(
     }
 }
 
-class FakeHistory : HistoryStore {
+class FakeHistory(private val recordingsDir: File? = null) : HistoryStore {
     val rows = MutableStateFlow<Map<String, Recording>>(emptyMap())
     override fun observeAll(): Flow<List<Recording>> = rows.map { it.values.sortedByDescending { r -> r.createdAt } }
     override fun observeRecent(limit: Int): Flow<List<Recording>> = observeAll().map { it.take(limit) }
@@ -94,10 +94,10 @@ class FakeHistory : HistoryStore {
         rows.value[id]?.audioPath?.let { File(it).delete() }
         rows.value = rows.value - id
     }
-    override suspend fun sweepInterrupted(): Int {
+    override suspend fun sweepInterrupted(excludeId: String?): Int {
         var n = 0
         rows.value = rows.value.mapValues { (_, r) ->
-            if (r.status == RecordingStatus.RECORDING || r.status == RecordingStatus.TRANSCRIBING) {
+            if (r.id != excludeId && (r.status == RecordingStatus.RECORDING || r.status == RecordingStatus.TRANSCRIBING)) {
                 n++
                 r.copy(status = RecordingStatus.FAILED, error = HistoryStore.INTERRUPTED)
             } else r
@@ -108,6 +108,14 @@ class FakeHistory : HistoryStore {
         val old = rows.value.values.filter { it.createdAt < cutoffEpochMs }
         old.forEach { delete(it.id) }
         return old.size
+    }
+    override suspend fun sweepOrphanAudio(exclude: File?): Int {
+        val ref = rows.value.values.mapNotNull { it.audioPath }.map { File(it).absoluteFile }.toSet()
+        var n = 0
+        recordingsDir?.listFiles()?.forEach { f ->
+            if (f.absoluteFile !in ref && f.absoluteFile != exclude?.absoluteFile && f.delete()) n++
+        }
+        return n
     }
     override suspend fun deleteAllAudio() {
         rows.value.values.forEach { r -> r.audioPath?.let { File(it).delete() }; upsert(r.copy(audioPath = null)) }
@@ -133,7 +141,7 @@ class TestCipher(var fail: Boolean = false) : SecretCipher {
         return iv + plain.map { (it.toInt() xor 0x5A).toByte() }.toByteArray()
     }
     override fun decrypt(blob: ByteArray): ByteArray {
-        if (fail) error("key invalidated")
+        if (fail) throw javax.crypto.AEADBadTagException("key invalidated")
         return blob.copyOfRange(12, blob.size).map { (it.toInt() xor 0x5A).toByte() }.toByteArray()
     }
 }

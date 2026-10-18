@@ -16,10 +16,16 @@ interface HistoryStore {
     suspend fun delete(id: String)
 
     /** rows in recording/transcribing become failed("Interrupted"); returns how many. */
-    suspend fun sweepInterrupted(): Int
+    suspend fun sweepInterrupted(excludeId: String? = null): Int
 
     /** Auto-delete by age: removes rows (and audio) created before [cutoffEpochMs]. */
     suspend fun deleteOlderThan(cutoffEpochMs: Long): Int
+
+    /**
+     * Deletes files in the recordings dir that no row references (e.g. a no-history clip left by process death),
+     * except [exclude] (the file being recorded right now). Returns how many were removed.
+     */
+    suspend fun sweepOrphanAudio(exclude: File?): Int
 
     /** Deletes every audio file but keeps the transcripts. */
     suspend fun deleteAllAudio()
@@ -48,7 +54,8 @@ class RoomHistoryStore(
         dao.delete(id)
     }
 
-    override suspend fun sweepInterrupted(): Int = dao.sweepInterrupted(HistoryStore.INTERRUPTED)
+    override suspend fun sweepInterrupted(excludeId: String?): Int =
+        dao.sweepInterrupted(HistoryStore.INTERRUPTED, excludeId ?: "")
 
     override suspend fun deleteOlderThan(cutoffEpochMs: Long): Int {
         val old = dao.olderThan(cutoffEpochMs)
@@ -57,6 +64,16 @@ class RoomHistoryStore(
             dao.delete(r.id)
         }
         return old.size
+    }
+
+    override suspend fun sweepOrphanAudio(exclude: File?): Int {
+        val referenced = dao.withAudio().mapNotNull { it.audioPath }.map { File(it).absoluteFile }.toSet()
+        val skip = exclude?.absoluteFile
+        var n = 0
+        recordingsDir.listFiles()?.forEach { f ->
+            if (f.isFile && f.absoluteFile !in referenced && f.absoluteFile != skip && f.delete()) n++
+        }
+        return n
     }
 
     override suspend fun deleteAllAudio() {

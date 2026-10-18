@@ -1,4 +1,10 @@
-# Whisperio Android — HANDOFF (2026-10-17, end of day)
+# Whisperio Android — HANDOFF (updated 2026-10-18)
+
+## 2026-10-18 update
+- **Gradle gate GREEN** (first compile): `:core:test` 111/111, `:app:testDebugUnitTest` 158/158, `:app:verifyRoborazziDebug` (82 baselines in `app/src/test/snapshots/`, eyeballed), `:app:lintDebug`, `:app:assembleDebug`. `local.properties` (gitignored) needs `sdk.dir=C\:/Users/dkwar/AppData/Local/Android/Sdk`. Run with `-Dorg.gradle.workers.max=2 -Dorg.gradle.jvmargs=-Xmx3g`; kill only own daemon PIDs afterwards (no `--stop` while others build).
+- **Opus code review (1 round): PASS with notes**, all findings fixed: IME commits only within the same input session + non-password + input view shown; Erase all aborts in-flight transcription (`abortAll`) in appScope; orphan-audio sweep; keepAudio respected on failure; maintenance sweep skips the live row; no redirects on the secure client; redacted network errors; cleartext only to private resolved addresses; Keystore wipes the key only on permanent errors; onDestroy cancels keyboard recording; backspace uses tracked selection (no getSelectedText); fallback disclosed in privacy §8.1 + consent string.
+- **Merged `android/skeleton` → `main`** (see git log). Remaining next steps below: 3 (emulator smoke), 5 (signed AAB, screenshots, internal track), 6.
+
 
 Brief: `C:/Users/dkwar/bees/whisperio-android.txt`. Contract: `docs/android/CONTRACT.md` (Opus-reviewed, merged to main 0eb641c).
 

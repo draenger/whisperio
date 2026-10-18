@@ -80,7 +80,8 @@ class AppGraph(private val app: Application) {
     /** Startup sweep (CONTRACT 6) and retention (CONTRACT 7.3). Safe to call repeatedly. */
     fun runMaintenance() {
         appScope.launch {
-            history.sweepInterrupted()
+            history.sweepInterrupted(dictation.activeId())
+            history.sweepOrphanAudio(dictation.activeFile())
             settings.current().autoDeleteDays?.let { days ->
                 history.deleteOlderThan(System.currentTimeMillis() - days * 86_400_000L)
             }
@@ -89,9 +90,13 @@ class AppGraph(private val app: Application) {
 
     /** "Erase all data" (CONTRACT 7.3): history, audio, keys and settings. */
     suspend fun eraseAllData() {
-        dictation.cancel()
-        history.clear()
-        secrets.clear()
-        settings.clear()
+        // Runs entirely in appScope (single-threaded, never cancelled) so leaving the screen cannot stop it midway;
+        // abortAll() first guarantees no in-flight transcription writes a row after the wipe.
+        appScope.launch {
+            dictation.abortAll()
+            history.clear()
+            secrets.clear()
+            settings.clear()
+        }.join()
     }
 }

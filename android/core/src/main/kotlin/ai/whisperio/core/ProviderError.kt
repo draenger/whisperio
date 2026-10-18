@@ -47,7 +47,11 @@ sealed class ProviderError(message: String, cause: Throwable? = null) : Exceptio
 
     /** Every attempted provider failed; [first] is the first failure (iOS surfaces its message). */
     class AllProvidersFailed(val first: Throwable) :
-        ProviderError(first.message ?: "Unknown error", first)
+        ProviderError(
+        if (first is ProviderError) first.message ?: "Unknown error"
+        else redactSecrets(first.message ?: "Unknown error"),
+        first,
+    )
 
     companion object {
         const val DEFAULT_LIMIT = 200

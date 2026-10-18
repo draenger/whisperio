@@ -74,4 +74,15 @@ class ProviderErrorTest {
         val first = ProviderError.NotConfigured(ProviderId.GROQ)
         assertEquals(first.message, ProviderError.AllProvidersFailed(first).message)
     }
+
+    @Test fun allProvidersFailedRedactsNonProviderErrors() {
+        val e = ProviderError.AllProvidersFailed(java.io.IOException("failed: xi-api-key: hunter2hunter2"))
+        assertFalse(e.message!!.contains("hunter2hunter2"))
+    }
+
+    @Test fun networkReasonFromIoExceptionIsRedactedAtSource() {
+        val reason = ProviderError.redactSecrets("unexpected url https://x/?api_key=abcdef123456 sk-abcdef1234567890")
+        assertFalse(reason.contains("abcdef123456"))
+        assertFalse(reason.contains("sk-abcdef1234567890"))
+    }
 }

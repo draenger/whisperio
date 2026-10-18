@@ -58,8 +58,8 @@ interface RecordingDao {
     suspend fun setInserted(id: String, inserted: Boolean)
 
     /** Process-death sweep (CONTRACT 6): rows left mid-flight become failed. */
-    @Query("UPDATE recording SET status = 'FAILED', error = :error WHERE status IN ('RECORDING', 'TRANSCRIBING')")
-    suspend fun sweepInterrupted(error: String): Int
+    @Query("UPDATE recording SET status = 'FAILED', error = :error WHERE status IN ('RECORDING', 'TRANSCRIBING') AND id != :excludeId")
+    suspend fun sweepInterrupted(error: String, excludeId: String): Int
 
     @Query("SELECT * FROM recording WHERE created_at < :cutoff")
     suspend fun olderThan(cutoff: Long): List<Recording>

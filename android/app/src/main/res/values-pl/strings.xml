@@ -98,7 +98,7 @@
     <string name="onboarding_welcome_body">Mów, a Twoje słowa pojawią się jako tekst w dowolnej aplikacji. Konfiguracja zajmuje minutę.</string>
     <string name="onboarding_privacy_title">Twoje nagrania, Twój dostawca</string>
     <string name="onboarding_privacy_body">Nagrania trafiają tylko do dostawcy, którego wybierzesz, z Twoim własnym kluczem. Bez serwera Whisperio, bez konta, bez analityki.</string>
-    <string name="onboarding_consent">Zgadzam się, żeby moje nagrania były wysyłane do wybranego przeze mnie dostawcy w celu transkrypcji.</string>
+    <string name="onboarding_consent">Zgadzam się, żeby moje nagrania były wysyłane do wybranego przeze mnie dostawcy w celu transkrypcji (a jeśli włączę przełączanie awaryjne, to także do kolejnego skonfigurowanego dostawcy, gdy pierwszy zawiedzie).</string>
     <string name="onboarding_provider_title">Wybierz dostawcę</string>
     <string name="onboarding_provider_body">Wklej swój klucz API. Najpierw go sprawdzimy, a potem zapiszemy zaszyfrowany, tylko na tym urządzeniu.</string>
     <string name="onboarding_language_title">Twój język</string>

@@ -39,7 +39,7 @@ class KeyValidator(
         } catch (e: CancellationException) {
             throw e
         } catch (e: IOException) {
-            KeyValidation.Network(e.message ?: e.javaClass.simpleName)
+            KeyValidation.Network(ProviderError.redactSecrets(e.message ?: e.javaClass.simpleName))
         }
     }
 

@@ -7,6 +7,7 @@ import org.junit.After
 import org.junit.Before
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNull
 
@@ -53,6 +54,13 @@ class KeyValidatorTest {
         val v = validator(ProviderId.OPENAI, "/v1")
         server.shutdown()
         assertIs<KeyValidation.Network>(v.validate(ProviderId.OPENAI, "k"))
+    }
+
+    @Test fun networkMessageIsRedacted() = runBlocking<Unit> {
+        val leaky = client.newBuilder().addInterceptor { throw java.io.IOException("boom xi-api-key: hunter2hunter2") }.build()
+        val v = KeyValidator(leaky, mapOf(ProviderId.OPENAI to server.base("/v1")))
+        val r = assertIs<KeyValidation.Network>(v.validate(ProviderId.OPENAI, "k"))
+        assertFalse(r.toString().contains("hunter2hunter2"))
     }
 
     @Test fun redirectIsNotFollowedAndIsUnexpected() = runBlocking<Unit> {

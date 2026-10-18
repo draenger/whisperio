@@ -3,6 +3,7 @@ package ai.whisperio.android
 import ai.whisperio.android.ime.EnterAction
 import ai.whisperio.android.ime.FieldKey
 import ai.whisperio.android.ime.ImeCommitPolicy
+import ai.whisperio.android.ime.InputSession
 import android.text.InputType
 import android.view.inputmethod.EditorInfo
 import org.junit.Assert.assertEquals
@@ -58,18 +59,37 @@ class ImeCommitPolicyTest {
         assertEquals(EnterAction.Newline, ImeCommitPolicy.enterAction(EditorInfo.IME_ACTION_SEND or EditorInfo.IME_FLAG_NO_ENTER_ACTION))
     }
 
-    @Test fun commitOnlyIntoTheSameBoundField() {
-        val a = FieldKey(10, "com.example.chat")
-        assertTrue(ImeCommitPolicy.canCommit(a, FieldKey(10, "com.example.chat")))
-        assertFalse(ImeCommitPolicy.canCommit(a, FieldKey(11, "com.example.chat")))
-        assertFalse(ImeCommitPolicy.canCommit(a, FieldKey(10, "com.other")))
-        assertFalse(ImeCommitPolicy.canCommit(a, null))
-        assertFalse(ImeCommitPolicy.canCommit(null, a))
+    private val key = FieldKey(10, "com.example.chat")
+    private val started = InputSession(5, key)
+
+    @Test fun sameSessionCommits() {
+        assertTrue(ImeCommitPolicy.canCommit(started, InputSession(5, FieldKey(10, "com.example.chat")), false, true))
+    }
+
+    @Test fun changedSessionNeverCommitsEvenWithSameFieldId() {
+        assertFalse(ImeCommitPolicy.canCommit(started, InputSession(6, key), false, true))
+    }
+
+    @Test fun differentFieldKeyDoesNotCommit() {
+        assertFalse(ImeCommitPolicy.canCommit(started, InputSession(5, FieldKey(11, "com.example.chat")), false, true))
+        assertFalse(ImeCommitPolicy.canCommit(started, InputSession(5, FieldKey(10, "com.other")), false, true))
+        assertFalse(ImeCommitPolicy.canCommit(started, InputSession(5, null), false, true))
+        assertFalse(ImeCommitPolicy.canCommit(InputSession(5, null), InputSession(5, null), false, true))
+        assertFalse(ImeCommitPolicy.canCommit(null, InputSession(5, key), false, true))
+    }
+
+    @Test fun passwordFieldNeverCommits() {
+        assertFalse(ImeCommitPolicy.canCommit(started, InputSession(5, key), true, true))
+    }
+
+    @Test fun hiddenInputViewNeverCommits() {
+        assertFalse(ImeCommitPolicy.canCommit(started, InputSession(5, key), false, false))
     }
 
     @Test fun backspaceDeletesSelectionFirst() {
-        assertTrue(ImeCommitPolicy.backspaceDeletesSelection("selected"))
-        assertFalse(ImeCommitPolicy.backspaceDeletesSelection(""))
-        assertFalse(ImeCommitPolicy.backspaceDeletesSelection(null))
+        assertTrue(ImeCommitPolicy.backspaceDeletesSelection(2, 5))
+        assertTrue(ImeCommitPolicy.backspaceDeletesSelection(5, 2))
+        assertFalse(ImeCommitPolicy.backspaceDeletesSelection(3, 3))
+        assertFalse(ImeCommitPolicy.backspaceDeletesSelection(-1, -1))
     }
 }

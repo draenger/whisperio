@@ -65,6 +65,9 @@ class WhisperioImeService : InputMethodService(), LifecycleOwner, ViewModelStore
     private val field = MutableStateFlow(FieldState())
     private val micGranted = MutableStateFlow(false)
     private val notInserted = MutableStateFlow(false)
+    private var inputSessionCounter = 0L
+    private var selStart = -1
+    private var selEnd = -1
     private lateinit var panelState: StateFlow<ImePanelState>
 
     override fun onCreate() {
@@ -121,6 +124,30 @@ class WhisperioImeService : InputMethodService(), LifecycleOwner, ViewModelStore
         }
     }
 
+    override fun onStartInput(attribute: EditorInfo?, restarting: Boolean) {
+        super.onStartInput(attribute, restarting)
+        if (!restarting) {
+            inputSessionCounter++
+            selStart = -1
+            selEnd = -1
+        }
+    }
+
+    override fun onFinishInput() {
+        inputSessionCounter++
+        super.onFinishInput()
+    }
+
+    override fun onUpdateSelection(
+        oldSelStart: Int, oldSelEnd: Int, newSelStart: Int, newSelEnd: Int, candidatesStart: Int, candidatesEnd: Int,
+    ) {
+        super.onUpdateSelection(oldSelStart, oldSelEnd, newSelStart, newSelEnd, candidatesStart, candidatesEnd)
+        selStart = newSelStart
+        selEnd = newSelEnd
+    }
+
+    private fun currentSession() = InputSession(inputSessionCounter, ImeCommitPolicy.fieldKey(currentInputEditorInfo))
+
     override fun onEvaluateFullscreenMode(): Boolean = false
 
     override fun onStartInputView(info: EditorInfo?, restarting: Boolean) {
@@ -147,6 +174,8 @@ class WhisperioImeService : InputMethodService(), LifecycleOwner, ViewModelStore
     }
 
     override fun onDestroy() {
+        val s = graph.dictation.state.value
+        if (s is DictationState.Recording && s.source == RecordingSource.KEYBOARD) graph.dictation.cancel()
         lifecycleRegistry.currentState = Lifecycle.State.DESTROYED
         store.clear()
         super.onDestroy()
@@ -176,7 +205,7 @@ class WhisperioImeService : InputMethodService(), LifecycleOwner, ViewModelStore
                     StartOptions(
                         source = RecordingSource.KEYBOARD,
                         saveToHistory = ImeCommitPolicy.shouldSaveToHistory(f.imeOptions),
-                        session = f.key,
+                        session = currentSession(),
                     ),
                 )
             }
@@ -185,10 +214,11 @@ class WhisperioImeService : InputMethodService(), LifecycleOwner, ViewModelStore
 
     private fun handleResult(result: DictationResult) {
         if (result.source != RecordingSource.KEYBOARD) return
-        val started = result.session as? FieldKey ?: return // retries from history carry no session
+        val started = result.session as? InputSession ?: return // retries from history carry no session
         val ic = currentInputConnection
-        val current = ImeCommitPolicy.fieldKey(currentInputEditorInfo)
-        if (ic != null && ImeCommitPolicy.canCommit(started, current)) {
+        val info = currentInputEditorInfo
+        val password = info == null || ImeCommitPolicy.isPasswordField(info.inputType)
+        if (ic != null && ImeCommitPolicy.canCommit(started, currentSession(), password, isInputViewShown)) {
             val text = ImeCommitPolicy.textToCommit(result.text, ic.getTextBeforeCursor(1, 0))
             ic.commitText(text, 1)
             result.recordingId?.let { graph.dictation.markInserted(it, true) }
@@ -196,14 +226,14 @@ class WhisperioImeService : InputMethodService(), LifecycleOwner, ViewModelStore
             graph.dictation.acknowledge()
             if (isVoiceSubtype()) switchBackAfterVoice()
         } else {
-            // Field changed (or IME hidden) while transcribing: the history row stays "not inserted".
+            // Input session changed, password field or IME hidden while transcribing: the history row stays "not inserted".
             notInserted.value = true
         }
     }
 
     private fun onBackspace() {
         val ic = currentInputConnection ?: return
-        if (ImeCommitPolicy.backspaceDeletesSelection(ic.getSelectedText(0))) {
+        if (ImeCommitPolicy.backspaceDeletesSelection(selStart, selEnd)) {
             ic.commitText("", 1)
         } else if (!ic.deleteSurroundingTextInCodePoints(1, 0)) {
             sendDownUpKeyEvents(KeyEvent.KEYCODE_DEL)

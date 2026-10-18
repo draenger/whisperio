@@ -98,7 +98,7 @@
     <string name="onboarding_welcome_body">Speak, and your words appear as text in any app. It takes a minute to set up.</string>
     <string name="onboarding_privacy_title">Your audio, your provider</string>
     <string name="onboarding_privacy_body">Audio goes only to the provider you pick, with your own key. No Whisperio server, no account, no analytics.</string>
-    <string name="onboarding_consent">I agree that my recordings are sent to the provider I choose for transcription.</string>
+    <string name="onboarding_consent">I agree that my recordings are sent to the provider I choose for transcription (and, if I turn on fallback, to the next provider I configured when the first one fails).</string>
     <string name="onboarding_provider_title">Pick a provider</string>
     <string name="onboarding_provider_body">Paste your API key. It is checked first and stored encrypted on this device only.</string>
     <string name="onboarding_language_title">Your language</string>
