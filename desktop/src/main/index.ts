@@ -1,4 +1,4 @@
-import { app, BrowserWindow, desktopCapturer, ipcMain, session } from 'electron'
+import { app, BrowserWindow, desktopCapturer, ipcMain, session, shell } from 'electron'
 import { initDictation, cleanupDictation, reRegisterHotkeys, pauseHotkeys, resumeHotkeys } from './dictation'
 import { createTray, destroyTray } from './tray'
 import { loadSettings, saveSettings } from './settingsManager'
@@ -49,7 +49,7 @@ import {
   setServerStatusCallback,
   markServerUsed
 } from './localServer'
-import { initAutoUpdater, getUpdateState, checkForUpdatesManual, installUpdate } from './autoUpdater'
+import { initAutoUpdater, setUpdateChecksEnabled, getUpdateState, checkForUpdatesManual, installUpdate, RELEASES_URL } from './autoUpdater'
 import {
   getStatus as githubGetStatus,
   beginConnect as githubBeginConnect,
@@ -254,7 +254,13 @@ app.whenReady().then(() => {
   })
   ipcMain.handle('settings:load', () => getEffectiveSettings())
   ipcMain.handle('settings:save', (_event, newSettings) => {
+    const prevChecks = loadSettings().checkForUpdates !== false
     const saved = saveSettingsWithKeys(newSettings)
+    // Only touch the update schedule when the flag actually changed (a settings save for any
+    // other reason that merely carries the field must not restart the timers).
+    if ('checkForUpdates' in newSettings && (saved.checkForUpdates !== false) !== prevChecks) {
+      setUpdateChecksEnabled(saved.checkForUpdates !== false)
+    }
     if ('launchAtStartup' in newSettings && isPackaged) {
       app.setLoginItemSettings({
         openAtLogin: saved.launchAtStartup,
@@ -453,6 +459,8 @@ app.whenReady().then(() => {
     return getUpdateState()
   })
   ipcMain.handle('updater:install', () => installUpdate())
+  // Fixed URL, never renderer-supplied: opens the GitHub Releases page in the default browser.
+  ipcMain.handle('updater:openReleases', () => shell.openExternal(RELEASES_URL))
 
   // Window control IPC handlers (for custom title bar)
   ipcMain.on('window:minimize', (event) => {
@@ -477,7 +485,7 @@ app.whenReady().then(() => {
   createTray()
 
   // Auto-update from GitHub releases
-  initAutoUpdater()
+  initAutoUpdater(loadSettings().checkForUpdates !== false)
 
   console.log('[Whisperio] Ready — press hotkey to dictate')
 })

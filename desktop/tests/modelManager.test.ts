@@ -43,6 +43,7 @@ interface FakeRequest {
   abort: ReturnType<typeof vi.fn>
   write: ReturnType<typeof vi.fn>
   setHeader: ReturnType<typeof vi.fn>
+  followRedirect: ReturnType<typeof vi.fn>
   emit: (event: string, ...args: any[]) => void
 }
 
@@ -66,6 +67,7 @@ function makeFakeRequest(): FakeRequest {
     abort: vi.fn(),
     write: vi.fn(),
     setHeader: vi.fn(),
+    followRedirect: vi.fn(),
     emit: (event, ...args) => {
       for (const cb of handlers.get(event) ?? []) cb(...args)
     }
@@ -359,27 +361,63 @@ describe('modelManager', () => {
       await expect(promise).rejects.toThrow('Download failed: HTTP 403')
     })
 
-    it('follows a 302 redirect and resolves to the final path', async () => {
-      const req1 = makeFakeRequest()
-      const req2 = makeFakeRequest()
-      netRequest.mockReturnValueOnce(req1).mockReturnValueOnce(req2)
+    it('uses redirect:manual, follows an approved redirect hop on the same request, and resolves', async () => {
+      const req = makeFakeRequest()
+      netRequest.mockReturnValueOnce(req)
 
       const promise = downloadCustomModel('https://example.com/redir.bin', 'redir.bin')
+      expect(netRequest.mock.calls[0][0]).toMatchObject({ redirect: 'manual' })
 
-      // First response: redirect.
-      req1.emit('response', makeFakeResponse(301, { location: 'https://cdn.example/redir.bin' }))
+      // Electron's real semantics: 'redirect' event (status, method, newUrl), then followRedirect().
+      req.emit('redirect', 302, 'GET', 'https://cdn.example/redir.bin')
+      expect(req.followRedirect).toHaveBeenCalledTimes(1)
 
-      // Second request driven to completion.
-      const res2 = makeFakeResponse(200, { 'content-length': '4' })
-      req2.emit('response', res2)
-      res2.emit('data', Buffer.from('data'))
-      res2.emit('end')
+      const res = makeFakeResponse(200, { 'content-length': '4' })
+      req.emit('response', res)
+      res.emit('data', Buffer.from('data'))
+      res.emit('end')
 
       const finalPath = await promise
       expect(finalPath).toBe(join(MODELS_DIR, 'redir.bin'))
       expect(existsSync(finalPath)).toBe(true)
-      expect(netRequest).toHaveBeenCalledTimes(2)
-      expect(netRequest.mock.calls[1][0]).toMatchObject({ url: 'https://cdn.example/redir.bin' })
+      expect(netRequest).toHaveBeenCalledTimes(1)
+    })
+  })
+
+  describe('downloadCustomModel URL security (L5)', () => {
+    it('rejects plain http:// from a public host without making a request', async () => {
+      netRequest.mockClear()
+      await expect(downloadCustomModel('http://example.com/m.bin', 'm.bin')).rejects.toThrow(/insecure http/)
+      expect(netRequest).not.toHaveBeenCalled()
+    })
+
+    it('rejects non-http(s) protocols', async () => {
+      await expect(downloadCustomModel('file:///etc/passwd', 'm.bin')).rejects.toThrow(/Unsupported/)
+      await expect(downloadCustomModel('ftp://example.com/m.bin', 'm.bin')).rejects.toThrow(/Unsupported/)
+    })
+
+    it.each(['http://localhost:8080/m.bin', 'http://192.168.1.20/m.bin', 'http://10.0.0.5/m.bin'])(
+      'still allows http:// for local host %s',
+      async (url) => {
+        const req = makeFakeRequest()
+        netRequest.mockReturnValueOnce(req)
+        const promise = downloadCustomModel(url, 'local.bin')
+        const res = makeFakeResponse(200, { 'content-length': '1' })
+        req.emit('response', res)
+        res.emit('data', Buffer.from('a'))
+        res.emit('end')
+        await expect(promise).resolves.toBe(join(MODELS_DIR, 'local.bin'))
+      }
+    )
+
+    it('aborts and rejects a redirect that downgrades to http on a public host', async () => {
+      const req = makeFakeRequest()
+      netRequest.mockReturnValueOnce(req)
+      const promise = downloadCustomModel('https://example.com/r.bin', 'r.bin')
+      req.emit('redirect', 302, 'GET', 'http://evil.example/r.bin')
+      await expect(promise).rejects.toThrow(/insecure http/)
+      expect(req.abort).toHaveBeenCalled()
+      expect(req.followRedirect).not.toHaveBeenCalled()
     })
   })
 

@@ -23,6 +23,13 @@ win:
     - target: nsis
       arch:
         - x64
+  # Authenticode: CI (GitHub-hosted runners) has no cert and builds UNSIGNED installers.
+  # The release cert lives only in Daniel's CurrentUser\My store, so signing happens locally via
+  # `npm run build:win:signed` (adds certificateSha1 + sha256 on the command line; see
+  # docs/release-runbook.md "Signed Windows release"). publisherName = the cert subject CN and is
+  # written into app-update.yml; the in-app verifier (src/main/updateSignature) pins the thumbprint.
+  signtoolOptions:
+    publisherName: Jarvis (Daniel Kasprzyk)
 nsis:
   oneClick: false
   allowToChangeInstallationDirectory: true
