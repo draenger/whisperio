@@ -4,10 +4,12 @@ import ai.whisperio.android.dictation.DictationController
 import ai.whisperio.android.dictation.DictationResult
 import ai.whisperio.android.dictation.DictationState
 import ai.whisperio.android.di.TextTidy
+import ai.whisperio.android.dictation.StartOptions
 import ai.whisperio.android.history.RecordingSource
 import ai.whisperio.android.ime.FieldKey
 import ai.whisperio.android.ime.InputSession
 import ai.whisperio.android.ime.InputSessionCounter
+import ai.whisperio.android.ime.cancelKeyboardRecordingIfNeeded
 import ai.whisperio.android.ime.commitKeyboardResult
 import ai.whisperio.android.ime.keyboardStartOptions
 import ai.whisperio.android.ime.shouldCancelKeyboardRecording
@@ -99,6 +101,23 @@ class WhisperioImeServiceTest {
         assertFalse(shouldCancelKeyboardRecording(DictationState.Transcribing(RecordingSource.KEYBOARD)))
     }
 
+    @Test fun destroyDecisionCancelsOnlyKeyboardRecording() = runTest {
+        val c = controller(FakeRecorder(), FakeHistory())
+        c.start(StartOptions(RecordingSource.TILE))
+        runCurrent()
+        assertTrue(c.state.value is DictationState.Recording)
+        cancelKeyboardRecordingIfNeeded(c) // what onDestroy runs: a tile recording must survive the IME dying
+        runCurrent()
+        assertTrue(c.state.value is DictationState.Recording)
+        c.cancel()
+        runCurrent()
+        c.start(keyboardStartOptions(false, 0, session(1))!!)
+        runCurrent()
+        cancelKeyboardRecordingIfNeeded(c)
+        runCurrent()
+        assertEquals(DictationState.Idle, c.state.value)
+    }
+
     @Test fun finishInputViewCancelDiscardsRealRecording() = runTest {
         val recorder = FakeRecorder()
         val history = FakeHistory()
@@ -106,8 +125,8 @@ class WhisperioImeServiceTest {
         c.start(keyboardStartOptions(false, 0, session(1))!!)
         runCurrent()
         assertTrue(c.state.value is DictationState.Recording)
-        // what onFinishInputView does
-        if (shouldCancelKeyboardRecording(c.state.value)) c.cancel()
+        // the exact helper onFinishInputView and onDestroy both call
+        cancelKeyboardRecordingIfNeeded(c)
         runCurrent()
         assertEquals(DictationState.Idle, c.state.value)
         assertTrue(recorder.released > 0)

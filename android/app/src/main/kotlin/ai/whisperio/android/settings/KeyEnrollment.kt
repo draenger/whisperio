@@ -11,6 +11,10 @@ sealed interface KeyUi {
     data object Validating : KeyUi
     data object Valid : KeyUi
     data object Invalid : KeyUi
+
+    /** Nothing stored to re-check (never set, or wiped as unreadable): the user must paste the key again. */
+    data object Missing : KeyUi
+
     data class Network(val message: String) : KeyUi
     data class Unexpected(val status: Int) : KeyUi
     data class InvalidUrl(val message: String) : KeyUi
@@ -45,7 +49,7 @@ class KeyEnrollment(
      */
     suspend fun recheck(id: ProviderId): KeyUi {
         val key = secrets.get(id)?.trim()?.ifEmpty { null }
-        if (key == null && id != ProviderId.SELFHOSTED) return KeyUi.Invalid
+        if (key == null && id != ProviderId.SELFHOSTED) return KeyUi.Missing
         val url = settings.current().baseUrls[id]?.trim()?.ifEmpty { null }
         return checker.validate(id, key, url).toKeyUi()
     }

@@ -26,6 +26,12 @@ import ai.whisperio.android.ui.onboarding.OnboardingActions
 import ai.whisperio.android.ui.onboarding.OnboardingScreen
 import ai.whisperio.android.ui.onboarding.OnboardingState
 import ai.whisperio.android.ui.onboarding.OnboardingStep
+import ai.whisperio.android.ui.onboarding.TryItCommand
+import ai.whisperio.android.ui.onboarding.TryItSession
+import ai.whisperio.android.ui.onboarding.tryItCanStop
+import ai.whisperio.android.ui.onboarding.tryItLeave
+import ai.whisperio.android.ui.onboarding.tryItShouldAck
+import ai.whisperio.android.ui.onboarding.tryItView
 import ai.whisperio.android.ui.settings.KeyDialogState
 import ai.whisperio.android.ui.settings.SettingsActions
 import ai.whisperio.android.ui.settings.SettingsScreen
@@ -93,13 +99,29 @@ fun AppRoot() {
     val g = LocalContext.current.graph
     val settings by g.settings.flow.collectAsState(initial = null)
     val s = settings ?: return // first DataStore read; avoids flashing onboarding for returning users
-    if (!s.onboardingDone) OnboardingRoute(g, s) else MainShell(g)
+    // Try-it bookkeeping lives here (not in OnboardingRoute) so it outlives onboarding: a transcription still in flight
+    // when the user finishes is acknowledged silently instead of surfacing on Home.
+    var tryActive by rememberSaveable { mutableStateOf(false) }
+    var tryPending by rememberSaveable { mutableStateOf(false) }
+    val tryIt = TryItSession(tryActive, tryPending)
+    val dictation by g.dictation.state.collectAsState()
+    LaunchedEffect(dictation, tryPending) {
+        if (tryItShouldAck(dictation, tryIt)) {
+            g.dictation.acknowledge()
+            tryPending = false
+        }
+    }
+    if (!s.onboardingDone) {
+        OnboardingRoute(g, s, tryIt) { tryActive = it.active; tryPending = it.pendingAck }
+    } else {
+        MainShell(g)
+    }
 }
 
 // region onboarding
 
 @Composable
-private fun OnboardingRoute(g: AppGraph, current: AppSettings) {
+private fun OnboardingRoute(g: AppGraph, current: AppSettings, tryIt: TryItSession, setTryIt: (TryItSession) -> Unit) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     var stepIndex by rememberSaveable { mutableStateOf(0) }
@@ -122,7 +144,10 @@ private fun OnboardingRoute(g: AppGraph, current: AppSettings) {
     var startAfterMic by remember { mutableStateOf(false) }
     val micLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         micGranted = granted
-        if (granted && startAfterMic) g.dictation.start(StartOptions(RecordingSource.APP))
+        if (granted && startAfterMic) {
+            setTryIt(TryItSession(active = true))
+            g.dictation.start(StartOptions(RecordingSource.APP))
+        }
         startAfterMic = false
     }
     LifecycleEventEffect(Lifecycle.Event.ON_STOP) {
@@ -133,8 +158,13 @@ private fun OnboardingRoute(g: AppGraph, current: AppSettings) {
     }
     // Leaves nothing behind when the step is left or onboarding ends.
     fun clearTry() {
-        val s = g.dictation.state.value
-        if (s is DictationState.Recording && s.source == RecordingSource.APP) g.dictation.cancel() else g.dictation.acknowledge()
+        val leave = tryItLeave(g.dictation.state.value, tryIt)
+        when (leave.command) {
+            TryItCommand.CANCEL -> g.dictation.cancel()
+            TryItCommand.ACKNOWLEDGE -> g.dictation.acknowledge()
+            TryItCommand.NONE -> Unit
+        }
+        setTryIt(leave.session)
     }
 
     val actions = object : OnboardingActions {
@@ -169,11 +199,16 @@ private fun OnboardingRoute(g: AppGraph, current: AppSettings) {
         override fun onOpenKeyboardSettings() { ctx.startActivity(Intent(AndroidSettings.ACTION_INPUT_METHOD_SETTINGS)) }
         override fun onAddTile() { requestAddTile(ctx) }
         override fun onTryDictate() {
-            if (g.micGranted()) g.dictation.start(StartOptions(RecordingSource.APP))
-            else { startAfterMic = true; micLauncher.launch(Manifest.permission.RECORD_AUDIO) }
+            if (g.micGranted()) {
+                setTryIt(TryItSession(active = true))
+                g.dictation.start(StartOptions(RecordingSource.APP))
+            } else {
+                startAfterMic = true
+                micLauncher.launch(Manifest.permission.RECORD_AUDIO)
+            }
         }
-        override fun onTryStop() = g.dictation.stopAndTranscribe()
-        override fun onTryDismiss() = g.dictation.acknowledge()
+        override fun onTryStop() { if (tryItCanStop(g.dictation.state.value, tryIt)) g.dictation.stopAndTranscribe() }
+        override fun onTryDismiss() { if (tryIt.active) g.dictation.acknowledge() }
         override fun onFinish() {
             clearTry()
             scope.launch { g.settings.setOnboardingDone(true) }
@@ -192,7 +227,7 @@ private fun OnboardingRoute(g: AppGraph, current: AppSettings) {
             keyboardEnabled = keyboardEnabled,
             canAddTile = Build.VERSION.SDK_INT >= 33,
             providerReady = provider in configured,
-            dictation = dictation,
+            dictation = tryItView(dictation, tryIt),
         ),
         actions = actions,
     )
@@ -386,7 +421,14 @@ private fun SettingsRoute(g: AppGraph, nav: NavHostController) {
         override fun onCheckKey(id: ProviderId) {
             scope.launch {
                 keyChecks = keyChecks + (id to KeyUi.Validating)
-                keyChecks = keyChecks + (id to enrollment.recheck(id))
+                val result = try {
+                    enrollment.recheck(id)
+                } catch (e: kotlinx.coroutines.CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    KeyUi.Network(e.message.orEmpty())
+                }
+                keyChecks = keyChecks + (id to result)
             }
         }
         override fun onKeyDialogKey(value: String) { dialog = dialog?.copy(key = value, ui = KeyUi.Idle) }
@@ -397,6 +439,7 @@ private fun SettingsRoute(g: AppGraph, nav: NavHostController) {
                 dialog = d.copy(ui = KeyUi.Validating)
                 val result = enrollment.validateAndSave(d.provider, d.key, d.baseUrl)
                 dialog = dialog?.copy(ui = result, key = if (result == KeyUi.Valid) "" else d.key)
+                if (result == KeyUi.Valid) keyChecks = keyChecks - d.provider // a stale check result must not outlive the new key
             }
         }
         override fun onKeyDialogDismiss() { dialog = null }

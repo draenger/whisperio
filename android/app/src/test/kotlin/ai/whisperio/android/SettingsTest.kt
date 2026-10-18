@@ -243,9 +243,9 @@ class KeyEnrollmentTest {
         assertEquals("m-key", s2.get(ProviderId.MISTRAL))
     }
 
-    @Test fun recheckWithoutStoredKeyIsInvalidWithoutACall() = runBlocking {
+    @Test fun recheckWithoutStoredKeyIsMissingWithoutACall() = runBlocking {
         val (e, _, checker) = parts(KeyValidation.Valid)
-        assertEquals(KeyUi.Invalid, e.recheck(ProviderId.OPENAI))
+        assertEquals(KeyUi.Missing, e.recheck(ProviderId.OPENAI))
         assertEquals(0, checker.calls)
     }
 

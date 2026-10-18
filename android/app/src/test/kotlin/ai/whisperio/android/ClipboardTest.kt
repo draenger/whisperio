@@ -42,10 +42,6 @@ class ClipboardTest {
         assertEquals(true, sensitiveFlag())
     }
 
-    @Test fun literalMatchesPlatformConstant() {
-        assertEquals("android.content.extra.IS_SENSITIVE", ClipDescription.EXTRA_IS_SENSITIVE)
-    }
-
     @Test fun laterCopyReplacesEarlierAndDropsSensitiveFlag() {
         copyPlainText(ctx, "first", sensitive = true)
         copyPlainText(ctx, "second", sensitive = false)

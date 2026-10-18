@@ -2,6 +2,7 @@ package ai.whisperio.android.ime
 
 import ai.whisperio.android.MainActivity
 import ai.whisperio.android.dictation.DictationResult
+import ai.whisperio.android.dictation.DictationController
 import ai.whisperio.android.dictation.DictationState
 import ai.whisperio.android.dictation.StartOptions
 import ai.whisperio.android.dictation.primaryProvider
@@ -169,14 +170,12 @@ class WhisperioImeService : InputMethodService(), LifecycleOwner, ViewModelStore
     override fun onFinishInputView(finishingInput: Boolean) {
         super.onFinishInputView(finishingInput)
         // Focus lost / IME hidden while recording: stop and discard, no background recording (CONTRACT 5).
-        val s = graph.dictation.state.value
-        if (shouldCancelKeyboardRecording(s)) graph.dictation.cancel()
+        cancelKeyboardRecordingIfNeeded(graph.dictation)
         lifecycleRegistry.currentState = Lifecycle.State.STARTED
     }
 
     override fun onDestroy() {
-        val s = graph.dictation.state.value
-        if (s is DictationState.Recording && s.source == RecordingSource.KEYBOARD) graph.dictation.cancel()
+        cancelKeyboardRecordingIfNeeded(graph.dictation)
         lifecycleRegistry.currentState = Lifecycle.State.DESTROYED
         store.clear()
         super.onDestroy()
@@ -277,6 +276,11 @@ internal class InputSessionCounter {
 /** Focus lost / IME hidden while the keyboard is recording: stop and discard (CONTRACT 5). */
 internal fun shouldCancelKeyboardRecording(s: DictationState): Boolean =
     s is DictationState.Recording && s.source == RecordingSource.KEYBOARD
+
+/** The decision shared by onFinishInputView and onDestroy: cancel only a keyboard-owned recording. */
+internal fun cancelKeyboardRecordingIfNeeded(c: DictationController) {
+    if (shouldCancelKeyboardRecording(c.state.value)) c.cancel()
+}
 
 /**
  * Commits a keyboard transcript if [ImeCommitPolicy.canCommit] allows. Returns null when the result is not ours

@@ -77,7 +77,7 @@ class NativeApiProvidersTest {
         assertEquals("ElevenLabs error: HTTP 401: invalid api key", e.message)
     }
 
-    @Test fun elevenLabsHasNoSizeLimitCheck() = runBlocking<Unit> {
+    @Test fun elevenLabsAcceptsFilesOver25MiB() = runBlocking<Unit> {
         server.enqueueJson("""{"text":"x"}""")
         val big = java.io.File.createTempFile("big", ".m4a").apply {
             deleteOnExit()

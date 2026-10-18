@@ -24,6 +24,7 @@ fun keyUiText(ui: KeyUi): String? = when (ui) {
     KeyUi.Idle, KeyUi.Validating -> null
     KeyUi.Valid -> stringResource(R.string.key_valid)
     KeyUi.Invalid -> stringResource(R.string.key_invalid)
+    KeyUi.Missing -> stringResource(R.string.key_lost)
     is KeyUi.Network -> stringResource(R.string.key_network, ui.message)
     is KeyUi.Unexpected -> stringResource(R.string.key_unexpected, ui.status)
     is KeyUi.InvalidUrl -> stringResource(R.string.key_invalid_url, ui.message)
