@@ -157,6 +157,9 @@ final class KeyboardViewController: UIInputViewController {
             model.showFullAccessHint = true
             return
         }
+        // Refresh the TTL so the 600s window can't expire while the rewrite round-trips
+        // (otherwise applyPendingRewriteIfAny would find no "last" text and not delete the original).
+        SharedStore.setLastInsertedTranscript(source)
         SharedStore.setRewriteSource(source)
         SharedStore.setRewritePresetID(presetID)
         if !openURL(SharedStore.rewriteURL) {

@@ -57,4 +57,25 @@ import Foundation
         #expect(!SharedStore.hasPendingTranscript)
         #expect(SharedStore.lastInsertedTranscript == nil)
     }
+
+    @Test func clearAllTranscriptsRemovesRewriteKeys() {
+        SharedStore.setRewriteSource("src")
+        SharedStore.setRewritePresetID("preset")
+        SharedStore.setRewriteResult("result")
+        SharedStore.clearAllTranscripts()
+        #expect(SharedStore.consumeRewriteSource() == nil)
+        #expect(SharedStore.consumeRewritePresetID() == nil)
+        #expect(SharedStore.consumeRewriteResult() == nil)
+    }
+
+    @Test func purgeDropsStaleRewriteResult() {
+        SharedStore.clearAllTranscripts()
+        SharedStore.setRewriteResult("result")
+        SharedStore.purgeStalePendingTranscript(maxAge: 600)
+        #expect(SharedStore.consumeRewriteResult() == "result")   // fresh survives
+        SharedStore.setRewriteResult("result")
+        SharedStore.purgeStalePendingTranscript(maxAge: -1)
+        #expect(SharedStore.consumeRewriteResult() == nil)
+        SharedStore.clearAllTranscripts()
+    }
 }

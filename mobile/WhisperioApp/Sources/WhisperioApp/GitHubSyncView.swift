@@ -203,6 +203,7 @@ struct GitHubSyncView: View {
         case GitHubError.http(let status, _) where status == 401: return "bad token"
         case GitHubError.http(let status, _) where status == 404: return "repo or branch not found"
         case GitHubError.http(let status, _): return "HTTP \(status)"
+        case GitHubError.repositoryMoved: return "Repository moved - update owner/repo in Settings"
         case GitHubError.noResponse, GitHubError.invalidURL: return "no response"
         default: return (error as NSError).localizedDescription
         }

@@ -23,7 +23,7 @@ public enum Keychain {
 
     private static let service = "ai.whisperio.mobile.secrets"
 
-    private static func base(_ item: Item) -> [String: Any] {
+    private static func base(_ item: Item, dataProtection: Bool = true) -> [String: Any] {
         var q: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
@@ -32,8 +32,9 @@ public enum Keychain {
         #if os(macOS)
         // On macOS the accessibility class is only honored by the data-protection keychain; the
         // legacy login keychain silently ignores it. Used for add/query/delete alike so items
-        // are found where they were written.
-        q[kSecUseDataProtectionKeychain as String] = true
+        // are found where they were written. `dataProtection: false` addresses the legacy login
+        // keychain, where items written by earlier builds still live (migrated on first read).
+        if dataProtection { q[kSecUseDataProtectionKeychain as String] = true }
         #endif
         return q
     }
@@ -43,6 +44,9 @@ public enum Keychain {
     @discardableResult
     public static func set(_ value: String, for item: Item) -> Bool {
         SecItemDelete(base(item) as CFDictionary)   // simplest upsert: delete then add
+        #if os(macOS)
+        SecItemDelete(base(item, dataProtection: false) as CFDictionary)   // never leave a stale legacy copy
+        #endif
         guard !value.isEmpty, let data = value.data(using: .utf8) else { return true }
         var add = base(item)
         add[kSecValueData as String] = data
@@ -52,7 +56,27 @@ public enum Keychain {
 
     /// Read a secret. Returns nil when no item is stored.
     public static func get(_ item: Item) -> String? {
-        var q = base(item)
+        if let s = read(base(item)) { return s }
+        #if os(macOS)
+        // Miss in the data-protection keychain: earlier builds wrote to the legacy login
+        // keychain. Migrate: copy into the data-protection keychain, and only after that add
+        // succeeded remove the legacy copy. If the add fails, still return the legacy value.
+        let legacy = base(item, dataProtection: false)
+        guard let s = read(legacy), let data = s.data(using: .utf8) else { return nil }
+        var add = base(item)
+        add[kSecValueData as String] = data
+        add[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
+        if SecItemAdd(add as CFDictionary, nil) == errSecSuccess {
+            SecItemDelete(legacy as CFDictionary)
+        }
+        return s
+        #else
+        return nil
+        #endif
+    }
+
+    private static func read(_ query: [String: Any]) -> String? {
+        var q = query
         q[kSecReturnData as String] = true
         q[kSecMatchLimit as String] = kSecMatchLimitOne
         var out: CFTypeRef?
@@ -65,6 +89,12 @@ public enum Keychain {
     @discardableResult
     public static func remove(_ item: Item) -> Bool {
         let st = SecItemDelete(base(item) as CFDictionary)
-        return st == errSecSuccess || st == errSecItemNotFound
+        var ok = st == errSecSuccess || st == errSecItemNotFound
+        #if os(macOS)
+        // Also drop any not-yet-migrated copy in the legacy login keychain.
+        let legacy = SecItemDelete(base(item, dataProtection: false) as CFDictionary)
+        ok = ok && (legacy == errSecSuccess || legacy == errSecItemNotFound)
+        #endif
+        return ok
     }
 }

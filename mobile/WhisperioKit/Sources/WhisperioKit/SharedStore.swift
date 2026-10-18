@@ -120,6 +120,10 @@ public enum SharedStore {
     public static func clearAllTranscripts() {
         clearPendingTranscript()
         clearLastInsertedTranscript()
+        guard let d = defaults else { return }
+        for k in [Key.rewriteSource, Key.rewriteResult, Key.rewriteResultAt, Key.rewritePresetID] {
+            d.removeObject(forKey: k)
+        }
     }
 
     /// Eagerly remove a pending transcript once it is older than `maxAge` (or carries no
@@ -128,6 +132,13 @@ public enum SharedStore {
     /// bounds the on-disk lifetime instead of relying on a future `consume` that may never come.
     public static func purgeStalePendingTranscript(maxAge: TimeInterval = pendingTranscriptMaxAge) {
         purgeStaleLastInsertedTranscript(maxAge: maxAge)
+        if let d = defaults, d.object(forKey: Key.rewriteResult) != nil {
+            let at = d.double(forKey: Key.rewriteResultAt)
+            if at <= 0 || Date().timeIntervalSince1970 - at > maxAge {
+                d.removeObject(forKey: Key.rewriteResult)
+                d.removeObject(forKey: Key.rewriteResultAt)
+            }
+        }
         guard let d = defaults, d.object(forKey: Key.pendingTranscript) != nil else { return }
         let created = d.double(forKey: Key.pendingCreatedAt)
         if created <= 0 || Date().timeIntervalSince1970 - created > maxAge {

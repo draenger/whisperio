@@ -32,6 +32,8 @@ public struct GitHubURLSessionTransport: GitHubTransport {
         req.setValue("2022-11-28", forHTTPHeaderField: "X-GitHub-Api-Version")
         let (data, resp) = try await session.data(for: req)
         guard let http = resp as? HTTPURLResponse else { throw GitHubError.noResponse }
+        // Redirects are never followed (token safety); 301/307/308 mean the repo was renamed/moved.
+        if [301, 307, 308].contains(http.statusCode) { throw GitHubError.repositoryMoved }
         return (data, http)
     }
 }
@@ -39,6 +41,8 @@ public struct GitHubURLSessionTransport: GitHubTransport {
 public enum GitHubError: Error, Equatable, Sendable {
     case noResponse
     case invalidURL
+    /// GitHub answered 301/307/308: the repository was renamed or moved.
+    case repositoryMoved
     case http(status: Int, body: String)
     case malformedResponse(String)
 }

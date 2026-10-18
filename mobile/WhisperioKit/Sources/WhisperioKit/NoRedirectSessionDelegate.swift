@@ -17,14 +17,19 @@ public final class NoRedirectSessionDelegate: NSObject, URLSessionTaskDelegate, 
     public func urlSession(_ session: URLSession,
                            task: URLSessionTask,
                            willPerformHTTPRedirection response: HTTPURLResponse,
-                           newRequest request: URLRequest,
-                           completionHandler: @escaping (URLRequest?) -> Void) {
-        completionHandler(Self.redirectTarget(for: request))
+                           newRequest request: URLRequest) async -> URLRequest? {
+        Self.redirectTarget(for: request)
     }
 
     /// Build an ephemeral session with the given timeouts that never follows redirects.
     public static func makeSession(requestTimeout: TimeInterval, resourceTimeout: TimeInterval) -> URLSession {
-        let config = URLSessionConfiguration.ephemeral
+        makeSession(configuration: .ephemeral, requestTimeout: requestTimeout, resourceTimeout: resourceTimeout)
+    }
+
+    /// Same, over a caller-supplied configuration (tests inject `protocolClasses` stubs).
+    public static func makeSession(configuration config: URLSessionConfiguration,
+                                   requestTimeout: TimeInterval = 30,
+                                   resourceTimeout: TimeInterval = 60) -> URLSession {
         config.timeoutIntervalForRequest = requestTimeout    // idle timeout between bytes
         config.timeoutIntervalForResource = resourceTimeout  // hard cap for the whole request+response
         return URLSession(configuration: config, delegate: shared, delegateQueue: nil)
