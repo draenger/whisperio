@@ -1,0 +1,73 @@
+{
+  "app": "Whisperio for Android",
+  "root": "out",
+  "languages": [
+    "en",
+    "pl"
+  ],
+  "forbidAlpha": true,
+  "formats": [
+    "png"
+  ],
+  "duplicateThreshold": 2,
+  "ocr": {
+    "enabled": true
+  },
+  "targets": [
+    {
+      "id": "play-phone",
+      "dir": "play-phone",
+      "width": 1080,
+      "height": 1920,
+      "ocr": true,
+      "maxBytes": 8388608,
+      "files": [
+        {
+          "file": "home.png",
+          "headline": {
+            "en": "Dictate into any app.",
+            "pl": "Dyktuj w każdej aplikacji."
+          }
+        },
+        {
+          "file": "provider.png",
+          "headline": {
+            "en": "Your key, your provider.",
+            "pl": "Twój klucz, Twój dostawca."
+          }
+        },
+        {
+          "file": "history.png",
+          "headline": {
+            "en": "History that stays on your phone.",
+            "pl": "Historia, która zostaje na telefonie."
+          }
+        },
+        {
+          "file": "settings.png",
+          "headline": {
+            "en": "Free. No account. No ads.",
+            "pl": "Za darmo. Bez konta. Bez reklam."
+          }
+        }
+      ]
+    },
+    {
+      "id": "play-feature",
+      "dir": "play-feature",
+      "width": 1024,
+      "height": 500,
+      "ocr": true,
+      "maxBytes": 15728640,
+      "files": [
+        {
+          "file": "feature.png",
+          "headline": {
+            "en": "Your voice, any app.",
+            "pl": "Twój głos, każda aplikacja."
+          }
+        }
+      ]
+    }
+  ]
+}

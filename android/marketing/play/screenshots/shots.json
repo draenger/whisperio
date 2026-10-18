@@ -1,0 +1,145 @@
+{
+  "app": "Whisperio for Android",
+  "languages": [
+    "en",
+    "pl"
+  ],
+  "rawDir": "raw",
+  "outDir": "out",
+  "theme": {
+    "bg": "#14112B",
+    "accent": "#9577FE",
+    "accent2": "#5B3FD6",
+    "glow": "top"
+  },
+  "targets": [
+    {
+      "id": "play-phone",
+      "store": "play",
+      "dir": "play-phone",
+      "size": [
+        1080,
+        1920
+      ],
+      "frame": "phone",
+      "shots": [
+        "home",
+        "provider",
+        "history",
+        "settings"
+      ],
+      "maxBytes": 8388608
+    },
+    {
+      "id": "play-feature",
+      "store": "play",
+      "dir": "play-feature",
+      "size": [
+        1024,
+        500
+      ],
+      "frame": "phone",
+      "shots": [
+        "feature"
+      ],
+      "maxBytes": 15728640
+    }
+  ],
+  "shots": [
+    {
+      "key": "home",
+      "glow": "top",
+      "source": {
+        "kind": "ios-raw",
+        "file": {
+          "en": "../../../app/src/test/snapshots/home_idle_dark.png",
+          "pl": "../../../app/src/test/snapshots/home_idle_dark_pl.png"
+        }
+      },
+      "headline": {
+        "en": "Dictate into <em>any app.</em>",
+        "pl": "Dyktuj w <em>każdej aplikacji.</em>"
+      },
+      "subcopy": {
+        "en": "Tap the mic, speak, and the text lands where you type.",
+        "pl": "Dotknij mikrofonu, mów, a tekst trafi tam, gdzie piszesz."
+      }
+    },
+    {
+      "key": "provider",
+      "glow": "bottom",
+      "source": {
+        "kind": "ios-raw",
+        "file": {
+          "en": "../../../app/src/test/snapshots/onboarding_3_provider.png",
+          "pl": "../../../app/src/test/snapshots/onboarding_3_provider_pl.png"
+        }
+      },
+      "headline": {
+        "en": "Your key, <em>your provider.</em>",
+        "pl": "Twój klucz, <em>Twój dostawca.</em>"
+      },
+      "subcopy": {
+        "en": "OpenAI, Groq, Mistral, ElevenLabs, Deepgram, AssemblyAI or your own server.",
+        "pl": "OpenAI, Groq, Mistral, ElevenLabs, Deepgram, AssemblyAI lub własny serwer."
+      }
+    },
+    {
+      "key": "history",
+      "glow": "top",
+      "source": {
+        "kind": "ios-raw",
+        "file": {
+          "en": "../../../app/src/test/snapshots/history_list_dark.png",
+          "pl": "../../../app/src/test/snapshots/history_list_dark_pl.png"
+        }
+      },
+      "headline": {
+        "en": "History that <em>stays on your phone.</em>",
+        "pl": "Historia, która <em>zostaje na telefonie.</em>"
+      },
+      "subcopy": {
+        "en": "Copy, share or retry. Erase everything with one tap.",
+        "pl": "Kopiuj, udostępniaj, ponawiaj. Usuń wszystko jednym dotknięciem."
+      }
+    },
+    {
+      "key": "settings",
+      "glow": "bottom",
+      "source": {
+        "kind": "ios-raw",
+        "file": {
+          "en": "../../../app/src/test/snapshots/settings_dark.png",
+          "pl": "../../../app/src/test/snapshots/settings_dark_pl.png"
+        }
+      },
+      "headline": {
+        "en": "Free. No account. <em>No ads.</em>",
+        "pl": "Za darmo. Bez konta. <em>Bez reklam.</em>"
+      },
+      "subcopy": {
+        "en": "No Whisperio server and no analytics. You pay your provider directly.",
+        "pl": "Bez serwera Whisperio i bez analityki. Płacisz bezpośrednio dostawcy."
+      }
+    },
+    {
+      "key": "feature",
+      "glow": "left",
+      "source": {
+        "kind": "ios-raw",
+        "file": {
+          "en": "../../../app/src/test/snapshots/home_idle_dark.png",
+          "pl": "../../../app/src/test/snapshots/home_idle_dark_pl.png"
+        }
+      },
+      "headline": {
+        "en": "Your voice, <em>any app.</em>",
+        "pl": "Twój głos, <em>każda aplikacja.</em>"
+      },
+      "subcopy": {
+        "en": "Bring your own key. Free, no account, no ads.",
+        "pl": "Własny klucz. Za darmo, bez konta, bez reklam."
+      }
+    }
+  ]
+}
