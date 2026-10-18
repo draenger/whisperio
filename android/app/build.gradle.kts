@@ -66,6 +66,7 @@ android {
         release {
             isMinifyEnabled = true
             isShrinkResources = true
+            isDebuggable = false // explicit: Play rejects debuggable bundles
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
             if (hasReleaseSigning) signingConfig = signingConfigs.getByName("release")
         }
@@ -79,6 +80,13 @@ android {
     kotlinOptions {
         jvmTarget = "17"
         freeCompilerArgs += "-opt-in=androidx.compose.material3.ExperimentalMaterial3Api"
+    }
+
+    // AAB config: keep ALL language resources (en + pl) in the base split. The UI follows the device locale, so a user who
+    // switches the phone language after install gets the matching strings at once instead of waiting for Play to fetch
+    // a language split (which fails offline). Cost: a few KB of strings.xml; Whisperio ships only en + pl.
+    bundle {
+        language { enableSplit = false }
     }
 
     buildFeatures {

@@ -1,0 +1,5 @@
+Pierwsza wersja Whisperio na Androida.
+- Klawiatura do dyktowania, kafelek w szybkich ustawieniach i skrót na ekranie głównym
+- Własny klucz API: OpenAI, Groq, Mistral, ElevenLabs, Deepgram, AssemblyAI lub własny serwer
+- Lokalna historia z kopiowaniem, udostępnianiem i ponawianiem
+- Za darmo, bez konta, reklam i analityki
