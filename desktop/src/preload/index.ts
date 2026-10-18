@@ -98,6 +98,7 @@ export interface AppSettings {
   aiModel: string
   anthropicApiKey: string
   launchAtStartup: boolean
+  checkForUpdates: boolean
   dictationHotkey: string
   dictateAndSendHotkey: string
   // COMMAND mode (v1.7) — see settingsManager.ts's AppSettings for the full

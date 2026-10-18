@@ -518,6 +518,7 @@ export function SettingsForm(): ReactElement {
 
   // General
   const [launchAtStartup, setLaunchAtStartup] = useState(true)
+  const [checkForUpdates, setCheckForUpdates] = useState(true)
 
   // Providers
   const [sttProvider, setSttProvider] = useState('openai')
@@ -604,6 +605,7 @@ export function SettingsForm(): ReactElement {
       setRemovedDefaultVocabulary(settings.removedDefaultVocabulary ?? [])
       setAiPostProcessing(settings.aiPostProcessing ?? false)
       setLaunchAtStartup(settings.launchAtStartup ?? true)
+      setCheckForUpdates(settings.checkForUpdates ?? true)
       setDictationHotkey(settings.dictationHotkey ?? '')
       setDictateAndSendHotkey(settings.dictateAndSendHotkey ?? '')
       setCommandHotkey(settings.commandHotkey ?? '')
@@ -691,6 +693,7 @@ export function SettingsForm(): ReactElement {
       removedDefaultVocabulary,
       aiPostProcessing,
       launchAtStartup,
+      checkForUpdates,
       dictationHotkey,
       dictateAndSendHotkey,
       commandHotkey,
@@ -731,7 +734,7 @@ export function SettingsForm(): ReactElement {
     providerChain, apiKey, openaiBaseUrl, whisperModel, elevenlabsApiKey, replicateApiKey, sttReplicateModel,
     groqApiKey, deepgramApiKey, assemblyaiApiKey, mistralApiKey,
     sttApiKey, transcriptionLanguage, prompt,
-    vocabulary, removedDefaultVocabulary, aiPostProcessing, launchAtStartup, dictationHotkey,
+    vocabulary, removedDefaultVocabulary, aiPostProcessing, launchAtStartup, checkForUpdates, dictationHotkey,
     dictateAndSendHotkey, commandHotkey, inputDeviceId, outputDeviceId, saveRecordings,
     outputRecordingHotkey, cleanupEnabled, cleanupMode, cleanupAuto, cleanupTemplates,
     aiProvider, aiBaseUrl, aiModel, anthropicApiKey,
@@ -887,6 +890,8 @@ export function SettingsForm(): ReactElement {
                     <GeneralTab
                       launchAtStartup={launchAtStartup}
                       setLaunchAtStartup={setLaunchAtStartup}
+                      checkForUpdates={checkForUpdates}
+                      setCheckForUpdates={setCheckForUpdates}
                       s={s}
                       theme={theme}
                     />
@@ -1092,11 +1097,15 @@ export function Segmented<T extends string>({
 function GeneralTab({
   launchAtStartup,
   setLaunchAtStartup,
+  checkForUpdates,
+  setCheckForUpdates,
   s,
   theme
 }: {
   launchAtStartup: boolean
   setLaunchAtStartup: (v: boolean) => void
+  checkForUpdates: boolean
+  setCheckForUpdates: (v: boolean) => void
   s: ReturnType<typeof makeStyles>
   theme: Theme
 }): ReactElement {
@@ -1113,6 +1122,13 @@ function GeneralTab({
           description="Automatically start Whisperio when you log in"
           checked={launchAtStartup}
           onChange={setLaunchAtStartup}
+          theme={theme}
+        />
+        <ToggleRow
+          label="Check for updates"
+          description="Periodically contact GitHub to look for new Whisperio releases"
+          checked={checkForUpdates}
+          onChange={setCheckForUpdates}
           theme={theme}
         />
       </div>

@@ -49,7 +49,7 @@ import {
   setServerStatusCallback,
   markServerUsed
 } from './localServer'
-import { initAutoUpdater, getUpdateState, checkForUpdatesManual, installUpdate } from './autoUpdater'
+import { initAutoUpdater, setUpdateChecksEnabled, getUpdateState, checkForUpdatesManual, installUpdate } from './autoUpdater'
 import {
   getStatus as githubGetStatus,
   beginConnect as githubBeginConnect,
@@ -255,6 +255,7 @@ app.whenReady().then(() => {
   ipcMain.handle('settings:load', () => getEffectiveSettings())
   ipcMain.handle('settings:save', (_event, newSettings) => {
     const saved = saveSettingsWithKeys(newSettings)
+    if ('checkForUpdates' in newSettings) setUpdateChecksEnabled(saved.checkForUpdates !== false)
     if ('launchAtStartup' in newSettings && isPackaged) {
       app.setLoginItemSettings({
         openAtLogin: saved.launchAtStartup,
@@ -477,7 +478,7 @@ app.whenReady().then(() => {
   createTray()
 
   // Auto-update from GitHub releases
-  initAutoUpdater()
+  initAutoUpdater(loadSettings().checkForUpdates !== false)
 
   console.log('[Whisperio] Ready — press hotkey to dictate')
 })

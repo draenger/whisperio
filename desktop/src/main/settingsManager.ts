@@ -128,6 +128,8 @@ export interface AppSettings {
   aiModel: string
   anthropicApiKey: string
   launchAtStartup: boolean
+  // Periodic GitHub release check (privacy policy section 6). Off => no network request to GitHub.
+  checkForUpdates: boolean
   dictationHotkey: string
   dictateAndSendHotkey: string
   // COMMAND mode (v1.7): a dedicated hotkey that, instead of inserting the
@@ -294,6 +296,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   aiModel: '',
   anthropicApiKey: '',
   launchAtStartup: true,
+  checkForUpdates: true,
   dictationHotkey: '',
   dictateAndSendHotkey: '',
   commandHotkey: 'Ctrl+Shift+C',

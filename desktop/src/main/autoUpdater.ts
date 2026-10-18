@@ -66,11 +66,55 @@ export function installUpdate(): boolean {
   return true
 }
 
-export function initAutoUpdater(): void {
+const CHECK_DELAY_MS = 10_000
+const CHECK_INTERVAL_MS = 4 * 60 * 60 * 1000
+
+let handlersRegistered = false
+let checksEnabled = true
+let initialTimer: ReturnType<typeof setTimeout> | null = null
+let intervalTimer: ReturnType<typeof setInterval> | null = null
+
+function stopScheduledChecks(): void {
+  if (initialTimer) clearTimeout(initialTimer)
+  if (intervalTimer) clearInterval(intervalTimer)
+  initialTimer = null
+  intervalTimer = null
+}
+
+function startScheduledChecks(): void {
+  stopScheduledChecks()
+  // Check for updates after 10s, then every 4 hours
+  initialTimer = setTimeout(() => {
+    initialTimer = null
+    autoUpdater.checkForUpdates().catch(() => {})
+  }, CHECK_DELAY_MS)
+  intervalTimer = setInterval(() => {
+    autoUpdater.checkForUpdates().catch(() => {})
+  }, CHECK_INTERVAL_MS)
+}
+
+/**
+ * Enable/disable the periodic (and initial) update check at runtime — driven by the
+ * `checkForUpdates` setting (privacy policy section 6). Disabling cancels pending timers;
+ * enabling (re)starts them. No-op before initAutoUpdater() or when the updater is inactive.
+ */
+export function setUpdateChecksEnabled(enabled: boolean): void {
+  checksEnabled = enabled
+  if (!handlersRegistered) return
+  if (enabled) startScheduledChecks()
+  else stopScheduledChecks()
+}
+
+export function initAutoUpdater(enabled = true): void {
   if (!autoUpdater.isUpdaterActive()) return
 
+  // Auto-download is fine (the user is notified and installs via the tray/restart prompt),
+  // but never install silently on quit for platforms whose CI builds are not code-signed
+  // (Windows NSIS, Linux AppImage): update integrity would otherwise rest on TLS + an
+  // unauthenticated sha512 only. macOS builds are signed + notarized. Re-enable for win32
+  // once Authenticode signing is live (see docs/release-runbook.md, "Signed Windows release").
   autoUpdater.autoDownload = true
-  autoUpdater.autoInstallOnAppQuit = true
+  autoUpdater.autoInstallOnAppQuit = process.platform === 'darwin'
 
   autoUpdater.on('checking-for-update', () => {
     setState({ status: 'checking', error: undefined })
@@ -126,12 +170,7 @@ export function initAutoUpdater(): void {
     setState({ status: 'not-available', version: undefined, percent: undefined, error: undefined })
   })
 
-  // Check for updates after 10s, then every 4 hours
-  setTimeout(() => {
-    autoUpdater.checkForUpdates().catch(() => {})
-  }, 10_000)
-
-  setInterval(() => {
-    autoUpdater.checkForUpdates().catch(() => {})
-  }, 4 * 60 * 60 * 1000)
+  handlersRegistered = true
+  checksEnabled = enabled
+  if (checksEnabled) startScheduledChecks()
 }

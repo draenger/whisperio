@@ -172,6 +172,63 @@ describe('autoUpdater', () => {
     })
   })
 
+  describe('update-check gating (checkForUpdates setting)', () => {
+    const TEN_S = 10_000
+    const FOUR_H = 4 * 60 * 60 * 1000
+
+    it('schedules no initial check and no interval when disabled', async () => {
+      const { initAutoUpdater } = await loadModule()
+      initAutoUpdater(false)
+      vi.advanceTimersByTime(TEN_S + 2 * FOUR_H)
+      expect(h.autoUpdater.checkForUpdates).not.toHaveBeenCalled()
+    })
+
+    it('runs initial + interval checks when enabled (default)', async () => {
+      const { initAutoUpdater } = await loadModule()
+      initAutoUpdater()
+      vi.advanceTimersByTime(TEN_S)
+      expect(h.autoUpdater.checkForUpdates).toHaveBeenCalledTimes(1)
+      vi.advanceTimersByTime(FOUR_H)
+      expect(h.autoUpdater.checkForUpdates).toHaveBeenCalledTimes(2)
+    })
+
+    it('stops the interval when toggled off at runtime', async () => {
+      const { initAutoUpdater, setUpdateChecksEnabled } = await loadModule()
+      initAutoUpdater(true)
+      vi.advanceTimersByTime(TEN_S)
+      expect(h.autoUpdater.checkForUpdates).toHaveBeenCalledTimes(1)
+      setUpdateChecksEnabled(false)
+      vi.advanceTimersByTime(3 * FOUR_H)
+      expect(h.autoUpdater.checkForUpdates).toHaveBeenCalledTimes(1)
+    })
+
+    it('cancels the pending initial check if toggled off before it fires', async () => {
+      const { initAutoUpdater, setUpdateChecksEnabled } = await loadModule()
+      initAutoUpdater(true)
+      setUpdateChecksEnabled(false)
+      vi.advanceTimersByTime(TEN_S + FOUR_H)
+      expect(h.autoUpdater.checkForUpdates).not.toHaveBeenCalled()
+    })
+
+    it('starts the schedule when toggled on at runtime after starting disabled', async () => {
+      const { initAutoUpdater, setUpdateChecksEnabled } = await loadModule()
+      initAutoUpdater(false)
+      setUpdateChecksEnabled(true)
+      vi.advanceTimersByTime(TEN_S)
+      expect(h.autoUpdater.checkForUpdates).toHaveBeenCalledTimes(1)
+      vi.advanceTimersByTime(FOUR_H)
+      expect(h.autoUpdater.checkForUpdates).toHaveBeenCalledTimes(2)
+    })
+
+    it('does not double-schedule on repeated enable', async () => {
+      const { initAutoUpdater, setUpdateChecksEnabled } = await loadModule()
+      initAutoUpdater(true)
+      setUpdateChecksEnabled(true)
+      vi.advanceTimersByTime(TEN_S)
+      expect(h.autoUpdater.checkForUpdates).toHaveBeenCalledTimes(1)
+    })
+  })
+
   describe('initAutoUpdater', () => {
     it('returns early when updater is not active', async () => {
       h.autoUpdater.isUpdaterActive.mockReturnValue(false)
@@ -190,7 +247,8 @@ describe('autoUpdater', () => {
       initAutoUpdater()
 
       expect(h.autoUpdater.autoDownload).toBe(true)
-      expect(h.autoUpdater.autoInstallOnAppQuit).toBe(true)
+      // vitest runs on win32/linux/darwin: only macOS (signed+notarized) may install on quit
+      expect(h.autoUpdater.autoInstallOnAppQuit).toBe(process.platform === 'darwin')
       for (const event of [
         'checking-for-update',
         'update-not-available',
