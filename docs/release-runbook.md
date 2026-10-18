@@ -83,6 +83,19 @@ from 1.3 has none). Installed apps verify every downloaded Windows update agains
 cert thumbprint `2A917C6457B67B928C52413DB00FA34CAAF15206` as a secondary pin; subject `CN=Jarvis (Daniel Kasprzyk)`,
 valid to 2031-08-06, in `Cert:\CurrentUser\My`; sha256 only) and **reject** unsigned or foreign-signed installers.
 The app also re-verifies the downloaded file right before `quitAndInstall`.
+
+**Preferred: the script** (dry-run by default; Windows + Daniel's PC only):
+```powershell
+cd desktop
+npm run typecheck; npm run test:coverage
+npm run release:desktop                          # dry run: preflight checks + plan, builds/uploads nothing
+npm run release:desktop -- --execute             # build:win:signed -> verify:signed + latest.yml sha512 check -> upload to the DRAFT
+npm run release:desktop -- --execute --publish   # same, then gh release edit vX.Y.Z --draft=false
+```
+Without `--publish` it stops after the upload and prints the publish command. Exit codes: 0 ok, 1 preflight/verify
+failure, 2 usage. Must run from `main`/`release` up to date with origin, clean tree.
+
+**Manual fallback** (exactly what the script does):
 ```powershell
 cd desktop
 npm run typecheck; npm run test:coverage
