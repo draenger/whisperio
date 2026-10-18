@@ -1,0 +1,13 @@
+<!-- PLACEHOLDER: simplified motif of desktop/icons/whisperio.png (violet body 9577FE, dark eyes 311F69).
+     Replace with a proper vector trace of the final icon before store submission. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
+    <path android:fillColor="#9577FE"
+        android:pathData="M54,26C68,26 78,36 78,50L78,66C78,70 76,74 72,76L72,80C72,82 69,83 68,81L64,76L44,76L40,81C39,83 36,82 36,80L36,76C32,74 30,70 30,66L30,50C30,36 40,26 54,26Z" />
+    <path android:fillColor="#311F69"
+        android:pathData="M44,48m-4.5,0a4.5,4.5 0,1 1,9 0a4.5,4.5 0,1 1,-9 0" />
+    <path android:fillColor="#311F69"
+        android:pathData="M64,48m-4.5,0a4.5,4.5 0,1 1,9 0a4.5,4.5 0,1 1,-9 0" />
+    <path android:fillColor="#00000000" android:strokeColor="#311F69" android:strokeWidth="2" android:strokeLineCap="round"
+        android:pathData="M47,58C50,62 58,62 61,58" />
+</vector>

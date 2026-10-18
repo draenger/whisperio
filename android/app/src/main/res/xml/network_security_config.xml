@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <!-- Cleartext is permitted at the platform level ONLY because this file cannot express CIDR ranges and a
+         user-configured self-hosted server often lives at a private IP (192.168.x.x, 10.x.x.x, *.local). The real
+         guard is in :core (CONTRACT 4.3): official providers use a client without the CLEARTEXT connection spec,
+         and the custom-URL client only accepts hosts passing BaseUrlPolicy, with redirects disabled. -->
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

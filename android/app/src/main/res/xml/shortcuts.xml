@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:shortcutId="dictate"
+        android:enabled="true"
+        android:icon="@drawable/ic_tile_mic"
+        android:shortcutShortLabel="@string/shortcut_dictate_short"
+        android:shortcutLongLabel="@string/shortcut_dictate_long">
+        <intent
+            android:action="ai.whisperio.android.action.DICTATE"
+            android:targetPackage="ai.whisperio.mobile"
+            android:targetClass="ai.whisperio.android.dictate.DictateActivity">
+            <extra android:name="source" android:value="shortcut" />
+        </intent>
+    </shortcut>
+</shortcuts>
