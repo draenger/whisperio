@@ -14,9 +14,15 @@ final class SettingsStore: ObservableObject {
         didSet { UserDefaults.standard.set(didCompleteSetup, forKey: Self.setupKey) }
     }
 
-    /// Labels of secrets the Keychain refused to store on the last save (empty = all safe in the
-    /// Keychain). Those values remain in the UserDefaults blob until a later save succeeds.
+    /// Labels of secrets the Keychain refused to store on the last save. They live in memory only
+    /// (forgotten on quit) and are never written to UserDefaults.
     @Published private(set) var keychainWriteFailures: Set<String> = []
+
+    static let keychainFailureWarning = "Couldn't save the key to Keychain - it will be forgotten when the app quits."
+
+    func isKeyUnsaved(_ value: String) -> Bool {
+        settings.isUnsavedSecret(value, failed: keychainWriteFailures)
+    }
 
     private static let key = "whisperio.settings.v1"
     private static let setupKey = "whisperio.setupDone.v1"
@@ -89,12 +95,12 @@ final class SettingsStore: ObservableObject {
         SharedStore.setEngineOnDevice(primary == .onDevice || primary == .localWhisper)
         // Secrets go to the Keychain only; everything else is persisted to UserDefaults with
         // the key fields blanked so no API secret is ever written in plaintext.
-        // If a Keychain write fails the blob copy is the only one left, so that secret is NOT
-        // scrubbed (never lose a key silently) and `keychainWriteFailures` records it for the UI.
-        // The next save retries; once the write succeeds the blob is scrubbed again.
+        // If a Keychain write fails the key is kept in memory for this session only (fail closed,
+        // like desktop): it is still scrubbed from UserDefaults and `keychainWriteFailures`
+        // records it so Settings can warn. The next save retries the Keychain write.
         let failed = settings.persistSecretsReportingFailures { value, item in Keychain.set(value, for: item) }
         if failed != keychainWriteFailures { keychainWriteFailures = failed }
-        let sanitized = settings.scrubbedOfSecrets(keeping: failed)
+        let sanitized = settings.scrubbedOfSecrets()
         if let data = try? JSONEncoder().encode(sanitized) {
             UserDefaults.standard.set(data, forKey: Self.key)
         }

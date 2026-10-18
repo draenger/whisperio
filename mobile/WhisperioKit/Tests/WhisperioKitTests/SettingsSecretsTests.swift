@@ -51,15 +51,17 @@ import Foundation
         #expect(WhisperioSettings().plaintextSecretLabels.isEmpty)
     }
 
-    @Test func failedKeychainWriteKeepsThatSecretInFallbackCopy() throws {
+    @Test func failedKeychainWriteIsReportedButNeverPersistedInPlaintext() throws {
         var s = WhisperioSettings()
         s.openAIKey = "sk-fail"
         s.groqKey = "gsk-ok"
         let failed = s.persistSecretsReportingFailures { _, item in item != .openAIKey }
         #expect(failed == ["openAIKey"])
-        let kept = s.scrubbedOfSecrets(keeping: failed)
-        #expect(kept.openAIKey == "sk-fail", "a secret the Keychain refused must not be dropped")
-        #expect(kept.groqKey.isEmpty, "secrets that did persist are still scrubbed")
-        #expect(s.scrubbedOfSecrets(keeping: []).plaintextSecretLabels.isEmpty)
+        // Never persisted in plaintext: the stored blob is fully scrubbed, the in-memory value stays.
+        #expect(s.scrubbedOfSecrets().plaintextSecretLabels.isEmpty)
+        #expect(s.openAIKey == "sk-fail")
+        #expect(s.isUnsavedSecret("sk-fail", failed: failed))
+        #expect(!s.isUnsavedSecret("gsk-ok", failed: failed))
+        #expect(!s.isUnsavedSecret("", failed: failed))
     }
 }

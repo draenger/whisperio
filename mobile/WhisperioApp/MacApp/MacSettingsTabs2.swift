@@ -525,6 +525,10 @@ struct MacProvidersTab: View {
         VStack(alignment: .leading, spacing: 5) {
             Text(label).font(WZFont.ui(12, .medium)).foregroundStyle(t.muted)
             SecureField(placeholder, text: text).textFieldStyle(.roundedBorder)
+            if settings.isKeyUnsaved(text.wrappedValue) {
+                Text(SettingsStore.keychainFailureWarning)
+                    .font(WZFont.ui(11)).foregroundStyle(.orange)
+            }
         }
     }
     /// Inline policy feedback under a base-URL field (rejection reason, or custom-host warning).

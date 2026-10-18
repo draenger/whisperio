@@ -1908,6 +1908,10 @@ struct SettingsView: View {
                 .padding(.horizontal, 13).padding(.vertical, 12)
                 .background(t.surfaceUp, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(t.line, lineWidth: 1))
+            if settings.isKeyUnsaved(text.wrappedValue) {
+                Text(SettingsStore.keychainFailureWarning)
+                    .font(WZFont.ui(12)).foregroundStyle(.orange).padding(.leading, 4)
+            }
         }
         .padding(.top, 2)
     }
