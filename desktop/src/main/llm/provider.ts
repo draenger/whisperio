@@ -142,6 +142,27 @@ export function assertSecureBaseUrl(baseUrl: string, providerId: string): void {
   )
 }
 
+/** True when a fetch rejection was caused by `redirect: 'error'` (Chromium: unexpected redirect). */
+export function isRedirectFetchError(err: unknown): boolean {
+  const e = err as { message?: string; cause?: { message?: string } } | null
+  return /redirect/i.test(`${e?.message ?? ''} ${e?.cause?.message ?? ''}`)
+}
+
+/** fetch with redirect:'error' that logs a clear, actionable message when the failure was a redirect. */
+export async function fetchNoRedirect(url: string, init: RequestInit): Promise<Response> {
+  try {
+    return await fetch(url, { ...init, redirect: 'error' })
+  } catch (err) {
+    if (isRedirectFetchError(err)) {
+      console.error(
+        `[Whisperio] ${init.method ?? 'GET'} ${url} was redirected and the redirect was refused (API keys are never re-sent to a redirect target). ` +
+          'If this server sits behind a redirecting proxy or http->https redirect, set the Base URL to the final https:// address.'
+      )
+    }
+    throw err
+  }
+}
+
 async function checkReachable(
   url: string,
   headers: Record<string, string>,
@@ -150,7 +171,7 @@ async function checkReachable(
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), timeoutMs)
   try {
-    const response = await fetch(url, { method: 'GET', headers, signal: controller.signal, redirect: 'error' })
+    const response = await fetchNoRedirect(url, { method: 'GET', headers, signal: controller.signal })
     return response.ok
   } catch {
     return false
@@ -237,12 +258,11 @@ export class OpenAICompatibleProvider implements LLMProvider {
     if (req.temperature !== undefined) body.temperature = req.temperature
     if (req.maxTokens !== undefined) body.max_tokens = req.maxTokens
 
-    const response = await fetch(`${this.baseUrl}/v1/chat/completions`, {
+    const response = await fetchNoRedirect(`${this.baseUrl}/v1/chat/completions`, {
       method: 'POST',
       headers,
       body: JSON.stringify(body),
-      signal: req.signal,
-      redirect: 'error'
+      signal: req.signal
     })
 
     if (!response.ok) {
@@ -345,12 +365,11 @@ export class AnthropicProvider implements LLMProvider {
     if (req.temperature !== undefined) body.temperature = req.temperature
     if (system) body.system = system
 
-    const response = await fetch(`${this.baseUrl}/v1/messages`, {
+    const response = await fetchNoRedirect(`${this.baseUrl}/v1/messages`, {
       method: 'POST',
       headers: this.headers(),
       body: JSON.stringify(body),
-      signal: req.signal,
-      redirect: 'error'
+      signal: req.signal
     })
 
     if (!response.ok) {
@@ -469,12 +488,11 @@ export class ReplicateProvider implements LLMProvider {
     if (req.temperature !== undefined) input.temperature = req.temperature
     if (req.maxTokens !== undefined) input.max_tokens = req.maxTokens
 
-    const response = await fetch(`${this.baseUrl}/v1/models/${this.model}/predictions`, {
+    const response = await fetchNoRedirect(`${this.baseUrl}/v1/models/${this.model}/predictions`, {
       method: 'POST',
       headers: this.predictionHeaders(),
       body: JSON.stringify({ input }),
-      signal: req.signal,
-      redirect: 'error'
+      signal: req.signal
     })
 
     if (!response.ok) {

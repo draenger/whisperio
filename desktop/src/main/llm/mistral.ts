@@ -6,7 +6,7 @@
 // base URL and Mistral's own model catalog. Mirrors
 // mobile/WhisperioApp/Sources/WhisperioApp/Engine/MistralProvider.swift.
 import { net, app } from 'electron'
-import { guardRedirects } from './redirectGuard'
+import { guardRedirects, GUARDED_REDIRECT } from './redirectGuard'
 import { handleTranscriptionError } from '../errorHandler'
 
 const MISTRAL_STT_URL = 'https://api.mistral.ai/v1/audio/transcriptions'
@@ -99,7 +99,7 @@ export function mistralTranscribe(
       }
     }
 
-    const request = net.request({ method: 'POST', url: MISTRAL_STT_URL })
+    const request = net.request({ method: 'POST', url: MISTRAL_STT_URL, redirect: GUARDED_REDIRECT })
     request.setHeader('Authorization', `Bearer ${apiKey}`)
     request.setHeader('Content-Type', `multipart/form-data; boundary=${boundary}`)
 

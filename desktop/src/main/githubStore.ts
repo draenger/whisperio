@@ -44,7 +44,7 @@ function requestJson(opts: {
 }): Promise<JsonResponse> {
   return new Promise((resolve, reject) => {
     let settled = false
-    const request = net.request({ method: opts.method, url: opts.url })
+    const request = net.request({ method: opts.method, url: opts.url, redirect: 'error' })
     request.setHeader('Accept', 'application/json')
     request.setHeader('User-Agent', USER_AGENT)
     for (const [k, v] of Object.entries(opts.headers ?? {})) request.setHeader(k, v)

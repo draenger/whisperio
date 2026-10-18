@@ -69,7 +69,8 @@ describe('groqTranscribe', () => {
 
     expect(mockNetRequest).toHaveBeenCalledWith({
       method: 'POST',
-      url: 'https://api.groq.com/openai/v1/audio/transcriptions'
+      url: 'https://api.groq.com/openai/v1/audio/transcriptions',
+      redirect: 'manual'
     })
   })
 

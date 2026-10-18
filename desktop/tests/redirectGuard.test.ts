@@ -32,6 +32,7 @@ describe('guardRedirects', () => {
     return {
       on: vi.fn((_e: 'redirect', h: (s: number, m: string, u: string) => void) => { handler = h }),
       abort: vi.fn(),
+      followRedirect: vi.fn(),
       fire: (u: string) => handler!(302, 'GET', u)
     }
   }
@@ -41,6 +42,7 @@ describe('guardRedirects', () => {
     guardRedirects(req, 'https://api.example.com/x', onBlocked)
     req.fire('http://api.example.com/x')
     expect(req.abort).toHaveBeenCalledTimes(1)
+    expect(req.followRedirect).not.toHaveBeenCalled()
     expect(onBlocked).toHaveBeenCalledTimes(1)
     expect(onBlocked.mock.calls[0][0].message).toMatch(/Blocked redirect/)
   })
@@ -50,9 +52,11 @@ describe('guardRedirects', () => {
     guardRedirects(req, 'https://api.example.com/x', onBlocked)
     req.fire('https://api.example.com/y')
     expect(req.abort).not.toHaveBeenCalled()
+    expect(req.followRedirect).toHaveBeenCalledTimes(1)
     // second hop is checked against the new URL, still same host
     req.fire('https://api.example.com/z')
     expect(req.abort).not.toHaveBeenCalled()
+    expect(req.followRedirect).toHaveBeenCalledTimes(2)
     expect(onBlocked).not.toHaveBeenCalled()
   })
 })

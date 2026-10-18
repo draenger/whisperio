@@ -468,7 +468,23 @@ export function downloadCustomModel(url: string, filename: string): Promise<stri
   return new Promise<string>((resolve, reject) => {
     let aborted = false
 
-    const request = net.request({ url, redirect: 'follow' })
+    // redirect:'manual': Chromium would otherwise follow 3xx itself and the policy check below
+    // could never run. Electron emits 'redirect' for every hop; we must call followRedirect().
+    const request = net.request({ url, redirect: 'manual' })
+
+    request.on('redirect', (_status, _method, newUrl) => {
+      try {
+        assertSecureModelUrl(newUrl)
+      } catch (err) {
+        aborted = true
+        request.abort()
+        activeDownloads.delete(customId)
+        try { unlinkSync(tempPath) } catch { /* ignore */ }
+        reject(err instanceof Error ? err : new Error(String(err)))
+        return
+      }
+      request.followRedirect()
+    })
 
     activeDownloads.set(customId, {
       // Pre-response cancel: no write stream exists yet, so aborting the
@@ -484,24 +500,6 @@ export function downloadCustomModel(url: string, filename: string): Promise<stri
     })
 
     request.on('response', (response) => {
-      if (response.statusCode === 302 || response.statusCode === 301) {
-        const location = response.headers['location']
-        const redirectUrl = Array.isArray(location) ? location[0] : location
-        if (redirectUrl) {
-          activeDownloads.delete(customId)
-          try {
-            assertSecureModelUrl(new URL(redirectUrl, url).toString())
-          } catch (err) {
-            reject(err instanceof Error ? err : new Error(String(err)))
-            return
-          }
-          downloadFromUrl(customId, redirectUrl, filepath, tempPath)
-            .then(resolve)
-            .catch(reject)
-          return
-        }
-      }
-
       if (response.statusCode !== 200) {
         activeDownloads.delete(customId)
         reject(new Error(`Download failed: HTTP ${response.statusCode}`))

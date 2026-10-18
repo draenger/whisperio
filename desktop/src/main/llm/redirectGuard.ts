@@ -33,12 +33,15 @@ export function checkRedirect(fromUrl: string, toUrl: string): string | null {
 interface RedirectableRequest {
   on(event: 'redirect', listener: (statusCode: number, method: string, redirectUrl: string) => void): unknown
   abort(): void
+  followRedirect(): void
 }
 
 /**
- * Electron `net.request` follows redirects by default and re-sends the body and headers
- * (Authorization / x-api-key). Abort instead unless `checkRedirect` approves the hop, and report
- * the reason through `onBlocked` so the caller can reject its promise.
+ * Electron `net.request` follows redirects by default WITHOUT emitting 'redirect', re-sending the
+ * body and headers (Authorization / x-api-key). Callers must therefore create the request with
+ * `redirect: 'manual'` (use `GUARDED_REDIRECT`); Electron then emits 'redirect' per hop and waits
+ * for `followRedirect()`. We follow only when `checkRedirect` approves, else abort and report the
+ * reason through `onBlocked` so the caller can reject its promise.
  */
 export function guardRedirects(
   request: RedirectableRequest,
@@ -54,5 +57,9 @@ export function guardRedirects(
       return
     }
     current = redirectUrl
+    request.followRedirect()
   })
 }
+
+/** Value for the `redirect` option of net.request when the request is passed to guardRedirects. */
+export const GUARDED_REDIRECT = 'manual' as const
