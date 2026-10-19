@@ -78,10 +78,13 @@ import androidx.compose.material3.Icon as M3Icon
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -297,6 +300,12 @@ private fun MainShell(g: AppGraph) {
         // Keyboard / DictateActivity sessions buzz in their own window; only this app's own results tick here.
         if (r.session == null && r.source == RecordingSource.APP) shellView.confirmHaptic()
     } }
+    // CONTRACT-1.2 F5: going to the background commits a pending History delete. (ProcessLifecycleOwner is not a
+    // dependency, so this is the activity's own ON_STOP; a rotation also stops the activity and is skipped.)
+    val shellCtx = LocalContext.current
+    LifecycleEventEffect(Lifecycle.Event.ON_STOP) {
+        if ((shellCtx as? Activity)?.isChangingConfigurations != true) g.pendingDelete.flush()
+    }
     Scaffold(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         snackbarHost = { SnackbarHost(snackbar) },
@@ -400,15 +409,47 @@ private fun HistoryRoute(g: AppGraph, nav: NavHostController, snackbar: Snackbar
     val items by g.history.observeAll().collectAsState(initial = emptyList())
     var exported by remember { mutableIntStateOf(0) }
     val export = rememberExporter(g.history, snackbar, onSuccess = { exported++ })
+    val ctx = LocalContext.current
+    val view = LocalView.current
+    val scope = rememberCoroutineScope()
+    val pending by g.pendingDelete.pendingId.collectAsState()
+    // CONTRACT-1.2 F5: one "Deleted / Undo" snackbar per pending item. Keyed on the pending id so a second swipe
+    // replaces it (the first was committed by the controller) and a rotation re-shows it.
+    val deletedText = stringResource(R.string.deleted_message)
+    val undoText = stringResource(R.string.action_undo)
+    LaunchedEffect(pending) {
+        val id = pending ?: return@LaunchedEffect
+        val result = snackbar.showSnackbar(deletedText, actionLabel = undoText, duration = SnackbarDuration.Long)
+        if (result == SnackbarResult.ActionPerformed) g.pendingDelete.undo(id) else g.pendingDelete.settle(id)
+    }
+    // Leaving History (tab, detail) commits; a rotation keeps the Undo window.
+    DisposableEffect(Unit) {
+        onDispose { if ((ctx as? Activity)?.isChangingConfigurations != true) g.pendingDelete.flush() }
+    }
     // Fixed per day so the day-header grouping is cached instead of recomputed on every recomposition.
     val today = LocalDate.now()
     val now = remember(today) { System.currentTimeMillis() }
     HistoryListScreen(
         items,
         onOpen = { nav.navigate(Routes.detail(it)) },
-        onExport = export,
+        onExport = { rows, format -> g.pendingDelete.flush(); export(rows, format) },
         now = now,
         clearSelectionToken = exported,
+        hiddenId = pending,
+        onSwipeDelete = { g.pendingDelete.swipe(it) },
+        onCopy = { text ->
+            scope.launch { copyPlainText(ctx, text, g.settings.current().transcriptsSensitive) }
+            view.confirmHaptic()
+            // A "Copied" snackbar would queue behind (or dismiss) the Undo window, so the tick alone confirms then.
+            if (g.pendingDelete.pendingId.value == null) {
+                scope.launch {
+                    snackbar.currentSnackbarData?.dismiss()
+                    snackbar.showSnackbar(ctx.getString(R.string.copied_toast), duration = SnackbarDuration.Short)
+                }
+            }
+        },
+        onDeleteDay = { ids -> g.pendingDelete.deleteDay(ids) },
+        onSelectionStart = { g.pendingDelete.flush() },
     )
 }
 
