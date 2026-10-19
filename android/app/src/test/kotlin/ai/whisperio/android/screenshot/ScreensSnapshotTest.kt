@@ -16,6 +16,9 @@ import ai.whisperio.android.ui.history.HistoryDetailActions
 import ai.whisperio.android.ui.history.HistoryDetailScreen
 import ai.whisperio.android.ui.history.HistoryFilters
 import ai.whisperio.android.ui.history.HistoryListScreen
+import ai.whisperio.android.ui.history.PlayerUi
+import ai.whisperio.android.ui.history.RetryChoiceUi
+import ai.whisperio.android.ui.history.RetryWithUi
 import ai.whisperio.android.ui.home.HomeActions
 import ai.whisperio.android.ui.home.HomeScreen
 import ai.whisperio.android.ui.home.HomeState
@@ -43,6 +46,26 @@ private const val PHONE = ScreenshotConfig.PHONE
 @Composable
 private fun DictateFixture(s: DictationState, setup: Boolean = false) =
     DictateScreen(s, {}, {}, {}, {}, {}, needsSetup = setup)
+
+@Composable
+private fun PlayerFixture(
+    playing: Boolean = false,
+    positionMs: Int = 0,
+    playerEnabled: Boolean = true,
+    player: Boolean = true,
+    audioAvailable: Boolean = true,
+    menuOpen: Boolean = false,
+    choices: List<RetryChoiceUi> = listOf(
+        RetryChoiceUi(ProviderId.OPENAI, "OpenAI", "whisper-1"),
+        RetryChoiceUi(ProviderId.GROQ, "Groq", "whisper-large-v3-turbo"),
+    ),
+) = HistoryDetailScreen(
+    rec = Fx.done,
+    actions = object : HistoryDetailActions {},
+    player = PlayerUi(playing, positionMs, 12_000, playerEnabled, onToggle = {}, onSeek = {}).takeIf { player },
+    retryWith = RetryWithUi(choices, audioAvailable),
+    initialRetryMenuOpen = menuOpen,
+)
 
 /** Fixed clock and zone: day headers (Today / Yesterday / date) must not depend on the wall clock. */
 @Composable
@@ -205,6 +228,36 @@ open class HistorySnapshotTest {
     fun detailFontScale2() = rule.snapshot("history_detail_font2", fontScale = 2f) {
         HistoryDetailScreen(Fx.notInserted, object : HistoryDetailActions {})
     }
+
+    @Test @Config(qualifiers = PHONE)
+    fun detailPlayer() = rule.snapshot("history_detail_player") { PlayerFixture() }
+
+    @Test @Config(qualifiers = PHONE)
+    fun detailPlayerPlayingDark() = rule.snapshot("history_detail_player_playing", dark = true) {
+        PlayerFixture(playing = true, positionMs = 4_000)
+    }
+
+    @Test @Config(qualifiers = PHONE)
+    fun detailPlayerDisabledWhileRecording() = rule.snapshot("history_detail_player_recording") {
+        PlayerFixture(playerEnabled = false)
+    }
+
+    @Test @Config(qualifiers = PHONE)
+    fun detailRetryMenuOpen() = rule.snapshot("history_detail_retry_menu") { PlayerFixture(menuOpen = true) }
+
+    @Test @Config(qualifiers = PHONE)
+    fun detailRetryNoAudio() = rule.snapshot("history_detail_retry_no_audio") {
+        PlayerFixture(player = false, audioAvailable = false)
+    }
+
+    @Test @Config(qualifiers = PHONE)
+    fun detailRetryNoProviders() = rule.snapshot("history_detail_retry_none") { PlayerFixture(choices = emptyList()) }
+
+    @Test @Config(qualifiers = ScreenshotConfig.TABLET)
+    fun detailPlayerTablet() = rule.snapshot("history_detail_player_tablet") { PlayerFixture() }
+
+    @Test @Config(qualifiers = PHONE)
+    fun detailPlayerFontScale2() = rule.snapshot("history_detail_player_font2", fontScale = 2f) { PlayerFixture() }
 }
 
 @RunWith(RobolectricTestRunner::class)
