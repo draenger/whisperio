@@ -2,6 +2,7 @@ package ai.whisperio.android.settings
 
 import ai.whisperio.android.di.ModelCatalog
 import ai.whisperio.android.security.SecretStore
+import ai.whisperio.core.Categories
 import ai.whisperio.core.ChainSettings
 import ai.whisperio.core.ProviderId
 import androidx.datastore.core.DataStore
@@ -10,6 +11,7 @@ import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
+import java.util.UUID
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
@@ -39,12 +41,43 @@ class SettingsRepository(
         val sensitive = booleanPreferencesKey("transcripts_sensitive")
         val onboarding = booleanPreferencesKey("onboarding_done")
         val perAppLanguage = booleanPreferencesKey("per_app_language")
+        val customCategories = stringPreferencesKey("custom_categories") // JSON list, CONTRACT-1.2 F3
         fun baseUrl(id: ProviderId) = stringPreferencesKey("base_url_${id.wire}")
     }
 
     val flow: Flow<AppSettings> = store.data.map { decode(it) }
 
     override suspend fun current(): AppSettings = flow.first()
+
+    /** CONTRACT-1.2 F3: custom categories in creation order. Stored in this DataStore, so [clear] erases them. */
+    val customCategories: Flow<List<CustomCategory>> = store.data.map { CustomCategories.decode(it[K.customCategories]) }
+
+    /**
+     * Adds a custom category if [name] passes the D6 rule against [seedLabels] plus the stored custom names; the check
+     * and the write share one DataStore transaction, so two quick adds cannot both pass. [newId] is injectable for tests.
+     */
+    suspend fun addCustomCategory(
+        name: String,
+        seedLabels: Collection<String>,
+        newId: () -> String = { Categories.CUSTOM_PREFIX + UUID.randomUUID() },
+    ): CategoryNameCheck {
+        var result: CategoryNameCheck = CategoryNameCheck.Blank
+        store.edit {
+            val list = CustomCategories.decode(it[K.customCategories])
+            result = CustomCategories.check(name, seedLabels + list.map { c -> c.name })
+            (result as? CategoryNameCheck.Ok)?.let { ok ->
+                it[K.customCategories] = CustomCategories.encode(CustomCategories.add(list, ok.name, newId()))
+            }
+        }
+        return result
+    }
+
+    /** Removes the custom category from the list; resetting the recordings that carry it is [AppGraph.deleteCategory]'s job. */
+    suspend fun removeCustomCategory(id: String) = store.edit {
+        val list = CustomCategories.decode(it[K.customCategories])
+        val next = CustomCategories.remove(list, id)
+        if (next.isEmpty()) it.remove(K.customCategories) else it[K.customCategories] = CustomCategories.encode(next)
+    }
 
     override suspend fun chain(): ChainSettings {
         val settings = current()

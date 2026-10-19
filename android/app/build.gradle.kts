@@ -94,6 +94,9 @@ android {
         buildConfig = true
     }
 
+    // CONTRACT-1.2: MigrationTestHelper reads the exported Room schemas (schemas/<db>/<version>.json) as test assets.
+    sourceSets["test"].assets.srcDir("$projectDir/schemas")
+
     testOptions {
         unitTests {
             isIncludeAndroidResources = true

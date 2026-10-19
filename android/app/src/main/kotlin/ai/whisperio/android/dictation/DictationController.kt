@@ -357,9 +357,8 @@ class DictationController(
     private suspend fun failRecording(row: Recording, file: File, elapsed: Long, error: DictationError, persist: Boolean) {
         file.delete()
         if (persist) {
-            history.upsert(
-                row.copy(status = RecordingStatus.FAILED, durationMs = elapsed, error = error.name, audioPath = null),
-            )
+            // Re-read before writing so a category set meanwhile (or a row deleted meanwhile) is not clobbered.
+            writeBack(row) { it.copy(status = RecordingStatus.FAILED, durationMs = elapsed, error = error.name, audioPath = null) }
         }
         _state.value = DictationState.Error(error, recordingId = if (persist) row.id else null)
     }

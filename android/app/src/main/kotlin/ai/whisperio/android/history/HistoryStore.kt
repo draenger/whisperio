@@ -12,6 +12,12 @@ interface HistoryStore {
     suspend fun upsert(recording: Recording)
     suspend fun setInserted(id: String, inserted: Boolean)
 
+    /** CONTRACT-1.2 F3: sets (or with null clears) one row's category without touching any other column. */
+    suspend fun setCategory(id: String, category: String?)
+
+    /** CONTRACT-1.2 F3: every row with [categoryId] becomes uncategorised (a custom category was deleted). */
+    suspend fun clearCategory(categoryId: String)
+
     /** Deletes the row and its audio file. */
     suspend fun delete(id: String)
 
@@ -48,6 +54,8 @@ class RoomHistoryStore(
     override suspend fun get(id: String) = dao.get(id)
     override suspend fun upsert(recording: Recording) = dao.upsert(recording)
     override suspend fun setInserted(id: String, inserted: Boolean) = dao.setInserted(id, inserted)
+    override suspend fun setCategory(id: String, category: String?) = dao.setCategory(id, category)
+    override suspend fun clearCategory(categoryId: String) { dao.clearCategory(categoryId) }
 
     override suspend fun delete(id: String) {
         dao.get(id)?.audioPath?.let { File(it).delete() }

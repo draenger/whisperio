@@ -7,6 +7,7 @@ import ai.whisperio.android.dictation.SetupStatus
 import ai.whisperio.android.dictation.computeSetupStatus
 import ai.whisperio.android.history.AppDatabase
 import ai.whisperio.android.history.HistoryStore
+import ai.whisperio.android.history.MIGRATION_1_2
 import ai.whisperio.android.history.RoomHistoryStore
 import ai.whisperio.android.security.AndroidKeystoreCipher
 import ai.whisperio.android.security.KeystoreSecretStore
@@ -80,7 +81,7 @@ class AppGraph private constructor(private val appOrNull: Application?, private 
     }
 
     private val database: AppDatabase by lazy {
-        o?.database ?: Room.databaseBuilder(app, AppDatabase::class.java, "whisperio.db").build()
+        o?.database ?: Room.databaseBuilder(app, AppDatabase::class.java, "whisperio.db").addMigrations(MIGRATION_1_2).build()
     }
     val history: HistoryStore by lazy { RoomHistoryStore(database.recordings(), recordingsDir) }
 
@@ -120,6 +121,14 @@ class AppGraph private constructor(private val appOrNull: Application?, private 
                 history.deleteOlderThan(System.currentTimeMillis() - days * 86_400_000L)
             }
         }
+    }
+
+    /** CONTRACT-1.2 F3: deletes a custom category and sets every recording that carried it back to none. */
+    suspend fun deleteCategory(id: String) {
+        appScope.launch {
+            history.clearCategory(id)
+            settings.removeCustomCategory(id)
+        }.join()
     }
 
     /** "Erase all data" (CONTRACT 7.3): history, audio, keys and settings. */
