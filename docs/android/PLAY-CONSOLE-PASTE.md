@@ -31,11 +31,14 @@ EN (domyślny) - pełny opis i informacje o wersji: `android/marketing/play/list
 | Krótki opis (<=80) | `Dictate into any app with your own API key. No account, no ads, no analytics.` | `Dyktuj w każdej aplikacji z własnym kluczem API. Bez konta, reklam i analityki.` |
 | Pełny opis (<=4000) | blok "Full description" z `listing.en.md` | blok "Pełny opis" z `listing.pl.md` |
 
-Grafiki (wygenerowane, bramka `verify.mjs` PASS; zobacz je zanim wgrasz):
-- Ikona 512x512: `android/marketing/play/icon-512.png` (jeśli brak - [REPO] dorobi przed wgraniem)
-- Grafika promocyjna 1024x500: `android/marketing/play/screenshots/out/play-feature/{en,pl}/feature.png`
-- Zrzuty telefonu 1080x1920 (4 na język): `android/marketing/play/screenshots/out/play-phone/{en,pl}/`
-  (`out/` nie jest w repo - generuje `android/marketing/play/screenshots/README.md`; [REPO] poda paczkę)
+Grafiki (19.10: kolory teal, bramka `verify.mjs` PASS 18/18; zobacz je zanim wgrasz). Wszystko w jednym folderze
+`C:/Users/dkwar/bees/whisperio-play-assets/`:
+- Ikona 512x512: `icon-512.png`
+- Grafika promocyjna 1024x500: `screenshots/play-feature/{en,pl}/feature.png`
+- Zrzuty telefonu 1080x1920 (4 na język): `screenshots/play-phone/{en,pl}/`
+- Zrzuty tabletu 1920x1080 (4 na język) - wgraj te same do sekcji **7-calowy tablet** i **10-calowy tablet**:
+  `screenshots/play-tablet/{en,pl}/`
+- (źródło w repo: `android/marketing/play/screenshots/`, README tam mówi jak odtworzyć)
 
 Kategoria i kontakt (Obecność w sklepie > Ustawienia sklepu):
 
@@ -82,8 +85,10 @@ w App Store jest inaczej i tam "Data Not Collected" jest poprawne).
 
 ## 5. Testy wewnętrzne (Testowanie > Testy wewnętrzne)
 
-Utwórz ścieżkę, dodaj listę testerów (Twój e-mail + kilka urządzeń), wgraj `app-release.aab` od [REPO], potwierdź
-podpisywanie przez Play, opublikuj. Po instalacji z linku opt-in: smoke z `docs/android/CONTRACT.md` §9.
+Utwórz ścieżkę, dodaj listę testerów (Twój e-mail + kilka urządzeń), wgraj gotowy AAB
+`C:/Users/dkwar/bees/whisperio-play-assets/whisperio-1.0.0-10000.aab` (1.0.0 / versionCode 10000, podpisany kluczem
+przesyłania, `jarsigner` OK), potwierdź podpisywanie przez Play, informacje o wersji z `android/marketing/play/release-notes/`,
+opublikuj. Po instalacji z linku opt-in: smoke z `docs/android/CONTRACT.md` §9.
 
 ## 6. Później
 
