@@ -3,22 +3,24 @@ name: Build & Release
 on:
   push:
     branches: [release]
+  # Dry run (test + build + smoke test); the release job is push-only so a dispatch never creates a draft.
+  workflow_dispatch:
 
 permissions:
   contents: write
 
 # A newer push to `release` cancels an in-progress run for the same ref — no
-# duplicate builds piling up and burning Actions minutes.
+# duplicate builds piling up on the single self-hosted PC runner.
 concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  # Cheap gate (Ubuntu = 1x minutes). Typecheck + tests with coverage thresholds.
+  # Cheap gate (runs on the PC's self-hosted Linux runner; GitHub-hosted runners are not used). Typecheck + tests with coverage thresholds.
   # The expensive build matrix only runs if this passes, so broken code never
   # reaches the build runners.
   test:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, pc]
     timeout-minutes: 18
     defaults:
       run:
@@ -49,13 +51,22 @@ jobs:
       # leaves the machine — see e2e/recordings-cleanup-failsoft.spec.ts) so
       # there's no CI-only flakiness source to buy down with continue-on-error.
       # `xvfb-run` gives Electron a virtual X display (no GPU/X11 on the
-      # runner) — same install pattern as the Linux AppImage smoke test below.
-      - name: Install xvfb
+      # runner) — libs installed by the step above.
+      - name: Install Electron runtime libs + xvfb
+        shell: bash
         run: |
-          if ! command -v xvfb-run >/dev/null 2>&1; then
-            sudo apt-get update
-            sudo apt-get install -y xvfb
+          # Self-hosted Linux runner container (Ubuntu 24.04) ships no Electron/GTK libs and no X display.
+          # Guarded by dpkg -s so reruns on the persistent container are a no-op.
+          PKGS="xvfb libgtk-3-0t64 libnss3 libgbm1 libasound2t64 libxss1 libxtst6 libatk-bridge2.0-0t64 libatk1.0-0t64 libdrm2 libxkbcommon0 libsecret-1-0 libcups2t64"
+          MISSING=""
+          for p in $PKGS; do dpkg -s "$p" >/dev/null 2>&1 || MISSING="$MISSING $p"; done
+          if [ -n "$MISSING" ]; then
+            SUDO=""; [ "$(id -u)" != "0" ] && SUDO=sudo
+            export DEBIAN_FRONTEND=noninteractive
+            $SUDO apt-get update
+            $SUDO apt-get install -y --no-install-recommends $MISSING
           fi
+          command -v xvfb-run
 
       - name: E2E click tests (Electron, headless via xvfb)
         timeout-minutes: 5
@@ -77,11 +88,12 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # windows-latest = windows-2025-vs2026 since 2026-10; node-gyp 9 (active-win rebuild) cannot find VS 2026.
-          - os: windows-2022
+          # Daniel's PC runner (no `pc` label on purpose). VS 2022 + VS 2026 are installed there;
+          # node-gyp 9 (active-win rebuild) only finds VS 2022, pinned via GYP_MSVS_VERSION below.
+          - os: [self-hosted, windows, desktop-sign]
             platform: win
             timeout: 20
-          - os: ubuntu-latest
+          - os: [self-hosted, pc]
             platform: linux
             timeout: 15
 
@@ -90,7 +102,11 @@ jobs:
     timeout-minutes: ${{ matrix.timeout }}
     defaults:
       run:
+        shell: bash
         working-directory: desktop
+    env:
+      GYP_MSVS_VERSION: "2022"
+      npm_config_msvs_version: "2022"
     steps:
       - uses: actions/checkout@v4
 
@@ -100,19 +116,35 @@ jobs:
           cache: npm
           cache-dependency-path: desktop/package-lock.json
 
-      # node-gyp 9 (active-win rebuild) imports distutils, removed in Python 3.12 (runner default).
-      - uses: actions/setup-python@v5
+      # node-gyp 9 (active-win rebuild) imports distutils, removed in Python 3.12. The PC runner has
+      # Python 3.12 + setuptools (provides distutils). actions/setup-python is NOT used: its installer needs admin.
+      - name: Check python distutils (node-gyp)
         if: matrix.platform == 'win'
-        with:
-          python-version: '3.11'
+        run: python -c "import distutils; print('distutils OK')"
 
       - name: Read version from package.json
         id: version
-        shell: bash
         run: |
           VERSION=$(node -p "require('./package.json').version")
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
           echo "Version: ${VERSION}"
+
+      - name: Install Electron runtime libs + xvfb (Linux smoke test)
+        shell: bash
+        run: |
+          # Self-hosted Linux runner container (Ubuntu 24.04) ships no Electron/GTK libs and no X display.
+          # Guarded by dpkg -s so reruns on the persistent container are a no-op.
+          PKGS="xvfb libgtk-3-0t64 libnss3 libgbm1 libasound2t64 libxss1 libxtst6 libatk-bridge2.0-0t64 libatk1.0-0t64 libdrm2 libxkbcommon0 libsecret-1-0 libcups2t64"
+          MISSING=""
+          for p in $PKGS; do dpkg -s "$p" >/dev/null 2>&1 || MISSING="$MISSING $p"; done
+          if [ -n "$MISSING" ]; then
+            SUDO=""; [ "$(id -u)" != "0" ] && SUDO=sudo
+            export DEBIAN_FRONTEND=noninteractive
+            $SUDO apt-get update
+            $SUDO apt-get install -y --no-install-recommends $MISSING
+          fi
+          command -v xvfb-run
+        if: matrix.platform == 'linux'
 
       - name: Install dependencies
         run: npm ci
@@ -128,23 +160,15 @@ jobs:
       # Real gate (not just "it compiled"): launch the freshly built AppImage
       # headlessly and confirm the app process survives a few seconds without
       # crashing. Catches missing shared libs / runtime startup crashes that a
-      # pure electron-builder packaging step can't. Ubuntu = 1x billing, and the
-      # whole thing is wrapped in `timeout 60` so it can never hang the runner.
+      # pure electron-builder packaging step can't. The whole thing is wrapped in `timeout 60` so it can never hang the runner.
       - name: Smoke test (Linux launch)
         if: matrix.platform == 'linux'
-        shell: bash
         # working-directory is already `desktop`, so dist/*.AppImage resolves here.
         env:
           # No FUSE / no GPU sandbox available on the runner.
           ELECTRON_DISABLE_SANDBOX: "1"
         run: |
           set -euo pipefail
-
-          # xvfb gives the Electron app a virtual X display to render into.
-          if ! command -v xvfb-run >/dev/null 2>&1; then
-            sudo apt-get update
-            sudo apt-get install -y xvfb
-          fi
 
           # Locate the AppImage electron-builder just produced.
           APPIMAGE=$(ls dist/*.AppImage 2>/dev/null | head -n1 || true)
@@ -204,7 +228,8 @@ jobs:
 
   release:
     needs: build
-    runs-on: ubuntu-latest
+    if: github.event_name == 'push'
+    runs-on: [self-hosted, pc]
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
