@@ -21,6 +21,18 @@ import ai.whisperio.android.ui.common.label
 import ai.whisperio.android.ui.history.HistoryDetailActions
 import ai.whisperio.android.ui.history.HistoryDetailScreen
 import ai.whisperio.android.ui.history.HistoryListScreen
+import ai.whisperio.android.ui.history.PlayerAvailability
+import ai.whisperio.android.ui.history.PlayerUi
+import ai.whisperio.android.ui.history.RetryChoiceUi
+import ai.whisperio.android.ui.history.RetryWithUi
+import ai.whisperio.android.ui.history.playerAvailability
+import ai.whisperio.android.ui.history.rememberAudioPlayer
+import ai.whisperio.android.ui.history.shouldStopPlayback
+import ai.whisperio.android.ui.common.errorText
+import ai.whisperio.android.dictation.RetryOutcome
+import ai.whisperio.android.dictation.retryChoices
+import ai.whisperio.android.settings.toChainSettings
+import java.io.File
 import ai.whisperio.android.ui.history.rememberExporter
 import ai.whisperio.android.ui.home.HomeActions
 import ai.whisperio.android.ui.home.HomeScreen
@@ -392,9 +404,53 @@ private fun DetailRoute(g: AppGraph, nav: NavHostController, id: String, snackba
     val scope = rememberCoroutineScope()
     val rec by g.history.observe(id).collectAsState(initial = null)
     val export = rememberExporter(g.history, snackbar)
+
+    // F4: the player. Hidden when the file is gone, disabled while recording, released when a recording starts.
+    val dictation by g.dictation.state.collectAsState()
+    val audioPath = rec?.audioPath
+    val audioExists = remember(audioPath, rec?.status) { audioPath != null && File(audioPath).exists() }
+    val availability = playerAvailability(audioExists, recording = dictation is DictationState.Recording)
+    val player = rememberAudioPlayer(audioPath.orEmpty(), (rec?.durationMs ?: 0L).toInt(), stop = shouldStopPlayback(dictation))
+    val playerUi = if (availability == PlayerAvailability.HIDDEN) null else PlayerUi(
+        playing = player.playing,
+        positionMs = player.positionMs,
+        durationMs = player.durationMs,
+        enabled = availability == PlayerAvailability.READY,
+        onToggle = player::toggle,
+        onSeek = player::seekTo,
+    )
+
+    // F5: only providers with a key (self-hosted: a URL), in the user's order. The key text is irrelevant here.
+    val settings by g.settings.flow.collectAsState(initial = AppSettings(order = g.settings.defaultOrder()))
+    val keys by g.secrets.configured.collectAsState(initial = emptySet())
+    val choices = retryChoices(settings.toChainSettings(ProviderId.entries.associateWith { if (it in keys) "configured" else null }))
+        .map { RetryChoiceUi(it.id, it.id.label(ctx), it.model) }
+    val busy = dictation is DictationState.Recording || dictation is DictationState.Transcribing
+    val retryUi = RetryWithUi(choices, audioAvailable = audioExists, busy = busy, retrying = busy && g.dictation.activeId() == id)
+
+    var failure by remember { mutableStateOf<RetryOutcome.Failure?>(null) }
+    LaunchedEffect(id) {
+        g.dictation.retryOutcomes.collect { o ->
+            if (o.recordingId != id) return@collect
+            when (o) {
+                is RetryOutcome.Success -> view.confirmHaptic()
+                is RetryOutcome.Failure -> failure = o
+            }
+        }
+    }
+    val failureText = failure?.let { stringResource(R.string.retry_failed, errorText(it.error, it.detail)) }
+    LaunchedEffect(failure) {
+        if (failureText != null) {
+            snackbar.showSnackbar(failureText)
+            failure = null
+        }
+    }
+
     run {
         HistoryDetailScreen(
             rec = rec,
+            player = playerUi,
+            retryWith = retryUi,
             actions = object : HistoryDetailActions {
                 override fun onBack() { nav.popBackStack() }
                 override fun onCopy(text: String) {
@@ -406,6 +462,7 @@ private fun DetailRoute(g: AppGraph, nav: NavHostController, id: String, snackba
                     ctx.startActivity(Intent.createChooser(send, null))
                 }
                 override fun onRetry(id: String) = g.dictation.retry(id)
+                override fun onRetryWith(id: String, provider: ProviderId) = g.dictation.retryWith(id, provider)
                 override fun onExport(rec: Recording, format: ExportFormat) = export(listOf(rec), format)
                 override fun onDelete(id: String) {
                     scope.launch { g.history.delete(id) }

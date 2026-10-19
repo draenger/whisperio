@@ -7,6 +7,11 @@ import ai.whisperio.android.history.RecordingSource
 import ai.whisperio.android.ui.common.SectionTitle
 import ai.whisperio.android.ui.home.sourceLabelRes
 import ai.whisperio.core.ExportFormat
+import ai.whisperio.core.ProviderId
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material3.Slider
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.text.KeyboardActions
@@ -265,17 +270,123 @@ private fun ExportMenu(open: Boolean, onDismiss: () -> Unit, onExport: (ExportFo
     }
 }
 
+@Composable
+private fun AudioPlayerRow(player: PlayerUi) {
+    val position = formatElapsed(player.positionMs.toLong())
+    val duration = formatElapsed(player.durationMs.toLong())
+    val stateText = stringResource(R.string.player_state, position, duration)
+    Column(Modifier.fillMaxWidth().padding(bottom = 12.dp)) {
+        Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+            IconButton(onClick = player.onToggle, enabled = player.enabled, modifier = Modifier.heightIn(min = 48.dp)) {
+                Icon(
+                    if (player.playing) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                    contentDescription = stringResource(if (player.playing) R.string.player_pause else R.string.player_play),
+                )
+            }
+            val max = player.durationMs.coerceAtLeast(1).toFloat()
+            val seekLabel = stringResource(R.string.player_position)
+            Slider(
+                value = player.positionMs.toFloat().coerceIn(0f, max),
+                onValueChange = { player.onSeek(it.toInt()) },
+                valueRange = 0f..max,
+                enabled = player.enabled,
+                modifier = Modifier.weight(1f).semantics {
+                    contentDescription = seekLabel
+                    stateDescription = stateText
+                },
+            )
+            Text(
+                "$position / $duration",
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.padding(start = 8.dp),
+            )
+        }
+        if (!player.enabled) {
+            Text(
+                stringResource(R.string.player_disabled_recording),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+@Composable
+private fun RetryWithControl(rec: Recording, ui: RetryWithUi, initialOpen: Boolean, actions: HistoryDetailActions) {
+    var menuOpen by rememberSaveable { mutableStateOf(initialOpen) }
+    val enabled = ui.audioAvailable && ui.choices.isNotEmpty() && !ui.busy
+    Box(Modifier.padding(top = 12.dp)) {
+        OutlinedButton(onClick = { menuOpen = true }, enabled = enabled, modifier = Modifier.heightIn(min = 48.dp)) {
+            Icon(Icons.Filled.Refresh, null, Modifier.padding(end = 8.dp))
+            Text(stringResource(if (ui.retrying) R.string.retry_with_busy else R.string.action_retry_with))
+        }
+        DropdownMenu(expanded = menuOpen && enabled, onDismissRequest = { menuOpen = false }) {
+            ui.choices.forEach { c ->
+                DropdownMenuItem(
+                    text = { Text("${c.label} - ${c.model}") },
+                    onClick = { menuOpen = false; actions.onRetryWith(rec.id, c.id) },
+                )
+            }
+        }
+    }
+    val reason = when {
+        !ui.audioAvailable -> R.string.error_no_audio
+        ui.choices.isEmpty() -> R.string.retry_with_none
+        else -> null
+    }
+    if (reason != null) {
+        Text(
+            stringResource(reason),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(top = 4.dp),
+        )
+    }
+}
+
 interface HistoryDetailActions {
     fun onBack() {}
     fun onCopy(text: String) {}
     fun onShare(text: String) {}
     fun onRetry(id: String) {}
+    fun onRetryWith(id: String, provider: ProviderId) {}
     fun onDelete(id: String) {}
     fun onExport(rec: Recording, format: ExportFormat) {}
 }
 
+/** CONTRACT-1.1 F4: the kept-audio player; null on the screen means no player (file gone). */
+data class PlayerUi(
+    val playing: Boolean,
+    val positionMs: Int,
+    val durationMs: Int,
+    /** False while the dictation controller is recording: shown with a reason, play disabled. */
+    val enabled: Boolean,
+    val onToggle: () -> Unit,
+    val onSeek: (Int) -> Unit,
+)
+
+/** One provider offered in the "Retry with..." menu. */
+data class RetryChoiceUi(val id: ProviderId, val label: String, val model: String)
+
+/** CONTRACT-1.1 F5: state of the "Retry with..." control. */
+data class RetryWithUi(
+    val choices: List<RetryChoiceUi>,
+    val audioAvailable: Boolean,
+    /** A recording or transcription is in flight (this or another one): the control is disabled. */
+    val busy: Boolean = false,
+    /** This very entry is being re-transcribed. */
+    val retrying: Boolean = false,
+)
+
 @Composable
-fun HistoryDetailScreen(rec: Recording?, actions: HistoryDetailActions, modifier: Modifier = Modifier) {
+fun HistoryDetailScreen(
+    rec: Recording?,
+    actions: HistoryDetailActions,
+    modifier: Modifier = Modifier,
+    player: PlayerUi? = null,
+    retryWith: RetryWithUi? = null,
+    initialRetryMenuOpen: Boolean = false,
+) {
     var confirmDelete by rememberSaveable { mutableStateOf(false) }
     Column(modifier.fillMaxSize()) {
         TopAppBar(
@@ -299,6 +410,7 @@ fun HistoryDetailScreen(rec: Recording?, actions: HistoryDetailActions, modifier
         }
         Column(Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 8.dp)) {
             val text = rec.transcript
+            if (player != null) AudioPlayerRow(player)
             if (rec.status == RecordingStatus.DONE && text != null) {
                 SelectionContainer { Text(text, style = MaterialTheme.typography.bodyLarge) }
                 Row(Modifier.padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -336,6 +448,9 @@ fun HistoryDetailScreen(rec: Recording?, actions: HistoryDetailActions, modifier
                     Icon(Icons.Filled.Refresh, null, Modifier.padding(end = 8.dp))
                     Text(stringResource(R.string.action_retry))
                 }
+            }
+            if (retryWith != null && (rec.status == RecordingStatus.DONE || rec.status == RecordingStatus.FAILED)) {
+                RetryWithControl(rec, retryWith, initialRetryMenuOpen, actions)
             }
             if (rec.inserted == false && rec.status == RecordingStatus.DONE) {
                 Text(
