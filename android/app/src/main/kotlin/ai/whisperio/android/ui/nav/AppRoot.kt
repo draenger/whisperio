@@ -494,6 +494,7 @@ private fun SettingsRoute(g: AppGraph, nav: NavHostController) {
     val settings by g.settings.flow.collectAsState(initial = AppSettings(order = g.settings.defaultOrder()))
     val configured by g.secrets.configured.collectAsState(initial = emptySet())
     val lost by g.secrets.lost.collectAsState()
+    val appLanguageCount by g.appLanguages.count.collectAsState(initial = 0)
     var dialog by remember { mutableStateOf<KeyDialogState?>(null) }
     var keyChecks by remember { mutableStateOf<Map<ProviderId, KeyUi>>(emptyMap()) }
     val enrollment = remember { KeyEnrollment(g.keyChecker, g.secrets, g.settings) }
@@ -539,6 +540,8 @@ private fun SettingsRoute(g: AppGraph, nav: NavHostController) {
         override fun onKeyDialogDismiss() { dialog = null }
         override fun onFallback(value: Boolean) { scope.launch { g.settings.setFallback(value) } }
         override fun onLanguage(code: String) { scope.launch { g.settings.setLanguage(code) } }
+        override fun onPerAppLanguage(value: Boolean) { scope.launch { g.setPerAppLanguage(value) } }
+        override fun onClearAppLanguages() { scope.launch { g.appLanguages.clear() } }
         override fun onVocabulary(value: String) { scope.launch { g.settings.setVocabulary(value) } }
         override fun onCleanup(value: Boolean) { scope.launch { g.settings.setCleanup(value) } }
         override fun onAutoStop(seconds: Int) { scope.launch { g.settings.setAutoStop(seconds) } }
@@ -560,6 +563,7 @@ private fun SettingsRoute(g: AppGraph, nav: NavHostController) {
                 customHost = !openAiUrl.isNullOrBlank() && !g.hostPolicy.isOfficialHost(openAiUrl),
                 keyDialog = dialog,
                 keyChecks = keyChecks,
+                appLanguageCount = appLanguageCount,
             ),
             actions = actions,
         )

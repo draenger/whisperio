@@ -69,6 +69,8 @@ data class StartOptions(
     val saveToHistory: Boolean = true,
     /** Opaque caller tag (the IME stores the bound field here) echoed in [DictationResult]. */
     val session: Any? = null,
+    /** One-shot language override (per-app language, F7); null = the global setting. */
+    val language: String? = null,
 )
 
 data class DictationResult(
@@ -271,7 +273,7 @@ class DictationController(
 
     private suspend fun startInternal(options: StartOptions) {
         if (busy) return
-        val s = settings.current()
+        val s = settings.current().let { base -> options.language?.let { base.copy(language = it) } ?: base }
         // Retry does not need the mic; recording does. precheck() covers both, so check the mic only here.
         if (!micGranted()) return fail(DictationError.PERMISSION_MISSING)
         precheck(s)?.let { return fail(it) }

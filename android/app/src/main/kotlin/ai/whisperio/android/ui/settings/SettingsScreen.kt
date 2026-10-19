@@ -46,8 +46,11 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.unit.dp
@@ -70,6 +73,8 @@ data class SettingsUiState(
     val keyDialog: KeyDialogState? = null,
     /** Result of the last "Check key" per provider (Validating while in flight). Absent = never checked. */
     val keyChecks: Map<ProviderId, KeyUi> = emptyMap(),
+    /** F7: number of apps with a saved keyboard language. */
+    val appLanguageCount: Int = 0,
 )
 
 interface SettingsActions {
@@ -84,6 +89,8 @@ interface SettingsActions {
     fun onKeyDialogDismiss() {}
     fun onFallback(value: Boolean) {}
     fun onLanguage(code: String) {}
+    fun onPerAppLanguage(value: Boolean) {}
+    fun onClearAppLanguages() {}
     fun onVocabulary(value: String) {}
     fun onCleanup(value: Boolean) {}
     fun onAutoStop(seconds: Int) {}
@@ -145,6 +152,27 @@ fun SettingsScreen(state: SettingsUiState, actions: SettingsActions, modifier: M
                         label = { Text(Languages.label(code)) },
                         modifier = Modifier.heightIn(min = 48.dp),
                     )
+                }
+            }
+            SwitchRow(
+                stringResource(R.string.settings_per_app_language),
+                stringResource(R.string.settings_per_app_language_hint),
+                s.perAppLanguage,
+                actions::onPerAppLanguage,
+            )
+            if (s.perAppLanguage) {
+                Row(Modifier.fillMaxWidth().heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        stringResource(R.string.settings_per_app_language_count, state.appLanguageCount),
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.weight(1f),
+                    )
+                    val clearDesc = pluralStringResource(R.plurals.settings_per_app_language_clear_desc, state.appLanguageCount, state.appLanguageCount)
+                    TextButton(
+                        onClick = actions::onClearAppLanguages,
+                        enabled = state.appLanguageCount > 0,
+                        modifier = Modifier.heightIn(min = 48.dp).semantics { contentDescription = clearDesc },
+                    ) { Text(stringResource(R.string.settings_per_app_language_clear)) }
                 }
             }
             OutlinedTextField(

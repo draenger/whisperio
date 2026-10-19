@@ -38,6 +38,7 @@ class SettingsRepository(
         val autoDeleteDays = intPreferencesKey("auto_delete_days") // absent = never
         val sensitive = booleanPreferencesKey("transcripts_sensitive")
         val onboarding = booleanPreferencesKey("onboarding_done")
+        val perAppLanguage = booleanPreferencesKey("per_app_language")
         fun baseUrl(id: ProviderId) = stringPreferencesKey("base_url_${id.wire}")
     }
 
@@ -75,6 +76,7 @@ class SettingsRepository(
             autoDeleteDays = p[K.autoDeleteDays],
             transcriptsSensitive = p[K.sensitive] ?: false,
             onboardingDone = p[K.onboarding] ?: false,
+            perAppLanguage = p[K.perAppLanguage] ?: false,
         )
     }
 
@@ -110,6 +112,7 @@ class SettingsRepository(
     suspend fun setAutoDeleteDays(days: Int?) = store.edit { if (days == null) it.remove(K.autoDeleteDays) else it[K.autoDeleteDays] = days }
     suspend fun setSensitive(v: Boolean) = store.edit { it[K.sensitive] = v }
     suspend fun setOnboardingDone(v: Boolean) = store.edit { it[K.onboarding] = v }
+    suspend fun setPerAppLanguage(v: Boolean) = store.edit { it[K.perAppLanguage] = v }
 
     /** Part of "Erase all data": resets every setting to its default. */
     suspend fun clear() {

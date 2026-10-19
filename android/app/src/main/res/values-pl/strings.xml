@@ -9,6 +9,7 @@
     <string name="ime_subtype_voice">Wprowadzanie głosowe</string>
     <string name="provider_selfhosted">Własny serwer</string>
     <string name="language_auto">Wykryj automatycznie</string>
+    <string name="language_auto_short">Auto</string>
     <string name="nav_home">Start</string>
     <string name="nav_history">Historia</string>
     <string name="nav_settings">Ustawienia</string>
@@ -48,6 +49,8 @@
     <string name="ime_backspace">Usuń znak</string>
     <string name="ime_space">Spacja</string>
     <string name="ime_enter">Enter</string>
+    <string name="ime_language_chip_desc">Język dyktowania: %1$s. Dotknij, aby zmienić.</string>
+    <string name="ime_language_picker_close">Zamknij listę języków</string>
     <string name="ime_switch_keyboard">Zmień klawiaturę</string>
     <string name="ime_open_setup">Otwórz Whisperio, żeby dokończyć konfigurację</string>
     <string name="ime_open_setup_short">Otwórz Whisperio</string>
@@ -151,6 +154,16 @@
     <string name="settings_custom_host_warning">Własny serwer - Twój klucz i nagrania trafiają na ten serwer, a nie do OpenAI.</string>
     <string name="settings_dictation">Dyktowanie</string>
     <string name="settings_language">Język</string>
+    <string name="settings_per_app_language">Pamiętaj język dla każdej aplikacji</string>
+    <string name="settings_per_app_language_hint">Klawiatura zapamiętuje język wybrany w danej aplikacji, tylko na tym urządzeniu.</string>
+    <string name="settings_per_app_language_count">Aplikacje z zapisanym językiem: %1$d</string>
+    <string name="settings_per_app_language_clear">Wyczyść</string>
+    <plurals name="settings_per_app_language_clear_desc">
+        <item quantity="one">Wyczyść zapisany język dla %1$d aplikacji</item>
+        <item quantity="few">Wyczyść zapisany język dla %1$d aplikacji</item>
+        <item quantity="many">Wyczyść zapisany język dla %1$d aplikacji</item>
+        <item quantity="other">Wyczyść zapisany język dla %1$d aplikacji</item>
+    </plurals>
     <string name="settings_vocabulary">Słownik</string>
     <string name="settings_vocabulary_hint">Imiona i terminy oddzielone przecinkami, które pomogą w rozpoznawaniu</string>
     <string name="settings_cleanup">Porządkuj tekst</string>

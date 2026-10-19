@@ -1,0 +1,9 @@
+Nowości w 1.1:
+- Wyszukiwanie w historii i grupowanie jej po dniach
+- Filtrowanie po źródle i nieudanych dyktowaniach
+- Eksport transkrypcji do .txt lub .md
+- Odtwarzanie zapisanego nagrania
+- Ponawianie transkrypcji u innego dostawcy
+- Widżet na ekranie głównym do startu dyktowania
+- Delikatna wibracja przy kopiowaniu, wstawieniu i gotowym tekście
+- Opcjonalnie: pamiętanie języka klawiatury dla każdej aplikacji (domyślnie wyłączone)
