@@ -44,6 +44,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 
 /** Everything the panel renders; built by the service, or by fixtures in snapshot tests. */
@@ -84,13 +85,18 @@ fun ImePanel(state: ImePanelState, actions: ImePanelActions, modifier: Modifier 
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            // SpaceBetween (not a weighted spacer): the chip may take all the width the switch button leaves,
+            // so "Self-hosted - whisper-1" is not cut at half the panel.
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
                 AssistChip(
                     onClick = actions.onProviderChip,
-                    label = { Text(state.providerLabel, maxLines = 1) },
+                    label = { Text(state.providerLabel, maxLines = 1, overflow = TextOverflow.Ellipsis) },
                     modifier = Modifier.heightIn(min = 48.dp).weight(1f, fill = false),
                 )
-                Box(Modifier.weight(1f))
                 IconButton(onClick = actions.onSwitchKeyboard, modifier = Modifier.size(48.dp)) {
                     Icon(Icons.Filled.Keyboard, contentDescription = stringResource(R.string.ime_switch_keyboard))
                 }
