@@ -202,4 +202,10 @@
     <string name="retry_with_busy">Ponawiam...</string>
     <string name="retry_with_none">Dodaj klucz API w Ustawieniach, aby ponowić z innym dostawcą.</string>
     <string name="retry_failed">Ponowienie nie powiodło się, poprzedni tekst zachowany: %1$s</string>
+    <plurals name="history_word_count">
+        <item quantity="one">%1$d słowo</item>
+        <item quantity="few">%1$d słowa</item>
+        <item quantity="many">%1$d słów</item>
+        <item quantity="other">%1$d słowa</item>
+    </plurals>
 </resources>

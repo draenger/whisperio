@@ -202,4 +202,8 @@
     <string name="retry_with_busy">Retrying...</string>
     <string name="retry_with_none">Add an API key in Settings to retry with another provider.</string>
     <string name="retry_failed">Retry failed, previous text kept: %1$s</string>
+    <plurals name="history_word_count">
+        <item quantity="one">%1$d word</item>
+        <item quantity="other">%1$d words</item>
+    </plurals>
 </resources>
