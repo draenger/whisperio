@@ -129,7 +129,7 @@ Characters: 288/500
 | No account/server/analytics/ads | `app/build.gradle.kts:130-170`, `app/src/test/kotlin/ai/whisperio/android/PrivacyGateTest.kt:15-29` |
 | Excluded from backups/transfer | `AndroidManifest.xml:14-16`, `res/xml/data_extraction_rules.xml` |
 | Erase all data | `di/AppGraph.kt:110-119` |
-| Keyboard: password fields off, no typed-text storage | `ime/ImeCommitPolicy.kt:19-37`, `ime/WhisperioImeService.kt:192`; the keyboard also reads `EditorInfo.packageName` for F7 (per-app language): stored only with the opt-in switch, on device, never for password or no-learning fields (`settings/AppLanguageMap.kt` `AppLanguagePolicy`) |
+| Keyboard: password fields off, no typed-text storage | `ime/ImeCommitPolicy.kt:19-37`, `ime/WhisperioImeService.kt:192`; the keyboard reads `EditorInfo.packageName` + `fieldId` in memory as the field identity (`ImeCommitPolicy.kt:47,75`, insert only into the dictated field) and for F7 (per-app language): stored only with the opt-in switch, on device, never for password or no-learning fields (`settings/AppLanguageMap.kt` `AppLanguagePolicy`) |
 | Android 8.0+ | `app/build.gradle.kts` `minSdk = 26` |
 | History search, day groups, filters | `ui/history/HistoryQuery.kt`, `ui/history/HistoryScreens.kt` |
 | Export .txt / .md | `ui/history/ExportLauncher.kt` |
