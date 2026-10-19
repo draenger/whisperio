@@ -1,6 +1,6 @@
 # Whisperio for Android — v1.1.0 contract (delta on CONTRACT.md)
 
-> Status: draft 2026-10-19, before code. Opus review required before any lane starts. Everything in CONTRACT.md stays in
+> Status: 2026-10-19, before code. Opus review done (CHANGES, all applied); lanes may start. Everything in CONTRACT.md stays in
 > force unless this file changes it. Version: `versionName 1.1.0`, `versionCode 10100` (`android/app/version.properties`).
 
 ## 1. Goal
@@ -19,7 +19,7 @@ them. Neither iOS nor desktop has bulk export or per-app language.
 |---|---|---|---|
 | F1 | History search (transcript text, provider name) | iOS `HomeView.swift:27,62,307-320` | S |
 | F2 | History grouped by day (Today, Yesterday, then dates in the device locale) | iOS `HomeView.swift:114-115` | S |
-| F3 | History filter chips: source (app / keyboard / tile / shortcut) and status Failed | Android-first; fields already stored (§7.3) | S |
+| F3 | History filter chips: source (app / keyboard / tile / shortcut / widget) and status Failed | Android-first; fields already stored (§7.3) | S |
 | F4 | Play back kept audio in detail | iOS `DetailView.swift:93-96,863-878` | S |
 | F5 | Retry with a chosen provider (from detail) | iOS `DetailView.swift` `chooseEngine` | S |
 | F6 | Export text: one, a selection, or all filtered results, as `.txt` or `.md`, through the system file picker | Android-first (queenbee) | M |
@@ -35,10 +35,10 @@ everything already out of v1 (sync, LLM post-processing, Wear OS, full QWERTY).
 ## 3. Feature contracts
 
 ### F1-F3 History list
-- Search is a Room query, no FTS table and no schema change: `transcript LIKE '%' || :q || '%' ESCAPE '\'` OR
-  `provider LIKE ...`, case-insensitive (`COLLATE NOCASE` is ASCII-only, so the query also lower-cases both sides via
-  `lower()` and accepts that SQLite `lower()` folds ASCII only; Polish diacritics must match exactly — documented, tested).
-  `%`, `_` and `\` in the query are escaped. Debounce 250 ms. Empty query = full list.
+- Search filters in Kotlin over `observeAll()` (local history is small; no FTS table, no SQL `LIKE`, no schema
+  change): `text.lowercase(Locale.ROOT).contains(q.lowercase(Locale.ROOT))` on transcript and provider. Full Unicode
+  case folding (Ł/ł, Ż/ż); diacritics still matter (`ł` ≠ `l`), tested. No SQL, so no escaping. Debounce 250 ms. Empty
+  query = full list. (SQLite `LIKE`/`lower()` fold ASCII only, which is why this is not a Room query.)
 - Day headers are computed in the UI from `createdAt` in the device time zone; no stored field.
 - Filter chips combine with search (AND). State survives rotation (`rememberSaveable`), not process death.
 - Room stays at `version = 1`: **v1.1 adds no Room migration.** Any feature that needs one moves to 1.2.
@@ -46,7 +46,8 @@ everything already out of v1 (sync, LLM post-processing, Wear OS, full QWERTY).
 ### F4 Playback
 - `MediaPlayer` on the stored `audioPath` (MPEG-4/AAC, `AudioRecorder.kt:39-43`); play/pause, position, duration.
   Released in `onStop`/leaving the screen. Audio focus `AUDIOFOCUS_GAIN_TRANSIENT`; pauses on focus loss and on
-  `ACTION_AUDIO_BECOMING_NOISY`.
+  `ACTION_AUDIO_BECOMING_NOISY`. `AudioFocusRequest` (API 26+) with `USAGE_MEDIA` / `CONTENT_TYPE_SPEECH`.
+- Playback is disabled while `DictationController` is recording, and starting a recording stops playback.
 - Hidden when the audio file is gone (keep-audio off, retention, "delete all audio"); no error toast.
 - No new permission. Playback never starts on its own.
 
@@ -54,7 +55,8 @@ everything already out of v1 (sync, LLM post-processing, Wear OS, full QWERTY).
 - Detail menu "Retry with…" lists configured providers that have a valid key (and self-hosted if set). Runs one
   attempt with that provider only (no fallback chain), same consent and size checks as a normal run (CONTRACT §4.2, §4.4).
   Needs the kept audio; disabled with a reason when it is gone.
-- Result replaces the transcript of that history item and updates `provider`/`model`; the previous text is not kept.
+- On success the result replaces the transcript and updates `provider`/`model` (the previous text is not kept). On
+  failure the item keeps its previous text and status, and the error shows as a snackbar.
 
 ### F6 Export
 - Entry points: detail ("Export"), and a selection mode in the history list (long-press to select, "Select all" =
@@ -66,7 +68,8 @@ everything already out of v1 (sync, LLM post-processing, Wear OS, full QWERTY).
   - `.md`: `# Whisperio export` + `## YYYY-MM-DD HH:mm · <source> · <provider>` per item, transcript as a paragraph.
   - Failed items without text are skipped and counted in the result snackbar ("Exported 12, skipped 2 without text").
 - Pure formatter in `core` (unit-tested: ordering newest first, escaping of Markdown-significant leading characters
-  `#`, `>`, `-`, `*`, `1.` by a backslash, empty selection).
+  `#`, `>`, `-`, `+`, `*`, any `\d+[.)]`, and a line that is only `---` or `===` (would become a heading or
+  rule), by a backslash; empty selection).
 - The existing share sheet (`ACTION_SEND`) stays for one item.
 
 ### F7 Language per app
@@ -79,27 +82,35 @@ everything already out of v1 (sync, LLM post-processing, Wear OS, full QWERTY).
 - Storage: a local DataStore map, max 200 entries (LRU by last use). Never sent anywhere, not in history, not in logs,
   not exported. Turning the switch off deletes the map. "Erase all data" deletes it. Settings shows "Apps with a saved
   language: N" with "Clear".
-- Password / `TYPE_TEXT_VARIATION_*PASSWORD*` / `IME_FLAG_NO_PERSONALIZED_LEARNING` fields: never store an entry (same
-  rule as Gboard's personalised learning).
+- Fields where `ImeCommitPolicy.isPasswordField` is true (including number passwords) or `isNoPersonalizedLearning`
+  is set, or where `packageName` is null, never store an entry (same rule as Gboard's personalised learning).
 - Privacy: package names stay on the device, so Play Data safety does not change (it covers data sent off the device;
-  see `play-data-safety.md` §0). The privacy policy gets one sentence in the on-device data section (§3 of
-  `docs/privacy.html`): the per-app language list, local only, off by default. Legal review (Opus) of that sentence.
+  see `play-data-safety.md` §0; Play's "Installed apps" type covers collection only, and package names come from
+  `EditorInfo`, no `QUERY_ALL_PACKAGES`). `play-data-safety.md` §3 gets the line "Installed apps: not collected (F7
+  package names stay on device; from `EditorInfo`, no `QUERY_ALL_PACKAGES`)". The privacy policy gets one sentence in
+  §8.3 Keyboard of `docs/privacy.html` (per-app language list, package names only, on device, off by default, deleted
+  on switch-off or Erase all). Legal review (Opus) of that sentence.
 
 ### F8 Widget
 - `AppWidgetProvider` with RemoteViews (no Glance dependency): one "Dictate" button that starts the same
   `DictateActivity` as the QS tile and shortcut (CONTRACT §6), `PendingIntent.FLAG_IMMUTABLE`. Sizes 1x1 and 2x1
   (2x1 adds the label). Recording `source = WIDGET` is new: add `WIDGET` to `RecordingSource`; stored as text in the
-  existing `source` column, so no migration (old app versions are never downgraded onto the same database).
+  existing `source` column (Room enum name in TEXT, no TypeConverter, exported schema unchanged), so no migration.
+  An older build reading `WIDGET` would throw, so app versions are never downgraded onto the same database
+  (internal-track rollback = uninstall). `DictateActivity.sourceFor` maps `"widget"` to `WIDGET` (unit test; today any
+  non-"shortcut" extra becomes `TILE`). The `PendingIntent` is explicit, so `exported="false"` stays.
 - No periodic updates (`updatePeriodMillis = 0`), no data shown on the widget (no transcript on the home screen).
 
 ### F9 Haptics
 - `View.performHapticFeedback(HapticFeedbackConstants.CONFIRM)` (API 30+, `VIRTUAL_KEY` below) on copy, keyboard insert
-  and finished transcription. No `VIBRATE` permission. Follows the system "touch feedback" setting.
+  and finished transcription. No `VIBRATE` permission. Follows the system "touch feedback" setting. In Compose use
+  `LocalHapticFeedback` (`Confirm` / `VirtualKey`); the finished-transcription haptic fires only while a view is attached.
 
 ## 4. Non-functional
 - No new runtime permissions, no new network destinations, no new dependencies except `androidx.media` only if
   `MediaPlayer` proves insufficient (decide in review, default: none).
-- All new strings in `values` and `values-pl`. TalkBack labels for the chip, the player and selection mode.
+- All new strings in `values` and `values-pl`, and TalkBack labels (keyboard chip, player, selection mode, widget
+  `contentDescription`), per lane, not at the end.
 - Tests: unit tests for search escaping, day grouping, export formatter, per-app language map (LRU, password rule,
   wipe on switch-off and on Erase all), retry-with-provider (single attempt, no fallback). Roborazzi for history (search,
   headers, chips, selection), detail (player, retry menu), keyboard chip, widget layout; phone + tablet + font 2x, EN/PL.
@@ -115,7 +126,7 @@ everything already out of v1 (sync, LLM post-processing, Wear OS, full QWERTY).
 Each lane: branch from `android/skeleton`, PR-equivalent review (Opus, 1 round), merge `--no-ff`. Version bump and
 release notes in the last merge.
 
-## 6. Decisions needed in review
-- D1: per-app language on by default? Proposal: off (privacy-by-default, RODO art. 25).
-- D2: `source = WIDGET` as a new value vs reusing `SHORTCUT`. Proposal: new value (honest history).
-- D3: export `.json` too? Proposal: no (no consumer yet; add in 1.2 if asked).
+## 6. Decisions (Opus review 2026-10-19: CHANGES, all applied)
+- D1: per-app language is off by default (privacy by default, RODO art. 25); an opt-in switch.
+- D2: `source = WIDGET` is a new value (honest history), with the F3 chip and the `sourceFor` mapping above.
+- D3: no `.json` export in 1.1 (no consumer yet; 1.2 if asked).
