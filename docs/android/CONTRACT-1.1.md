@@ -105,6 +105,8 @@ everything already out of v1 (sync, LLM post-processing, Wear OS, full QWERTY).
 - `View.performHapticFeedback(HapticFeedbackConstants.CONFIRM)` (API 30+, `VIRTUAL_KEY` below) on copy, keyboard insert
   and finished transcription. No `VIBRATE` permission. Follows the system "touch feedback" setting. In Compose use
   `LocalHapticFeedback` (`Confirm` / `VirtualKey`); the finished-transcription haptic fires only while a view is attached.
+- Accepted deviation: the app calls `View.performHapticFeedback` (via `confirmHaptic`) instead of `LocalHapticFeedback`,
+  because `HapticFeedbackType.Confirm` needs Compose 1.8 and the BOM in use ships 1.7.x.
 
 ## 4. Non-functional
 - No new runtime permissions, no new network destinations, no new dependencies except `androidx.media` only if
