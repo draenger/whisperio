@@ -88,6 +88,7 @@ Transport — **two OkHttp clients**, so plain http can never reach a public hos
 
 ### 4.4 Size limits (Android adds what iOS lacks)
 Recording at AAC-LC 16 kHz mono 32 kbps ≈ 14 MB/hour. Before upload the client checks the file against the provider limit (OpenAI/Groq/Mistral 25 MB, others 100 MB+) and fails with a clear message instead of an opaque HTTP 413. Hard recording cap: 60 min, with a visible warning at 55 min.
+The 100 MiB on-device cap for ElevenLabs/Deepgram/AssemblyAI (`ProviderCatalog.kt`) is a deliberate safety cap below those providers' own limits (phone memory and upload time); at 32 kbps it is about 7 hours of audio, far above the 60-minute recording cap.
 
 ## 5. Keyboard (IME)
 

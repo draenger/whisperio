@@ -30,6 +30,7 @@ import ai.whisperio.android.ui.onboarding.TryItCommand
 import ai.whisperio.android.ui.onboarding.TryItSession
 import ai.whisperio.android.ui.onboarding.tryItCanStop
 import ai.whisperio.android.ui.onboarding.tryItLeave
+import ai.whisperio.android.ui.onboarding.tryItPendingStale
 import ai.whisperio.android.ui.onboarding.tryItShouldAck
 import ai.whisperio.android.ui.onboarding.tryItView
 import ai.whisperio.android.ui.settings.KeyDialogState
@@ -109,6 +110,8 @@ fun AppRoot() {
         if (tryItShouldAck(dictation, tryIt)) {
             g.dictation.acknowledge()
             tryPending = false
+        } else if (tryItPendingStale(dictation, tryIt)) {
+            tryPending = false // never acknowledge: the controller is not transcribing anything of ours any more
         }
     }
     if (!s.onboardingDone) {

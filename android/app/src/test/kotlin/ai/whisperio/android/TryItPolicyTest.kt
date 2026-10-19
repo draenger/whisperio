@@ -7,6 +7,7 @@ import ai.whisperio.android.ui.onboarding.TryItCommand
 import ai.whisperio.android.ui.onboarding.TryItSession
 import ai.whisperio.android.ui.onboarding.tryItCanStop
 import ai.whisperio.android.ui.onboarding.tryItLeave
+import ai.whisperio.android.ui.onboarding.tryItPendingStale
 import ai.whisperio.android.ui.onboarding.tryItShouldAck
 import ai.whisperio.android.ui.onboarding.tryItView
 import org.junit.Assert.assertEquals
@@ -77,5 +78,31 @@ class TryItPolicyTest {
         assertTrue(tryItCanStop(rec(), active))
         assertFalse(tryItCanStop(rec(RecordingSource.KEYBOARD), active))
         assertFalse(tryItCanStop(rec(), TryItSession()))
+    }
+
+    @Test fun pendingAckIsStaleOnceControllerIsIdleOrRecording() {
+        val pending = TryItSession(pendingAck = true)
+        assertTrue(tryItPendingStale(DictationState.Idle, pending))
+        for (src in RecordingSource.values()) assertTrue(tryItPendingStale(rec(src), pending))
+    }
+
+    @Test fun pendingAckSurvivesTranscribingAndTheAckPath() {
+        val pending = TryItSession(pendingAck = true)
+        assertFalse(tryItPendingStale(transcribing, pending))
+        assertFalse(tryItPendingStale(done, pending))
+        assertFalse(tryItPendingStale(error, pending))
+        // leave-while-transcribing yields a session that is not stale in the very state it was left in
+        assertFalse(tryItPendingStale(transcribing, tryItLeave(transcribing, active).session))
+    }
+
+    @Test fun noPendingAckIsNeverStale() {
+        assertFalse(tryItPendingStale(DictationState.Idle, TryItSession()))
+        assertFalse(tryItPendingStale(rec(), active))
+    }
+
+    @Test fun clearedStaleFlagDoesNotSwallowALaterDone() {
+        var session = TryItSession(pendingAck = true)
+        if (tryItPendingStale(DictationState.Idle, session)) session = session.copy(pendingAck = false)
+        assertFalse(tryItShouldAck(DictationState.Done("home", "r2", RecordingSource.APP), session))
     }
 }
