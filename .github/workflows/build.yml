@@ -77,7 +77,8 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: windows-latest
+          # windows-latest = windows-2025-vs2026 since 2026-10; node-gyp 9 (active-win rebuild) cannot find VS 2026.
+          - os: windows-2022
             platform: win
             timeout: 20
           - os: ubuntu-latest
