@@ -73,12 +73,13 @@ Kategoria i kontakt (Obecność w sklepie > Ustawienia sklepu):
 | Czy użytkownik może poprosić o usunięcie danych? | **Tak** (usuwanie lokalne "Usuń wszystkie dane" + odinstalowanie; nic nie trzymamy na serwerze) |
 | Tworzenie konta | **Aplikacja nie pozwala tworzyć kont** (brak URL usuwania konta) |
 
-Typy danych (zaznacz tylko te dwa):
+Typy danych (zaznacz dokładnie te trzy):
 
 | Typ | Zbierane | Udostępniane | Przetwarzane efemerycznie | Wymagane/opcjonalne | Cel |
 |---|---|---|---|---|---|
 | Pliki audio > **Nagrania głosu lub dźwięku** | Tak | **Nie** | **Nie** | Wymagane | Funkcje aplikacji |
 | Aktywność w aplikacji > **Inne treści generowane przez użytkownika** (własny słownik) | Tak | **Nie** | **Nie** | Opcjonalne | Funkcje aplikacji |
+| Dane osobowe > **Identyfikatory użytkownika** (własny klucz API dostawcy) | Tak | **Nie** | **Nie** | Wymagane | Funkcje aplikacji |
 
 Sprawdź podgląd: **NIE** może pokazywać "Brak zbieranych danych" (w Play nagranie wysyłane do dostawcy = dane zbierane;
 w App Store jest inaczej i tam "Data Not Collected" jest poprawne).
