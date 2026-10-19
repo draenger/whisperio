@@ -30,6 +30,9 @@ win:
   # written into app-update.yml; the in-app verifier (src/main/updateSignature) pins the thumbprint.
   signtoolOptions:
     publisherName: Jarvis (Daniel Kasprzyk)
+    # Only used when a cert is given (build:win:signed); the CLI can't pass an array (string fails validation).
+    signingHashAlgorithms:
+      - sha256
 nsis:
   oneClick: false
   allowToChangeInstallationDirectory: true
