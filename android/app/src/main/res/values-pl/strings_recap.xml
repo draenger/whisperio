@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="recap_card_title">Ten tydzień</string>
+    <string name="recap_card_summary">%1$s · %2$s</string>
+    <string name="recap_card_saved">Oszczędność ok. %1$s względem pisania</string>
+    <string name="recap_card_cd">Ten tydzień: %1$s, %2$s, oszczędność ok. %3$s względem pisania. Otwiera podsumowanie tygodnia.</string>
+    <string name="recap_title">Podsumowanie tygodnia</string>
+    <string name="recap_week">Tydzień %1$d · %2$s</string>
+    <string name="recap_range">%1$s – %2$s</string>
+    <string name="recap_share">Udostępnij podsumowanie</string>
+    <string name="recap_share_chooser">Udostępnij swój tydzień</string>
+    <string name="recap_share_failed">Nie udało się udostępnić podsumowania.</string>
+    <string name="recap_share_text">Mój tydzień z Whisperio: %1$s, %2$s, oszczędność ok. %3$s względem pisania. Seria: %4$s.</string>
+    <string name="recap_empty">W tym tygodniu nie ma jeszcze notatek z tekstem. Podyktuj coś, a pojawi się tutaj.</string>
+    <string name="recap_tile_words">Słowa</string>
+    <string name="recap_tile_notes">Notatki</string>
+    <string name="recap_tile_wpm">Słów na minutę</string>
+    <string name="recap_tile_streak">Seria dni</string>
+    <string name="recap_tile_best">Rekord: %1$s</string>
+    <string name="recap_wpm_none">—</string>
+    <string name="recap_words_per_day">Słowa dziennie</string>
+    <string name="recap_chart_cd">Słowa dziennie: %1$s</string>
+    <string name="recap_chart_item">%1$s %2$s</string>
+    <string name="recap_note_title">Notatka tygodnia</string>
+    <string name="recap_categories">Według kategorii</string>
+    <string name="recap_category_none">Brak</string>
+    <string name="recap_providers">Minuty według dostawcy</string>
+    <string name="recap_minutes_short">%1$s min</string>
+    <string name="recap_card_footer">Whisperio</string>
+
+    <plurals name="recap_n_words">
+        <item quantity="one">%1$s słowo</item>
+        <item quantity="few">%1$s słowa</item>
+        <item quantity="many">%1$s słów</item>
+        <item quantity="other">%1$s słowa</item>
+    </plurals>
+    <plurals name="recap_n_notes">
+        <item quantity="one">%1$s notatka</item>
+        <item quantity="few">%1$s notatki</item>
+        <item quantity="many">%1$s notatek</item>
+        <item quantity="other">%1$s notatki</item>
+    </plurals>
+    <plurals name="recap_n_days">
+        <item quantity="one">%1$s dzień</item>
+        <item quantity="few">%1$s dni</item>
+        <item quantity="many">%1$s dni</item>
+        <item quantity="other">%1$s dnia</item>
+    </plurals>
+    <plurals name="recap_n_minutes">
+        <item quantity="one">%1$s minuta</item>
+        <item quantity="few">%1$s minuty</item>
+        <item quantity="many">%1$s minut</item>
+        <item quantity="other">%1$s minuty</item>
+    </plurals>
+    <plurals name="recap_saved_caption">
+        <item quantity="one">minuta zaoszczędzona względem pisania</item>
+        <item quantity="few">minuty zaoszczędzone względem pisania</item>
+        <item quantity="many">minut zaoszczędzonych względem pisania</item>
+        <item quantity="other">minuty zaoszczędzone względem pisania</item>
+    </plurals>
+</resources>

@@ -50,6 +50,7 @@ class AppGraph private constructor(private val appOrNull: Application?, private 
         val recordingsDir: File,
         val dictation: DictationController,
         val appLanguages: AppLanguageStore? = null,
+        val shareDir: File? = null,
     )
 
     internal constructor(overrides: Overrides) : this(null, overrides)
@@ -61,6 +62,9 @@ class AppGraph private constructor(private val appOrNull: Application?, private 
         o?.appScope ?: CoroutineScope(SupervisorJob() + Dispatchers.Default.limitedParallelism(1))
 
     val recordingsDir: File by lazy { o?.recordingsDir ?: File(app.filesDir, "recordings") }
+
+    /** `cacheDir/share/`: the recap card PNG (CONTRACT-1.2 F2); deleted by [eraseAllData]. Null only in a test graph without one. */
+    private val shareDir: File? by lazy { o?.shareDir ?: appOrNull?.let { File(it.cacheDir, "share") } }
 
     val secrets: SecretStore by lazy { o?.secrets ?: KeystoreSecretStore(app.secretsDataStore, AndroidKeystoreCipher()) }
     val catalog: ModelCatalog by lazy { CoreModelCatalog() }
@@ -132,6 +136,7 @@ class AppGraph private constructor(private val appOrNull: Application?, private 
             secrets.clear()
             settings.clear()
             appLanguages.clear()
+            shareDir?.deleteRecursively()
         }.join()
     }
 }

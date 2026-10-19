@@ -139,6 +139,18 @@ class EraseAllTest {
         assertNull(appLanguages.languageFor("com.example.app"))
     }
 
+    @Test fun eraseDeletesTheShareCacheDir() = runTest {
+        val scope = appScope()
+        val dictation = controller(scope)
+        val shareDir = File(tmp.root, "cache/share").also { it.mkdirs() }
+        File(shareDir, "recap.png").writeBytes(byteArrayOf(1, 2, 3))
+        val g = AppGraph(AppGraph.Overrides(scope, db, secrets, settings, recordingsDir, dictation, appLanguages, shareDir))
+
+        g.eraseAllData()
+
+        assertTrue(!shareDir.exists())
+    }
+
     @Test fun switchingPerAppLanguageOffDeletesTheMap() = runTest {
         val scope = appScope()
         val g = graph(scope, controller(scope))

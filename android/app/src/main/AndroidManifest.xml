@@ -93,5 +93,15 @@
                 android:name="android.appwidget.provider"
                 android:resource="@xml/widget_dictate_2x1_info" />
         </receiver>
+        <!-- CONTRACT-1.2 F2: shares the recap card PNG (cacheDir/share/ only). Not exported; the share intent grants read per URI. -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.share"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/share_paths" />
+        </provider>
     </application>
 </manifest>

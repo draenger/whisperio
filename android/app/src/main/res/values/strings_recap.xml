@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="recap_card_title">This week</string>
+    <string name="recap_card_summary">%1$s · %2$s</string>
+    <string name="recap_card_saved">About %1$s saved vs typing</string>
+    <string name="recap_card_cd">This week: %1$s, %2$s, about %3$s saved vs typing. Opens the weekly recap.</string>
+    <string name="recap_title">Weekly recap</string>
+    <string name="recap_week">Week %1$d · %2$s</string>
+    <string name="recap_range">%1$s – %2$s</string>
+    <string name="recap_share">Share recap</string>
+    <string name="recap_share_chooser">Share your week</string>
+    <string name="recap_share_failed">Could not share the recap.</string>
+    <string name="recap_share_text">My week with Whisperio: %1$s spoken across %2$s, about %3$s saved vs typing. %4$s streak.</string>
+    <string name="recap_empty">No notes with text this week yet. Dictate something and it shows up here.</string>
+    <string name="recap_tile_words">Words</string>
+    <string name="recap_tile_notes">Notes</string>
+    <string name="recap_tile_wpm">Words per minute</string>
+    <string name="recap_tile_streak">Day streak</string>
+    <string name="recap_tile_best">Best: %1$s</string>
+    <string name="recap_wpm_none">—</string>
+    <string name="recap_words_per_day">Words per day</string>
+    <string name="recap_chart_cd">Words per day: %1$s</string>
+    <string name="recap_chart_item">%1$s %2$s</string>
+    <string name="recap_note_title">Note of the week</string>
+    <string name="recap_categories">By category</string>
+    <string name="recap_category_none">None</string>
+    <string name="recap_providers">Minutes by provider</string>
+    <string name="recap_minutes_short">%1$s min</string>
+    <string name="recap_card_footer">Whisperio</string>
+
+    <plurals name="recap_n_words">
+        <item quantity="one">%1$s word</item>
+        <item quantity="other">%1$s words</item>
+    </plurals>
+    <plurals name="recap_n_notes">
+        <item quantity="one">%1$s note</item>
+        <item quantity="other">%1$s notes</item>
+    </plurals>
+    <plurals name="recap_n_days">
+        <item quantity="one">%1$s day</item>
+        <item quantity="other">%1$s days</item>
+    </plurals>
+    <plurals name="recap_n_minutes">
+        <item quantity="one">%1$s minute</item>
+        <item quantity="other">%1$s minutes</item>
+    </plurals>
+    <!-- Caption under the big number, which is shown separately. -->
+    <plurals name="recap_saved_caption">
+        <item quantity="one">minute saved vs typing</item>
+        <item quantity="other">minutes saved vs typing</item>
+    </plurals>
+</resources>

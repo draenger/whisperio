@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <!-- CONTRACT-1.2 F2: only cacheDir/share/ (the recap card PNG) is ever exposed through the FileProvider. -->
+    <cache-path name="share" path="share/" />
+</paths>
