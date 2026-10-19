@@ -77,13 +77,34 @@ class NativeApiProvidersTest {
         assertEquals("ElevenLabs error: HTTP 401: invalid api key", e.message)
     }
 
-    @Test fun elevenLabsHasNoSizeLimitCheck() = runBlocking<Unit> {
+    @Test fun elevenLabsAcceptsFilesOver25MiB() = runBlocking<Unit> {
         server.enqueueJson("""{"text":"x"}""")
         val big = java.io.File.createTempFile("big", ".m4a").apply {
             deleteOnExit()
             java.io.RandomAccessFile(this, "rw").use { it.setLength(MAX_UPLOAD_BYTES + 1) }
         }
         assertEquals("x", ElevenLabsProvider("k", "", server.base("/v1"), client).transcribe(TranscriptionRequest(big, "en")).text)
+    }
+
+    @Test fun nativeProvidersRejectFilesOverTheirCatalogLimitBeforeUploading() = runBlocking<Unit> {
+        val limit = 100L * 1024 * 1024
+        val big = java.io.File.createTempFile("big", ".m4a").apply {
+            deleteOnExit()
+            java.io.RandomAccessFile(this, "rw").use { it.setLength(limit + 1) }
+        }
+        val providers = listOf(
+            ElevenLabsProvider("k", "", server.base("/v1"), client),
+            DeepgramProvider("k", "", server.base("/v1"), client),
+            AssemblyAiProvider("k", "", server.base("/v2"), client),
+        )
+        for (p in providers) {
+            val e = kotlin.test.assertFailsWith<ProviderError.FileTooLarge>(p.id.wire) {
+                runBlocking { p.transcribe(TranscriptionRequest(big, "en")) }
+            }
+            assertEquals(limit, e.limitBytes, p.id.wire)
+        }
+        assertEquals(0, server.requestCount)
+        big.delete()
     }
 
     // ---- Deepgram

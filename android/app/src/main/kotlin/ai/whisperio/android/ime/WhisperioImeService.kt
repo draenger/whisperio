@@ -2,6 +2,7 @@ package ai.whisperio.android.ime
 
 import ai.whisperio.android.MainActivity
 import ai.whisperio.android.dictation.DictationResult
+import ai.whisperio.android.dictation.DictationController
 import ai.whisperio.android.dictation.DictationState
 import ai.whisperio.android.dictation.StartOptions
 import ai.whisperio.android.dictation.primaryProvider
@@ -15,6 +16,7 @@ import android.os.Build
 import android.view.KeyEvent
 import android.view.View
 import android.view.inputmethod.EditorInfo
+import android.view.inputmethod.InputConnection
 import android.view.inputmethod.InputMethodManager
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -65,7 +67,7 @@ class WhisperioImeService : InputMethodService(), LifecycleOwner, ViewModelStore
     private val field = MutableStateFlow(FieldState())
     private val micGranted = MutableStateFlow(false)
     private val notInserted = MutableStateFlow(false)
-    private var inputSessionCounter = 0L
+    private val sessionCounter = InputSessionCounter()
     private var selStart = -1
     private var selEnd = -1
     private lateinit var panelState: StateFlow<ImePanelState>
@@ -126,15 +128,15 @@ class WhisperioImeService : InputMethodService(), LifecycleOwner, ViewModelStore
 
     override fun onStartInput(attribute: EditorInfo?, restarting: Boolean) {
         super.onStartInput(attribute, restarting)
+        sessionCounter.onStartInput(restarting)
         if (!restarting) {
-            inputSessionCounter++
             selStart = -1
             selEnd = -1
         }
     }
 
     override fun onFinishInput() {
-        inputSessionCounter++
+        sessionCounter.onFinishInput()
         super.onFinishInput()
     }
 
@@ -146,7 +148,7 @@ class WhisperioImeService : InputMethodService(), LifecycleOwner, ViewModelStore
         selEnd = newSelEnd
     }
 
-    private fun currentSession() = InputSession(inputSessionCounter, ImeCommitPolicy.fieldKey(currentInputEditorInfo))
+    private fun currentSession() = InputSession(sessionCounter.value, ImeCommitPolicy.fieldKey(currentInputEditorInfo))
 
     override fun onEvaluateFullscreenMode(): Boolean = false
 
@@ -168,14 +170,12 @@ class WhisperioImeService : InputMethodService(), LifecycleOwner, ViewModelStore
     override fun onFinishInputView(finishingInput: Boolean) {
         super.onFinishInputView(finishingInput)
         // Focus lost / IME hidden while recording: stop and discard, no background recording (CONTRACT 5).
-        val s = graph.dictation.state.value
-        if (s is DictationState.Recording && s.source == RecordingSource.KEYBOARD) graph.dictation.cancel()
+        cancelKeyboardRecordingIfNeeded(graph.dictation)
         lifecycleRegistry.currentState = Lifecycle.State.STARTED
     }
 
     override fun onDestroy() {
-        val s = graph.dictation.state.value
-        if (s is DictationState.Recording && s.source == RecordingSource.KEYBOARD) graph.dictation.cancel()
+        cancelKeyboardRecordingIfNeeded(graph.dictation)
         lifecycleRegistry.currentState = Lifecycle.State.DESTROYED
         store.clear()
         super.onDestroy()
@@ -198,37 +198,22 @@ class WhisperioImeService : InputMethodService(), LifecycleOwner, ViewModelStore
             is DictationState.Transcribing -> Unit
             else -> {
                 val f = field.value
-                if (f.password) return // mic is disabled in password fields
+                val options = keyboardStartOptions(f.password, f.imeOptions, currentSession()) ?: return // mic disabled in password fields
                 micGranted.value = graph.micGranted()
                 notInserted.value = false
-                controller.start(
-                    StartOptions(
-                        source = RecordingSource.KEYBOARD,
-                        saveToHistory = ImeCommitPolicy.shouldSaveToHistory(f.imeOptions),
-                        session = currentSession(),
-                    ),
-                )
+                controller.start(options)
             }
         }
     }
 
     private fun handleResult(result: DictationResult) {
-        if (result.source != RecordingSource.KEYBOARD) return
-        val started = result.session as? InputSession ?: return // retries from history carry no session
-        val ic = currentInputConnection
-        val info = currentInputEditorInfo
-        val password = info == null || ImeCommitPolicy.isPasswordField(info.inputType)
-        if (ic != null && ImeCommitPolicy.canCommit(started, currentSession(), password, isInputViewShown)) {
-            val text = ImeCommitPolicy.textToCommit(result.text, ic.getTextBeforeCursor(1, 0))
-            ic.commitText(text, 1)
-            result.recordingId?.let { graph.dictation.markInserted(it, true) }
-            notInserted.value = false
-            graph.dictation.acknowledge()
-            if (isVoiceSubtype()) switchBackAfterVoice()
-        } else {
-            // Input session changed, password field or IME hidden while transcribing: the history row stays "not inserted".
-            notInserted.value = true
-        }
+        val outcome = commitKeyboardResult(
+            result, currentInputConnection, currentInputEditorInfo, currentSession(), isInputViewShown,
+            markInserted = { graph.dictation.markInserted(it, true) },
+            acknowledge = { graph.dictation.acknowledge() },
+        ) ?: return
+        notInserted.value = !outcome
+        if (outcome && isVoiceSubtype()) switchBackAfterVoice()
     }
 
     private fun onBackspace() {
@@ -278,3 +263,52 @@ class WhisperioImeService : InputMethodService(), LifecycleOwner, ViewModelStore
         )
     }
 }
+
+/** Input-session counter: bumped by a non-restarting start and by every finish (testable without a service host). */
+internal class InputSessionCounter {
+    var value = 0L
+        private set
+
+    fun onStartInput(restarting: Boolean) { if (!restarting) value++ }
+    fun onFinishInput() { value++ }
+}
+
+/** Focus lost / IME hidden while the keyboard is recording: stop and discard (CONTRACT 5). */
+internal fun shouldCancelKeyboardRecording(s: DictationState): Boolean =
+    s is DictationState.Recording && s.source == RecordingSource.KEYBOARD
+
+/** The decision shared by onFinishInputView and onDestroy: cancel only a keyboard-owned recording. */
+internal fun cancelKeyboardRecordingIfNeeded(c: DictationController) {
+    if (shouldCancelKeyboardRecording(c.state.value)) c.cancel()
+}
+
+/**
+ * Commits a keyboard transcript if [ImeCommitPolicy.canCommit] allows. Returns null when the result is not ours
+ * (other source / retry without a session), true when committed, false when it must stay "not inserted".
+ */
+internal fun commitKeyboardResult(
+    result: DictationResult,
+    ic: InputConnection?,
+    info: EditorInfo?,
+    current: InputSession,
+    inputViewShown: Boolean,
+    markInserted: (String) -> Unit,
+    acknowledge: () -> Unit,
+): Boolean? {
+    if (result.source != RecordingSource.KEYBOARD) return null
+    val started = result.session as? InputSession ?: return null // retries from history carry no session
+    val password = info == null || ImeCommitPolicy.isPasswordField(info.inputType)
+    if (ic == null || !ImeCommitPolicy.canCommit(started, current, password, inputViewShown)) return false
+    ic.commitText(ImeCommitPolicy.textToCommit(result.text, ic.getTextBeforeCursor(1, 0)), 1)
+    result.recordingId?.let(markInserted)
+    acknowledge()
+    return true
+}
+
+/** Mic start options for the bound field; null in password fields (mic disabled). */
+internal fun keyboardStartOptions(password: Boolean, imeOptions: Int, session: InputSession): StartOptions? =
+    if (password) null else StartOptions(
+        source = RecordingSource.KEYBOARD,
+        saveToHistory = ImeCommitPolicy.shouldSaveToHistory(imeOptions),
+        session = session,
+    )

@@ -22,6 +22,7 @@ class ElevenLabsProvider(
 
     override suspend fun transcribe(request: TranscriptionRequest): TranscriptionResult {
         val key = requireKey(id, apiKey)
+        ProviderCatalog.info(id).maxUploadBytes?.let { checkUploadSize(request.audio, it) }
         val terms = cleanKeyterms(request.vocabulary)
         val trimmed = model.trim()
         val modelId = if (trimmed.isEmpty() || (trimmed == "scribe_v1" && terms.isNotEmpty())) {

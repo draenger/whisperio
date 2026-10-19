@@ -2,6 +2,25 @@ package ai.whisperio.android.ui.onboarding
 
 import ai.whisperio.android.R
 import ai.whisperio.android.settings.KeyUi
+import ai.whisperio.android.dictation.DictationState
+import ai.whisperio.android.ui.common.LevelMeter
+import ai.whisperio.android.ui.common.dictationStatusText
+import ai.whisperio.android.ui.common.liveStatus
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilledIconButton
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButtonDefaults
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextAlign
 import ai.whisperio.android.ui.common.KeyEntry
 import ai.whisperio.android.ui.common.Languages
 import ai.whisperio.android.ui.common.providerLabel
@@ -54,6 +73,8 @@ data class OnboardingState(
     val canAddTile: Boolean = false,
     /** A key for [provider] is already stored (re-opened onboarding), so Next is allowed without re-pasting. */
     val providerReady: Boolean = false,
+    /** Live dictation state for the step-7 "try it" mic (source APP). */
+    val dictation: DictationState = DictationState.Idle,
 )
 
 interface OnboardingActions {
@@ -68,6 +89,9 @@ interface OnboardingActions {
     fun onGrantMic() {}
     fun onOpenKeyboardSettings() {}
     fun onAddTile() {}
+    fun onTryDictate() {}
+    fun onTryStop() {}
+    fun onTryDismiss() {}
     fun onFinish() {}
 }
 
@@ -190,7 +214,10 @@ fun OnboardingScreen(state: OnboardingState, actions: OnboardingActions, modifie
                         modifier = Modifier.padding(top = 12.dp),
                     )
                 }
-                OnboardingStep.DONE -> StepText(R.string.onboarding_done_title, R.string.onboarding_done_body)
+                OnboardingStep.DONE -> {
+                    StepText(R.string.onboarding_done_title, R.string.onboarding_done_body)
+                    TryIt(state.dictation, actions)
+                }
             }
         }
         Row(
@@ -224,4 +251,63 @@ private fun StepText(title: Int, body: Int) {
     Text(stringResource(title), style = MaterialTheme.typography.headlineMedium)
     Spacer(Modifier.height(12.dp))
     Text(stringResource(body), style = MaterialTheme.typography.bodyLarge)
+}
+
+/** Step 7: a real first dictation through the shared controller; entirely optional (Finish is always enabled). */
+@Composable
+private fun TryIt(d: DictationState, actions: OnboardingActions) {
+    val recording = d is DictationState.Recording
+    val transcribing = d is DictationState.Transcribing
+    Column(Modifier.fillMaxWidth().padding(top = 16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(
+            stringResource(R.string.onboarding_try_hint),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        val desc = stringResource(if (recording) R.string.home_stop else R.string.home_dictate)
+        Box(Modifier.padding(vertical = 16.dp).size(112.dp), contentAlignment = Alignment.Center) {
+            if (transcribing) CircularProgressIndicator(Modifier.size(112.dp))
+            FilledIconButton(
+                onClick = if (recording) actions::onTryStop else actions::onTryDictate,
+                enabled = !transcribing,
+                shape = CircleShape,
+                modifier = Modifier.size(88.dp).semantics { contentDescription = desc },
+                colors = IconButtonDefaults.filledIconButtonColors(
+                    containerColor = if (recording) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
+                    contentColor = if (recording) MaterialTheme.colorScheme.onError else MaterialTheme.colorScheme.onPrimary,
+                ),
+            ) {
+                Icon(if (recording) Icons.Filled.Stop else Icons.Filled.Mic, null, Modifier.size(44.dp))
+            }
+        }
+        if (d is DictationState.Recording) LevelMeter(d.level, Modifier.widthIn(max = 320.dp))
+        Text(
+            dictationStatusText(d),
+            style = MaterialTheme.typography.bodyLarge,
+            textAlign = TextAlign.Center,
+            color = if (d is DictationState.Error) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.liveStatus().padding(top = 8.dp),
+        )
+        if (d is DictationState.Done) {
+            SelectionContainer {
+                Text(
+                    d.text,
+                    style = MaterialTheme.typography.bodyLarge,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 12.dp)
+                        .border(1.dp, MaterialTheme.colorScheme.outlineVariant, MaterialTheme.shapes.medium)
+                        .padding(12.dp),
+                )
+            }
+            TextButton(onClick = actions::onTryDismiss, modifier = Modifier.heightIn(min = 48.dp)) {
+                Text(stringResource(R.string.onboarding_try_again))
+            }
+        }
+        if (d is DictationState.Error) {
+            TextButton(onClick = actions::onTryDismiss, modifier = Modifier.heightIn(min = 48.dp)) {
+                Text(stringResource(R.string.action_dismiss))
+            }
+        }
+    }
 }

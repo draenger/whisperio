@@ -93,6 +93,7 @@
     <string name="key_add">Dodaj klucz</string>
     <string name="key_replace">Zmień klucz</string>
     <string name="key_remove">Usuń</string>
+    <string name="key_check">Sprawdź klucz</string>
     <string name="onboarding_step_of">Krok %1$d z %2$d</string>
     <string name="onboarding_welcome_title">Witaj w Whisperio</string>
     <string name="onboarding_welcome_body">Mów, a Twoje słowa pojawią się jako tekst w dowolnej aplikacji. Konfiguracja zajmuje minutę.</string>
@@ -116,6 +117,8 @@
     <string name="onboarding_done_title">Gotowe</string>
     <string name="onboarding_done_body">Dotknij mikrofonu na ekranie głównym albo przełącz się na klawiaturę Whisperio w dowolnej aplikacji.</string>
     <string name="onboarding_finish">Zacznij dyktować</string>
+    <string name="onboarding_try_hint">Dotknij mikrofonu, aby wypróbować pierwsze dyktowanie, albo zakończ teraz. Możesz to zrobić później na ekranie głównym.</string>
+    <string name="onboarding_try_again">Spróbuj ponownie</string>
     <string name="settings_providers">Dostawcy</string>
     <string name="settings_providers_hint">Dostawcy są używani w tej kolejności. Brane są pod uwagę tylko ci z kluczem.</string>
     <string name="settings_fallback">Przełączaj na następnego dostawcę</string>

@@ -1,4 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="window_bg">#FF14111F</color>
+    <!-- = dark scheme surface in ui/theme/Theme.kt (desktop CSS var wsp-bg, dark). -->
+    <color name="window_bg">#FF070D15</color>
 </resources>

@@ -23,46 +23,13 @@ Whisperio is **free**: no billing, no ads, no account. Public production launch 
 
 Signing is read in `android/app/build.gradle.kts:11-28` (gitignored `android/keystore.properties` first, then the env vars).
 If any of the four values is missing the release build is produced **unsigned** instead of failing - always run the
-verification in section 3 so an unsigned AAB is never uploaded.
+signature check in `docs/android/INTERNAL-TRACK.md` so an unsigned AAB is never uploaded.
 
-## 2. Build the AAB [REPO]
+## 2-3. Build and verify the AAB [REPO]
 
-PowerShell, from the repo root:
-
-```powershell
-# 0. the four User env vars must exist (prints only SET/MISSING, never the value)
-'WHISPERIO_KEYSTORE_FILE','WHISPERIO_KEYSTORE_PASSWORD','WHISPERIO_KEY_ALIAS','WHISPERIO_KEY_PASSWORD' |
-  ForEach-Object { '{0}: {1}' -f $_, $(if ([Environment]::GetEnvironmentVariable($_, 'User')) {'SET'} else {'MISSING'}) }
-# expected values (not secrets): FILE = %USERPROFILE%\.android-keys\whisperio-upload.jks, ALIAS = whisperio-upload
-
-# 1. build with JDK 21
-$env:JAVA_HOME = 'C:\Program Files\Android\openjdk\jdk-21.0.8'
-cd android
-./gradlew :app:bundleRelease        # heavy job: queue it, do not run parallel to other gradle/emulator work
-```
-
-Gate before building (non-heavy, exit code 0 required): `./gradlew test lint :app:verifyRoborazziDebug :app:assembleDebug`
-(CONTRACT 9). Check the exit code, not the log tail.
-
-New session note: User env vars are visible to a freshly started shell, not to one that was open when they were set.
-
-## 3. Verify the signature [REPO]
-
-An AAB is a jar: use `jarsigner`/`keytool` (`apksigner` only verifies APKs).
-
-```powershell
-$jdk = 'C:\Program Files\Android\openjdk\jdk-21.0.8\bin'
-$aab = 'android\app\build\outputs\bundle\release\app-release.aab'
-& "$jdk\jarsigner.exe" -verify -verbose:summary -certs $aab      # must print "jar verified."
-& "$jdk\keytool.exe" -printcert -jarfile $aab                    # SHA256 line must equal the upload cert above
-```
-
-PASS only if (a) `jar verified.`, (b) the `SHA256:` fingerprint equals
-`CF:F7:B7:15:FF:B9:EF:79:7D:EE:B4:FF:56:BA:6F:87:92:A0:33:6B:9A:87:61:82:11:9E:A8:9E:0D:AE:D0:3D`
-(`jarsigner: ... not signed` or a different fingerprint = unsigned/wrong key: do not upload). Optional extra: after the
-first upload, Play Console > Test and release > App integrity shows the upload key fingerprint - it must match too.
-
-Optional content check (no emulator needed): `bundletool validate --bundle app-release.aab` if bundletool is installed.
+Moved to `docs/android/INTERNAL-TRACK.md` (exact build command with JAVA_HOME and gradle caps, signature check against the
+upload cert above, bundletool smoke, hand-over folder). Keep one copy only. Unsigned builds are not an error in gradle: the
+signature check there is mandatory.
 
 ## 4. Release-readiness gate [REPO]
 
@@ -107,7 +74,7 @@ Do these in order. Console menu names change; follow the intent.
    key"; the key in `whisperio-upload.jks` is the **upload key** only. On the first AAB upload Play registers its
    certificate. Keep a backup of the keystore and password outside the repo (the upload key can be reset via Play
    support, the signing key cannot be lost).
-4. **[REPO]** Prepare the signed AAB (sections 2-5) and the gate result. Hand over `app-release.aab`.
+4. **[REPO]** Prepare the signed AAB and the gate result per `docs/android/INTERNAL-TRACK.md`; hand over `app-release.aab`.
 5. **[DANIEL] Main store listing.** Grow > Store presence > Main store listing: copy **App name**, **Short description**,
    **Full description** from `android/marketing/play/listing.en.md` (default language) and add a Polish translation from
    `android/marketing/play/listing.pl.md`. Category Productivity, contact e-mail `daniel@danielkasprzyk.com`, website
@@ -131,10 +98,9 @@ Do these in order. Console menu names change; follow the intent.
 12. **[DANIEL] App content > Government apps = No; Financial features = none / not a financial app; Health = not a
     health app; News app = No; COVID-19 = not applicable.** Also: no advertising ID use (declare "No" to the
     advertising-ID question; the manifest has no `AD_ID`).
-13. **[DANIEL] Testing > Internal testing:** create the internal track, add the testers' e-mail list (Daniel + a few
-    devices), upload `app-release.aab`, confirm the Play App Signing prompt, roll out. Install through the opt-in link and
-    run the manual smoke from `docs/android/CONTRACT.md` section 9 (enable keyboard, dictate with a real key, tile flow,
-    erase all) on a real device from Play.
+13. **[DANIEL] Testing > Internal testing:** follow `docs/android/INTERNAL-TRACK.md` (track, testers, upload, release notes, roll out), then
+    install through the opt-in link and run the manual smoke from `docs/android/CONTRACT.md` section 9 (enable keyboard,
+    dictate with a real key, tile flow, erase all) on a real device from Play.
 14. **[DANIEL] Pre-launch report:** read the report Play generates for the internal build (crashes, accessibility,
     permission warnings) and hand findings to [REPO].
 15. **[DANIEL] Closed testing (personal accounts created after 2023-11-13 only):** production access requires a closed

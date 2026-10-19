@@ -99,14 +99,14 @@ Characters: 288/500
 | Order + optional fallback | strings `settings_providers_hint`, `settings_fallback` |
 | Key validated before save, encrypted with Keystore | `settings/KeyEnrollment.kt`, `security/KeystoreSecretStore.kt:47-66` |
 | Languages | `ui/common/Languages.kt` |
-| Custom vocabulary | `core/.../ProviderHttp.kt:132`, `ElevenLabsProvider.kt:25-35`; string `settings_vocabulary` |
+| Custom vocabulary | `core/.../ProviderHttp.kt:129`, `ElevenLabsProvider.kt:25-35`; string `settings_vocabulary` |
 | Text tidy-up | `core/.../TextCleaner.kt`; string `settings_cleanup_hint` |
 | Local history: copy, share, retry, delete | `history/HistoryStore.kt`, strings `action_copy/share/retry/delete` |
 | Auto-stop on silence, auto-delete 1/7/30 days | strings `settings_autostop_value`, `settings_auto_delete`; `di/AppGraph.kt:81-87` |
 | Consent before first upload | `ui/onboarding/OnboardingScreen.kt:80`, `dictation/DictationController.kt:172` |
-| No account/server/analytics/ads | `app/build.gradle.kts:122-162`, `app/src/test/kotlin/ai/whisperio/android/PrivacyGateTest.kt:15-29` |
+| No account/server/analytics/ads | `app/build.gradle.kts:130-170`, `app/src/test/kotlin/ai/whisperio/android/PrivacyGateTest.kt:15-29` |
 | Excluded from backups/transfer | `AndroidManifest.xml:14-16`, `res/xml/data_extraction_rules.xml` |
-| Erase all data | `di/AppGraph.kt:90-96` |
+| Erase all data | `di/AppGraph.kt:110-119` |
 | Keyboard: password fields off, no typed-text storage | `ime/ImeCommitPolicy.kt:19-37`, `ime/WhisperioImeService.kt:192` |
 | Android 8.0+ | `app/build.gradle.kts` `minSdk = 26` |
 | Dark/light, EN/PL UI | `res/values-night`, `res/values-pl/strings.xml` |

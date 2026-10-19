@@ -26,9 +26,6 @@ import kotlin.coroutines.resumeWithException
 
 // Shared plumbing for the providers; the iOS equivalent is Engine/MultipartBody.swift.
 
-/** 25 MB: OpenAI / Groq / Mistral reject larger uploads (CONTRACT section 4.4). */
-internal const val MAX_UPLOAD_BYTES: Long = 25L * 1024 * 1024
-
 internal val OCTET_STREAM = "application/octet-stream".toMediaType()
 internal val JSON_MEDIA = "application/json".toMediaType()
 
@@ -41,8 +38,8 @@ internal fun requireKey(provider: ProviderId, key: String?): String {
     return k
 }
 
-internal fun checkUploadSize(file: File) {
-    if (file.length() > MAX_UPLOAD_BYTES) throw ProviderError.FileTooLarge(MAX_UPLOAD_BYTES)
+internal fun checkUploadSize(file: File, limitBytes: Long) {
+    if (file.length() > limitBytes) throw ProviderError.FileTooLarge(limitBytes)
 }
 
 /** Adds the audio part; quotes/CR/LF are stripped from the filename (MultipartBody.swift). */

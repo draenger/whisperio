@@ -95,6 +95,16 @@ open class HomeSnapshotTest {
     fun setupNeeded() = rule.snapshot("home_setup_needed") {
         HomeScreen(HomeState(setupNeeded = true), noop)
     }
+
+    @Test @Config(qualifiers = ScreenshotConfig.TABLET)
+    fun idleTablet() = rule.snapshot("home_idle_tablet") {
+        HomeScreen(HomeState(recent = Fx.all, providerLabel = "OpenAI - whisper-1"), noop)
+    }
+
+    @Test @Config(qualifiers = PHONE)
+    fun idleFontScale2() = rule.snapshot("home_idle_font2", fontScale = 2f) {
+        HomeScreen(HomeState(recent = Fx.all, providerLabel = "OpenAI - whisper-1"), noop)
+    }
 }
 
 @RunWith(RobolectricTestRunner::class)
@@ -123,6 +133,20 @@ open class HistorySnapshotTest {
     @Test @Config(qualifiers = PHONE)
     fun detailFailedDark() = rule.snapshot("history_detail_failed", dark = true) {
         HistoryDetailScreen(Fx.failed, object : HistoryDetailActions {})
+    }
+
+    @Test @Config(qualifiers = ScreenshotConfig.TABLET)
+    fun listTablet() = rule.snapshot("history_list_tablet") { HistoryListScreen(Fx.all + Fx.notInserted, onOpen = {}) }
+
+    @Test @Config(qualifiers = PHONE)
+    fun listFontScale2() = rule.snapshot("history_list_font2", fontScale = 2f) { HistoryListScreen(Fx.all + Fx.notInserted, onOpen = {}) }
+
+    @Test @Config(qualifiers = ScreenshotConfig.TABLET)
+    fun detailTablet() = rule.snapshot("history_detail_tablet") { HistoryDetailScreen(Fx.notInserted, object : HistoryDetailActions {}) }
+
+    @Test @Config(qualifiers = PHONE)
+    fun detailFontScale2() = rule.snapshot("history_detail_font2", fontScale = 2f) {
+        HistoryDetailScreen(Fx.notInserted, object : HistoryDetailActions {})
     }
 }
 
@@ -170,6 +194,12 @@ open class SettingsSnapshotTest {
             )
         }
     }
+
+    @Test @Config(qualifiers = ScreenshotConfig.TABLET)
+    fun tablet() = rule.snapshot("settings_tablet") { SettingsScreen(state(), noop) }
+
+    @Test @Config(qualifiers = PHONE)
+    fun fontScale2() = rule.snapshot("settings_font2", fontScale = 2f) { SettingsScreen(state(), noop) }
 }
 
 @RunWith(RobolectricTestRunner::class)

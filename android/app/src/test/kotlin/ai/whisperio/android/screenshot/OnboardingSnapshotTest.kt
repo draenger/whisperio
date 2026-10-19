@@ -1,5 +1,7 @@
 package ai.whisperio.android.screenshot
 
+import ai.whisperio.android.dictation.DictationState
+import ai.whisperio.android.history.RecordingSource
 import ai.whisperio.android.settings.KeyUi
 import ai.whisperio.android.ui.onboarding.OnboardingActions
 import ai.whisperio.android.ui.onboarding.OnboardingScreen
@@ -22,8 +24,15 @@ open class OnboardingSnapshotTest {
 
     private val noop = object : OnboardingActions {}
 
-    private fun step(name: String, dark: Boolean = false, state: OnboardingState) =
-        rule.snapshot(name, dark) { OnboardingScreen(state, noop) }
+    private fun step(name: String, dark: Boolean = false, fontScale: Float = 1f, state: OnboardingState) =
+        rule.snapshot(name, dark, fontScale) { OnboardingScreen(state, noop) }
+
+    private val providerState =
+        OnboardingState(OnboardingStep.PROVIDER, keyInput = "sk-test-0000", keyUi = KeyUi.Valid)
+    private val tryItDoneState = OnboardingState(
+        OnboardingStep.DONE,
+        dictation = DictationState.Done("Hello from my first dictation.", null, RecordingSource.APP),
+    )
 
     @Test @Config(qualifiers = ScreenshotConfig.PHONE)
     fun welcome() = step("onboarding_1_welcome", state = OnboardingState(OnboardingStep.WELCOME))
@@ -58,6 +67,37 @@ open class OnboardingSnapshotTest {
 
     @Test @Config(qualifiers = ScreenshotConfig.PHONE)
     fun done() = step("onboarding_7_done", state = OnboardingState(OnboardingStep.DONE))
+
+    @Test @Config(qualifiers = ScreenshotConfig.PHONE)
+    fun tryItDone() = step(
+        "onboarding_7_try_done",
+        state = OnboardingState(
+            OnboardingStep.DONE,
+            dictation = DictationState.Done("Hello from my first dictation.", null, RecordingSource.APP),
+        ),
+    )
+
+    @Test @Config(qualifiers = ScreenshotConfig.PHONE)
+    fun tryItRecordingDark() = step(
+        "onboarding_7_try_recording",
+        dark = true,
+        state = OnboardingState(
+            OnboardingStep.DONE,
+            dictation = DictationState.Recording(elapsedMs = 4_000, level = 0.5f, nearLimit = false, source = RecordingSource.APP),
+        ),
+    )
+
+    @Test @Config(qualifiers = ScreenshotConfig.TABLET)
+    fun providerTablet() = step("onboarding_3_provider_tablet", state = providerState)
+
+    @Test @Config(qualifiers = ScreenshotConfig.PHONE)
+    fun providerFontScale2() = step("onboarding_3_provider_font2", fontScale = 2f, state = providerState)
+
+    @Test @Config(qualifiers = ScreenshotConfig.TABLET)
+    fun tryItDoneTablet() = step("onboarding_7_try_done_tablet", state = tryItDoneState)
+
+    @Test @Config(qualifiers = ScreenshotConfig.PHONE)
+    fun tryItDoneFontScale2() = step("onboarding_7_try_done_font2", fontScale = 2f, state = tryItDoneState)
 }
 
 @RunWith(RobolectricTestRunner::class)

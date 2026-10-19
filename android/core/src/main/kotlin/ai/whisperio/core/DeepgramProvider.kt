@@ -24,6 +24,7 @@ class DeepgramProvider(
 
     override suspend fun transcribe(request: TranscriptionRequest): TranscriptionResult {
         val key = requireKey(id, apiKey)
+        ProviderCatalog.info(id).maxUploadBytes?.let { checkUploadSize(request.audio, it) }
         val m = apiModel()
         val url = baseUrl.toHttpUrlStrict().child("listen").newBuilder()
             .addQueryParameter("model", m)

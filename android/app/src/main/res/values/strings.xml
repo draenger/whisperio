@@ -93,6 +93,7 @@
     <string name="key_add">Add key</string>
     <string name="key_replace">Replace key</string>
     <string name="key_remove">Remove</string>
+    <string name="key_check">Check key</string>
     <string name="onboarding_step_of">Step %1$d of %2$d</string>
     <string name="onboarding_welcome_title">Welcome to Whisperio</string>
     <string name="onboarding_welcome_body">Speak, and your words appear as text in any app. It takes a minute to set up.</string>
@@ -116,6 +117,8 @@
     <string name="onboarding_done_title">You are ready</string>
     <string name="onboarding_done_body">Tap the mic on the Home screen, or switch to the Whisperio keyboard in any app.</string>
     <string name="onboarding_finish">Start dictating</string>
+    <string name="onboarding_try_hint">Tap the mic to try a first dictation, or finish now. You can do this later from Home.</string>
+    <string name="onboarding_try_again">Try again</string>
     <string name="settings_providers">Providers</string>
     <string name="settings_providers_hint">Providers are tried in this order. Only those with a key are used.</string>
     <string name="settings_fallback">Fall back to the next provider</string>

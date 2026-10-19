@@ -11,6 +11,10 @@ sealed interface KeyUi {
     data object Validating : KeyUi
     data object Valid : KeyUi
     data object Invalid : KeyUi
+
+    /** Nothing stored to re-check (never set, or wiped as unreadable): the user must paste the key again. */
+    data object Missing : KeyUi
+
     data class Network(val message: String) : KeyUi
     data class Unexpected(val status: Int) : KeyUi
     data class InvalidUrl(val message: String) : KeyUi
@@ -35,10 +39,26 @@ class KeyEnrollment(
                 if (id == ProviderId.OPENAI || id == ProviderId.SELFHOSTED) settings.setBaseUrl(id, url)
                 KeyUi.Valid
             }
-            KeyValidation.InvalidKey -> KeyUi.Invalid
-            is KeyValidation.Unexpected -> KeyUi.Unexpected(v.status)
-            is KeyValidation.Network -> KeyUi.Network(v.message)
-            is KeyValidation.InvalidUrl -> KeyUi.InvalidUrl(v.message)
+            else -> v.toKeyUi()
         }
+    }
+
+    /**
+     * Re-validates the key already stored for [id] (CONTRACT 7.4). Read-only: whatever the outcome, nothing is written
+     * or deleted - an invalid key is only reported.
+     */
+    suspend fun recheck(id: ProviderId): KeyUi {
+        val key = secrets.get(id)?.trim()?.ifEmpty { null }
+        if (key == null && id != ProviderId.SELFHOSTED) return KeyUi.Missing
+        val url = settings.current().baseUrls[id]?.trim()?.ifEmpty { null }
+        return checker.validate(id, key, url).toKeyUi()
+    }
+
+    private fun KeyValidation.toKeyUi(): KeyUi = when (this) {
+        KeyValidation.Valid -> KeyUi.Valid
+        KeyValidation.InvalidKey -> KeyUi.Invalid
+        is KeyValidation.Unexpected -> KeyUi.Unexpected(status)
+        is KeyValidation.Network -> KeyUi.Network(message)
+        is KeyValidation.InvalidUrl -> KeyUi.InvalidUrl(message)
     }
 }

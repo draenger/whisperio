@@ -23,7 +23,7 @@ class GroqProvider(
 
     override suspend fun transcribe(request: TranscriptionRequest): TranscriptionResult {
         val key = requireKey(id, apiKey)
-        checkUploadSize(request.audio)
+        ProviderCatalog.info(id).maxUploadBytes?.let { checkUploadSize(request.audio, it) }
         val url = baseUrl.toHttpUrlStrict().child("audio/transcriptions")
         val m = apiModel()
         return TranscriptionResult(client.postOpenAiStyle(id, url, key, m, request, sendPrompt = true), id, m)

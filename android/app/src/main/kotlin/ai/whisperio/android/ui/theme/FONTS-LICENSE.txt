@@ -1,0 +1,3 @@
+IBM Plex Sans (c) IBM Corp. and Space Grotesk (c) The Space Grotesk Project Authors.
+Both are licensed under the SIL Open Font License 1.1 (https://openfontlicense.org), which permits
+bundling and redistribution with software. Same files as the iOS app (mobile/WhisperioApp/Sources/WhisperioApp/Fonts).
