@@ -207,7 +207,7 @@ private fun OnboardingRoute(g: AppGraph, current: AppSettings, tryIt: TryItSessi
             scope.launch {
                 keyUi = KeyUi.Validating
                 keyUi = enrollment.validateAndSave(provider, keyInput, baseUrl)
-                if (keyUi == KeyUi.Valid) {
+                if (keyUi is KeyUi.Valid) {
                     // The provider the user just set up goes first.
                     val order = g.settings.current().order
                     g.settings.setOrder(order.sortedBy { if (it.id == provider) 0 else 1 })
@@ -532,8 +532,8 @@ private fun SettingsRoute(g: AppGraph, nav: NavHostController) {
             scope.launch {
                 dialog = d.copy(ui = KeyUi.Validating)
                 val result = enrollment.validateAndSave(d.provider, d.key, d.baseUrl)
-                dialog = dialog?.copy(ui = result, key = if (result == KeyUi.Valid) "" else d.key)
-                if (result == KeyUi.Valid) keyChecks = keyChecks - d.provider // a stale check result must not outlive the new key
+                dialog = dialog?.copy(ui = result, key = if (result is KeyUi.Valid) "" else d.key)
+                if (result is KeyUi.Valid) keyChecks = keyChecks - d.provider // a stale check result must not outlive the new key
             }
         }
         override fun onKeyDialogDismiss() { dialog = null }

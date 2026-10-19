@@ -104,6 +104,7 @@
     <string name="key_check_save">Check and save</string>
     <string name="key_checking">Checking...</string>
     <string name="key_valid">The key works and is saved on this device.</string>
+    <string name="server_valid">The server answers and is saved on this device.</string>
     <string name="key_invalid">The provider rejected this key.</string>
     <string name="key_network">Could not reach the provider: %1$s</string>
     <string name="key_unexpected">Unexpected answer from the provider (HTTP %1$d).</string>

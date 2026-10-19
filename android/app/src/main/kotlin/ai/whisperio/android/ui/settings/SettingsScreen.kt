@@ -223,7 +223,7 @@ fun SettingsScreen(state: SettingsUiState, actions: SettingsActions, modifier: M
             },
             confirmButton = {
                 TextButton(onClick = actions::onKeyDialogDismiss) {
-                    Text(stringResource(if (d.ui == KeyUi.Valid) R.string.action_close else R.string.action_cancel))
+                    Text(stringResource(if (d.ui is KeyUi.Valid) R.string.action_close else R.string.action_cancel))
                 }
             },
         )
@@ -311,7 +311,7 @@ private fun ProviderCard(
                 Text(
                     checkMessage,
                     style = MaterialTheme.typography.bodyMedium,
-                    color = if (check == KeyUi.Valid) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+                    color = if (check is KeyUi.Valid) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
                     modifier = Modifier.liveStatus().padding(top = 4.dp),
                 )
             }

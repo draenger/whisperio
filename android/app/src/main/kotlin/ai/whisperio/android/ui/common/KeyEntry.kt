@@ -22,7 +22,7 @@ import androidx.compose.ui.unit.dp
 @Composable
 fun keyUiText(ui: KeyUi): String? = when (ui) {
     KeyUi.Idle, KeyUi.Validating -> null
-    KeyUi.Valid -> stringResource(R.string.key_valid)
+    is KeyUi.Valid -> stringResource(if (ui.serverOnly) R.string.server_valid else R.string.key_valid)
     KeyUi.Invalid -> stringResource(R.string.key_invalid)
     KeyUi.Missing -> stringResource(R.string.key_lost)
     is KeyUi.Network -> stringResource(R.string.key_network, ui.message)

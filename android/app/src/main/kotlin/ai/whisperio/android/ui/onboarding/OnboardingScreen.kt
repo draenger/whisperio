@@ -102,7 +102,7 @@ fun OnboardingScreen(state: OnboardingState, actions: OnboardingActions, modifie
     val index = steps.indexOf(state.step)
     val canNext = when (state.step) {
         OnboardingStep.PRIVACY -> state.consent
-        OnboardingStep.PROVIDER -> state.keyUi == KeyUi.Valid || state.providerReady
+        OnboardingStep.PROVIDER -> state.keyUi is KeyUi.Valid || state.providerReady
         else -> true
     }
     Column(

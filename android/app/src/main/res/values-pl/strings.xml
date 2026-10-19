@@ -104,6 +104,7 @@
     <string name="key_check_save">Sprawdź i zapisz</string>
     <string name="key_checking">Sprawdzam...</string>
     <string name="key_valid">Klucz działa i jest zapisany na tym urządzeniu.</string>
+    <string name="server_valid">Serwer odpowiada i jest zapisany na tym urządzeniu.</string>
     <string name="key_invalid">Dostawca odrzucił ten klucz.</string>
     <string name="key_network">Nie można połączyć się z dostawcą: %1$s</string>
     <string name="key_unexpected">Nieoczekiwana odpowiedź dostawcy (HTTP %1$d).</string>

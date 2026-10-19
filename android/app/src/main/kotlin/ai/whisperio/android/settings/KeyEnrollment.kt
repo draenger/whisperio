@@ -9,7 +9,7 @@ import ai.whisperio.core.ProviderId
 sealed interface KeyUi {
     data object Idle : KeyUi
     data object Validating : KeyUi
-    data object Valid : KeyUi
+    data class Valid(val serverOnly: Boolean = false) : KeyUi
     data object Invalid : KeyUi
 
     /** Nothing stored to re-check (never set, or wiped as unreadable): the user must paste the key again. */
@@ -37,7 +37,7 @@ class KeyEnrollment(
             KeyValidation.Valid -> {
                 if (key != null) secrets.put(id, key)
                 if (id == ProviderId.OPENAI || id == ProviderId.SELFHOSTED) settings.setBaseUrl(id, url)
-                KeyUi.Valid
+                KeyUi.Valid(serverOnly = id == ProviderId.SELFHOSTED && key == null)
             }
             else -> v.toKeyUi()
         }
@@ -51,11 +51,11 @@ class KeyEnrollment(
         val key = secrets.get(id)?.trim()?.ifEmpty { null }
         if (key == null && id != ProviderId.SELFHOSTED) return KeyUi.Missing
         val url = settings.current().baseUrls[id]?.trim()?.ifEmpty { null }
-        return checker.validate(id, key, url).toKeyUi()
+        return checker.validate(id, key, url).toKeyUi(serverOnly = id == ProviderId.SELFHOSTED && key == null)
     }
 
-    private fun KeyValidation.toKeyUi(): KeyUi = when (this) {
-        KeyValidation.Valid -> KeyUi.Valid
+    private fun KeyValidation.toKeyUi(serverOnly: Boolean = false): KeyUi = when (this) {
+        KeyValidation.Valid -> KeyUi.Valid(serverOnly = serverOnly)
         KeyValidation.InvalidKey -> KeyUi.Invalid
         is KeyValidation.Unexpected -> KeyUi.Unexpected(status)
         is KeyValidation.Network -> KeyUi.Network(message)

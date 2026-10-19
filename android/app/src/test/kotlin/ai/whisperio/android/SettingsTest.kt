@@ -189,7 +189,7 @@ class KeyEnrollmentTest {
 
     @Test fun savesOnlyAfterValid() = runBlocking {
         val (e, secrets, _) = parts(KeyValidation.Valid)
-        assertEquals(KeyUi.Valid, e.validateAndSave(ProviderId.OPENAI, "  sk-ok ", null))
+        assertEquals(KeyUi.Valid(), e.validateAndSave(ProviderId.OPENAI, "  sk-ok ", null))
         assertEquals("sk-ok", secrets.get(ProviderId.OPENAI))
     }
 
@@ -216,15 +216,22 @@ class KeyEnrollmentTest {
 
     @Test fun selfHostedMayRunWithoutKey() = runBlocking {
         val (e, secrets, checker) = parts(KeyValidation.Valid)
-        assertEquals(KeyUi.Valid, e.validateAndSave(ProviderId.SELFHOSTED, "", "http://nas.local:9000"))
+        assertEquals(KeyUi.Valid(serverOnly = true), e.validateAndSave(ProviderId.SELFHOSTED, "", "http://nas.local:9000"))
         assertEquals(1, checker.calls)
         assertNull(secrets.get(ProviderId.SELFHOSTED))
+    }
+
+    @Test fun selfHostedWithKeyUsesKeySuccess() = runBlocking {
+        val (e, secrets, _) = parts(KeyValidation.Valid)
+        assertEquals(KeyUi.Valid(), e.validateAndSave(ProviderId.SELFHOSTED, "  server-key ", "http://nas.local:9000"))
+        assertEquals("server-key", secrets.get(ProviderId.SELFHOSTED))
+        assertEquals(KeyUi.Valid(), e.recheck(ProviderId.SELFHOSTED))
     }
 
     @Test fun recheckReportsValidWithoutWriting() = runBlocking {
         val (e, secrets, checker) = parts(KeyValidation.Valid)
         secrets.put(ProviderId.GROQ, "gsk-stored")
-        assertEquals(KeyUi.Valid, e.recheck(ProviderId.GROQ))
+        assertEquals(KeyUi.Valid(), e.recheck(ProviderId.GROQ))
         assertEquals(1, checker.calls)
         assertEquals("gsk-stored", secrets.get(ProviderId.GROQ))
     }
@@ -255,7 +262,7 @@ class KeyEnrollmentTest {
 
     @Test fun recheckSelfHostedWithoutKeyStillChecksTheServer() = runBlocking {
         val (e, _, checker) = parts(KeyValidation.Valid)
-        assertEquals(KeyUi.Valid, e.recheck(ProviderId.SELFHOSTED))
+        assertEquals(KeyUi.Valid(serverOnly = true), e.recheck(ProviderId.SELFHOSTED))
         assertEquals(1, checker.calls)
     }
 }
