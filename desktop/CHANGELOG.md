@@ -19,6 +19,16 @@
 - Raw transcription is never touched — tone only ever applies to the
   rule-based cleanup rewrite, same as every other AI cleanup guarantee.
 
+## v1.5.1 — 2026-10-19
+
+Security maintenance release. No feature changes.
+- Build and test dependencies updated to fix security advisories: tar 7.5.22
+  (path traversal / file overwrite), tinypool removed with Vitest 4 (prototype
+  pollution), electron-builder 26.15 / app-builder-lib 26.17, undici 7.30.1,
+  @xmldom/xmldom 0.9.12, js-yaml 4.3.2, brace-expansion, nanoid, source-map-js.
+- CI builds on Node 22 (required by electron-builder 26).
+- Electron itself stays on 34 in this release; the Electron 41 upgrade follows separately.
+
 ## v1.5.0 — 2026-07-14
 
 The provider & cleanup release: dictation output you can shape after the fact,
