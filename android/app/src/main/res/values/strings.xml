@@ -230,4 +230,18 @@
     <string name="categories_delete_cd">Delete category %1$s</string>
     <string name="categories_delete_title">Delete this category?</string>
     <string name="categories_delete_body">Dictations labelled %1$s keep their text and audio but lose the category.</string>
+    <string name="deleted_message">Deleted</string>
+    <string name="action_undo">Undo</string>
+    <string name="row_swipe_delete">Delete</string>
+    <string name="day_menu">Day options for %1$s</string>
+    <string name="day_delete">Delete this day</string>
+    <string name="day_delete_title">Delete this day?</string>
+    <plurals name="day_delete_body">
+        <item quantity="one">Delete %1$d recording from %2$s? Audio is deleted too.</item>
+        <item quantity="other">Delete %1$d recordings from %2$s? Audio is deleted too.</item>
+    </plurals>
+    <plurals name="day_delete_body_filtered">
+        <item quantity="one">Delete %1$d recording from %2$s that matches the current search and filters? Audio is deleted too.</item>
+        <item quantity="other">Delete %1$d recordings from %2$s that match the current search and filters? Audio is deleted too.</item>
+    </plurals>
 </resources>

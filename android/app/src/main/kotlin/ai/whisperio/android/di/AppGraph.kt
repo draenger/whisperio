@@ -14,6 +14,7 @@ import ai.whisperio.android.security.KeystoreSecretStore
 import ai.whisperio.android.security.SecretStore
 import ai.whisperio.android.settings.AppLanguageStore
 import ai.whisperio.android.settings.SettingsRepository
+import ai.whisperio.android.ui.history.PendingDeleteController
 import android.Manifest
 import android.app.Application
 import android.content.Context
@@ -89,6 +90,9 @@ class AppGraph private constructor(private val appOrNull: Application?, private 
     }
     val history: HistoryStore by lazy { RoomHistoryStore(database.recordings(), recordingsDir) }
 
+    /** CONTRACT-1.2 F5: the one swiped-away History row waiting for its Undo window. */
+    val pendingDelete: PendingDeleteController by lazy { PendingDeleteController(appScope, history) }
+
     val transcriber: Transcriber by lazy { CoreTranscriber() }
     val keyChecker: KeyChecker by lazy { CoreKeyChecker() }
     val textTidy: TextTidy by lazy { CoreTextTidy() }
@@ -141,6 +145,7 @@ class AppGraph private constructor(private val appOrNull: Application?, private 
         // abortAll() first guarantees no in-flight transcription writes a row after the wipe.
         appScope.launch {
             dictation.abortAll()
+            pendingDelete.drop()
             history.clear()
             secrets.clear()
             settings.clear()

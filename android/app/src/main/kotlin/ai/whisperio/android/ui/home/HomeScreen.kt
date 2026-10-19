@@ -51,6 +51,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextAlign
@@ -203,6 +205,10 @@ fun RecordingRow(
     onLongClick: (() -> Unit)? = null,
     /** CONTRACT-1.2 F3: the resolved category of [rec], null when none (no tag, D2). */
     category: CategoryUi? = null,
+    /** CONTRACT-1.2 F5: double-tap copy (History only). Delays a single tap by the double-tap timeout. */
+    onDoubleClick: (() -> Unit)? = null,
+    /** CONTRACT-1.2 F5: TalkBack custom actions (Delete, Copy). */
+    customActions: List<CustomAccessibilityAction> = emptyList(),
 ) {
     val subtitle = when (rec.status) {
         RecordingStatus.DONE -> rec.transcript.orEmpty()
@@ -227,7 +233,9 @@ fun RecordingRow(
                 role = if (selected != null) Role.Checkbox else null,
                 onLongClickLabel = if (onLongClick != null) stringResource(R.string.select_row) else null,
                 onLongClick = onLongClick,
+                onDoubleClick = onDoubleClick,
             )
+            .then(if (customActions.isEmpty()) Modifier else Modifier.semantics { this.customActions = customActions })
             .then(
                 if (selected == null) Modifier else {
                     val state = stringResource(if (selected) R.string.state_selected else R.string.state_not_selected)
