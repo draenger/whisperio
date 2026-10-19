@@ -163,5 +163,11 @@ bump to 1.2.0 and the listing go in the last merge.
 - D5: the share card holds numbers only, the same as iOS (`RecapView.swift:217-227`).
 - D6: custom names are trimmed and compared case-insensitively against all labels (iOS checks exact duplicates only), to
   avoid two "Work" chips.
+- D7: the background commit of a pending delete uses the activity's `ON_STOP` (`LifecycleEventEffect`) instead of
+  `ProcessLifecycleOwner`, because `lifecycle-process` would be a new dependency. It also flushes when another
+  activity covers the main one.
+- D8: deleting a custom category asks for confirmation (dialog). Selecting several category chips in History is an OR
+  within the row, as the 1.1 source chips; the row stays AND-combined with search and the other filters. The "Copied"
+  snackbar is skipped while an Undo snackbar is showing.
 - Not taken (noted): iOS long-press menu Copy/Delete on rows (`HomeView.swift:518-525`) — long-press is selection on
   Android since 1.1; Copy/Delete are reachable by double-tap, swipe and TalkBack actions.
