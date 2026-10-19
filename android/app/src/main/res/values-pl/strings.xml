@@ -179,4 +179,9 @@
     <string name="about_support">Pomoc</string>
     <string name="about_licences">Licencje</string>
     <string name="about_licences_body">Whisperio powstało w Kotlinie z użyciem Jetpack Compose, Room, DataStore, OkHttp i bibliotek kotlinx, wszystkich na licencji Apache 2.0.</string>
+    <string name="widget_label">Dyktuj</string>
+    <string name="widget_description">Zacznij dyktować jednym dotknięciem. Nie pokazuje transkrypcji.</string>
+    <string name="widget_button_description">Dyktuj w Whisperio</string>
+    <string name="widget_name_1x1">Dyktuj (mały)</string>
+    <string name="widget_name_2x1">Dyktuj (szeroki)</string>
 </resources>

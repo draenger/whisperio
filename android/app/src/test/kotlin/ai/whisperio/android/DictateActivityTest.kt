@@ -12,6 +12,12 @@ class DictateActivitySourceTest {
     @Test fun shortcutExtraMapsToShortcut() =
         assertEquals(RecordingSource.SHORTCUT, DictateActivity.sourceFor("shortcut"))
 
+    @Test fun widgetExtraMapsToWidget() {
+        assertEquals(RecordingSource.WIDGET, DictateActivity.sourceFor("widget"))
+        assertEquals(RecordingSource.WIDGET, DictateActivity.sourceFor(ai.whisperio.android.widget.WidgetLaunch.SOURCE))
+        assertEquals(RecordingSource.TILE, DictateActivity.sourceFor("WIDGET"))
+    }
+
     @Test fun missingOrUnknownExtraFallsBackToTile() {
         assertEquals(RecordingSource.TILE, DictateActivity.sourceFor(null))
         assertEquals(RecordingSource.TILE, DictateActivity.sourceFor(""))
