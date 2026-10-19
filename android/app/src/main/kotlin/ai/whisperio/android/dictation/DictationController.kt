@@ -13,7 +13,9 @@ import ai.whisperio.android.history.RecordingStatus
 import ai.whisperio.android.settings.AppSettings
 import ai.whisperio.android.settings.SettingsSource
 import ai.whisperio.android.settings.isProviderConfigured
+import ai.whisperio.core.ChainSettings
 import ai.whisperio.core.ProviderError
+import ai.whisperio.core.ProviderId
 import ai.whisperio.core.TranscriptionRequest
 import java.io.File
 import java.util.UUID
@@ -103,6 +105,11 @@ class DictationController(
     private val _results = MutableSharedFlow<DictationResult>(extraBufferCapacity = 8)
     val results: SharedFlow<DictationResult> = _results.asSharedFlow()
 
+    private val _retryOutcomes = MutableSharedFlow<RetryOutcome>(extraBufferCapacity = 8)
+
+    /** Result of every [retryWith] attempt (the history detail shows failures as a snackbar). */
+    val retryOutcomes: SharedFlow<RetryOutcome> = _retryOutcomes.asSharedFlow()
+
     private var session: Job? = null
     private var stopRequested = false
     private var currentId: String? = null
@@ -189,6 +196,59 @@ class DictationController(
             currentPersist = true
             currentSessionTag = null
             session = scope.launch { transcribe(row, file, row.durationMs, s) }
+        }
+    }
+
+    /**
+     * CONTRACT-1.1 F5: re-runs a saved clip with ONE chosen provider (no fallback chain; same consent gate and the
+     * provider upload limit as a normal run). On success the transcript, provider and model are replaced; on any
+     * failure the stored row (text, status, audio) is left exactly as it was and only [retryOutcomes] reports it.
+     */
+    fun retryWith(recordingId: String, providerId: ProviderId) {
+        scope.launch {
+            if (busy) return@launch
+            val row = history.get(recordingId) ?: return@launch
+            val file = row.audioPath?.let(::File)?.takeIf { it.exists() }
+                ?: return@launch retryFailed(recordingId, DictationError.NO_AUDIO)
+            val s = settings.current()
+            if (!s.cloudConsentGranted) return@launch retryFailed(recordingId, DictationError.CONSENT_MISSING)
+            val single = singleProviderChain(settings.chain(), providerId)
+                ?: return@launch retryFailed(recordingId, DictationError.NO_KEY)
+            currentId = recordingId
+            currentFile = file
+            currentPersist = true
+            currentSessionTag = null
+            session = scope.launch { transcribeWith(row, file, s, single) }
+        }
+    }
+
+    private suspend fun retryFailed(recordingId: String, error: DictationError, detail: String? = null) {
+        _retryOutcomes.emit(RetryOutcome.Failure(recordingId, error, detail))
+    }
+
+    private suspend fun transcribeWith(row: Recording, file: File, s: AppSettings, single: ChainSettings) {
+        _state.value = DictationState.Transcribing(row.source)
+        try {
+            val res = transcriber.transcribe(TranscriptionRequest(file, row.language, s.vocabulary), single)
+            var text = res.text.trim()
+            if (s.cleanupEnabled && text.isNotEmpty()) text = tidy.tidy(text).trim()
+            if (text.isEmpty()) {
+                _state.value = DictationState.Idle
+                return retryFailed(row.id, DictationError.NO_SPEECH)
+            }
+            history.upsert(
+                row.copy(status = RecordingStatus.DONE, provider = res.provider.wire, model = res.model, transcript = text, error = null),
+            )
+            _state.value = DictationState.Idle
+            _retryOutcomes.emit(RetryOutcome.Success(row.id))
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: UploadTooLargeException) {
+            _state.value = DictationState.Idle
+            retryFailed(row.id, DictationError.TOO_LARGE)
+        } catch (t: Throwable) {
+            _state.value = DictationState.Idle
+            retryFailed(row.id, DictationError.PROVIDER, t.message?.let { ProviderError.redactSecrets(it) }?.take(MAX_ERROR_CHARS))
         }
     }
 
