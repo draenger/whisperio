@@ -8,7 +8,6 @@ import ai.whisperio.android.ui.common.CategoryUi
 import ai.whisperio.android.ui.common.SectionTitle
 import ai.whisperio.android.ui.common.customCategoryUi
 import ai.whisperio.android.ui.common.rememberCategoryOptions
-import ai.whisperio.android.ui.common.seedLabels
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -62,7 +61,7 @@ fun CategoriesScreen(
     var name by rememberSaveable { mutableStateOf(initialName) }
     var confirmDelete by rememberSaveable { mutableStateOf<String?>(null) }
     val options = rememberCategoryOptions(customs)
-    val taken = seedLabels() + customs.map { it.name }
+    val taken = customs.map { it.name }
     val check = CustomCategories.check(name, taken)
 
     fun submit() {

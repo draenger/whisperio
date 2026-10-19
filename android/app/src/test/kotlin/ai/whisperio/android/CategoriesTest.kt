@@ -81,9 +81,13 @@ class CustomCategoriesTest {
         assertEquals(CategoryNameCheck.Duplicate, CustomCategories.check("łÓDŹ", taken))
     }
 
-    @Test fun otherLanguageSeedLabelIsAllowed() {
-        // Only the labels the user sees are compared (current locale).
-        assertEquals("Praca", ok("Praca", SEED_LABELS_EN))
+    @Test fun otherLanguageSeedLabelIsRejected() {
+        SEED_LABELS_PL.forEach { label ->
+            assertEquals(CategoryNameCheck.Duplicate, CustomCategories.check("  ${label.uppercase(java.util.Locale.ROOT)}  ", SEED_LABELS_EN))
+        }
+        SEED_LABELS_EN.forEach { label ->
+            assertEquals(CategoryNameCheck.Duplicate, CustomCategories.check("  ${label.uppercase(java.util.Locale.ROOT)}  ", SEED_LABELS_PL))
+        }
     }
 
     @Test fun firstCustomGetsSlotZeroAndSlotsFollowCreationOrder() {

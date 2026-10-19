@@ -11,12 +11,12 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.Chat
 import androidx.compose.material.icons.outlined.AutoAwesome
-import androidx.compose.material.icons.outlined.Chat
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.Code
 import androidx.compose.material.icons.outlined.Lightbulb
-import androidx.compose.material.icons.outlined.Person
+import androidx.compose.material.icons.outlined.WbSunny
 import androidx.compose.material.icons.outlined.Work
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -58,9 +58,9 @@ private fun seedColor(id: String): Color = when (id) {
 
 private fun seedIcon(id: String): ImageVector = when (id) {
     "work" -> Icons.Outlined.Work
-    "personal" -> Icons.Outlined.Person
+    "personal" -> Icons.Outlined.WbSunny
     "ideas" -> Icons.Outlined.Lightbulb
-    "messages" -> Icons.Outlined.Chat
+    "messages" -> Icons.AutoMirrored.Outlined.Chat
     "code" -> Icons.Outlined.Code
     else -> Icons.Outlined.CheckCircle
 }
@@ -78,10 +78,6 @@ fun rememberCategoryOptions(customs: List<CustomCategory>): List<CategoryUi> {
     }
     return seeds + customs.map(::customCategoryUi)
 }
-
-/** The display labels of the seeds in the current locale (for the D6 duplicate check). */
-@Composable
-fun seedLabels(): List<String> = Categories.SEED_IDS.map { stringResource(seedLabelRes(it)) }
 
 /** Coloured dot + label shown on a row (D2: only when categorised). Announced as one "Category: X" node. */
 @Composable

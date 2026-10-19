@@ -12,13 +12,13 @@ import ai.whisperio.android.graph
 import ai.whisperio.android.history.Recording
 import ai.whisperio.android.history.RecordingSource
 import ai.whisperio.android.settings.AppSettings
+import ai.whisperio.android.settings.CustomCategories
 import ai.whisperio.android.settings.KeyEnrollment
 import ai.whisperio.android.settings.KeyUi
 import ai.whisperio.android.ui.about.AboutScreen
 import ai.whisperio.android.ui.common.confirmHaptic
 import ai.whisperio.android.ui.common.copyPlainText
 import ai.whisperio.android.ui.common.label
-import ai.whisperio.android.ui.common.seedLabels
 import ai.whisperio.android.ui.history.HistoryDetailActions
 import ai.whisperio.android.ui.history.HistoryDetailScreen
 import ai.whisperio.android.ui.history.HistoryListScreen
@@ -487,7 +487,7 @@ private fun DetailRoute(g: AppGraph, nav: NavHostController, id: String, snackba
                     val send = Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, text)
                     ctx.startActivity(Intent.createChooser(send, null))
                 }
-                override fun onSetCategory(id: String, category: String?) { scope.launch { g.history.setCategory(id, category) } }
+                override fun onSetCategory(id: String, category: String?) { g.appScope.launch { g.history.setCategory(id, category) } }
                 override fun onRetry(id: String) = g.dictation.retry(id)
                 override fun onRetryWith(id: String, provider: ProviderId) = g.dictation.retryWith(id, provider)
                 override fun onExport(rec: Recording, format: ExportFormat) = export(listOf(rec), format)
@@ -504,12 +504,11 @@ private fun DetailRoute(g: AppGraph, nav: NavHostController, id: String, snackba
 private fun CategoriesRoute(g: AppGraph, nav: NavHostController) {
     val scope = rememberCoroutineScope()
     val customs by g.settings.customCategories.collectAsState(initial = emptyList())
-    val seeds = seedLabels()
     CategoriesScreen(
         customs = customs,
         actions = object : CategoriesActions {
             override fun onBack() { nav.popBackStack() }
-            override fun onAdd(name: String) { scope.launch { g.settings.addCustomCategory(name, seeds) } }
+            override fun onAdd(name: String) { g.appScope.launch { g.settings.addCustomCategory(name, CustomCategories.SEED_LABELS) } }
             override fun onDelete(id: String) { scope.launch { g.deleteCategory(id) } }
         },
     )

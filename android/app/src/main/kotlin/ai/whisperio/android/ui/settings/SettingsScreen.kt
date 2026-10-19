@@ -223,10 +223,6 @@ fun SettingsScreen(state: SettingsUiState, actions: SettingsActions, modifier: M
             OutlinedButton(onClick = { confirmAudio = true }, modifier = Modifier.fillMaxWidth().padding(top = 8.dp).heightIn(min = 48.dp)) {
                 Text(stringResource(R.string.settings_delete_audio))
             }
-            OutlinedButton(
-                onClick = { confirmErase = true },
-                modifier = Modifier.fillMaxWidth().padding(top = 8.dp).heightIn(min = 48.dp),
-            ) { Text(stringResource(R.string.settings_erase_all), color = MaterialTheme.colorScheme.error) }
 
             SectionTitle(stringResource(R.string.settings_categories))
             Text(
@@ -238,6 +234,11 @@ fun SettingsScreen(state: SettingsUiState, actions: SettingsActions, modifier: M
                 onClick = actions::onCategories,
                 modifier = Modifier.fillMaxWidth().padding(top = 8.dp).heightIn(min = 48.dp),
             ) { Text(stringResource(R.string.settings_categories)) }
+
+            OutlinedButton(
+                onClick = { confirmErase = true },
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp).heightIn(min = 48.dp),
+            ) { Text(stringResource(R.string.settings_erase_all), color = MaterialTheme.colorScheme.error) }
 
             TextButton(onClick = actions::onAbout, modifier = Modifier.padding(top = 16.dp).heightIn(min = 48.dp)) {
                 Text(stringResource(R.string.nav_about))

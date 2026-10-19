@@ -26,16 +26,22 @@ sealed interface CategoryNameCheck {
 object CustomCategories {
     const val MAX_NAME = 24
 
+    /** All seed labels from values/strings.xml and values-pl/strings.xml, regardless of the current locale. */
+    val SEED_LABELS = listOf(
+        "Work", "Personal", "Ideas", "Messages", "Code", "To-do",
+        "Praca", "Prywatne", "Pomysły", "Wiadomości", "Kod", "Do zrobienia",
+    )
+
     /**
-     * D6: trimmed, 1-[MAX_NAME] chars, and not equal (case-insensitive, full Unicode lowercase) to any of [takenLabels]
-     * (every seed label plus every existing custom name).
+     * D6: trimmed, 1-[MAX_NAME] chars, and not equal (case-insensitive, full Unicode lowercase) to any of [SEED_LABELS]
+     * (both languages) or [takenLabels] (including every existing custom name).
      */
     fun check(raw: String, takenLabels: Collection<String>): CategoryNameCheck {
         val name = raw.trim()
         if (name.isEmpty()) return CategoryNameCheck.Blank
         if (name.length > MAX_NAME) return CategoryNameCheck.TooLong
         val folded = name.lowercase(Locale.ROOT)
-        if (takenLabels.any { it.trim().lowercase(Locale.ROOT) == folded }) return CategoryNameCheck.Duplicate
+        if ((SEED_LABELS + takenLabels).any { it.trim().lowercase(Locale.ROOT) == folded }) return CategoryNameCheck.Duplicate
         return CategoryNameCheck.Ok(name)
     }
 
