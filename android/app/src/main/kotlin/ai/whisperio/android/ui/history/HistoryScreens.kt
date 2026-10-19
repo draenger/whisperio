@@ -8,6 +8,7 @@ import ai.whisperio.android.ui.common.SectionTitle
 import ai.whisperio.android.ui.home.sourceLabelRes
 import ai.whisperio.core.ExportFormat
 import ai.whisperio.core.ProviderId
+import ai.whisperio.core.wordCount
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.Slider
@@ -74,6 +75,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 
@@ -415,6 +417,14 @@ fun HistoryDetailScreen(
         }
         Column(Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 8.dp)) {
             val text = rec.transcript
+            val words = remember(text) { wordCount(text) }
+            val wordCountSuffix = if (words > 0) " · ${pluralStringResource(R.plurals.history_word_count, words, words)}" else ""
+            Text(
+                "${stringResource(sourceLabelRes(rec.source))} · ${formatDateTime(rec.createdAt)} · ${formatElapsed(rec.durationMs)}$wordCountSuffix",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(bottom = 8.dp),
+            )
             if (player != null) AudioPlayerRow(player)
             if (rec.status == RecordingStatus.DONE && text != null) {
                 SelectionContainer { Text(text, style = MaterialTheme.typography.bodyLarge) }
