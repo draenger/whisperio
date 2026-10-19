@@ -64,7 +64,7 @@ everything already out of v1 (sync, LLM post-processing, Wear OS, full QWERTY).
 - Destination: `ACTION_CREATE_DOCUMENT` (Storage Access Framework). Whisperio writes only to the URI the user picked;
   no storage permission, no `MediaStore`, no background write. Default file name `whisperio-YYYY-MM-DD.{txt|md}`.
 - Formats (UTF-8, LF):
-  - `.txt`: per item `YYYY-MM-DD HH:mm` line, blank line, transcript, then a `---` separator line.
+  - `.txt`: per item `YYYY-MM-DD HH:mm` line, blank line, transcript, then a `---` separator line; items are separated by a blank line after the `---` line.
   - `.md`: `# Whisperio export` + `## YYYY-MM-DD HH:mm · <source> · <provider>` per item, transcript as a paragraph.
   - Failed items without text are skipped and counted in the result snackbar ("Exported 12, skipped 2 without text").
 - Pure formatter in `core` (unit-tested: ordering newest first, escaping of Markdown-significant leading characters
