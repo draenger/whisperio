@@ -20,7 +20,7 @@ concurrency:
 jobs:
   desktop:
     runs-on: [self-hosted, pc]
-    timeout-minutes: 20
+    timeout-minutes: 35  # +10 min: the PC-wide CI gate (job hook) may queue the job, and that wait counts here
     defaults:
       run:
         working-directory: desktop

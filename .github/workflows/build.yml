@@ -21,7 +21,7 @@ jobs:
   # reaches the build runners.
   test:
     runs-on: [self-hosted, pc]
-    timeout-minutes: 18
+    timeout-minutes: 28  # +10: CI gate wait counts here
     defaults:
       run:
         working-directory: desktop
@@ -92,10 +92,10 @@ jobs:
           # node-gyp 9 (active-win rebuild) only finds VS 2022, pinned via GYP_MSVS_VERSION below.
           - os: [self-hosted, windows, desktop-sign]
             platform: win
-            timeout: 20
+            timeout: 30
           - os: [self-hosted, pc]
             platform: linux
-            timeout: 15
+            timeout: 25
 
     runs-on: ${{ matrix.os }}
     # Hard cap per platform so a hung build auto-kills.
@@ -230,7 +230,7 @@ jobs:
     needs: build
     if: github.event_name == 'push'
     runs-on: [self-hosted, pc]
-    timeout-minutes: 10
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
 
