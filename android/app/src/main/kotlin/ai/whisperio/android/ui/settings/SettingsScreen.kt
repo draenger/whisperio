@@ -99,6 +99,7 @@ interface SettingsActions {
     fun onConsent(value: Boolean) {}
     fun onDeleteAllAudio() {}
     fun onEraseAll() {}
+    fun onCategories() {}
     fun onAbout() {}
 }
 
@@ -222,6 +223,18 @@ fun SettingsScreen(state: SettingsUiState, actions: SettingsActions, modifier: M
             OutlinedButton(onClick = { confirmAudio = true }, modifier = Modifier.fillMaxWidth().padding(top = 8.dp).heightIn(min = 48.dp)) {
                 Text(stringResource(R.string.settings_delete_audio))
             }
+
+            SectionTitle(stringResource(R.string.settings_categories))
+            Text(
+                stringResource(R.string.settings_categories_hint),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            OutlinedButton(
+                onClick = actions::onCategories,
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp).heightIn(min = 48.dp),
+            ) { Text(stringResource(R.string.settings_categories)) }
+
             OutlinedButton(
                 onClick = { confirmErase = true },
                 modifier = Modifier.fillMaxWidth().padding(top = 8.dp).heightIn(min = 48.dp),

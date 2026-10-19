@@ -14,22 +14,42 @@ data class HistoryFilters(
     /** Empty = every source; otherwise a row must come from one of these. */
     val sources: Set<RecordingSource> = emptySet(),
     val failedOnly: Boolean = false,
+    /** CONTRACT-1.2 F3: empty = every category; otherwise category ids, with [NO_CATEGORY] standing for "None". */
+    val categories: Set<String> = emptySet(),
 ) {
-    val active: Boolean get() = query.isNotBlank() || sources.isNotEmpty() || failedOnly
+    val active: Boolean get() = query.isNotBlank() || sources.isNotEmpty() || failedOnly || categories.isNotEmpty()
+
+    companion object {
+        /** Filter value for recordings without a category (real ids are never empty). */
+        const val NO_CATEGORY = ""
+    }
 }
 
-/** Full Unicode lowercase on both sides (Ł/ł, Ż/ż fold; diacritics still matter). Blank [query] matches everything. */
-fun matchesQuery(rec: Recording, query: String): Boolean {
+/**
+ * Full Unicode lowercase on both sides (Ł/ł, Ż/ż fold; diacritics still matter). Blank [query] matches everything.
+ * [categoryLabel] is the row's category as shown to the user (CONTRACT-1.2 F3: search matches it), null when none.
+ */
+fun matchesQuery(rec: Recording, query: String, categoryLabel: String? = null): Boolean {
     val q = query.trim().lowercase(Locale.ROOT)
     if (q.isEmpty()) return true
-    return (rec.transcript?.lowercase(Locale.ROOT)?.contains(q) == true) || rec.provider.lowercase(Locale.ROOT).contains(q)
+    return (rec.transcript?.lowercase(Locale.ROOT)?.contains(q) == true) ||
+        rec.provider.lowercase(Locale.ROOT).contains(q) ||
+        (categoryLabel?.lowercase(Locale.ROOT)?.contains(q) == true)
 }
 
-/** Search AND chips; keeps the incoming (newest first) order. */
-fun applyFilters(items: List<Recording>, f: HistoryFilters): List<Recording> = items.filter {
-    matchesQuery(it, f.query) &&
+/**
+ * Search AND chips AND category chips; keeps the incoming (newest first) order. [categoryLabelOf] maps a category id to
+ * its display label (seed labels are localised, so the caller supplies them).
+ */
+fun applyFilters(
+    items: List<Recording>,
+    f: HistoryFilters,
+    categoryLabelOf: (String) -> String? = { null },
+): List<Recording> = items.filter {
+    matchesQuery(it, f.query, it.category?.let(categoryLabelOf)) &&
         (f.sources.isEmpty() || it.source in f.sources) &&
-        (!f.failedOnly || it.status == RecordingStatus.FAILED)
+        (!f.failedOnly || it.status == RecordingStatus.FAILED) &&
+        (f.categories.isEmpty() || (it.category ?: HistoryFilters.NO_CATEGORY) in f.categories)
 }
 
 enum class DayKind { TODAY, YESTERDAY, DATE }
