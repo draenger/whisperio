@@ -7,6 +7,7 @@ import ai.whisperio.android.dictation.DictationState
 import ai.whisperio.android.dictation.StartOptions
 import ai.whisperio.android.graph
 import ai.whisperio.android.history.RecordingSource
+import ai.whisperio.android.ui.common.confirmHaptic
 import ai.whisperio.android.ui.common.copyPlainText
 import ai.whisperio.android.ui.theme.WhisperioTheme
 import android.Manifest
@@ -66,7 +67,10 @@ class DictateActivity : ComponentActivity() {
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
                 controller.results.collect { r ->
-                    if (r.session == SESSION_TAG) copyToClipboard(r.text)
+                    if (r.session == SESSION_TAG) {
+                        copyToClipboard(r.text)
+                        window.decorView.confirmHaptic()
+                    }
                 }
             }
         }

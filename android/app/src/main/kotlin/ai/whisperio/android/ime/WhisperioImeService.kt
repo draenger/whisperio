@@ -8,6 +8,7 @@ import ai.whisperio.android.dictation.StartOptions
 import ai.whisperio.android.dictation.primaryProvider
 import ai.whisperio.android.graph
 import ai.whisperio.android.history.RecordingSource
+import ai.whisperio.android.ui.common.confirmHaptic
 import ai.whisperio.android.ui.common.label
 import ai.whisperio.android.ui.theme.WhisperioTheme
 import android.content.Intent
@@ -213,6 +214,7 @@ class WhisperioImeService : InputMethodService(), LifecycleOwner, ViewModelStore
             acknowledge = { graph.dictation.acknowledge() },
         ) ?: return
         notInserted.value = !outcome
+        if (outcome) window.window?.decorView?.confirmHaptic()
         if (outcome && isVoiceSubtype()) switchBackAfterVoice()
     }
 

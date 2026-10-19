@@ -15,6 +15,7 @@ import ai.whisperio.android.settings.AppSettings
 import ai.whisperio.android.settings.KeyEnrollment
 import ai.whisperio.android.settings.KeyUi
 import ai.whisperio.android.ui.about.AboutScreen
+import ai.whisperio.android.ui.common.confirmHaptic
 import ai.whisperio.android.ui.common.copyPlainText
 import ai.whisperio.android.ui.common.label
 import ai.whisperio.android.ui.history.HistoryDetailActions
@@ -80,6 +81,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.lifecycle.Lifecycle
@@ -275,6 +277,9 @@ private fun MainShell(g: AppGraph) {
     val backStack by nav.currentBackStackEntryAsState()
     val route = backStack?.destination?.route
     val snackbar = remember { SnackbarHostState() }
+    // F9: a finished transcription ticks while this window is on screen (confirmHaptic ignores a detached view).
+    val shellView = LocalView.current
+    LaunchedEffect(Unit) { g.dictation.results.collect { shellView.confirmHaptic() } }
     Scaffold(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         snackbarHost = { SnackbarHost(snackbar) },
@@ -320,6 +325,7 @@ private fun MainShell(g: AppGraph) {
 @Composable
 private fun HomeRoute(g: AppGraph, nav: NavHostController) {
     val ctx = LocalContext.current
+    val view = LocalView.current
     val scope = rememberCoroutineScope()
     val dictation by g.dictation.state.collectAsState()
     val recent by g.history.observeRecent(5).collectAsState(initial = emptyList())
@@ -355,6 +361,7 @@ private fun HomeRoute(g: AppGraph, nav: NavHostController) {
                 override fun onStop() = g.dictation.stopAndTranscribe()
                 override fun onCopy(text: String) {
                     scope.launch { copyPlainText(ctx, text, g.settings.current().transcriptsSensitive) }
+                    view.confirmHaptic()
                 }
                 override fun onDismissResult() = g.dictation.acknowledge()
                 override fun onOpen(id: String) = nav.navigate(Routes.detail(id))
@@ -381,6 +388,7 @@ private fun HistoryRoute(g: AppGraph, nav: NavHostController, snackbar: Snackbar
 @Composable
 private fun DetailRoute(g: AppGraph, nav: NavHostController, id: String, snackbar: SnackbarHostState) {
     val ctx = LocalContext.current
+    val view = LocalView.current
     val scope = rememberCoroutineScope()
     val rec by g.history.observe(id).collectAsState(initial = null)
     val export = rememberExporter(g.history, snackbar)
@@ -391,6 +399,7 @@ private fun DetailRoute(g: AppGraph, nav: NavHostController, id: String, snackba
                 override fun onBack() { nav.popBackStack() }
                 override fun onCopy(text: String) {
                     scope.launch { copyPlainText(ctx, text, g.settings.current().transcriptsSensitive) }
+                    view.confirmHaptic()
                 }
                 override fun onShare(text: String) {
                     val send = Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, text)
