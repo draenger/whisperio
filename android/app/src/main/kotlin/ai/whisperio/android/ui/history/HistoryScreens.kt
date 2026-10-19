@@ -90,7 +90,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 
@@ -246,6 +245,11 @@ fun HistoryListScreen(
                 }
             }
             val dayGroup = deleteDay?.let { d -> groups.firstOrNull { it.date.toEpochDay() == d } }
+            // The day's group is gone (all its rows deleted or filtered out) while the list itself is loaded: drop the
+            // pending dialog so it cannot reopen when a new recording lands on that day.
+            LaunchedEffect(deleteDay, dayGroup == null, items.isEmpty()) {
+                if (deleteDay != null && dayGroup == null && items.isNotEmpty()) deleteDay = null
+            }
             if (dayGroup != null) {
                 val doomed = deletableInDay(dayGroup.items)
                 val dayLabel = dayTitle(dayGroup)

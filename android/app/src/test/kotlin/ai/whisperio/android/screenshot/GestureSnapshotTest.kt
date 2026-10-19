@@ -119,6 +119,10 @@ open class GestureSnapshotTest {
 
     @Test @Config(qualifiers = ScreenshotConfig.TABLET)
     fun dayDeleteDialogTablet() = shoot("history_day_delete_tablet", target = { node(isDialog()) }) { Fixture(deleteDay = day) }
+
+    /** A past date (Fx.notInserted, NOW - 2 days) so the dated wording (%2$s) is covered, not only "today". */
+    @Test
+    fun dayDeleteDialogPastDate() = shoot("history_day_delete_date", target = { node(isDialog()) }) { Fixture(deleteDay = day.minusDays(2)) }
 }
 
 @RunWith(RobolectricTestRunner::class)
