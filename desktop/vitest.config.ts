@@ -39,10 +39,13 @@ export default defineConfig({
       ],
       // Release gate: tests must keep the testable logic well covered. CI runs
       // `npm run test:coverage`, which fails the build if any metric drops below this.
+      // Vitest 4's v8 provider remaps by AST (2026-10-19): same 928 tests, but it counts 476 functions where
+      // Vitest 3 counted 285, so statements/functions read ~3-8 points lower for identical code
+      // (Vitest 3: 92.8/87.8/97.2/92.8, Vitest 4: 89.4/82.7/89.3/90.8). Thresholds re-based to the new measure.
       thresholds: {
-        statements: 90,
+        statements: 89,
         branches: 82,
-        functions: 90,
+        functions: 89,
         lines: 90
       }
     }
