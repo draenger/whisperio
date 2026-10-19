@@ -202,4 +202,28 @@
     <string name="retry_with_busy">Retrying...</string>
     <string name="retry_with_none">Add an API key in Settings to retry with another provider.</string>
     <string name="retry_failed">Retry failed, previous text kept: %1$s</string>
+    <!-- CONTRACT-1.2 F3: categories -->
+    <string name="category_work">Work</string>
+    <string name="category_personal">Personal</string>
+    <string name="category_ideas">Ideas</string>
+    <string name="category_messages">Messages</string>
+    <string name="category_code">Code</string>
+    <string name="category_todo">To-do</string>
+    <string name="category_none">None</string>
+    <string name="category_button">Category: %1$s</string>
+    <string name="category_button_cd">Category, currently %1$s. Opens a menu.</string>
+    <string name="category_selected">Selected</string>
+    <string name="category_tag_cd">Category: %1$s</string>
+    <string name="settings_categories">Categories</string>
+    <string name="settings_categories_hint">Add your own labels for dictations.</string>
+    <string name="categories_builtin">Built-in</string>
+    <string name="categories_custom">Your categories</string>
+    <string name="categories_custom_empty">No custom categories yet.</string>
+    <string name="categories_add_label">New category name</string>
+    <string name="categories_add">Add</string>
+    <string name="categories_err_long">Use at most 24 characters.</string>
+    <string name="categories_err_duplicate">A category with this name already exists.</string>
+    <string name="categories_delete_cd">Delete category %1$s</string>
+    <string name="categories_delete_title">Delete this category?</string>
+    <string name="categories_delete_body">Dictations labelled %1$s keep their text and audio but lose the category.</string>
 </resources>

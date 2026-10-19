@@ -4,7 +4,10 @@ import ai.whisperio.android.R
 import ai.whisperio.android.history.Recording
 import ai.whisperio.android.history.RecordingStatus
 import ai.whisperio.android.history.RecordingSource
+import ai.whisperio.android.settings.CustomCategory
+import ai.whisperio.android.ui.common.CategoryUi
 import ai.whisperio.android.ui.common.SectionTitle
+import ai.whisperio.android.ui.common.rememberCategoryOptions
 import ai.whisperio.android.ui.home.sourceLabelRes
 import ai.whisperio.core.ExportFormat
 import ai.whisperio.core.ProviderId
@@ -17,6 +20,7 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.SelectAll
@@ -79,9 +83,14 @@ import androidx.compose.ui.unit.dp
 
 /** Saves a [HistoryFilters] across rotation (the debounced, applied value). */
 private val FiltersSaver: Saver<HistoryFilters, Any> = listSaver(
-    save = { listOf(it.query, it.failedOnly, it.sources.map { s -> s.name }) },
+    save = { listOf(it.query, it.failedOnly, it.sources.map { s -> s.name }, it.categories.toList()) },
     restore = { l ->
-        HistoryFilters(l[0] as String, (l[2] as List<*>).map { RecordingSource.valueOf(it as String) }.toSet(), l[1] as Boolean)
+        HistoryFilters(
+            l[0] as String,
+            (l[2] as List<*>).map { RecordingSource.valueOf(it as String) }.toSet(),
+            l[1] as Boolean,
+            (l[3] as List<*>).map { it as String }.toSet(),
+        )
     },
 )
 
@@ -103,6 +112,8 @@ fun HistoryListScreen(
     zone: ZoneId = ZoneId.systemDefault(),
     initial: HistoryFilters = HistoryFilters(),
     initialSelection: Set<String> = emptySet(),
+    /** CONTRACT-1.2 F3: the user's custom categories (seeds are built in). */
+    customCategories: List<CustomCategory> = emptyList(),
 ) {
     var filters by rememberSaveable(stateSaver = FiltersSaver) { mutableStateOf(initial) }
     var input by rememberSaveable { mutableStateOf(initial.query) }
@@ -114,7 +125,11 @@ fun HistoryListScreen(
             filters = filters.copy(query = input)
         }
     }
-    val shown = remember(items, filters) { applyFilters(items, filters) }
+    val categoryOptions = rememberCategoryOptions(customCategories)
+    val shown = remember(items, filters, categoryOptions) {
+        val labels = categoryOptions.associate { it.id to it.label }
+        applyFilters(items, filters) { id -> labels[id] }
+    }
     val picked = remember(items, selected) { items.filter { it.id in selected } }
     val selecting = picked.isNotEmpty()
     // Back leaves selection mode first; a finished export (token bump from the route) also clears it.
@@ -149,6 +164,7 @@ fun HistoryListScreen(
                 onInput = { input = it },
                 filters = filters,
                 onFilters = { filters = it },
+                categoryOptions = categoryOptions,
             )
         }
         if (shown.isEmpty()) {
@@ -173,6 +189,7 @@ fun HistoryListScreen(
                             onClick = { if (selecting) toggle(rec.id) else onOpen(rec.id) },
                             selected = if (selecting) rec.id in selected else null,
                             onLongClick = if (selecting) null else ({ toggle(rec.id) }),
+                            category = rec.category?.let { id -> categoryOptions.firstOrNull { it.id == id } },
                         )
                     }
                 }
@@ -189,7 +206,13 @@ private fun dayTitle(g: DayGroup): String = when (g.kind) {
 }
 
 @Composable
-private fun SearchAndChips(input: String, onInput: (String) -> Unit, filters: HistoryFilters, onFilters: (HistoryFilters) -> Unit) {
+private fun SearchAndChips(
+    input: String,
+    onInput: (String) -> Unit,
+    filters: HistoryFilters,
+    onFilters: (HistoryFilters) -> Unit,
+    categoryOptions: List<CategoryUi>,
+) {
     val focus = LocalFocusManager.current
     OutlinedTextField(
         value = input,
@@ -229,6 +252,33 @@ private fun SearchAndChips(input: String, onInput: (String) -> Unit, filters: Hi
                     onFilters(filters.copy(sources = if (src in filters.sources) filters.sources - src else filters.sources + src))
                 },
                 label = { Text(label) },
+                modifier = Modifier.semantics { contentDescription = cd },
+            )
+        }
+    }
+    // CONTRACT-1.2 F3: category chips (multi-select, "None" included); AND-combined with search and the chips above.
+    Row(
+        Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 4.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        fun toggleCategory(id: String) {
+            onFilters(filters.copy(categories = if (id in filters.categories) filters.categories - id else filters.categories + id))
+        }
+        val none = stringResource(R.string.category_none)
+        val noneCd = stringResource(R.string.filter_only, none)
+        FilterChip(
+            selected = HistoryFilters.NO_CATEGORY in filters.categories,
+            onClick = { toggleCategory(HistoryFilters.NO_CATEGORY) },
+            label = { Text(none) },
+            modifier = Modifier.semantics { contentDescription = noneCd },
+        )
+        categoryOptions.forEach { c ->
+            val cd = stringResource(R.string.filter_only, c.label)
+            FilterChip(
+                selected = c.id in filters.categories,
+                onClick = { toggleCategory(c.id) },
+                label = { Text(c.label) },
+                leadingIcon = { Icon(c.icon, contentDescription = null, tint = c.color) },
                 modifier = Modifier.semantics { contentDescription = cd },
             )
         }
@@ -316,6 +366,41 @@ private fun AudioPlayerRow(player: PlayerUi) {
     }
 }
 
+/** The detail "Category" menu: None, seeds, customs; the current one carries a check mark. */
+@Composable
+private fun CategoryControl(rec: Recording, options: List<CategoryUi>, initialOpen: Boolean, actions: HistoryDetailActions) {
+    var menuOpen by rememberSaveable { mutableStateOf(initialOpen) }
+    val current = options.firstOrNull { it.id == rec.category }
+    val none = stringResource(R.string.category_none)
+    val button = stringResource(R.string.category_button, current?.label ?: none)
+    val buttonCd = stringResource(R.string.category_button_cd, current?.label ?: none)
+    val selectedCd = stringResource(R.string.category_selected)
+    Box(Modifier.padding(top = 12.dp)) {
+        OutlinedButton(
+            onClick = { menuOpen = true },
+            modifier = Modifier.heightIn(min = 48.dp).semantics { contentDescription = buttonCd },
+        ) {
+            if (current != null) Icon(current.icon, null, Modifier.padding(end = 8.dp), tint = current.color)
+            Text(button)
+        }
+        DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+            DropdownMenuItem(
+                text = { Text(none) },
+                trailingIcon = if (current == null) ({ Icon(Icons.Filled.Check, contentDescription = selectedCd) }) else null,
+                onClick = { menuOpen = false; actions.onSetCategory(rec.id, null) },
+            )
+            options.forEach { c ->
+                DropdownMenuItem(
+                    text = { Text(c.label) },
+                    leadingIcon = { Icon(c.icon, contentDescription = null, tint = c.color) },
+                    trailingIcon = if (c.id == rec.category) ({ Icon(Icons.Filled.Check, contentDescription = selectedCd) }) else null,
+                    onClick = { menuOpen = false; actions.onSetCategory(rec.id, c.id) },
+                )
+            }
+        }
+    }
+}
+
 @Composable
 private fun RetryWithControl(rec: Recording, ui: RetryWithUi, initialOpen: Boolean, actions: HistoryDetailActions) {
     var menuOpen by rememberSaveable { mutableStateOf(initialOpen) }
@@ -357,6 +442,9 @@ interface HistoryDetailActions {
     fun onRetryWith(id: String, provider: ProviderId) {}
     fun onDelete(id: String) {}
     fun onExport(rec: Recording, format: ExportFormat) {}
+
+    /** CONTRACT-1.2 F3: [category] null = none. */
+    fun onSetCategory(id: String, category: String?) {}
 }
 
 /** CONTRACT-1.1 F4: the kept-audio player; null on the screen means no player (file gone). */
@@ -391,6 +479,8 @@ fun HistoryDetailScreen(
     player: PlayerUi? = null,
     retryWith: RetryWithUi? = null,
     initialRetryMenuOpen: Boolean = false,
+    customCategories: List<CustomCategory> = emptyList(),
+    initialCategoryMenuOpen: Boolean = false,
 ) {
     var confirmDelete by rememberSaveable { mutableStateOf(false) }
     Column(modifier.fillMaxSize()) {
@@ -453,6 +543,10 @@ fun HistoryDetailScreen(
                     Icon(Icons.Filled.Refresh, null, Modifier.padding(end = 8.dp))
                     Text(stringResource(R.string.action_retry))
                 }
+            }
+            // Hidden while RECORDING / TRANSCRIBING (CONTRACT-1.2 F3).
+            if (rec.status == RecordingStatus.DONE || rec.status == RecordingStatus.FAILED) {
+                CategoryControl(rec, rememberCategoryOptions(customCategories), initialCategoryMenuOpen, actions)
             }
             if (retryWith != null && (rec.status == RecordingStatus.DONE || rec.status == RecordingStatus.FAILED)) {
                 RetryWithControl(rec, retryWith, initialRetryMenuOpen, actions)

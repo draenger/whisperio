@@ -18,6 +18,7 @@ import ai.whisperio.android.ui.about.AboutScreen
 import ai.whisperio.android.ui.common.confirmHaptic
 import ai.whisperio.android.ui.common.copyPlainText
 import ai.whisperio.android.ui.common.label
+import ai.whisperio.android.ui.common.seedLabels
 import ai.whisperio.android.ui.history.HistoryDetailActions
 import ai.whisperio.android.ui.history.HistoryDetailScreen
 import ai.whisperio.android.ui.history.HistoryListScreen
@@ -48,6 +49,8 @@ import ai.whisperio.android.ui.onboarding.tryItLeave
 import ai.whisperio.android.ui.onboarding.tryItPendingStale
 import ai.whisperio.android.ui.onboarding.tryItShouldAck
 import ai.whisperio.android.ui.onboarding.tryItView
+import ai.whisperio.android.ui.settings.CategoriesActions
+import ai.whisperio.android.ui.settings.CategoriesScreen
 import ai.whisperio.android.ui.settings.KeyDialogState
 import ai.whisperio.android.ui.settings.SettingsActions
 import ai.whisperio.android.ui.settings.SettingsScreen
@@ -112,6 +115,7 @@ private object Routes {
     const val HISTORY = "history"
     const val SETTINGS = "settings"
     const val ABOUT = "about"
+    const val CATEGORIES = "settings/categories"
     const val DETAIL = "history/{id}"
     fun detail(id: String) = "history/$id"
 }
@@ -326,6 +330,7 @@ private fun MainShell(g: AppGraph) {
             composable(Routes.HISTORY) { HistoryRoute(g, nav, snackbar) }
             composable(Routes.DETAIL) { entry -> DetailRoute(g, nav, entry.arguments?.getString("id").orEmpty(), snackbar) }
             composable(Routes.SETTINGS) { SettingsRoute(g, nav) }
+            composable(Routes.CATEGORIES) { CategoriesRoute(g, nav) }
             composable(Routes.ABOUT) {
                 val ctx = LocalContext.current
                 AboutScreen(
@@ -346,6 +351,7 @@ private fun HomeRoute(g: AppGraph, nav: NavHostController) {
     val scope = rememberCoroutineScope()
     val dictation by g.dictation.state.collectAsState()
     val recent by g.history.observeRecent(5).collectAsState(initial = emptyList())
+    val customCategories by g.settings.customCategories.collectAsState(initial = emptyList())
     val settings by g.settings.flow.collectAsState(initial = AppSettings(order = g.settings.defaultOrder()))
     val keys by g.secrets.configured.collectAsState(initial = emptySet())
     var mic by remember { mutableStateOf(g.micGranted()) }
@@ -369,6 +375,7 @@ private fun HomeRoute(g: AppGraph, nav: NavHostController) {
                 recent = recent,
                 setupNeeded = !setup.ready,
                 providerLabel = primary?.let { "${it.first.label(ctx)} - ${it.second}" }.orEmpty(),
+                customCategories = customCategories,
             ),
             actions = object : HomeActions {
                 override fun onDictate() {
@@ -403,8 +410,10 @@ private fun HistoryRoute(g: AppGraph, nav: NavHostController, snackbar: Snackbar
     // Fixed per day so the day-header grouping is cached instead of recomputed on every recomposition.
     val today = LocalDate.now()
     val now = remember(today) { System.currentTimeMillis() }
+    val customCategories by g.settings.customCategories.collectAsState(initial = emptyList())
     HistoryListScreen(
         items,
+        customCategories = customCategories,
         onOpen = { nav.navigate(Routes.detail(it)) },
         onExport = export,
         now = now,
@@ -419,6 +428,7 @@ private fun DetailRoute(g: AppGraph, nav: NavHostController, id: String, snackba
     val scope = rememberCoroutineScope()
     val rec by g.history.observe(id).collectAsState(initial = null)
     val export = rememberExporter(g.history, snackbar)
+    val customCategories by g.settings.customCategories.collectAsState(initial = emptyList())
 
     // F4: the player. Hidden when the file is gone, disabled while recording, released when a recording starts.
     val dictation by g.dictation.state.collectAsState()
@@ -464,6 +474,7 @@ private fun DetailRoute(g: AppGraph, nav: NavHostController, id: String, snackba
     run {
         HistoryDetailScreen(
             rec = rec,
+            customCategories = customCategories,
             player = playerUi,
             retryWith = retryUi,
             actions = object : HistoryDetailActions {
@@ -476,6 +487,7 @@ private fun DetailRoute(g: AppGraph, nav: NavHostController, id: String, snackba
                     val send = Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, text)
                     ctx.startActivity(Intent.createChooser(send, null))
                 }
+                override fun onSetCategory(id: String, category: String?) { scope.launch { g.history.setCategory(id, category) } }
                 override fun onRetry(id: String) = g.dictation.retry(id)
                 override fun onRetryWith(id: String, provider: ProviderId) = g.dictation.retryWith(id, provider)
                 override fun onExport(rec: Recording, format: ExportFormat) = export(listOf(rec), format)
@@ -486,6 +498,21 @@ private fun DetailRoute(g: AppGraph, nav: NavHostController, id: String, snackba
             },
         )
     }
+}
+
+@Composable
+private fun CategoriesRoute(g: AppGraph, nav: NavHostController) {
+    val scope = rememberCoroutineScope()
+    val customs by g.settings.customCategories.collectAsState(initial = emptyList())
+    val seeds = seedLabels()
+    CategoriesScreen(
+        customs = customs,
+        actions = object : CategoriesActions {
+            override fun onBack() { nav.popBackStack() }
+            override fun onAdd(name: String) { scope.launch { g.settings.addCustomCategory(name, seeds) } }
+            override fun onDelete(id: String) { scope.launch { g.deleteCategory(id) } }
+        },
+    )
 }
 
 @Composable
@@ -551,6 +578,7 @@ private fun SettingsRoute(g: AppGraph, nav: NavHostController) {
         override fun onConsent(value: Boolean) { scope.launch { g.settings.setConsent(value) } }
         override fun onDeleteAllAudio() { scope.launch { g.history.deleteAllAudio() } }
         override fun onEraseAll() { scope.launch { g.eraseAllData() } }
+        override fun onCategories() { nav.navigate(Routes.CATEGORIES) }
         override fun onAbout() { nav.navigate(Routes.ABOUT) }
     }
     run {

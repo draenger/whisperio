@@ -202,4 +202,28 @@
     <string name="retry_with_busy">Ponawiam...</string>
     <string name="retry_with_none">Dodaj klucz API w Ustawieniach, aby ponowić z innym dostawcą.</string>
     <string name="retry_failed">Ponowienie nie powiodło się, poprzedni tekst zachowany: %1$s</string>
+    <!-- CONTRACT-1.2 F3: kategorie -->
+    <string name="category_work">Praca</string>
+    <string name="category_personal">Prywatne</string>
+    <string name="category_ideas">Pomysły</string>
+    <string name="category_messages">Wiadomości</string>
+    <string name="category_code">Kod</string>
+    <string name="category_todo">Do zrobienia</string>
+    <string name="category_none">Brak</string>
+    <string name="category_button">Kategoria: %1$s</string>
+    <string name="category_button_cd">Kategoria, obecnie %1$s. Otwiera menu.</string>
+    <string name="category_selected">Wybrana</string>
+    <string name="category_tag_cd">Kategoria: %1$s</string>
+    <string name="settings_categories">Kategorie</string>
+    <string name="settings_categories_hint">Dodaj własne etykiety dla dyktowań.</string>
+    <string name="categories_builtin">Wbudowane</string>
+    <string name="categories_custom">Twoje kategorie</string>
+    <string name="categories_custom_empty">Nie masz jeszcze własnych kategorii.</string>
+    <string name="categories_add_label">Nazwa nowej kategorii</string>
+    <string name="categories_add">Dodaj</string>
+    <string name="categories_err_long">Użyj najwyżej 24 znaków.</string>
+    <string name="categories_err_duplicate">Kategoria o tej nazwie już istnieje.</string>
+    <string name="categories_delete_cd">Usuń kategorię %1$s</string>
+    <string name="categories_delete_title">Usunąć tę kategorię?</string>
+    <string name="categories_delete_body">Dyktowania z etykietą %1$s zachowają tekst i nagranie, ale stracą kategorię.</string>
 </resources>

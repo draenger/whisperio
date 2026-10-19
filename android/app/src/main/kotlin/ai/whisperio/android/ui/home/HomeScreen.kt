@@ -5,7 +5,11 @@ import ai.whisperio.android.dictation.DictationState
 import ai.whisperio.android.history.Recording
 import ai.whisperio.android.history.RecordingSource
 import ai.whisperio.android.history.RecordingStatus
+import ai.whisperio.android.settings.CustomCategory
+import ai.whisperio.android.ui.common.CategoryTag
+import ai.whisperio.android.ui.common.CategoryUi
 import ai.whisperio.android.ui.common.LevelMeter
+import ai.whisperio.android.ui.common.rememberCategoryOptions
 import ai.whisperio.android.ui.common.SectionTitle
 import ai.whisperio.android.ui.common.dictationStatusText
 import ai.whisperio.android.ui.common.formatDateTime
@@ -58,6 +62,8 @@ data class HomeState(
     val recent: List<Recording> = emptyList(),
     val setupNeeded: Boolean = false,
     val providerLabel: String = "",
+    /** CONTRACT-1.2 F3: needed to resolve the tag of a custom category on the recent rows. */
+    val customCategories: List<CustomCategory> = emptyList(),
 )
 
 interface HomeActions {
@@ -73,6 +79,7 @@ interface HomeActions {
 @Composable
 fun HomeScreen(state: HomeState, actions: HomeActions, modifier: Modifier = Modifier) {
     val d = state.dictation
+    val categoryOptions = rememberCategoryOptions(state.customCategories)
     val recording = d is DictationState.Recording
     val transcribing = d is DictationState.Transcribing
     LazyColumn(
@@ -148,7 +155,11 @@ fun HomeScreen(state: HomeState, actions: HomeActions, modifier: Modifier = Modi
             }
         }
         items(state.recent, key = { it.id }) { rec ->
-            RecordingRow(rec, onClick = { actions.onOpen(rec.id) })
+            RecordingRow(
+                rec,
+                onClick = { actions.onOpen(rec.id) },
+                category = rec.category?.let { id -> categoryOptions.firstOrNull { it.id == id } },
+            )
         }
     }
 }
@@ -190,6 +201,8 @@ fun RecordingRow(
     modifier: Modifier = Modifier,
     selected: Boolean? = null,
     onLongClick: (() -> Unit)? = null,
+    /** CONTRACT-1.2 F3: the resolved category of [rec], null when none (no tag, D2). */
+    category: CategoryUi? = null,
 ) {
     val subtitle = when (rec.status) {
         RecordingStatus.DONE -> rec.transcript.orEmpty()
@@ -200,7 +213,10 @@ fun RecordingRow(
     ListItem(
         headlineContent = { Text(subtitle, maxLines = 2, overflow = TextOverflow.Ellipsis) },
         supportingContent = {
-            Text("${formatDateTime(rec.createdAt)} - ${stringResource(sourceLabelRes(rec.source))}")
+            Column {
+                Text("${formatDateTime(rec.createdAt)} - ${stringResource(sourceLabelRes(rec.source))}")
+                if (category != null) CategoryTag(category, Modifier.padding(top = 2.dp))
+            }
         },
         leadingContent = if (selected == null) null else {
             { Checkbox(checked = selected, onCheckedChange = null) }
