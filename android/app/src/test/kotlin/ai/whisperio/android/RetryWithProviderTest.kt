@@ -20,6 +20,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -149,6 +150,42 @@ class RetryWithProviderTest {
         assertEquals(DictationError.NO_AUDIO, (outcomes.single() as RetryOutcome.Failure).error)
         assertEquals("old text", history.rows.value["r1"]!!.transcript)
         assertTrue(transcriber.calls.isEmpty())
+    }
+
+    @Test fun deletingTheEntryDuringRetryDoesNotResurrectIt() = runTest {
+        seed()
+        transcriber.latencyMs = 1_000
+        val c = controller()
+        c.retryWith("r1", ProviderId.GROQ); runCurrent()
+        assertTrue(c.state.value is DictationState.Transcribing)
+        history.delete("r1") // the user deletes the entry while the upload is in flight
+        advanceUntilIdle()
+        assertNull(history.rows.value["r1"])
+        assertEquals(DictationState.Idle, c.state.value)
+    }
+
+    @Test fun retryDoesNotOverwriteFieldsChangedDuringUpload() = runTest {
+        seed()
+        transcriber.latencyMs = 1_000
+        val c = controller()
+        c.retryWith("r1", ProviderId.GROQ); runCurrent()
+        history.setInserted("r1", true)
+        advanceUntilIdle()
+        val row = history.rows.value["r1"]!!
+        assertEquals("new text", row.transcript)
+        assertEquals(true, row.inserted)
+    }
+
+    @Test fun retryShowsTranscribingAsAppAndKeepsTheStoredSource() = runTest {
+        val row = seed()
+        history.upsert(row.copy(source = RecordingSource.KEYBOARD))
+        transcriber.latencyMs = 1_000
+        val c = controller()
+        c.retryWith("r1", ProviderId.GROQ)
+        runCurrent()
+        assertEquals(DictationState.Transcribing(RecordingSource.APP), c.state.value)
+        advanceUntilIdle()
+        assertEquals(RecordingSource.KEYBOARD, history.rows.value["r1"]!!.source)
     }
 
     @Test fun choicesAreOnlyProvidersWithAKeyInPriorityOrder() {

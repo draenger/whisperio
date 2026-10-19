@@ -403,7 +403,7 @@ fun HistoryDetailScreen(
             },
             actions = {
                 if (rec != null) {
-                    IconButton(onClick = { confirmDelete = true }) {
+                    IconButton(onClick = { confirmDelete = true }, enabled = retryWith?.retrying != true) {
                         Icon(Icons.Filled.Delete, contentDescription = stringResource(R.string.action_delete))
                     }
                 }
