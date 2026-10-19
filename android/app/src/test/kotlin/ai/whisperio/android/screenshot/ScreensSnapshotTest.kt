@@ -275,8 +275,11 @@ open class SettingsSnapshotTest {
     private fun state(
         customHost: Boolean = false,
         dialog: KeyDialogState? = null,
+        perApp: Boolean = false,
+        appLanguageCount: Int = 0,
     ) = SettingsUiState(
-        settings = if (customHost) settingsFixture.copy(baseUrls = mapOf(ProviderId.OPENAI to "http://192.168.1.20:8000/v1")) else settingsFixture,
+        settings = if (customHost) settingsFixture.copy(baseUrls = mapOf(ProviderId.OPENAI to "http://192.168.1.20:8000/v1")) else settingsFixture.copy(perAppLanguage = perApp),
+        appLanguageCount = appLanguageCount,
         configured = setOf(ProviderId.OPENAI),
         lost = setOf(ProviderId.GROQ),
         models = modelsFixture,
@@ -289,6 +292,21 @@ open class SettingsSnapshotTest {
 
     @Test @Config(qualifiers = PHONE)
     fun dark() = rule.snapshot("settings", dark = true) { SettingsScreen(state(), noop) }
+
+    @Test @Config(qualifiers = PHONE)
+    fun perAppLanguage() = rule.snapshot("settings_per_app_language") {
+        SettingsScreen(state(perApp = true, appLanguageCount = 3), noop)
+    }
+
+    @Test @Config(qualifiers = PHONE)
+    fun perAppLanguageEmpty() = rule.snapshot("settings_per_app_language_empty") {
+        SettingsScreen(state(perApp = true), noop)
+    }
+
+    @Test @Config(qualifiers = PHONE)
+    fun perAppLanguageFontScale2() = rule.snapshot("settings_per_app_language_font2", fontScale = 2f) {
+        SettingsScreen(state(perApp = true, appLanguageCount = 12), noop)
+    }
 
     @Test @Config(qualifiers = PHONE)
     fun customHost() = rule.snapshot("settings_custom_host") { SettingsScreen(state(customHost = true), noop) }
@@ -328,7 +346,8 @@ open class ImePanelSnapshotTest {
         d: DictationState = DictationState.Idle,
         password: Boolean = false,
         setup: Boolean = false,
-    ) = ImePanelState(d, password, setup, "OpenAI - whisper-1")
+        language: String = "auto",
+    ) = ImePanelState(d, password, setup, "OpenAI - whisper-1", language = language)
 
     private val rec = DictationState.Recording(0.55f, 8_000, false, RecordingSource.KEYBOARD)
 
@@ -337,6 +356,22 @@ open class ImePanelSnapshotTest {
 
     @Test @Config(qualifiers = PHONE)
     fun idleDark() = rule.snapshot("ime_idle", dark = true) { ImePanel(st(), noop) }
+
+    @Test @Config(qualifiers = PHONE)
+    fun languageChip() = rule.snapshot("ime_language_chip") { ImePanel(st(language = "pl"), noop) }
+
+    @Test @Config(qualifiers = PHONE)
+    fun languageChipDark() = rule.snapshot("ime_language_chip", dark = true) { ImePanel(st(language = "en"), noop) }
+
+    @Test @Config(qualifiers = PHONE)
+    fun languagePicker() = rule.snapshot("ime_language_picker") {
+        ImePanel(st(language = "pl"), noop, initialLanguagePickerOpen = true)
+    }
+
+    @Test @Config(qualifiers = PHONE)
+    fun languageChipFontScale2() = rule.snapshot("ime_language_chip_font2", fontScale = 2f) {
+        ImePanel(st(language = "pl"), noop)
+    }
 
     @Test @Config(qualifiers = PHONE)
     fun recording() = rule.snapshot("ime_recording") { ImePanel(st(rec), noop) }

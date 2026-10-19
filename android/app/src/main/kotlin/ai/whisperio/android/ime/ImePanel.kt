@@ -2,6 +2,8 @@ package ai.whisperio.android.ime
 
 import ai.whisperio.android.R
 import ai.whisperio.android.dictation.DictationState
+import ai.whisperio.android.settings.AppSettings
+import ai.whisperio.android.ui.common.Languages
 import ai.whisperio.android.ui.common.LevelMeter
 import ai.whisperio.android.ui.common.dictationStatusText
 import ai.whisperio.android.ui.common.liveStatus
@@ -9,6 +11,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -31,13 +35,19 @@ import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilledIconButton
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
@@ -56,6 +66,8 @@ data class ImePanelState(
     val providerLabel: String,
     /** True when a finished dictation was not typed (field changed meanwhile). */
     val notInserted: Boolean = false,
+    /** Language the next dictation uses (global, or the saved one for this app); `auto`, `pl`, ... */
+    val language: String = AppSettings.LANGUAGE_AUTO,
 )
 
 class ImePanelActions(
@@ -66,10 +78,19 @@ class ImePanelActions(
     val onSwitchKeyboard: () -> Unit,
     val onOpenSetup: () -> Unit,
     val onProviderChip: () -> Unit,
+    /** The user picked a language in the chip's list. */
+    val onLanguage: (String) -> Unit = {},
 )
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun ImePanel(state: ImePanelState, actions: ImePanelActions, modifier: Modifier = Modifier) {
+fun ImePanel(
+    state: ImePanelState,
+    actions: ImePanelActions,
+    modifier: Modifier = Modifier,
+    initialLanguagePickerOpen: Boolean = false,
+) {
+    var picking by rememberSaveable { mutableStateOf(initialLanguagePickerOpen) }
     val d = state.dictation
     val recording = d is DictationState.Recording
     val transcribing = d is DictationState.Transcribing
@@ -92,17 +113,45 @@ fun ImePanel(state: ImePanelState, actions: ImePanelActions, modifier: Modifier 
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                AssistChip(
-                    onClick = actions.onProviderChip,
-                    label = { Text(state.providerLabel, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                    modifier = Modifier.heightIn(min = 48.dp).weight(1f, fill = false),
-                )
+                Row(
+                    Modifier.weight(1f, fill = false),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    AssistChip(
+                        onClick = actions.onProviderChip,
+                        label = { Text(state.providerLabel, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                        modifier = Modifier.heightIn(min = 48.dp).weight(1f, fill = false),
+                    )
+                    val chipDesc = stringResource(R.string.ime_language_chip_desc, Languages.label(state.language))
+                    AssistChip(
+                        onClick = { picking = !picking },
+                        label = { Text(Languages.short(state.language), maxLines = 1) },
+                        modifier = Modifier.heightIn(min = 48.dp).semantics { contentDescription = chipDesc },
+                    )
+                }
                 IconButton(onClick = actions.onSwitchKeyboard, modifier = Modifier.size(48.dp)) {
                     Icon(Icons.Filled.Keyboard, contentDescription = stringResource(R.string.ime_switch_keyboard))
                 }
             }
 
-            if (state.setupNeeded) {
+            if (picking) {
+                val closeDesc = stringResource(R.string.ime_language_picker_close)
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                    Languages.settings.forEach { code ->
+                        FilterChip(
+                            selected = state.language == code,
+                            onClick = { picking = false; actions.onLanguage(code) },
+                            label = { Text(Languages.label(code)) },
+                            modifier = Modifier.heightIn(min = 48.dp),
+                        )
+                    }
+                }
+                TextButton(
+                    onClick = { picking = false },
+                    modifier = Modifier.heightIn(min = 48.dp).semantics { contentDescription = closeDesc },
+                ) { Text(stringResource(R.string.action_close)) }
+            } else if (state.setupNeeded) {
                 Button(onClick = actions.onOpenSetup, modifier = Modifier.heightIn(min = 56.dp)) {
                     Text(stringResource(R.string.ime_open_setup), textAlign = TextAlign.Center)
                 }

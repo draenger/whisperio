@@ -11,6 +11,7 @@ import ai.whisperio.android.history.RoomHistoryStore
 import ai.whisperio.android.security.AndroidKeystoreCipher
 import ai.whisperio.android.security.KeystoreSecretStore
 import ai.whisperio.android.security.SecretStore
+import ai.whisperio.android.settings.AppLanguageStore
 import ai.whisperio.android.settings.SettingsRepository
 import android.Manifest
 import android.app.Application
@@ -31,6 +32,7 @@ import kotlinx.coroutines.launch
 
 private val Context.settingsDataStore by preferencesDataStore(name = "settings")
 private val Context.secretsDataStore by preferencesDataStore(name = "secrets")
+private val Context.appLanguagesDataStore by preferencesDataStore(name = "app_languages")
 
 /** Manual DI (no Hilt, CONTRACT 3). One instance on [ai.whisperio.android.WhisperioApp]. */
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -47,6 +49,7 @@ class AppGraph private constructor(private val appOrNull: Application?, private 
         val settings: SettingsRepository,
         val recordingsDir: File,
         val dictation: DictationController,
+        val appLanguages: AppLanguageStore? = null,
     )
 
     internal constructor(overrides: Overrides) : this(null, overrides)
@@ -62,6 +65,19 @@ class AppGraph private constructor(private val appOrNull: Application?, private 
     val secrets: SecretStore by lazy { o?.secrets ?: KeystoreSecretStore(app.secretsDataStore, AndroidKeystoreCipher()) }
     val catalog: ModelCatalog by lazy { CoreModelCatalog() }
     val settings: SettingsRepository by lazy { o?.settings ?: SettingsRepository(app.settingsDataStore, secrets, catalog) }
+
+    /** F7 per-app language map: private DataStore, never logged or exported. */
+    val appLanguages: AppLanguageStore by lazy {
+        o?.appLanguages ?: AppLanguageStore(app.appLanguagesDataStore)
+    }
+
+    /** The "Remember language per app" switch; turning it off deletes the map (CONTRACT-1.1 F7). */
+    suspend fun setPerAppLanguage(enabled: Boolean) {
+        appScope.launch {
+            settings.setPerAppLanguage(enabled)
+            if (!enabled) appLanguages.clear()
+        }.join()
+    }
 
     private val database: AppDatabase by lazy {
         o?.database ?: Room.databaseBuilder(app, AppDatabase::class.java, "whisperio.db").build()
@@ -115,6 +131,7 @@ class AppGraph private constructor(private val appOrNull: Application?, private 
             history.clear()
             secrets.clear()
             settings.clear()
+            appLanguages.clear()
         }.join()
     }
 }

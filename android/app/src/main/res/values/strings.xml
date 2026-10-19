@@ -9,6 +9,7 @@
     <string name="ime_subtype_voice">Voice input</string>
     <string name="provider_selfhosted">Self-hosted</string>
     <string name="language_auto">Auto-detect</string>
+    <string name="language_auto_short">Auto</string>
     <string name="nav_home">Home</string>
     <string name="nav_history">History</string>
     <string name="nav_settings">Settings</string>
@@ -48,6 +49,8 @@
     <string name="ime_backspace">Backspace</string>
     <string name="ime_space">Space</string>
     <string name="ime_enter">Enter</string>
+    <string name="ime_language_chip_desc">Dictation language: %1$s. Tap to change.</string>
+    <string name="ime_language_picker_close">Close language list</string>
     <string name="ime_switch_keyboard">Switch keyboard</string>
     <string name="ime_open_setup">Open Whisperio to finish setup</string>
     <string name="ime_open_setup_short">Open Whisperio</string>
@@ -151,6 +154,11 @@
     <string name="settings_custom_host_warning">Custom host - your key and audio go to this server, not to OpenAI.</string>
     <string name="settings_dictation">Dictation</string>
     <string name="settings_language">Language</string>
+    <string name="settings_per_app_language">Remember language per app</string>
+    <string name="settings_per_app_language_hint">The keyboard remembers the language you pick for each app, on this device only. Off by default.</string>
+    <string name="settings_per_app_language_count">Apps with a saved language: %1$d</string>
+    <string name="settings_per_app_language_clear">Clear</string>
+    <string name="settings_per_app_language_clear_desc">Clear the saved language for %1$d apps</string>
     <string name="settings_vocabulary">Vocabulary</string>
     <string name="settings_vocabulary_hint">Comma-separated names and terms to help recognition</string>
     <string name="settings_cleanup">Tidy up text</string>

@@ -8,6 +8,8 @@ import ai.whisperio.android.dictation.StartOptions
 import ai.whisperio.android.dictation.primaryProvider
 import ai.whisperio.android.graph
 import ai.whisperio.android.history.RecordingSource
+import ai.whisperio.android.settings.AppLanguagePolicy
+import ai.whisperio.android.ui.common.Languages
 import ai.whisperio.android.ui.common.confirmHaptic
 import ai.whisperio.android.ui.common.label
 import ai.whisperio.android.ui.theme.WhisperioTheme
@@ -63,6 +65,10 @@ class WhisperioImeService : InputMethodService(), LifecycleOwner, ViewModelStore
         val key: FieldKey? = null,
         val password: Boolean = false,
         val imeOptions: Int = 0,
+        val inputType: Int = 0,
+        val packageName: String? = null,
+        /** Language chosen with the chip, or loaded from the per-app map, for this field; null = global. */
+        val language: String? = null,
     )
 
     private val field = MutableStateFlow(FieldState())
@@ -96,6 +102,7 @@ class WhisperioImeService : InputMethodService(), LifecycleOwner, ViewModelStore
                 setupNeeded = !status.ready,
                 providerLabel = "${primary.first.label(this)} - ${primary.second}",
                 notInserted = ni,
+                language = effectiveLanguage(settings.perAppLanguage, f.language, settings.language),
             )
         }.stateIn(
             lifecycle.coroutineScope,
@@ -157,11 +164,18 @@ class WhisperioImeService : InputMethodService(), LifecycleOwner, ViewModelStore
         super.onStartInputView(info, restarting)
         lifecycleRegistry.currentState = Lifecycle.State.RESUMED
         micGranted.value = graph.micGranted()
+        val pkg = info?.packageName
+        // A restart in the same app keeps what the user picked with the chip (it may not be storable).
+        val keepLanguage = if (restarting && field.value.packageName == pkg) field.value.language else null
         field.value = FieldState(
             key = ImeCommitPolicy.fieldKey(info),
             password = info != null && ImeCommitPolicy.isPasswordField(info.inputType),
             imeOptions = info?.imeOptions ?: 0,
+            inputType = info?.inputType ?: 0,
+            packageName = pkg,
+            language = keepLanguage,
         )
+        if (pkg != null && keepLanguage == null) loadSavedLanguage(pkg)
         if (!restarting) {
             notInserted.value = false
             graph.dictation.acknowledge()
@@ -190,7 +204,34 @@ class WhisperioImeService : InputMethodService(), LifecycleOwner, ViewModelStore
         onSwitchKeyboard = ::switchKeyboard,
         onOpenSetup = ::openSetup,
         onProviderChip = ::openSetup,
+        onLanguage = ::onLanguage,
     )
+
+    /** F7: apply the language saved for [pkg], if the switch is on. Never logged. */
+    private fun loadSavedLanguage(pkg: String) {
+        lifecycle.coroutineScope.launch {
+            val g = graph
+            if (!g.settings.current().perAppLanguage) return@launch
+            val saved = g.appLanguages.languageFor(pkg)?.takeIf { it in Languages.settings } ?: return@launch
+            val f = field.value
+            if (f.packageName == pkg && f.language == null) field.value = f.copy(language = saved)
+        }
+    }
+
+    /** Language chip: global language when the per-app switch is off, otherwise this field/app (F7). */
+    private fun onLanguage(code: String) {
+        lifecycle.coroutineScope.launch {
+            val g = graph
+            if (!g.settings.current().perAppLanguage) {
+                g.settings.setLanguage(code)
+                return@launch
+            }
+            val f = field.value
+            field.value = f.copy(language = code)
+            val pkg = f.packageName
+            if (pkg != null && AppLanguagePolicy.shouldStore(f.inputType, f.imeOptions, pkg)) g.appLanguages.remember(pkg, code)
+        }
+    }
 
     private fun onMic() {
         val controller = graph.dictation
@@ -199,7 +240,10 @@ class WhisperioImeService : InputMethodService(), LifecycleOwner, ViewModelStore
             is DictationState.Transcribing -> Unit
             else -> {
                 val f = field.value
-                val options = keyboardStartOptions(f.password, f.imeOptions, currentSession()) ?: return // mic disabled in password fields
+                val options = keyboardStartOptions(
+                    f.password, f.imeOptions, currentSession(),
+                    language = panelState.value.language,
+                ) ?: return // mic disabled in password fields
                 micGranted.value = graph.micGranted()
                 notInserted.value = false
                 controller.start(options)
@@ -308,9 +352,19 @@ internal fun commitKeyboardResult(
 }
 
 /** Mic start options for the bound field; null in password fields (mic disabled). */
-internal fun keyboardStartOptions(password: Boolean, imeOptions: Int, session: InputSession): StartOptions? =
+internal fun keyboardStartOptions(
+    password: Boolean,
+    imeOptions: Int,
+    session: InputSession,
+    language: String? = null,
+): StartOptions? =
     if (password) null else StartOptions(
         source = RecordingSource.KEYBOARD,
         saveToHistory = ImeCommitPolicy.shouldSaveToHistory(imeOptions),
         session = session,
+        language = language,
     )
+
+/** The language the keyboard dictates in: the field's own choice only while the per-app switch is on (F7). */
+internal fun effectiveLanguage(perAppEnabled: Boolean, fieldLanguage: String?, global: String): String =
+    if (perAppEnabled && fieldLanguage != null) fieldLanguage else global

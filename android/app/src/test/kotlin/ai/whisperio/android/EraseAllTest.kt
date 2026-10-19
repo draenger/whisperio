@@ -11,6 +11,7 @@ import ai.whisperio.android.history.RecordingSource
 import ai.whisperio.android.history.RecordingStatus
 import ai.whisperio.android.history.RoomHistoryStore
 import ai.whisperio.android.security.KeystoreSecretStore
+import ai.whisperio.android.settings.AppLanguageStore
 import ai.whisperio.android.settings.SettingsRepository
 import ai.whisperio.core.ProviderId
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
@@ -51,6 +52,7 @@ class EraseAllTest {
     private lateinit var history: RoomHistoryStore
     private lateinit var secrets: KeystoreSecretStore
     private lateinit var settings: SettingsRepository
+    private lateinit var appLanguages: AppLanguageStore
     private val recorder = FakeRecorder()
     private val transcriber = FakeTranscriber(latencyMs = 10_000)
     private var ids = 0
@@ -66,6 +68,9 @@ class EraseAllTest {
         settings = SettingsRepository(
             PreferenceDataStoreFactory.create(scope = ioScope) { File(tmp.root, "settings.preferences_pb") },
             secrets, FakeCatalog(),
+        )
+        appLanguages = AppLanguageStore(
+            PreferenceDataStoreFactory.create(scope = ioScope) { File(tmp.root, "app_languages.preferences_pb") },
         )
     }
 
@@ -85,6 +90,7 @@ class EraseAllTest {
         settings.setConsent(true); settings.setSensitive(true); settings.setKeepAudio(false)
         settings.setAutoDeleteDays(7); settings.setLanguage("pl"); settings.setVocabulary("Whisperio")
         settings.setOnboardingDone(true)
+        settings.setPerAppLanguage(true); appLanguages.remember("com.example.app", "pl")
     }
 
     private fun TestScope.appScope() = CoroutineScope(StandardTestDispatcher(testScheduler))
@@ -110,7 +116,7 @@ class EraseAllTest {
     }
 
     private fun graph(scope: CoroutineScope, dictation: DictationController) = AppGraph(
-        AppGraph.Overrides(scope, db, secrets, settings, recordingsDir, dictation),
+        AppGraph.Overrides(scope, db, secrets, settings, recordingsDir, dictation, appLanguages),
     )
 
     @Test fun eraseLeavesNoRowsFilesSecretsAndDefaultSettings() = runTest {
@@ -129,6 +135,31 @@ class EraseAllTest {
             PreferenceDataStoreFactory.create(scope = ioScope) { File(tmp.root, "fresh.preferences_pb") }, secrets, FakeCatalog(),
         ).current()
         assertEquals(fresh, settings.current())
+        assertEquals(0, appLanguages.count.first())
+        assertNull(appLanguages.languageFor("com.example.app"))
+    }
+
+    @Test fun switchingPerAppLanguageOffDeletesTheMap() = runTest {
+        val scope = appScope()
+        val g = graph(scope, controller(scope))
+        settings.setPerAppLanguage(true)
+        appLanguages.remember("com.example.app", "pl")
+
+        g.setPerAppLanguage(false)
+
+        assertEquals(false, settings.current().perAppLanguage)
+        assertEquals(0, appLanguages.count.first())
+    }
+
+    @Test fun switchingPerAppLanguageOnKeepsTheMap() = runTest {
+        val scope = appScope()
+        val g = graph(scope, controller(scope))
+        appLanguages.remember("com.example.app", "pl")
+
+        g.setPerAppLanguage(true)
+
+        assertEquals(true, settings.current().perAppLanguage)
+        assertEquals("pl", appLanguages.languageFor("com.example.app"))
     }
 
     @Test fun eraseDuringInFlightTranscriptionWritesNothingAfterwards() = runTest {
