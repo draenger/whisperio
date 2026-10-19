@@ -5,6 +5,8 @@ import ai.whisperio.android.ime.effectiveLanguage
 import ai.whisperio.android.ime.keyboardStartOptions
 import ai.whisperio.android.settings.AppLanguageMap
 import ai.whisperio.android.settings.AppLanguagePolicy
+import ai.whisperio.android.settings.decideLanguageChoice
+import ai.whisperio.android.settings.languageAfterRestart
 import android.text.InputType
 import android.view.inputmethod.EditorInfo
 import org.junit.Assert.assertEquals
@@ -147,5 +149,35 @@ class AppLanguageMapTest {
         assertEquals("pl", keyboardStartOptions(false, 0, session, language = "pl")!!.language)
         assertNull(keyboardStartOptions(false, 0, session)!!.language)
         assertNull(keyboardStartOptions(true, 0, session, language = "pl")) // mic stays off in password fields
+    }
+
+    @Test fun chipPickWithSwitchOffSetsGlobalAndStoresNothing() {
+        val c = decideLanguageChoice(perApp = false, code = "pl", inputType = InputType.TYPE_CLASS_TEXT, imeOptions = 0, packageName = "com.a")
+        assertTrue(c.setGlobal)
+        assertNull(c.fieldLanguage)
+        assertFalse(c.store)
+    }
+
+    @Test fun chipPickWithSwitchOnAppliesToFieldAndStoresWhenAllowed() {
+        val c = decideLanguageChoice(true, "pl", InputType.TYPE_CLASS_TEXT, 0, "com.a")
+        assertFalse(c.setGlobal)
+        assertEquals("pl", c.fieldLanguage)
+        assertTrue(c.store)
+    }
+
+    @Test fun chipPickWithSwitchOnAppliesButDoesNotStoreWhenPolicyForbids() {
+        val pw = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+        val c = decideLanguageChoice(true, "pl", pw, 0, "com.a")
+        assertFalse(c.setGlobal)
+        assertEquals("pl", c.fieldLanguage)
+        assertFalse(c.store)
+        assertFalse(decideLanguageChoice(true, "pl", InputType.TYPE_CLASS_TEXT, 0, null).store)
+        assertFalse(decideLanguageChoice(true, "pl", InputType.TYPE_CLASS_TEXT, EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING, "com.a").store)
+    }
+
+    @Test fun restartInSameAppKeepsThePickOtherwiseDropsIt() {
+        assertEquals("pl", languageAfterRestart(true, "com.a", "com.a", "pl"))
+        assertNull(languageAfterRestart(true, "com.a", "com.b", "pl"))
+        assertNull(languageAfterRestart(false, "com.a", "com.a", "pl"))
     }
 }

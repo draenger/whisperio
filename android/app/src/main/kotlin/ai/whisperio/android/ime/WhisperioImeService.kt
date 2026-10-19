@@ -8,7 +8,8 @@ import ai.whisperio.android.dictation.StartOptions
 import ai.whisperio.android.dictation.primaryProvider
 import ai.whisperio.android.graph
 import ai.whisperio.android.history.RecordingSource
-import ai.whisperio.android.settings.AppLanguagePolicy
+import ai.whisperio.android.settings.decideLanguageChoice
+import ai.whisperio.android.settings.languageAfterRestart
 import ai.whisperio.android.ui.common.Languages
 import ai.whisperio.android.ui.common.confirmHaptic
 import ai.whisperio.android.ui.common.label
@@ -69,6 +70,8 @@ class WhisperioImeService : InputMethodService(), LifecycleOwner, ViewModelStore
         val packageName: String? = null,
         /** Language chosen with the chip, or loaded from the per-app map, for this field; null = global. */
         val language: String? = null,
+        /** Bumped on every onStartInputView so the panel can drop per-field UI state (open language list). */
+        val seq: Int = 0,
     )
 
     private val field = MutableStateFlow(FieldState())
@@ -103,6 +106,7 @@ class WhisperioImeService : InputMethodService(), LifecycleOwner, ViewModelStore
                 providerLabel = "${primary.first.label(this)} - ${primary.second}",
                 notInserted = ni,
                 language = effectiveLanguage(settings.perAppLanguage, f.language, settings.language),
+                fieldSeq = f.seq,
             )
         }.stateIn(
             lifecycle.coroutineScope,
@@ -166,7 +170,7 @@ class WhisperioImeService : InputMethodService(), LifecycleOwner, ViewModelStore
         micGranted.value = graph.micGranted()
         val pkg = info?.packageName
         // A restart in the same app keeps what the user picked with the chip (it may not be storable).
-        val keepLanguage = if (restarting && field.value.packageName == pkg) field.value.language else null
+        val keepLanguage = languageAfterRestart(restarting, field.value.packageName, pkg, field.value.language)
         field.value = FieldState(
             key = ImeCommitPolicy.fieldKey(info),
             password = info != null && ImeCommitPolicy.isPasswordField(info.inputType),
@@ -174,6 +178,7 @@ class WhisperioImeService : InputMethodService(), LifecycleOwner, ViewModelStore
             inputType = info?.inputType ?: 0,
             packageName = pkg,
             language = keepLanguage,
+            seq = field.value.seq + 1,
         )
         if (pkg != null && keepLanguage == null) loadSavedLanguage(pkg)
         if (!restarting) {
@@ -222,14 +227,17 @@ class WhisperioImeService : InputMethodService(), LifecycleOwner, ViewModelStore
     private fun onLanguage(code: String) {
         lifecycle.coroutineScope.launch {
             val g = graph
-            if (!g.settings.current().perAppLanguage) {
+            val f = field.value
+            val choice = decideLanguageChoice(g.settings.current().perAppLanguage, code, f.inputType, f.imeOptions, f.packageName)
+            if (choice.setGlobal) {
                 g.settings.setLanguage(code)
                 return@launch
             }
-            val f = field.value
-            field.value = f.copy(language = code)
+            field.value = f.copy(language = choice.fieldLanguage)
             val pkg = f.packageName
-            if (pkg != null && AppLanguagePolicy.shouldStore(f.inputType, f.imeOptions, pkg)) g.appLanguages.remember(pkg, code)
+            if (choice.store && pkg != null) {
+                g.appLanguages.rememberIfEnabled(pkg, code) { g.settings.current().perAppLanguage }
+            }
         }
     }
 

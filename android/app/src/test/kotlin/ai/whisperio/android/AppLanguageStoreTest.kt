@@ -11,7 +11,9 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
@@ -51,5 +53,12 @@ class AppLanguageStoreTest {
         store.clear()
         assertEquals(0, store.count.first())
         assertNull(store.languageFor("com.a"))
+    }
+
+    @Test fun rememberIfEnabledStoresOnlyWhileTheSwitchIsOn() = runBlocking {
+        assertFalse(store.rememberIfEnabled("com.a", "pl") { false })
+        assertEquals(0, store.count.first())
+        assertTrue(store.rememberIfEnabled("com.a", "pl") { true })
+        assertEquals("pl", store.languageFor("com.a"))
     }
 }

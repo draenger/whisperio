@@ -155,10 +155,13 @@
     <string name="settings_dictation">Dictation</string>
     <string name="settings_language">Language</string>
     <string name="settings_per_app_language">Remember language per app</string>
-    <string name="settings_per_app_language_hint">The keyboard remembers the language you pick for each app, on this device only. Off by default.</string>
+    <string name="settings_per_app_language_hint">The keyboard remembers the language you pick for each app, on this device only.</string>
     <string name="settings_per_app_language_count">Apps with a saved language: %1$d</string>
     <string name="settings_per_app_language_clear">Clear</string>
-    <string name="settings_per_app_language_clear_desc">Clear the saved language for %1$d apps</string>
+    <plurals name="settings_per_app_language_clear_desc">
+        <item quantity="one">Clear the saved language for %1$d app</item>
+        <item quantity="other">Clear the saved language for %1$d apps</item>
+    </plurals>
     <string name="settings_vocabulary">Vocabulary</string>
     <string name="settings_vocabulary_hint">Comma-separated names and terms to help recognition</string>
     <string name="settings_cleanup">Tidy up text</string>

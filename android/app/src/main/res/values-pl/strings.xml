@@ -155,10 +155,15 @@
     <string name="settings_dictation">Dyktowanie</string>
     <string name="settings_language">Język</string>
     <string name="settings_per_app_language">Pamiętaj język dla każdej aplikacji</string>
-    <string name="settings_per_app_language_hint">Klawiatura zapamiętuje język wybrany w danej aplikacji, tylko na tym urządzeniu. Domyślnie wyłączone.</string>
+    <string name="settings_per_app_language_hint">Klawiatura zapamiętuje język wybrany w danej aplikacji, tylko na tym urządzeniu.</string>
     <string name="settings_per_app_language_count">Aplikacje z zapisanym językiem: %1$d</string>
     <string name="settings_per_app_language_clear">Wyczyść</string>
-    <string name="settings_per_app_language_clear_desc">Wyczyść zapisany język dla %1$d aplikacji</string>
+    <plurals name="settings_per_app_language_clear_desc">
+        <item quantity="one">Wyczyść zapisany język dla %1$d aplikacji</item>
+        <item quantity="few">Wyczyść zapisany język dla %1$d aplikacji</item>
+        <item quantity="many">Wyczyść zapisany język dla %1$d aplikacji</item>
+        <item quantity="other">Wyczyść zapisany język dla %1$d aplikacji</item>
+    </plurals>
     <string name="settings_vocabulary">Słownik</string>
     <string name="settings_vocabulary_hint">Imiona i terminy oddzielone przecinkami, które pomogą w rozpoznawaniu</string>
     <string name="settings_cleanup">Porządkuj tekst</string>

@@ -46,6 +46,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -166,7 +167,7 @@ fun SettingsScreen(state: SettingsUiState, actions: SettingsActions, modifier: M
                         style = MaterialTheme.typography.bodyMedium,
                         modifier = Modifier.weight(1f),
                     )
-                    val clearDesc = stringResource(R.string.settings_per_app_language_clear_desc, state.appLanguageCount)
+                    val clearDesc = pluralStringResource(R.plurals.settings_per_app_language_clear_desc, state.appLanguageCount, state.appLanguageCount)
                     TextButton(
                         onClick = actions::onClearAppLanguages,
                         enabled = state.appLanguageCount > 0,
