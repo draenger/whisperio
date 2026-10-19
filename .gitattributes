@@ -1,0 +1,2 @@
+# Node scripts keep LF: a CRLF after the #! line breaks vitest/vite parsing on Windows checkouts (autocrlf=true).
+*.mjs text eol=lf
