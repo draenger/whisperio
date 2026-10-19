@@ -50,6 +50,10 @@ WHAT YOU GET
 - Custom vocabulary for names and technical terms (sent to providers that support it)
 - Optional text tidy-up: fixes spacing and repeated words without rewriting what you said
 - Local history of your dictations: search it, browse it by day, filter by source or failed items, copy, share, delete
+- Weekly recap: words, notes, minutes saved and streaks, with a numbers-only card to share
+- Categories: six built-in plus your own, shown on each recording, with filter and search
+- Word count on every transcript
+- Swipe a recording to delete it with Undo, double-tap to copy, or delete a whole day
 - Export transcripts as .txt or .md through the system file picker
 - Play back the saved audio and retry a transcription with another provider
 - Home-screen widget to start dictating
@@ -73,7 +77,22 @@ Privacy policy: https://whisperio.danielkasprzyk.com/privacy.html
 Terms of use: https://whisperio.danielkasprzyk.com/terms.html
 Support: https://whisperio.danielkasprzyk.com/support.html
 ```
-Characters: 2913/4000
+Characters: 3586/4000
+
+## 1.2.0 (<=500)
+
+```
+What's new in 1.2:
+- Weekly recap: words, notes, minutes saved and streaks, with a share card
+- Categories: six built-in plus your own, shown on rows, with filter and search
+- Word count on each transcript
+- Swipe a recording to delete it, with Undo
+- Double-tap a recording to copy its text
+- Delete a whole day from its header
+```
+Characters: 328/500
+
+File: `android/marketing/play/release-notes/1.2.0/en-US.txt`
 
 ## Release notes 1.1.0 (<=500)
 

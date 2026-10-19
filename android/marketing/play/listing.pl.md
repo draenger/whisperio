@@ -50,6 +50,10 @@ CO DOSTAJESZ
 - Własny słownik na imiona i terminy (wysyłany do dostawców, którzy to obsługują)
 - Opcjonalne porządkowanie tekstu: poprawia odstępy i powtórzone słowa, nie przepisuje tego, co powiedziałeś
 - Lokalna historia dyktowań: wyszukiwanie, grupowanie po dniach, filtry według źródła i nieudanych, kopiowanie, udostępnianie, usuwanie
+- Tygodniowe podsumowanie: słowa, notatki, zaoszczędzone minuty i serie, z kartą z samymi liczbami do udostępnienia
+- Kategorie: sześć wbudowanych i własne, widoczne przy każdym nagraniu, z filtrem i wyszukiwaniem
+- Liczba słów przy każdej transkrypcji
+- Przesuń nagranie, by je usunąć (z opcją Cofnij), stuknij dwukrotnie, by skopiować, albo usuń cały dzień
 - Eksport transkrypcji do .txt lub .md przez systemowy wybór pliku
 - Odtwarzanie zapisanego nagrania i ponawianie transkrypcji u innego dostawcy
 - Widżet na ekranie głównym do szybkiego dyktowania
@@ -73,7 +77,22 @@ Polityka prywatności: https://whisperio.danielkasprzyk.com/privacy.html
 Regulamin: https://whisperio.danielkasprzyk.com/terms.html
 Pomoc: https://whisperio.danielkasprzyk.com/support.html
 ```
-Znaków: 3037/4000
+Znaków: 3832/4000
+
+## 1.2.0 (<=500)
+
+```
+Nowości w 1.2:
+- Tygodniowe podsumowanie: słowa, notatki, zaoszczędzone minuty i serie, z kartą do udostępnienia
+- Kategorie: sześć wbudowanych i własne, widoczne na liście, z filtrem i wyszukiwaniem
+- Liczba słów przy każdej transkrypcji
+- Przesuń nagranie, by je usunąć, z opcją Cofnij
+- Dwukrotne stuknięcie kopiuje tekst nagrania
+- Usuń cały dzień z jego nagłówka
+```
+Znaków: 367/500
+
+Plik: `android/marketing/play/release-notes/1.2.0/pl-PL.txt`
 
 ## Informacje o wersji 1.1.0 (<=500)
 

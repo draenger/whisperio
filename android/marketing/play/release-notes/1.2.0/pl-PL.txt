@@ -1,0 +1,7 @@
+Nowości w 1.2:
+- Tygodniowe podsumowanie: słowa, notatki, zaoszczędzone minuty i serie, z kartą do udostępnienia
+- Kategorie: sześć wbudowanych i własne, widoczne na liście, z filtrem i wyszukiwaniem
+- Liczba słów przy każdej transkrypcji
+- Przesuń nagranie, by je usunąć, z opcją Cofnij
+- Dwukrotne stuknięcie kopiuje tekst nagrania
+- Usuń cały dzień z jego nagłówka
