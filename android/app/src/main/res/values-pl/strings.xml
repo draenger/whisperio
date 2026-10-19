@@ -250,4 +250,28 @@
         <item quantity="many">Usunąć %1$d nagrań z dnia %2$s pasujących do bieżącego wyszukiwania i filtrów? Nagrania dźwiękowe też zostaną usunięte.</item>
         <item quantity="other">Usunąć %1$d nagrania z dnia %2$s pasujące do bieżącego wyszukiwania i filtrów? Nagrania dźwiękowe też zostaną usunięte.</item>
     </plurals>
+    <plurals name="day_delete_body_today">
+        <item quantity="one">Usunąć %1$d nagranie z dzisiaj? Nagranie dźwiękowe też zostanie usunięte.</item>
+        <item quantity="few">Usunąć %1$d nagrania z dzisiaj? Nagrania dźwiękowe też zostaną usunięte.</item>
+        <item quantity="many">Usunąć %1$d nagrań z dzisiaj? Nagrania dźwiękowe też zostaną usunięte.</item>
+        <item quantity="other">Usunąć %1$d nagrania z dzisiaj? Nagrania dźwiękowe też zostaną usunięte.</item>
+    </plurals>
+    <plurals name="day_delete_body_today_filtered">
+        <item quantity="one">Usunąć %1$d nagranie z dzisiaj pasujące do bieżącego wyszukiwania i filtrów? Nagranie dźwiękowe też zostanie usunięte.</item>
+        <item quantity="few">Usunąć %1$d nagrania z dzisiaj pasujące do bieżącego wyszukiwania i filtrów? Nagrania dźwiękowe też zostaną usunięte.</item>
+        <item quantity="many">Usunąć %1$d nagrań z dzisiaj pasujących do bieżącego wyszukiwania i filtrów? Nagrania dźwiękowe też zostaną usunięte.</item>
+        <item quantity="other">Usunąć %1$d nagrania z dzisiaj pasujące do bieżącego wyszukiwania i filtrów? Nagrania dźwiękowe też zostaną usunięte.</item>
+    </plurals>
+    <plurals name="day_delete_body_yesterday">
+        <item quantity="one">Usunąć %1$d nagranie z wczoraj? Nagranie dźwiękowe też zostanie usunięte.</item>
+        <item quantity="few">Usunąć %1$d nagrania z wczoraj? Nagrania dźwiękowe też zostaną usunięte.</item>
+        <item quantity="many">Usunąć %1$d nagrań z wczoraj? Nagrania dźwiękowe też zostaną usunięte.</item>
+        <item quantity="other">Usunąć %1$d nagrania z wczoraj? Nagrania dźwiękowe też zostaną usunięte.</item>
+    </plurals>
+    <plurals name="day_delete_body_yesterday_filtered">
+        <item quantity="one">Usunąć %1$d nagranie z wczoraj pasujące do bieżącego wyszukiwania i filtrów? Nagranie dźwiękowe też zostanie usunięte.</item>
+        <item quantity="few">Usunąć %1$d nagrania z wczoraj pasujące do bieżącego wyszukiwania i filtrów? Nagrania dźwiękowe też zostaną usunięte.</item>
+        <item quantity="many">Usunąć %1$d nagrań z wczoraj pasujących do bieżącego wyszukiwania i filtrów? Nagrania dźwiękowe też zostaną usunięte.</item>
+        <item quantity="other">Usunąć %1$d nagrania z wczoraj pasujące do bieżącego wyszukiwania i filtrów? Nagrania dźwiękowe też zostaną usunięte.</item>
+    </plurals>
 </resources>

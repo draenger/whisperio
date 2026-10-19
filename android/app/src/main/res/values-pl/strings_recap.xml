@@ -18,6 +18,7 @@
     <string name="recap_tile_streak">Seria dni</string>
     <string name="recap_tile_best">Rekord: %1$s</string>
     <string name="recap_wpm_none">—</string>
+    <string name="recap_wpm_none_cd">za mało danych</string>
     <string name="recap_words_per_day">Słowa dziennie</string>
     <string name="recap_chart_cd">Słowa dziennie: %1$s</string>
     <string name="recap_chart_item">%1$s %2$s</string>

@@ -19,6 +19,7 @@ import ai.whisperio.android.ui.about.AboutScreen
 import ai.whisperio.android.ui.common.confirmHaptic
 import ai.whisperio.android.ui.common.copyPlainText
 import ai.whisperio.android.ui.common.label
+import ai.whisperio.android.ui.common.rememberCategoryOptions
 import ai.whisperio.android.ui.history.HistoryDetailActions
 import ai.whisperio.android.ui.history.HistoryDetailScreen
 import ai.whisperio.android.ui.history.HistoryListScreen
@@ -434,6 +435,8 @@ private fun HistoryRoute(g: AppGraph, nav: NavHostController, snackbar: Snackbar
     val undoText = stringResource(R.string.action_undo)
     LaunchedEffect(pending) {
         val id = pending ?: return@LaunchedEffect
+        // Undo must never queue behind another snackbar (e.g. "Copied").
+        snackbar.currentSnackbarData?.dismiss()
         val result = snackbar.showSnackbar(deletedText, actionLabel = undoText, duration = SnackbarDuration.Long)
         if (result == SnackbarResult.ActionPerformed) g.pendingDelete.undo(id) else g.pendingDelete.settle(id)
     }
@@ -467,13 +470,19 @@ private fun HistoryRoute(g: AppGraph, nav: NavHostController, snackbar: Snackbar
         },
         onDeleteDay = { ids -> g.pendingDelete.deleteDay(ids) },
         onSelectionStart = { g.pendingDelete.flush() },
+        onOpenRecap = { nav.navigate(Routes.RECAP) },
     )
 }
 
 @Composable
 private fun RecapRoute(g: AppGraph, nav: NavHostController, snackbar: SnackbarHostState) {
     val ctx = LocalContext.current
-    val items by g.history.observeAll().collectAsState(initial = emptyList())
+    val allItems by g.history.observeAll().collectAsState(initial = emptyList())
+    // The History row waiting for Undo is not part of the recap (CONTRACT-1.2 F5).
+    val pendingId by g.pendingDelete.pendingId.collectAsState()
+    val items = remember(allItems, pendingId) { if (pendingId == null) allItems else allItems.filter { it.id != pendingId } }
+    val customCategories by g.settings.customCategories.collectAsState(initial = emptyList())
+    val categoryOptions = rememberCategoryOptions(customCategories)
     val zone = ZoneId.systemDefault()
     val now = remember(items) { System.currentTimeMillis() }
     val stats = remember(items, now, zone) { Recap.compute(items.toRecapItems(), now, zone) }
@@ -501,6 +510,7 @@ private fun RecapRoute(g: AppGraph, nav: NavHostController, snackbar: SnackbarHo
             }
         },
         providerLabel = { ProviderId.fromWire(it)?.label(ctx) ?: it },
+        categoryLabel = { id -> categoryOptions.firstOrNull { it.id == id }?.label ?: id },
     )
 }
 

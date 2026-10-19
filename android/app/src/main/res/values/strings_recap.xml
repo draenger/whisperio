@@ -18,6 +18,7 @@
     <string name="recap_tile_streak">Day streak</string>
     <string name="recap_tile_best">Best: %1$s</string>
     <string name="recap_wpm_none">—</string>
+    <string name="recap_wpm_none_cd">not enough data</string>
     <string name="recap_words_per_day">Words per day</string>
     <string name="recap_chart_cd">Words per day: %1$s</string>
     <string name="recap_chart_item">%1$s %2$s</string>

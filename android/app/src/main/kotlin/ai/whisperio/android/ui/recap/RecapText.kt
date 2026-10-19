@@ -20,7 +20,7 @@ fun List<Recording>.toRecapItems(): List<RecapItem> = map {
         transcript = it.transcript,
         done = it.status == RecordingStatus.DONE,
         provider = it.provider,
-        category = null,
+        category = it.category,
     )
 }
 

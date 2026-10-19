@@ -107,7 +107,10 @@ fun RecapScreen(
                 StatTile(t.num(stats.notes), stringResource(R.string.recap_tile_notes), Modifier.weight(1f))
             }
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                StatTile(t.wpm(stats), stringResource(R.string.recap_tile_wpm), Modifier.weight(1f))
+                StatTile(
+                    t.wpm(stats), stringResource(R.string.recap_tile_wpm), Modifier.weight(1f),
+                    valueCd = if (stats.speakingWpm == null) stringResource(R.string.recap_wpm_none_cd) else null,
+                )
                 StatTile(
                     t.num(stats.streakCurrent), stringResource(R.string.recap_tile_streak), Modifier.weight(1f),
                     sub = stringResource(R.string.recap_tile_best, t.days(stats.streakBest)),
@@ -185,9 +188,11 @@ private fun Hero(value: String, caption: String) {
 }
 
 @Composable
-private fun StatTile(value: String, label: String, modifier: Modifier = Modifier, sub: String? = null) {
+private fun StatTile(value: String, label: String, modifier: Modifier = Modifier, sub: String? = null, valueCd: String? = null) {
+    // valueCd: spoken instead of the visible value (the "—" placeholder), e.g. "not enough data".
     Card(
-        modifier.semantics(mergeDescendants = true) {},
+        if (valueCd != null) modifier.clearAndSetSemantics { contentDescription = "$valueCd, $label" }
+        else modifier.semantics(mergeDescendants = true) {},
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
     ) {
         Column(Modifier.fillMaxWidth().padding(16.dp)) {

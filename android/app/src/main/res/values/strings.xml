@@ -244,4 +244,20 @@
         <item quantity="one">Delete %1$d recording from %2$s that matches the current search and filters? Audio is deleted too.</item>
         <item quantity="other">Delete %1$d recordings from %2$s that match the current search and filters? Audio is deleted too.</item>
     </plurals>
+    <plurals name="day_delete_body_today">
+        <item quantity="one">Delete %1$d recording from today? Audio is deleted too.</item>
+        <item quantity="other">Delete %1$d recordings from today? Audio is deleted too.</item>
+    </plurals>
+    <plurals name="day_delete_body_today_filtered">
+        <item quantity="one">Delete %1$d recording from today that matches the current search and filters? Audio is deleted too.</item>
+        <item quantity="other">Delete %1$d recordings from today that match the current search and filters? Audio is deleted too.</item>
+    </plurals>
+    <plurals name="day_delete_body_yesterday">
+        <item quantity="one">Delete %1$d recording from yesterday? Audio is deleted too.</item>
+        <item quantity="other">Delete %1$d recordings from yesterday? Audio is deleted too.</item>
+    </plurals>
+    <plurals name="day_delete_body_yesterday_filtered">
+        <item quantity="one">Delete %1$d recording from yesterday that matches the current search and filters? Audio is deleted too.</item>
+        <item quantity="other">Delete %1$d recordings from yesterday that match the current search and filters? Audio is deleted too.</item>
+    </plurals>
 </resources>

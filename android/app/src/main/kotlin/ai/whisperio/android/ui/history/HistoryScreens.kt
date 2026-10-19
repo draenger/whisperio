@@ -9,6 +9,7 @@ import ai.whisperio.android.ui.common.CategoryUi
 import ai.whisperio.android.ui.common.SectionTitle
 import ai.whisperio.android.ui.common.rememberCategoryOptions
 import ai.whisperio.android.ui.home.sourceLabelRes
+import ai.whisperio.android.ui.recap.RecapCard
 import ai.whisperio.core.ExportFormat
 import ai.whisperio.core.ProviderId
 import ai.whisperio.core.wordCount
@@ -137,6 +138,8 @@ fun HistoryListScreen(
     /** Seeds for snapshots: a day whose overflow menu / confirm dialog starts open. */
     initialMenuDay: LocalDate? = null,
     initialDeleteDay: LocalDate? = null,
+    /** CONTRACT-1.2 F1: opens the Recap screen from the "This week" card. */
+    onOpenRecap: () -> Unit = {},
 ) {
     var filters by rememberSaveable(stateSaver = FiltersSaver) { mutableStateOf(initial) }
     var input by rememberSaveable { mutableStateOf(initial.query) }
@@ -207,6 +210,8 @@ fun HistoryListScreen(
         } else {
             val groups = remember(shown, now, zone) { groupByDay(shown, now, zone) }
             LazyColumn(Modifier.fillMaxSize()) {
+                // Hidden while selecting; visibleItems already excludes the pending-delete row.
+                if (!selecting) item(key = "recap") { RecapCard(visibleItems, now, zone, onOpenRecap) }
                 groups.forEach { g ->
                     item(key = "day-${g.date}") {
                         DayHeader(
@@ -244,16 +249,28 @@ fun HistoryListScreen(
             if (dayGroup != null) {
                 val doomed = deletableInDay(dayGroup.items)
                 val dayLabel = dayTitle(dayGroup)
+                // Nothing left to delete (rows finished or were removed while the dialog was open): close it.
+                LaunchedEffect(doomed.isEmpty()) { if (doomed.isEmpty()) deleteDay = null }
                 if (doomed.isNotEmpty()) {
                     AlertDialog(
                         onDismissRequest = { deleteDay = null },
                         title = { Text(stringResource(R.string.day_delete_title)) },
                         text = {
                             Text(
-                                pluralStringResource(
-                                    if (filters.active) R.plurals.day_delete_body_filtered else R.plurals.day_delete_body,
-                                    doomed.size, doomed.size, dayLabel,
-                                ),
+                                when (dayGroup.kind) {
+                                    DayKind.TODAY -> pluralStringResource(
+                                        if (filters.active) R.plurals.day_delete_body_today_filtered else R.plurals.day_delete_body_today,
+                                        doomed.size, doomed.size,
+                                    )
+                                    DayKind.YESTERDAY -> pluralStringResource(
+                                        if (filters.active) R.plurals.day_delete_body_yesterday_filtered else R.plurals.day_delete_body_yesterday,
+                                        doomed.size, doomed.size,
+                                    )
+                                    DayKind.DATE -> pluralStringResource(
+                                        if (filters.active) R.plurals.day_delete_body_filtered else R.plurals.day_delete_body,
+                                        doomed.size, doomed.size, dayLabel,
+                                    )
+                                },
                             )
                         },
                         confirmButton = {
