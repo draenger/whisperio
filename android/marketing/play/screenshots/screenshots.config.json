@@ -53,6 +53,44 @@
       ]
     },
     {
+      "id": "play-tablet",
+      "dir": "play-tablet",
+      "width": 1920,
+      "height": 1080,
+      "ocr": true,
+      "maxBytes": 8388608,
+      "files": [
+        {
+          "file": "home-tab.png",
+          "headline": {
+            "en": "Dictate into any app.",
+            "pl": "Dyktuj w każdej aplikacji."
+          }
+        },
+        {
+          "file": "provider-tab.png",
+          "headline": {
+            "en": "Your key, your provider.",
+            "pl": "Twój klucz, Twój dostawca."
+          }
+        },
+        {
+          "file": "history-tab.png",
+          "headline": {
+            "en": "History that stays on your phone.",
+            "pl": "Historia, która zostaje na telefonie."
+          }
+        },
+        {
+          "file": "settings-tab.png",
+          "headline": {
+            "en": "Free. No account. No ads.",
+            "pl": "Za darmo. Bez konta. Bez reklam."
+          }
+        }
+      ]
+    },
+    {
       "id": "play-feature",
       "dir": "play-feature",
       "width": 1024,

@@ -1,6 +1,6 @@
 # Google Play - Data safety form (Whisperio for Android, `ai.whisperio.mobile`)
 
-> Verified against the code on branch `android/skeleton`, 2026-10-17. Evidence is `file:line`, relative to the repo root.
+> Verified against the code on branch `android/skeleton`, 2026-10-17; line references re-checked 2026-10-19 (after 9647739). Evidence is `file:line`, relative to the repo root.
 > Binding source: `docs/android/CONTRACT.md` section 8.1. The owner enters these answers in Play Console
 > (Policy > App content > Data safety) - code cannot do that, and `release-readiness` only checks that this file exists
 > and mentions every detected data category. Policy text (`docs/privacy.html`), in-app wording and this form must say
@@ -25,7 +25,7 @@ never write it in the listing.**
 |---|---|---|
 | Does your app collect or share any of the required user data types? | **Yes** | section 2 |
 | Is all of the user data collected by your app encrypted in transit? | **Yes** | all providers with an official endpoint use `HttpClients.secureClient` = TLS only, no CLEARTEXT spec (`android/core/src/main/kotlin/ai/whisperio/core/HttpClients.kt:19-31`); default bases are `https://` (`ProviderCatalog.kt:21,27,32,37,42,47`). The only plain-http path is a user-typed self-hosted or custom-OpenAI URL on a private network, via `localClient` (`HttpClients.kt:37-59`, `ProviderChain.kt:71`, `SelfHostedProvider.kt:15`), gated by `BaseUrlPolicy` - disclose in the privacy policy. |
-| Do you provide a way for users to request that their data is deleted? | **Yes** (nothing is held by us; in-app erase + uninstall; provider-side deletion is the provider's - section 4) | `android/app/src/main/kotlin/ai/whisperio/android/di/AppGraph.kt:91-102`; `ui/settings/SettingsScreen.kt:192-195,236-247` |
+| Do you provide a way for users to request that their data is deleted? | **Yes** (nothing is held by us; in-app erase + uninstall; provider-side deletion is the provider's - section 4) | `android/app/src/main/kotlin/ai/whisperio/android/di/AppGraph.kt:110-119`; `ui/settings/SettingsScreen.kt:201,245-249` |
 | Account creation methods / Delete account URL | **Not applicable** - no account, no sign-in, no server | no auth code anywhere under `android/`; `PrivacyGateTest.kt:15-18` bans analytics/ads/billing SDKs |
 | Independent security review / Families / Play Billing | No | - |
 
@@ -40,11 +40,11 @@ Why each answer:
 
 - **Collected = Yes.** The recording is uploaded off-device to the provider the user configured:
   - request builders: `android/core/src/main/kotlin/ai/whisperio/core/ProviderHttp.kt:132` (OpenAI-compatible multipart incl. `prompt`), `ElevenLabsProvider.kt:25-35` (`keyterms`), plus `DeepgramProvider.kt`, `AssemblyAiProvider.kt`, `MistralProvider.kt`, `GroqProvider.kt`, `SelfHostedProvider.kt`.
-  - nothing is uploaded before the user ticks the consent box in onboarding (`android/app/src/main/kotlin/ai/whisperio/android/ui/onboarding/OnboardingScreen.kt:80`: Next stays disabled until `consent`), and it is enforced again in code: `dictation/DictationController.kt:194` (`!s.cloudConsentGranted -> CONSENT_MISSING`) and `android/core/src/main/kotlin/ai/whisperio/core/ProviderChain.kt:50-59` (`ConsentRequired`); default is `false` (`settings/AppSettings.kt:16`).
+  - nothing is uploaded before the user ticks the consent box in onboarding (`android/app/src/main/kotlin/ai/whisperio/android/ui/onboarding/OnboardingScreen.kt:104`: Next stays disabled on the privacy step until `consent`), and it is enforced again in code: `dictation/DictationController.kt:197` (`!s.cloudConsentGranted -> CONSENT_MISSING`) and `android/core/src/main/kotlin/ai/whisperio/core/ProviderChain.kt:50-59` (`ConsentRequired`); default is `false` (`settings/AppSettings.kt:16`).
 - **Shared = No.** The only recipient is the provider chosen by the user, with the user's own API key, on the user's own tap (a "specific user-initiated action", section 0). Whisperio operates no server and ships no third-party SDK that receives data:
   - network destinations are exactly the endpoints in `ProviderCatalog.kt:18-53` plus the user's own URL. No analytics, crash reporter, Firebase, Play Services, ads or billing library: `android/app/build.gradle.kts:122-162` (the complete dependency list) and the enforcing JVM test `android/app/src/test/kotlin/ai/whisperio/android/PrivacyGateTest.kt:15-28` (bans firebase, crashlytics, play-services, gms.ads, admob, sentry, bugsnag, mixpanel, amplitude, appsflyer, posthog, datadog, billingclient ...).
   - Judgement call to confirm at submission: some reviewers treat the provider as an independent third party and the transfer as "sharing". Because the user picks the provider, supplies the key and triggers every upload, the "user-initiated action" exemption applies and the contract decision (2026-10-17) is **No**. If Play pushes back, change this file, the Console and the privacy policy together.
-- **Ephemeral = No.** "Only stored in memory" cannot be guaranteed for the recipient: providers may retain API audio (e.g. OpenAI up to 30 days for abuse monitoring), and on the device the audio file and transcript are stored by default (`settings/AppSettings.kt:22` `keepAudio = true`; Room table `recording` with `audio_path`, `transcript`: `history/Recording.kt:18-32`; file in `filesDir/recordings` (`di/AppGraph.kt:42`)).
+- **Ephemeral = No.** "Only stored in memory" cannot be guaranteed for the recipient: providers may retain API audio (e.g. OpenAI up to 30 days for abuse monitoring), and on the device the audio file and transcript are stored by default (`settings/AppSettings.kt:22` `keepAudio = true`; Room table `recording` with `audio_path`, `transcript`: `history/Recording.kt:18-32`; file in `filesDir/recordings` (`di/AppGraph.kt:60`)).
 - **Required = Yes (audio) / No (vocabulary).** Vocabulary defaults to empty (`AppSettings.kt:18`) and is forwarded only when non-blank and only to OpenAI, Groq and ElevenLabs (`ProviderHttp.kt:132`, `ElevenLabsProvider.kt:25-35`; `usesVocabulary=false` for Mistral, Deepgram, AssemblyAI, self-hosted: `ProviderCatalog.kt:32,42,47,52`).
 - **Purpose = App functionality only.** No advertising, analytics, personalisation, fraud prevention or account management exists in the code.
 
@@ -57,14 +57,14 @@ Why each answer:
 | App info and performance (crash logs, diagnostics) | Not collected | no crash reporter (`PrivacyGateTest.kt:15-18`); provider errors are redacted before display (`core/.../ProviderError.kt`, CONTRACT 4.2) |
 | App activity > App interactions, in-app search history | Not collected | no analytics anywhere |
 | API keys | Not transmitted to us | stored on device only: AES-256-GCM key in the Android Keystore (`android/app/src/main/kotlin/ai/whisperio/android/security/KeystoreSecretStore.kt:45-77`, `AES/GCM/NoPadding` at `:84`), ciphertext in a private DataStore (`di/AppGraph.kt:33`). The key goes only to the provider it belongs to, as that provider's auth header; this is the provider authenticating its own customer, not data collected by us. |
-| Typed text | Not collected, not stored | `ime/WhisperioImeService.kt:222` reads only `getTextBeforeCursor(1, 0)` (leading-space rule); `ime/ImeCommitPolicy.kt:29-45` turns the mic off in password fields and skips history when `IME_FLAG_NO_PERSONALIZED_LEARNING` is set |
+| Typed text | Not collected, not stored | `ime/WhisperioImeService.kt:302` reads only `getTextBeforeCursor(1, 0)` (leading-space rule); `ime/ImeCommitPolicy.kt:29-45` turns the mic off in password fields and skips history when `IME_FLAG_NO_PERSONALIZED_LEARNING` is set |
 | Backups | Nothing leaves the device via Auto Backup or device transfer | `AndroidManifest.xml:14` `allowBackup="false"`, `:15` `dataExtractionRules`, `:16` `fullBackupContent="false"`; `res/xml/data_extraction_rules.xml` excludes every domain for both `cloud-backup` and `device-transfer` (asserted by `PrivacyGateTest.kt:40-47`) |
 
 ## 4. Data deletion question
 
 Whisperio holds **nothing server-side**: no account, no server, no analytics store. Therefore:
 
-- Local data (history, audio, API keys, settings) is deleted by **Settings > Erase all data** (`AppGraph.kt:91-102`: cancels dictation, clears history, secrets and settings; UI `SettingsScreen.kt:192-195,236-247`), by per-item delete, "Delete all audio" and auto-delete in Settings, or by uninstalling the app.
+- Local data (history, audio, API keys, settings) is deleted by **Settings > Erase all data** (`AppGraph.kt:110-119`: aborts dictation, clears history, secrets and settings; UI `SettingsScreen.kt:201,245-249`; emulator smoke 2026-10-19: after Erase all the app returns to onboarding step 1, the secrets file and recordings are gone), by per-item delete, "Delete all audio" and auto-delete in Settings, or by uninstalling the app.
 - Data held by the user's transcription provider (audio, transcript, retention) is governed by that provider's terms and the user's account with them; the user deletes it there. The privacy policy says so (`docs/privacy.html` sections 8.4 and 9; the Android section 8 is in place).
 - Play's account-deletion URL requirement does **not** apply (no account can be created). In the Console choose the path "my app does not allow users to create an account".
 

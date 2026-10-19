@@ -91,7 +91,7 @@
     ]
   },
   "screenshots": {
-    "config": "android/marketing/screenshots.config.json",
-    "required": false
+    "config": "android/marketing/play/screenshots/screenshots.config.json",
+    "required": true
   }
 }

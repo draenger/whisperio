@@ -7,9 +7,9 @@
   "rawDir": "raw",
   "outDir": "out",
   "theme": {
-    "bg": "#14112B",
-    "accent": "#9577FE",
-    "accent2": "#5B3FD6",
+    "bg": "#070D15",
+    "accent": "#1CC8B4",
+    "accent2": "#0B7469",
     "glow": "top"
   },
   "targets": [
@@ -27,6 +27,23 @@
         "provider",
         "history",
         "settings"
+      ],
+      "maxBytes": 8388608
+    },
+    {
+      "id": "play-tablet",
+      "store": "play",
+      "dir": "play-tablet",
+      "size": [
+        1920,
+        1080
+      ],
+      "frame": "tablet-landscape",
+      "shots": [
+        "home-tab",
+        "provider-tab",
+        "history-tab",
+        "settings-tab"
       ],
       "maxBytes": 8388608
     },
@@ -139,6 +156,82 @@
       "subcopy": {
         "en": "Bring your own key. Free, no account, no ads.",
         "pl": "Własny klucz. Za darmo, bez konta, bez reklam."
+      }
+    },
+    {
+      "key": "home-tab",
+      "glow": "top",
+      "source": {
+        "kind": "ios-raw",
+        "file": {
+          "en": "../../../app/src/test/snapshots/home_idle_tablet.png",
+          "pl": "../../../app/src/test/snapshots/home_idle_tablet_pl.png"
+        }
+      },
+      "headline": {
+        "en": "Dictate into <em>any app.</em>",
+        "pl": "Dyktuj w <em>każdej aplikacji.</em>"
+      },
+      "subcopy": {
+        "en": "Tap the mic, speak, and the text lands where you type.",
+        "pl": "Dotknij mikrofonu, mów, a tekst trafi tam, gdzie piszesz."
+      }
+    },
+    {
+      "key": "provider-tab",
+      "glow": "bottom",
+      "source": {
+        "kind": "ios-raw",
+        "file": {
+          "en": "../../../app/src/test/snapshots/onboarding_3_provider_tablet.png",
+          "pl": "../../../app/src/test/snapshots/onboarding_3_provider_tablet_pl.png"
+        }
+      },
+      "headline": {
+        "en": "Your key, <em>your provider.</em>",
+        "pl": "Twój klucz, <em>Twój dostawca.</em>"
+      },
+      "subcopy": {
+        "en": "OpenAI, Groq, Mistral, ElevenLabs, Deepgram, AssemblyAI or your own server.",
+        "pl": "OpenAI, Groq, Mistral, ElevenLabs, Deepgram, AssemblyAI lub własny serwer."
+      }
+    },
+    {
+      "key": "history-tab",
+      "glow": "top",
+      "source": {
+        "kind": "ios-raw",
+        "file": {
+          "en": "../../../app/src/test/snapshots/history_list_tablet.png",
+          "pl": "../../../app/src/test/snapshots/history_list_tablet_pl.png"
+        }
+      },
+      "headline": {
+        "en": "History that <em>stays on your phone.</em>",
+        "pl": "Historia, która <em>zostaje na telefonie.</em>"
+      },
+      "subcopy": {
+        "en": "Copy, share or retry. Erase everything with one tap.",
+        "pl": "Kopiuj, udostępniaj, ponawiaj. Usuń wszystko jednym dotknięciem."
+      }
+    },
+    {
+      "key": "settings-tab",
+      "glow": "bottom",
+      "source": {
+        "kind": "ios-raw",
+        "file": {
+          "en": "../../../app/src/test/snapshots/settings_tablet.png",
+          "pl": "../../../app/src/test/snapshots/settings_tablet_pl.png"
+        }
+      },
+      "headline": {
+        "en": "Free. No account. <em>No ads.</em>",
+        "pl": "Za darmo. Bez konta. <em>Bez reklam.</em>"
+      },
+      "subcopy": {
+        "en": "No Whisperio server and no analytics. You pay your provider directly.",
+        "pl": "Bez serwera Whisperio i bez analityki. Płacisz bezpośrednio dostawcy."
       }
     }
   ]

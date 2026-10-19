@@ -10,7 +10,10 @@ node $K/tools/kit/kit.mjs all --shots shots.json          # raw/ + out/ + screen
 node $K/tools/verify.mjs --config screenshots.config.json # gate: size 1080x1920 / 1024x500, no alpha, all langs
 ```
 
-Output: `out/play-phone/{en,pl}/*.png` (4 phone shots, 9:16) and `out/play-feature/{en,pl}/feature.png` (1024x500).
+Output: `out/play-phone/{en,pl}/*.png` (4 phone shots, 1080x1920), `out/play-tablet/{en,pl}/*-tab.png` (4 tablet shots,
+1920x1080, `frame: tablet-landscape` from the 1920x1200 tablet baselines; use for both the 7" and 10" tablet slots) and
+`out/play-feature/{en,pl}/feature.png` (1024x500). Theme = teal brand tokens (2026-10-19). Copy for Daniel:
+`C:/Users/dkwar/bees/whisperio-play-assets/screenshots/`.
 `raw/` and `out/` are build output (gitignored); upload to Play Console only after Daniel approves the images.
 
 TODO after the emulator smoke: add a keyboard-in-a-chat-app shot and a Quick Settings tile shot captured with the kit's
