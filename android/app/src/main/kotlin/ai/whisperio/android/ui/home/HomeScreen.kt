@@ -45,6 +45,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
@@ -207,6 +208,7 @@ fun RecordingRow(
         modifier = modifier.heightIn(min = 56.dp)
             .combinedClickable(
                 onClick = onClick,
+                role = if (selected != null) Role.Checkbox else null,
                 onLongClickLabel = if (onLongClick != null) stringResource(R.string.select_row) else null,
                 onLongClick = onLongClick,
             )

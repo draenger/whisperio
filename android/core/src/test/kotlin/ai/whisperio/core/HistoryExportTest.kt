@@ -55,34 +55,48 @@ class HistoryExportTest {
 
     @Test fun escapesLeadingMarkdownCharacters() {
         for (c in listOf("#", ">", "-", "+", "*")) {
-            assertEquals("\$c x", HistoryExport.escapeMarkdown("$c x"), c)
+            assertEquals("\\$c x", HistoryExport.escapeMarkdown("$c x"), c)
         }
         assertEquals("a # b - c", HistoryExport.escapeMarkdown("a # b - c"))
     }
 
+    @Test fun escapingKeepsTheWholeOriginalLine() {
+        for (line in listOf("# h", "> q", "- i", "+ i", "* i", "1. one", "1) one", "---", "===", "  - nested")) {
+            val indent = line.length - line.trimStart().length
+            val out = HistoryExport.escapeMarkdown(line)
+            if (line.trimStart()[0].isDigit()) {
+                // ordered list: the backslash goes before the punctuation, everything else is untouched
+                assertEquals(line, out.replace("\\", ""), line)
+                assertEquals(line.length + 1, out.length, line)
+            } else {
+                assertEquals(line.substring(0, indent) + "\\" + line.substring(indent), out, line)
+            }
+        }
+    }
+
     @Test fun escapesOrderedListMarkers() {
-        assertEquals("1\. one", HistoryExport.escapeMarkdown("1. one"))
-        assertEquals("12\) twelve", HistoryExport.escapeMarkdown("12) twelve"))
-        assertEquals("  3\. indented", HistoryExport.escapeMarkdown("  3. indented"))
+        assertEquals("1\\. one", HistoryExport.escapeMarkdown("1. one"))
+        assertEquals("12\\) twelve", HistoryExport.escapeMarkdown("12) twelve"))
+        assertEquals("  3\\. indented", HistoryExport.escapeMarkdown("  3. indented"))
         assertEquals("1 one", HistoryExport.escapeMarkdown("1 one"))
         assertEquals("a1. x", HistoryExport.escapeMarkdown("a1. x"))
     }
 
     @Test fun escapesRuleAndSetextLines() {
-        assertEquals("\---", HistoryExport.escapeMarkdown("---"))
-        assertEquals("\===", HistoryExport.escapeMarkdown("==="))
-        assertEquals("\=", HistoryExport.escapeMarkdown("="))
+        assertEquals("\\---", HistoryExport.escapeMarkdown("---"))
+        assertEquals("\\===", HistoryExport.escapeMarkdown("==="))
+        assertEquals("\\=", HistoryExport.escapeMarkdown("="))
         assertEquals("a=b", HistoryExport.escapeMarkdown("a=b"))
     }
 
     @Test fun escapesEveryLineOfMultilineText() {
-        assertEquals("first\n\- second\n\n2\. third", HistoryExport.escapeMarkdown("first\n- second\n\n2. third"))
+        assertEquals("first\n\\- second\n\n2\\. third", HistoryExport.escapeMarkdown("first\n- second\n\n2. third"))
     }
 
     @Test fun mdBodyIsEscapedInOutput() {
         val r = HistoryExport.format(listOf(item(t1, "intro\n- item")), ExportFormat.MD, utc)
         assertEquals(
-            "# Whisperio export\n\n## 2026-10-17 09:41 \u00B7 App \u00B7 openai\n\nintro\n\- item\n",
+            "# Whisperio export\n\n## 2026-10-17 09:41 \u00B7 App \u00B7 openai\n\nintro\n\\- item\n",
             r.content,
         )
     }

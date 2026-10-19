@@ -20,6 +20,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
+import java.io.FileNotFoundException
 import java.io.IOException
 import java.time.ZoneId
 import kotlinx.coroutines.CancellationException
@@ -38,7 +39,11 @@ fun exportItems(rows: List<Recording>, label: (Recording) -> String): List<Expor
  * survive process death; the result is reported on [snackbar].
  */
 @Composable
-fun rememberExporter(history: HistoryStore, snackbar: SnackbarHostState): (List<Recording>, ExportFormat) -> Unit {
+fun rememberExporter(
+    history: HistoryStore,
+    snackbar: SnackbarHostState,
+    onSuccess: () -> Unit = {},
+): (List<Recording>, ExportFormat) -> Unit {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     var pendingIds by rememberSaveable(stateSaver = IdsSaver) { mutableStateOf(emptyList<String>()) }
@@ -53,6 +58,7 @@ fun rememberExporter(history: HistoryStore, snackbar: SnackbarHostState): (List<
             val result = HistoryExport.format(exportItems(rows) { ctx.getString(sourceLabelRes(it.source)) }, format, ZoneId.systemDefault())
             val message = try {
                 withContext(Dispatchers.IO) { write(ctx, uri, result.content) }
+                onSuccess()
                 if (result.skipped == 0) ctx.getString(R.string.export_done, result.exported)
                 else ctx.getString(R.string.export_done_skipped, result.exported, result.skipped)
             } catch (e: CancellationException) {
@@ -84,6 +90,13 @@ fun rememberExporter(history: HistoryStore, snackbar: SnackbarHostState): (List<
 
 /** Truncating write to the uri the user picked; no storage permission involved. */
 private fun write(ctx: Context, uri: Uri, content: String) {
-    val out = ctx.contentResolver.openOutputStream(uri, "wt") ?: throw IOException("no output stream")
+    // Some document providers (e.g. Drive) reject "wt"; the picker made a fresh empty document, so "w" leaves no stale bytes.
+    val out = try {
+        ctx.contentResolver.openOutputStream(uri, "wt")
+    } catch (e: FileNotFoundException) {
+        ctx.contentResolver.openOutputStream(uri, "w")
+    } catch (e: IllegalArgumentException) {
+        ctx.contentResolver.openOutputStream(uri, "w")
+    } ?: throw IOException("no output stream")
     out.use { it.write(content.toByteArray(Charsets.UTF_8)) }
 }
