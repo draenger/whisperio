@@ -1,5 +1,9 @@
 # Whisperio Android — HANDOFF (updated 2026-10-18)
 
+## 2026-10-19 update
+- **Desktop 1.5.0:** `release` ff to main; CI fixed twice (main 16299d6 pin `windows-2022` — windows-latest is now windows-2025-vs2026 and node-gyp 9 can't find VS 2026; main d65b9f8 Python 3.11 on the win job — distutils). Run 39212496598 green, **draft v1.5.0** has the Linux assets. `release-desktop.mjs` dry run PASS from worktree `D:/Master/Repo/whisperio-release` (branch `main`). Next (heavy slot): `npm ci` + `npm run release:desktop -- --execute` (no `--publish` without an OK).
+- **Audit Apple:** L6 (`NSAllowsLocalNetworking`, 8eb3437) and L2 (keyboard inserts only into the origin field; hashed origin + TTL; chip "Paste last dictation"; e15521a) pushed to `fix/audit-apple`. Not compiled (no Swift on Windows) — Mac test run (amc) before merge; check the keyboard height with the chip shown. H1 (CloudKit Production schema) = Mac/Console, not code.
+
 ## 2026-10-18 update
 - **Play prep (18.10 pm):** `docs/android/PLAY-CONSOLE-PASTE.md` (PL paste sheet), Plaster task `wh-android-play-1017` v2; store assets via `android/marketing/play/screenshots` (app-screenshots kit from Roborazzi baselines, verify PASS; copies in `C:/Users/dkwar/bees/whisperio-play-assets`). Launcher icon = teal ghost traced from the iOS icon (commit 234654f) - NOT yet through gradle (lint/assemble).
 - **Next heavy slot (queued in heavy-queue.txt):** gate (lint + assembleDebug + verifyRoborazzi) after the icon, emulator smoke API 34/35/36 (CONTRACT §9), capture keyboard + tile store shots with the kit `android` adapter, then signed `:app:bundleRelease` + signature verify + release-readiness, then merge `android/skeleton` -> main.
