@@ -13,6 +13,7 @@ final class KeyboardModel: ObservableObject {
     @Published var shifted = true
     @Published var lastInserted: String?
     @Published var pendingRewrite: String?
+    @Published var pendingPasteAvailable = false
     @Published var suggestions: [String] = []
 
     func tap(_ ch: String) {

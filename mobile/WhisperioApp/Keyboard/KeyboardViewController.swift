@@ -61,6 +61,7 @@ final class KeyboardViewController: UIInputViewController {
     // Recompute predictions whenever the document text changes.
     override func textDidChange(_ textInput: UITextInput?) {
         super.textDidChange(textInput)
+        refreshState()
         updateSuggestions()
     }
 
@@ -70,14 +71,36 @@ final class KeyboardViewController: UIInputViewController {
         model.hasFullAccess = hasFullAccess
         model.needsGlobeKey = needsInputModeSwitchKey
         model.lastInserted = SharedStore.lastInsertedTranscript
+        model.pendingPasteAvailable = (SharedStore.peekPendingTranscript() != nil)
+            && !SharedStore.originMatches(origin: SharedStore.dictationOrigin, current: currentFingerprint())
+    }
+
+    private func currentFingerprint() -> KeyboardFieldFingerprint {
+        KeyboardFieldFingerprint(
+            documentID: textDocumentProxy.documentIdentifier.uuidString,
+            contextTail: String((textDocumentProxy.documentContextBeforeInput ?? "").suffix(64))
+        )
     }
 
     private func insertPendingTranscriptIfAny() {
-        if let text = SharedStore.consumePendingTranscript() {
-            textDocumentProxy.insertText(text)
-            model.lastInserted = text
-            SharedStore.setLastInsertedTranscript(text)
+        guard SharedStore.peekPendingTranscript() != nil else {
+            model.pendingPasteAvailable = false
+            return
         }
+        guard SharedStore.originMatches(origin: SharedStore.dictationOrigin, current: currentFingerprint()) else {
+            model.pendingPasteAvailable = true
+            return
+        }
+        pasteHeldDictation()
+    }
+
+    func pasteHeldDictation() {
+        defer { model.pendingPasteAvailable = false }
+        guard let text = SharedStore.consumePendingTranscript() else { return }
+        textDocumentProxy.insertText(text)
+        model.lastInserted = text
+        SharedStore.setLastInsertedTranscript(text)
+        SharedStore.clearDictationOrigin()
     }
 
     private func applyPendingRewriteIfAny() {
@@ -140,6 +163,9 @@ final class KeyboardViewController: UIInputViewController {
             return
         }
         SharedStore.swipeBackExplainerShown = true
+        SharedStore.clearPendingTranscript()
+        SharedStore.setDictationOrigin(currentFingerprint())
+        model.pendingPasteAvailable = false
         if !openURL(SharedStore.dictateURL) {
             // Opening failed despite Full Access — tell the user instead of failing silently.
             model.showFullAccessHint = true

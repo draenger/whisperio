@@ -1,4 +1,27 @@
 import Foundation
+import CryptoKit
+
+/// Identifies the host text field a keyboard dictation started in, so the transcript is only
+/// auto-inserted back into that field (audit L2). Host text is never stored: only a SHA-256 of
+/// the last 64 characters before the caret ("" when there is no context).
+public struct KeyboardFieldFingerprint: Equatable, Sendable {
+    public let documentID: String?
+    public let contextHash: String
+
+    public init(documentID: String?, contextTail: String) {
+        self.init(documentID: documentID, contextHash: Self.hash(String(contextTail.suffix(64))))
+    }
+
+    init(documentID: String?, contextHash: String) {
+        self.documentID = documentID
+        self.contextHash = contextHash
+    }
+
+    static func hash(_ tail: String) -> String {
+        guard !tail.isEmpty else { return "" }
+        return SHA256.hash(data: Data(tail.utf8)).map { String(format: "%02x", $0) }.joined()
+    }
+}
 
 /// Cross-process bridge between the main app and the Whisperio keyboard extension,
 /// backed by a shared App Group `UserDefaults` suite.
@@ -23,6 +46,9 @@ public enum SharedStore {
     private enum Key {
         static let pendingTranscript = "kbd.pendingTranscript"
         static let pendingCreatedAt  = "kbd.pendingTranscript.createdAt"
+        static let originDocumentID = "kbd.origin.documentID"
+        static let originContextHash = "kbd.origin.contextHash"
+        static let originCreatedAt = "kbd.origin.createdAt"
         static let lastInsertedTranscript = "kbd.lastInsertedTranscript"
         static let lastInsertedCreatedAt  = "kbd.lastInsertedTranscript.createdAt"
         static let appHeartbeat      = "kbd.appHeartbeat"          // app writes; keyboard never needs it
@@ -61,6 +87,46 @@ public enum SharedStore {
     /// eagerly cleared, so dictated text is never retained in the shared container indefinitely.
     public static let pendingTranscriptMaxAge: TimeInterval = 600
 
+    public static func setDictationOrigin(_ fp: KeyboardFieldFingerprint) {
+        guard let d = defaults else { return }
+        d.set(fp.documentID, forKey: Key.originDocumentID)
+        d.set(fp.contextHash, forKey: Key.originContextHash)
+        d.set(Date().timeIntervalSince1970, forKey: Key.originCreatedAt)
+    }
+
+    /// The field the current dictation started in; nil when unknown or older than the transcript TTL.
+    public static var dictationOrigin: KeyboardFieldFingerprint? {
+        purgeStaleDictationOrigin()
+        guard let d = defaults,
+              let hash = d.string(forKey: Key.originContextHash) else { return nil }
+        return KeyboardFieldFingerprint(documentID: d.string(forKey: Key.originDocumentID), contextHash: hash)
+    }
+
+    /// A dictation that never produced a transcript (cancelled in the app) leaves its origin behind;
+    /// drop it with the same TTL as the transcript.
+    public static func purgeStaleDictationOrigin(maxAge: TimeInterval = pendingTranscriptMaxAge) {
+        guard let d = defaults, d.object(forKey: Key.originContextHash) != nil else { return }
+        let created = d.double(forKey: Key.originCreatedAt)
+        if created <= 0 || Date().timeIntervalSince1970 - created > maxAge {
+            clearDictationOrigin()
+        }
+    }
+
+    public static func clearDictationOrigin() {
+        guard let d = defaults else { return }
+        d.removeObject(forKey: Key.originDocumentID)
+        d.removeObject(forKey: Key.originContextHash)
+        d.removeObject(forKey: Key.originCreatedAt)
+    }
+
+    public static func originMatches(origin: KeyboardFieldFingerprint?, current: KeyboardFieldFingerprint) -> Bool {
+        guard let origin else { return false }
+        if let originID = origin.documentID, let currentID = current.documentID, originID == currentID {
+            return true
+        }
+        return !origin.contextHash.isEmpty && origin.contextHash == current.contextHash
+    }
+
     /// Called by the app after a keyboard-initiated dictation finishes.
     public static func setPendingTranscript(_ text: String) {
         guard let d = defaults else { return }
@@ -71,11 +137,20 @@ public enum SharedStore {
     /// Called by the keyboard when it reappears; returns the transcript once, then clears it.
     /// `maxAge` guards against inserting a stale transcript from a much earlier session.
     public static func consumePendingTranscript(maxAge: TimeInterval = pendingTranscriptMaxAge) -> String? {
+        guard let text = peekPendingTranscript(maxAge: maxAge) else { return nil }
+        clearPendingTranscript()
+        return text
+    }
+
+    /// Read a fresh transcript without consuming it; stale transcripts are cleared.
+    public static func peekPendingTranscript(maxAge: TimeInterval = pendingTranscriptMaxAge) -> String? {
         guard let d = defaults,
               let text = d.string(forKey: Key.pendingTranscript), !text.isEmpty else { return nil }
         let created = d.double(forKey: Key.pendingCreatedAt)
-        defer { clearPendingTranscript() }
-        if created > 0, Date().timeIntervalSince1970 - created > maxAge { return nil }
+        if created <= 0 || Date().timeIntervalSince1970 - created > maxAge {
+            clearPendingTranscript()
+            return nil
+        }
         return text
     }
 
@@ -84,6 +159,7 @@ public enum SharedStore {
         guard let d = defaults else { return }
         d.removeObject(forKey: Key.pendingTranscript)
         d.removeObject(forKey: Key.pendingCreatedAt)
+        clearDictationOrigin()
     }
 
     /// Remembered for the keyboard's immediate rewrite flow only; it shares the pending
@@ -132,6 +208,7 @@ public enum SharedStore {
     /// bounds the on-disk lifetime instead of relying on a future `consume` that may never come.
     public static func purgeStalePendingTranscript(maxAge: TimeInterval = pendingTranscriptMaxAge) {
         purgeStaleLastInsertedTranscript(maxAge: maxAge)
+        purgeStaleDictationOrigin(maxAge: maxAge)
         if let d = defaults, d.object(forKey: Key.rewriteResult) != nil {
             let at = d.double(forKey: Key.rewriteResultAt)
             if at <= 0 || Date().timeIntervalSince1970 - at > maxAge {

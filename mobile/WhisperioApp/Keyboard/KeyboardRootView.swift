@@ -45,6 +45,9 @@ struct KeyboardRootView: View {
             background.ignoresSafeArea()
             VStack(spacing: 8) {
                 topBar
+                if model.pendingPasteAvailable {
+                    pendingPasteChip
+                }
                 if model.showFullAccessHint && !model.hasFullAccess {
                     fullAccessBanner
                 }
@@ -160,6 +163,18 @@ struct KeyboardRootView: View {
         .padding(.vertical, 5)
         .background(color.opacity(dark ? 0.12 : 0.09), in: Capsule())
         .overlay(Capsule().stroke(color.opacity(0.28), lineWidth: 1))
+    }
+
+    private var pendingPasteChip: some View {
+        Button(action: { model.controller?.pasteHeldDictation() }) {
+            Text("Paste last dictation")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(accent)
+                .padding(.horizontal, 11)
+                .padding(.vertical, 5)
+                .background(specialFill, in: Capsule())
+        }
+        .buttonStyle(KBPressStyle())
     }
 
     private var rewriteMenu: some View {
