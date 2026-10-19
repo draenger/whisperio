@@ -72,6 +72,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -89,6 +90,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import java.time.LocalDate
 import kotlinx.coroutines.launch
 
 private object Routes {
@@ -374,8 +376,18 @@ private fun HomeRoute(g: AppGraph, nav: NavHostController) {
 @Composable
 private fun HistoryRoute(g: AppGraph, nav: NavHostController, snackbar: SnackbarHostState) {
     val items by g.history.observeAll().collectAsState(initial = emptyList())
-    val export = rememberExporter(g.history, snackbar)
-    HistoryListScreen(items, onOpen = { nav.navigate(Routes.detail(it)) }, onExport = export)
+    var exported by remember { mutableIntStateOf(0) }
+    val export = rememberExporter(g.history, snackbar, onSuccess = { exported++ })
+    // Fixed per day so the day-header grouping is cached instead of recomputed on every recomposition.
+    val today = LocalDate.now()
+    val now = remember(today) { System.currentTimeMillis() }
+    HistoryListScreen(
+        items,
+        onOpen = { nav.navigate(Routes.detail(it)) },
+        onExport = export,
+        now = now,
+        clearSelectionToken = exported,
+    )
 }
 
 @Composable

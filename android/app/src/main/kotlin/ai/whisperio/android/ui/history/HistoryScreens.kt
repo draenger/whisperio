@@ -7,6 +7,7 @@ import ai.whisperio.android.history.RecordingSource
 import ai.whisperio.android.ui.common.SectionTitle
 import ai.whisperio.android.ui.home.sourceLabelRes
 import ai.whisperio.core.ExportFormat
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.text.KeyboardActions
@@ -93,6 +94,7 @@ fun HistoryListScreen(
     modifier: Modifier = Modifier,
     onExport: (List<Recording>, ExportFormat) -> Unit = { _, _ -> },
     now: Long = System.currentTimeMillis(),
+    clearSelectionToken: Int = 0,
     zone: ZoneId = ZoneId.systemDefault(),
     initial: HistoryFilters = HistoryFilters(),
     initialSelection: Set<String> = emptySet(),
@@ -110,6 +112,9 @@ fun HistoryListScreen(
     val shown = remember(items, filters) { applyFilters(items, filters) }
     val picked = remember(items, selected) { items.filter { it.id in selected } }
     val selecting = picked.isNotEmpty()
+    // Back leaves selection mode first; a finished export (token bump from the route) also clears it.
+    BackHandler(selecting) { selected = emptyList() }
+    LaunchedEffect(clearSelectionToken) { if (clearSelectionToken > 0) selected = emptyList() }
     fun toggle(id: String) { selected = if (id in selected) selected - id else selected + id }
 
     Column(modifier.fillMaxSize()) {
