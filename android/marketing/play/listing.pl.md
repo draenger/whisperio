@@ -49,16 +49,16 @@ CO DOSTAJESZ
 - Język wykrywany automatycznie albo wybrany: polski, angielski, niemiecki, hiszpański, francuski, włoski, portugalski, niderlandzki, rosyjski, ukraiński
 - Własny słownik na imiona i terminy (wysyłany do dostawców, którzy to obsługują)
 - Opcjonalne porządkowanie tekstu: poprawia odstępy i powtórzone słowa, nie przepisuje tego, co powiedziałeś
-- Lokalna historia dyktowań: wyszukiwanie, grupowanie po dniach, filtry według źródła i nieudanych, kopiowanie, udostępnianie, usuwanie
+- Lokalna historia dyktowań: wyszukiwanie, grupowanie po dniach, filtrowanie po źródle i nieudanych dyktowaniach, kopiowanie, udostępnianie, usuwanie
 - Tygodniowe podsumowanie: słowa, notatki, zaoszczędzone minuty i serie, z kartą z samymi liczbami do udostępnienia
 - Kategorie: sześć wbudowanych i własne, widoczne przy każdym nagraniu, z filtrem i wyszukiwaniem
 - Liczba słów przy każdej transkrypcji
-- Przesuń nagranie, by je usunąć (z opcją Cofnij), stuknij dwukrotnie, by skopiować, albo usuń cały dzień
+- Gesty na liście: usuwanie przesunięciem (z opcją Cofnij), kopiowanie dwukrotnym stuknięciem i usuwanie całego dnia
 - Eksport transkrypcji do .txt lub .md przez systemowy wybór pliku
 - Odtwarzanie zapisanego nagrania i ponawianie transkrypcji u innego dostawcy
 - Widżet na ekranie głównym do szybkiego dyktowania
 - Delikatna wibracja przy kopiowaniu, wstawieniu i gotowym tekście
-- Opcjonalnie: pamiętanie języka dyktowania dla każdej aplikacji (domyślnie wyłączone, tylko na Twoim telefonie)
+- Opcjonalnie: pamiętanie języka dyktowania dla każdej aplikacji (domyślnie wyłączone, tylko na tym urządzeniu)
 - Opcjonalne automatyczne zatrzymanie przy ciszy i czyszczenie historii po 1, 7 lub 30 dniach
 - Ciemny i jasny motyw, interfejs po polsku i angielsku
 
@@ -77,7 +77,7 @@ Polityka prywatności: https://whisperio.danielkasprzyk.com/privacy.html
 Regulamin: https://whisperio.danielkasprzyk.com/terms.html
 Pomoc: https://whisperio.danielkasprzyk.com/support.html
 ```
-Znaków: 3832/4000
+Znaków: 3856/4000
 
 ## 1.2.0 (<=500)
 
@@ -86,11 +86,11 @@ Nowości w 1.2:
 - Tygodniowe podsumowanie: słowa, notatki, zaoszczędzone minuty i serie, z kartą do udostępnienia
 - Kategorie: sześć wbudowanych i własne, widoczne na liście, z filtrem i wyszukiwaniem
 - Liczba słów przy każdej transkrypcji
-- Przesuń nagranie, by je usunąć, z opcją Cofnij
-- Dwukrotne stuknięcie kopiuje tekst nagrania
-- Usuń cały dzień z jego nagłówka
+- Usuwanie nagrania przesunięciem, z opcją Cofnij
+- Kopiowanie tekstu dwukrotnym stuknięciem
+- Usuwanie całego dnia z jego nagłówka
 ```
-Znaków: 367/500
+Znaków: 370/500
 
 Plik: `android/marketing/play/release-notes/1.2.0/pl-PL.txt`
 
@@ -98,16 +98,16 @@ Plik: `android/marketing/play/release-notes/1.2.0/pl-PL.txt`
 
 ```
 Nowości w 1.1:
-- Szukaj w historii i przeglądaj ją pogrupowaną po dniach
-- Filtry: źródło dyktowania i nieudane
+- Wyszukiwanie w historii i grupowanie jej po dniach
+- Filtrowanie po źródle i nieudanych dyktowaniach
 - Eksport transkrypcji do .txt lub .md
 - Odtwarzanie zapisanego nagrania
-- Ponów transkrypcję u innego dostawcy
+- Ponawianie transkrypcji u innego dostawcy
 - Widżet na ekranie głównym do startu dyktowania
 - Delikatna wibracja przy kopiowaniu, wstawieniu i gotowym tekście
-- Opcjonalnie: pamiętaj język klawiatury dla każdej aplikacji (domyślnie wyłączone)
+- Opcjonalnie: pamiętanie języka klawiatury dla każdej aplikacji (domyślnie wyłączone)
 ```
-Znaków: 423/500
+Znaków: 437/500
 
 Plik: `android/marketing/play/release-notes/1.1.0/pl-PL.txt`
 

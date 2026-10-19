@@ -68,6 +68,8 @@ data class ImePanelState(
     val notInserted: Boolean = false,
     /** Language the next dictation uses (global, or the saved one for this app); `auto`, `pl`, ... */
     val language: String = AppSettings.LANGUAGE_AUTO,
+    /** Changes whenever a new input field starts; resets per-field panel state such as the open language list. */
+    val fieldSeq: Int = 0,
 )
 
 class ImePanelActions(
@@ -90,10 +92,11 @@ fun ImePanel(
     modifier: Modifier = Modifier,
     initialLanguagePickerOpen: Boolean = false,
 ) {
-    var picking by rememberSaveable { mutableStateOf(initialLanguagePickerOpen) }
+    var picking by rememberSaveable(state.fieldSeq) { mutableStateOf(initialLanguagePickerOpen) }
     val d = state.dictation
     val recording = d is DictationState.Recording
     val transcribing = d is DictationState.Transcribing
+    val languageEditable = !recording && !transcribing
     Box(
         modifier
             .fillMaxWidth()
@@ -123,19 +126,21 @@ fun ImePanel(
                         label = { Text(state.providerLabel, maxLines = 1, overflow = TextOverflow.Ellipsis) },
                         modifier = Modifier.heightIn(min = 48.dp).weight(1f, fill = false),
                     )
-                    val chipDesc = stringResource(R.string.ime_language_chip_desc, Languages.label(state.language))
-                    AssistChip(
-                        onClick = { picking = !picking },
-                        label = { Text(Languages.short(state.language), maxLines = 1) },
-                        modifier = Modifier.heightIn(min = 48.dp).semantics { contentDescription = chipDesc },
-                    )
+                    if (languageEditable) {
+                        val chipDesc = stringResource(R.string.ime_language_chip_desc, Languages.label(state.language))
+                        AssistChip(
+                            onClick = { picking = !picking },
+                            label = { Text(Languages.short(state.language), maxLines = 1) },
+                            modifier = Modifier.heightIn(min = 48.dp).semantics { contentDescription = chipDesc },
+                        )
+                    }
                 }
                 IconButton(onClick = actions.onSwitchKeyboard, modifier = Modifier.size(48.dp)) {
                     Icon(Icons.Filled.Keyboard, contentDescription = stringResource(R.string.ime_switch_keyboard))
                 }
             }
 
-            if (picking) {
+            if (picking && languageEditable) {
                 val closeDesc = stringResource(R.string.ime_language_picker_close)
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                     Languages.settings.forEach { code ->

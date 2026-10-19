@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Privacy Policy — Whisperio</title>
-  <meta name="description" content="Privacy policy for Whisperio — a privacy-first dictation app for iPhone, iPad and Apple Watch (coming to the App Store), for Android (coming to Google Play) and for desktop (Windows, macOS, Linux). No accounts, no telemetry; the developer receives none of your data. Audio is sent only to the provider you configure, or nowhere with on-device recognition.">
+  <meta name="description" content="Whisperio privacy policy: no account, no telemetry, the developer gets none of your data; audio goes only to the provider you choose.">
   <meta name="author" content="Daniel Kasprzyk">
   <meta name="robots" content="index, follow">
   <meta name="theme-color" content="#4a8cf7">
@@ -13,8 +13,11 @@
   <meta property="og:type" content="article">
   <meta property="og:url" content="https://whisperio.danielkasprzyk.com/privacy.html">
   <meta property="og:title" content="Privacy Policy — Whisperio">
-  <meta property="og:description" content="No accounts, no telemetry, no data collection. Audio goes only to the provider you choose.">
-  <meta property="og:image" content="https://whisperio.danielkasprzyk.com/og-image.png">
+  <meta property="og:description" content="Whisperio privacy policy: no account, no telemetry, the developer gets none of your data; audio goes only to the provider you choose.">
+  <meta property="og:image" content="https://whisperio.danielkasprzyk.com/og-image-1200x630.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="Whisperio — free dictation with your own AI key">
   <meta property="og:site_name" content="Whisperio">
 
   <link rel="icon" type="image/png" href="favicon.png">
@@ -88,6 +91,7 @@
     <ul>
       <li><strong>Settings</strong> — hotkeys, theme, provider choice, custom vocabulary, output preferences. Stored in the app's sandbox, private app storage (Android) or local config directory.</li>
       <li><strong>API keys</strong> — keys you enter for the providers below. On iPhone, iPad and Apple Watch (and in the Mac App Store app, once released) they are stored in the Apple Keychain, readable only when the device is unlocked and not synced through iCloud Keychain. On the desktop app they are stored in the operating system's secure credential store (Keychain on macOS, Credential Manager on Windows, libsecret on Linux) where available; otherwise in the app's local config directory. On Android they are encrypted with an AES-256-GCM key held in the Android Keystore (see section 8).</li>
+      <li><strong>Per-app language list (Android, optional)</strong> — if you turn on "Remember language per app" (off by default), the keyboard stores a list of app package names and the dictation language you chose for each. It stays on your device, is never sent anywhere, and is deleted when you turn the switch off, clear the list in Settings or erase all data.</li>
       <li><strong>Dictation history</strong> — transcripts, notes, optional AI summaries and, if you keep them, the audio recordings. You can delete individual entries, delete all audio, or erase everything from the app (Settings → Storage on iOS; in Settings (storage and retention), via "Erase all data", on Android).</li>
       <li><strong>Downloaded local models</strong> — optional speech and language models (Whisper / WhisperKit and GGUF models) that you download inside the app. They are downloaded from Hugging Face (<a href="https://huggingface.co/privacy" target="_blank" rel="noopener">Hugging Face Privacy Policy</a>); that request reveals your IP address to Hugging Face but no audio or text. After download, these models run entirely on your device.</li>
     </ul>
@@ -157,9 +161,9 @@
     <h3>8.2 API keys</h3>
     <p>Your API keys are stored encrypted. They are encrypted with an AES-256-GCM key that is held in the Android Keystore and cannot be exported from it; only the encrypted data is written to the app's private storage. Keys are excluded from Android backup and from device-to-device transfer (the app disables backup and declares data-extraction rules that exclude all app data), so they are not copied to a cloud backup or to a new phone; on a new device you enter your keys again. If the Keystore key is lost or invalidated, Whisperio deletes the stored ciphertext and asks you to paste the key again. Keys are not written to logs, history or error messages.</p>
     <h3>8.3 Keyboard</h3>
-    <p>The Whisperio keyboard on Android is a dictation panel. It does not store or transmit what you type. On your device it only checks the field type (to detect password fields) and the single character before the cursor (to decide whether to add a space); the only data it sends anywhere is the audio you record with its microphone button. Dictation is disabled in password fields, so a spoken password never reaches a provider. In fields that ask keyboards not to learn from input (the Android "no personalized learning" flag), the transcript is inserted but is not saved to your history. If you turn on "Remember language per app" (off by default), the keyboard keeps a list of app package names and the language you chose for each, on your device only; it is never sent anywhere, and it is deleted when you turn the switch off or use "Erase all data".</p>
+    <p>The Whisperio keyboard on Android is a dictation panel. It does not store or transmit what you type. On your device it only checks the field type and options (to detect password fields and choose the Enter action), which app and field it is (the package name and field ID, kept in memory only so that a transcript is inserted into the field it was dictated for and, if you turn it on, for the per-app language described below) and the single character before the cursor (to decide whether to add a space); the only data it sends anywhere is the audio you record with its microphone button. Dictation is disabled in password fields, so a spoken password never reaches a provider. In fields that ask keyboards not to learn from input (the Android "no personalized learning" flag), the transcript is inserted but is not saved to your history. If you turn on "Remember language per app" (off by default), the keyboard keeps a list of app package names and the language you chose for each, on your device only; it is never sent anywhere, and it is deleted when you turn the switch off, clear the list in Settings or use "Erase all data". Nothing is stored for password fields or for fields that ask keyboards not to learn from input.</p>
     <h3>8.4 History and deletion</h3>
-    <p>Your dictation history (transcripts and, if you keep them, the audio files) is stored only on your device, in the app's private storage. In Settings you can choose whether to keep audio, set automatic deletion after 1, 7 or 30 days, delete all audio, or use "Erase all data" to remove history, audio, keys and settings. Uninstalling Whisperio deletes everything it stored. There is no cloud sync on Android. A transcript copied to the clipboard by the Quick Settings tile or the shortcut is an ordinary clipboard entry, which the system and other apps may be able to access according to your Android version and settings. You can turn on "Treat transcripts as sensitive" to mark these clipboard entries as sensitive, which hides them from clipboard previews.</p>
+    <p>Your dictation history (transcripts and, if you keep them, the audio files) is stored only on your device, in the app's private storage. In Settings you can choose whether to keep audio, set automatic deletion after 1, 7 or 30 days, delete all audio, or use "Erase all data" to remove history, audio, keys, settings and the per-app language list. Uninstalling Whisperio deletes everything it stored. There is no cloud sync on Android. A transcript copied to the clipboard by the Quick Settings tile or the shortcut is an ordinary clipboard entry, which the system and other apps may be able to access according to your Android version and settings. You can turn on "Treat transcripts as sensitive" to mark these clipboard entries as sensitive, which hides them from clipboard previews.</p>
     <h3>8.5 Permissions</h3>
     <p>Microphone (to record when you tap the microphone button) and internet (to reach your chosen provider). Nothing else is requested.</p>
 

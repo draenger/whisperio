@@ -60,6 +60,28 @@ class AppLanguageMap private constructor(private val items: List<Pair<String, St
     }
 }
 
+/** What a language-chip pick does (F7). Pure so both branches are unit-testable. */
+data class LanguageChoice(
+    /** Switch off: change the global language and store nothing. */
+    val setGlobal: Boolean,
+    /** Switch on: the language applied to the current field/app; null when [setGlobal]. */
+    val fieldLanguage: String?,
+    /** Switch on: persist packageName -> language (only if [AppLanguagePolicy] allows). */
+    val store: Boolean,
+)
+
+fun decideLanguageChoice(perApp: Boolean, code: String, inputType: Int, imeOptions: Int, packageName: String?): LanguageChoice =
+    if (!perApp) LanguageChoice(setGlobal = true, fieldLanguage = null, store = false)
+    else LanguageChoice(
+        setGlobal = false,
+        fieldLanguage = code,
+        store = AppLanguagePolicy.shouldStore(inputType, imeOptions, packageName),
+    )
+
+/** A restart of the input view in the same app keeps the language picked with the chip (it may not be storable). */
+fun languageAfterRestart(restarting: Boolean, previousPackage: String?, newPackage: String?, previousLanguage: String?): String? =
+    if (restarting && previousPackage == newPackage) previousLanguage else null
+
 /** The privacy rule for F7: when may an entry be stored? Same spirit as Gboard's personalised learning. */
 object AppLanguagePolicy {
     fun shouldStore(inputType: Int, imeOptions: Int, packageName: String?): Boolean =
