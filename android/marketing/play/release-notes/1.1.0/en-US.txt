@@ -1,0 +1,9 @@
+What's new in 1.1:
+- Search your history and browse it grouped by day
+- Filter by source and failed items
+- Export transcripts as .txt or .md
+- Play back the saved audio
+- Retry a transcription with another provider
+- Home-screen widget to start dictation
+- Haptic feedback on copy, insert and done
+- Optional: remember the keyboard language per app (off by default)

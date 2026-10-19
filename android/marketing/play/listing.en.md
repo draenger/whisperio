@@ -8,7 +8,7 @@ Polish counterpart: `android/marketing/play/listing.pl.md` (keep both in parity)
 
 Rules for this text (CONTRACT 8.1): it must NOT say "no data collected" - on Play the voice recording IS collected data
 (it leaves the device for the provider the user picked). It may say: no account, no Whisperio server, no analytics, no ads.
-It describes only what ships in 1.0.0 (see the evidence table below).
+It describes only what ships in 1.1.0 (see the evidence table below).
 
 ## App name (<=30)
 
@@ -49,7 +49,12 @@ WHAT YOU GET
 - Auto-detect or pick your language: English, Polish, German, Spanish, French, Italian, Portuguese, Dutch, Russian, Ukrainian
 - Custom vocabulary for names and technical terms (sent to providers that support it)
 - Optional text tidy-up: fixes spacing and repeated words without rewriting what you said
-- Local history of your dictations: copy, share, retry a transcription, delete
+- Local history of your dictations: search it, browse it by day, filter by source or failed items, copy, share, delete
+- Export transcripts as .txt or .md through the system file picker
+- Play back the saved audio and retry a transcription with another provider
+- Home-screen widget to start dictating
+- Subtle haptic feedback on copy, insert and done
+- Optional: remember the dictation language for each app (off by default, kept on your device only)
 - Optional auto-stop on silence and automatic history clean-up after 1, 7 or 30 days
 - Dark and light theme, English and Polish interface
 
@@ -69,6 +74,23 @@ Terms of use: https://whisperio.danielkasprzyk.com/terms.html
 Support: https://whisperio.danielkasprzyk.com/support.html
 ```
 Characters: 2913/4000
+
+## Release notes 1.1.0 (<=500)
+
+```
+What's new in 1.1:
+- Search your history and browse it grouped by day
+- Filter by source and failed items
+- Export transcripts as .txt or .md
+- Play back the saved audio
+- Retry a transcription with another provider
+- Home-screen widget to start dictation
+- Haptic feedback on copy, insert and done
+- Optional: remember the keyboard language per app (off by default)
+```
+Characters: 366/500
+
+File: `android/marketing/play/release-notes/1.1.0/en-US.txt`
 
 ## Release notes 1.0.0 (<=500)
 
@@ -109,6 +131,12 @@ Characters: 288/500
 | Erase all data | `di/AppGraph.kt:110-119` |
 | Keyboard: password fields off, no typed-text storage | `ime/ImeCommitPolicy.kt:19-37`, `ime/WhisperioImeService.kt:192` |
 | Android 8.0+ | `app/build.gradle.kts` `minSdk = 26` |
+| History search, day groups, filters | `ui/history/HistoryQuery.kt`, `ui/history/HistoryScreens.kt` |
+| Export .txt / .md | `ui/history/ExportLauncher.kt` |
+| Audio playback, retry with another provider | `ui/history/AudioPlayback.kt`, `ui/history/PlayerPolicy.kt`, `dictation/RetryPolicy.kt` |
+| Home-screen widget | `widget/DictateWidget.kt` |
+| Haptics | `ui/common/Haptics.kt` |
+| Language per app (opt-in) | `settings/AppLanguageMap.kt`, `settings/AppLanguageStore.kt`, `ime/ImePanel.kt` language chip |
 | Dark/light, EN/PL UI | `res/values-night`, `res/values-pl/strings.xml` |
 
 ## Do NOT write in the listing

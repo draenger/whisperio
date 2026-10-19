@@ -49,7 +49,12 @@ CO DOSTAJESZ
 - Język wykrywany automatycznie albo wybrany: polski, angielski, niemiecki, hiszpański, francuski, włoski, portugalski, niderlandzki, rosyjski, ukraiński
 - Własny słownik na imiona i terminy (wysyłany do dostawców, którzy to obsługują)
 - Opcjonalne porządkowanie tekstu: poprawia odstępy i powtórzone słowa, nie przepisuje tego, co powiedziałeś
-- Lokalna historia dyktowań: kopiuj, udostępniaj, ponów transkrypcję, usuwaj
+- Lokalna historia dyktowań: wyszukiwanie, grupowanie po dniach, filtry według źródła i nieudanych, kopiowanie, udostępnianie, usuwanie
+- Eksport transkrypcji do .txt lub .md przez systemowy wybór pliku
+- Odtwarzanie zapisanego nagrania i ponawianie transkrypcji u innego dostawcy
+- Widżet na ekranie głównym do szybkiego dyktowania
+- Delikatna wibracja przy kopiowaniu, wstawieniu i gotowym tekście
+- Opcjonalnie: pamiętanie języka dyktowania dla każdej aplikacji (domyślnie wyłączone, tylko na Twoim telefonie)
 - Opcjonalne automatyczne zatrzymanie przy ciszy i czyszczenie historii po 1, 7 lub 30 dniach
 - Ciemny i jasny motyw, interfejs po polsku i angielsku
 
@@ -69,6 +74,23 @@ Regulamin: https://whisperio.danielkasprzyk.com/terms.html
 Pomoc: https://whisperio.danielkasprzyk.com/support.html
 ```
 Znaków: 3037/4000
+
+## Informacje o wersji 1.1.0 (<=500)
+
+```
+Nowości w 1.1:
+- Szukaj w historii i przeglądaj ją pogrupowaną po dniach
+- Filtry: źródło dyktowania i nieudane
+- Eksport transkrypcji do .txt lub .md
+- Odtwarzanie zapisanego nagrania
+- Ponów transkrypcję u innego dostawcy
+- Widżet na ekranie głównym do startu dyktowania
+- Delikatna wibracja przy kopiowaniu, wstawieniu i gotowym tekście
+- Opcjonalnie: pamiętaj język klawiatury dla każdej aplikacji (domyślnie wyłączone)
+```
+Znaków: 423/500
+
+Plik: `android/marketing/play/release-notes/1.1.0/pl-PL.txt`
 
 ## Informacje o wersji 1.0.0 (<=500)
 
