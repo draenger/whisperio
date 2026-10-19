@@ -79,48 +79,18 @@ Pomoc: https://whisperio.danielkasprzyk.com/support.html
 ```
 Znaków: 3856/4000
 
-## 1.2.0 (<=500)
-
-```
-Nowości w 1.2:
-- Tygodniowe podsumowanie: słowa, notatki, zaoszczędzone minuty i serie, z kartą do udostępnienia
-- Kategorie: sześć wbudowanych i własne, widoczne na liście, z filtrem i wyszukiwaniem
-- Liczba słów przy każdej transkrypcji
-- Usuwanie nagrania przesunięciem, z opcją Cofnij
-- Kopiowanie tekstu dwukrotnym stuknięciem
-- Usuwanie całego dnia z jego nagłówka
-```
-Znaków: 370/500
-
-Plik: `android/marketing/play/release-notes/1.2.0/pl-PL.txt`
-
-## Informacje o wersji 1.1.0 (<=500)
-
-```
-Nowości w 1.1:
-- Wyszukiwanie w historii i grupowanie jej po dniach
-- Filtrowanie po źródle i nieudanych dyktowaniach
-- Eksport transkrypcji do .txt lub .md
-- Odtwarzanie zapisanego nagrania
-- Ponawianie transkrypcji u innego dostawcy
-- Widżet na ekranie głównym do startu dyktowania
-- Delikatna wibracja przy kopiowaniu, wstawieniu i gotowym tekście
-- Opcjonalnie: pamiętanie języka klawiatury dla każdej aplikacji (domyślnie wyłączone)
-```
-Znaków: 437/500
-
-Plik: `android/marketing/play/release-notes/1.1.0/pl-PL.txt`
-
 ## Informacje o wersji 1.0.0 (<=500)
 
 ```
 Pierwsza wersja Whisperio na Androida.
-- Klawiatura do dyktowania, kafelek w szybkich ustawieniach i skrót na ekranie głównym
+- Klawiatura do dyktowania, kafelek szybkich ustawień, skrót i widżet
 - Własny klucz API: OpenAI, Groq, Mistral, ElevenLabs, Deepgram, AssemblyAI lub własny serwer
-- Lokalna historia z kopiowaniem, udostępnianiem i ponawianiem
+- Historia z wyszukiwaniem, kategoriami, eksportem do .txt lub .md i odtwarzaniem nagrań
+- Tygodniowe podsumowanie z seriami i zaoszczędzonymi minutami
+- Usuwanie przesunięciem z opcją Cofnij, kopiowanie dwukrotnym stuknięciem
 - Za darmo, bez konta, reklam i analityki
 ```
-Znaków: 324/500
+Znaków: 471/500
 
 ## Kategoria i kontakt
 

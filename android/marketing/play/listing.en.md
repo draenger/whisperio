@@ -8,7 +8,7 @@ Polish counterpart: `android/marketing/play/listing.pl.md` (keep both in parity)
 
 Rules for this text (CONTRACT 8.1): it must NOT say "no data collected" - on Play the voice recording IS collected data
 (it leaves the device for the provider the user picked). It may say: no account, no Whisperio server, no analytics, no ads.
-It describes only what ships in 1.1.0 (see the evidence table below).
+It describes only what ships in the first Play release, versionName 1.0.0 / versionCode 10200 (internal milestones v1 + 1.1 + 1.2; see the evidence table below).
 
 ## App name (<=30)
 
@@ -79,48 +79,18 @@ Support: https://whisperio.danielkasprzyk.com/support.html
 ```
 Characters: 3586/4000
 
-## 1.2.0 (<=500)
-
-```
-What's new in 1.2:
-- Weekly recap: words, notes, minutes saved and streaks, with a share card
-- Categories: six built-in plus your own, shown on rows, with filter and search
-- Word count on each transcript
-- Swipe a recording to delete it, with Undo
-- Double-tap a recording to copy its text
-- Delete a whole day from its header
-```
-Characters: 328/500
-
-File: `android/marketing/play/release-notes/1.2.0/en-US.txt`
-
-## Release notes 1.1.0 (<=500)
-
-```
-What's new in 1.1:
-- Search your history and browse it grouped by day
-- Filter by source and failed items
-- Export transcripts as .txt or .md
-- Play back the saved audio
-- Retry a transcription with another provider
-- Home-screen widget to start dictation
-- Haptic feedback on copy, insert and done
-- Optional: remember the keyboard language per app (off by default)
-```
-Characters: 366/500
-
-File: `android/marketing/play/release-notes/1.1.0/en-US.txt`
-
 ## Release notes 1.0.0 (<=500)
 
 ```
 First release of Whisperio for Android.
-- Dictation keyboard, Quick Settings tile and launcher shortcut
-- Bring your own API key: OpenAI, Groq, Mistral, ElevenLabs, Deepgram, AssemblyAI or your own server
-- Local history with copy, share and retry
+- Dictation keyboard, Quick Settings tile, launcher shortcut and home-screen widget
+- Bring your own key: OpenAI, Groq, Mistral, ElevenLabs, Deepgram, AssemblyAI or your own server
+- History with search, categories, export to .txt or .md and audio playback
+- Weekly recap with streaks and minutes saved
+- Swipe to delete with Undo, double-tap to copy
 - Free, no account, no ads, no analytics
 ```
-Characters: 288/500
+Characters: 431/500
 
 ## Category and contact
 

@@ -1,8 +1,8 @@
 # Whisperio for Android — v1.2.0 contract (delta on CONTRACT.md and CONTRACT-1.1.md)
 
 > Status: 2026-10-19, before code. Opus review done (CHANGES, all 12 applied); lanes may start. Everything in
-> CONTRACT.md and CONTRACT-1.1.md stays in force unless this file changes it. Version: `versionName 1.2.0`,
-> `versionCode 10200`. Whisperio stays free: no billing, ads or accounts.
+> CONTRACT.md and CONTRACT-1.1.md stays in force unless this file changes it. Version: `versionCode 10200`; public `versionName 1.0.0`
+> (queenbee/Daniel 2026-10-19: the Play debut is always 1.0.0, so v1 + 1.1 + 1.2 ship together as 1.0.0; 1.1/1.2 stay internal milestone names). Whisperio stays free: no billing, ads or accounts.
 
 ## 1. Goal and rule
 Parity-first (queenbee, 2026-10-19): v1.2 ports only features that iOS (`mobile/`) or desktop (`desktop/src`) already

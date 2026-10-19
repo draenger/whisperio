@@ -1,7 +1,0 @@
-What's new in 1.2:
-- Weekly recap: words, notes, minutes saved and streaks, with a share card
-- Categories: six built-in plus your own, shown on rows, with filter and search
-- Word count on each transcript
-- Swipe a recording to delete it, with Undo
-- Double-tap a recording to copy its text
-- Delete a whole day from its header
