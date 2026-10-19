@@ -202,4 +202,22 @@
     <string name="retry_with_busy">Ponawiam...</string>
     <string name="retry_with_none">Dodaj klucz API w Ustawieniach, aby ponowić z innym dostawcą.</string>
     <string name="retry_failed">Ponowienie nie powiodło się, poprzedni tekst zachowany: %1$s</string>
+    <string name="deleted_message">Usunięto</string>
+    <string name="action_undo">Cofnij</string>
+    <string name="row_swipe_delete">Usuń</string>
+    <string name="day_menu">Opcje dnia: %1$s</string>
+    <string name="day_delete">Usuń ten dzień</string>
+    <string name="day_delete_title">Usunąć ten dzień?</string>
+    <plurals name="day_delete_body">
+        <item quantity="one">Usunąć %1$d nagranie z dnia %2$s? Nagranie dźwiękowe też zostanie usunięte.</item>
+        <item quantity="few">Usunąć %1$d nagrania z dnia %2$s? Nagrania dźwiękowe też zostaną usunięte.</item>
+        <item quantity="many">Usunąć %1$d nagrań z dnia %2$s? Nagrania dźwiękowe też zostaną usunięte.</item>
+        <item quantity="other">Usunąć %1$d nagrania z dnia %2$s? Nagrania dźwiękowe też zostaną usunięte.</item>
+    </plurals>
+    <plurals name="day_delete_body_filtered">
+        <item quantity="one">Usunąć %1$d nagranie z dnia %2$s pasujące do bieżącego wyszukiwania i filtrów? Nagranie dźwiękowe też zostanie usunięte.</item>
+        <item quantity="few">Usunąć %1$d nagrania z dnia %2$s pasujące do bieżącego wyszukiwania i filtrów? Nagrania dźwiękowe też zostaną usunięte.</item>
+        <item quantity="many">Usunąć %1$d nagrań z dnia %2$s pasujących do bieżącego wyszukiwania i filtrów? Nagrania dźwiękowe też zostaną usunięte.</item>
+        <item quantity="other">Usunąć %1$d nagrania z dnia %2$s pasujące do bieżącego wyszukiwania i filtrów? Nagrania dźwiękowe też zostaną usunięte.</item>
+    </plurals>
 </resources>

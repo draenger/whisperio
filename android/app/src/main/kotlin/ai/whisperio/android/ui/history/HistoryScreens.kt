@@ -24,6 +24,16 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.SwipeToDismissBox
+import androidx.compose.material3.SwipeToDismissBoxValue
+import androidx.compose.material3.rememberSwipeToDismissBoxState
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.foundation.background
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import java.time.LocalDate
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.saveable.Saver
@@ -103,6 +113,17 @@ fun HistoryListScreen(
     zone: ZoneId = ZoneId.systemDefault(),
     initial: HistoryFilters = HistoryFilters(),
     initialSelection: Set<String> = emptySet(),
+    /** CONTRACT-1.2 F5: the swiped-away row waiting for Undo; hidden here only. */
+    hiddenId: String? = null,
+    onSwipeDelete: (String) -> Unit = {},
+    onCopy: (String) -> Unit = {},
+    /** CONTRACT-1.2 F6: ids to delete for "Delete this day" (already confirmed, filtered, in-flight skipped). */
+    onDeleteDay: (List<String>) -> Unit = {},
+    /** Entering selection mode flushes a pending delete (CONTRACT-1.2 F5). */
+    onSelectionStart: () -> Unit = {},
+    /** Seeds for snapshots: a day whose overflow menu / confirm dialog starts open. */
+    initialMenuDay: LocalDate? = null,
+    initialDeleteDay: LocalDate? = null,
 ) {
     var filters by rememberSaveable(stateSaver = FiltersSaver) { mutableStateOf(initial) }
     var input by rememberSaveable { mutableStateOf(initial.query) }
@@ -114,9 +135,12 @@ fun HistoryListScreen(
             filters = filters.copy(query = input)
         }
     }
-    val shown = remember(items, filters) { applyFilters(items, filters) }
-    val picked = remember(items, selected) { items.filter { it.id in selected } }
+    val visibleItems = remember(items, hiddenId) { if (hiddenId == null) items else items.filter { it.id != hiddenId } }
+    val shown = remember(visibleItems, filters) { applyFilters(visibleItems, filters) }
+    val picked = remember(visibleItems, selected) { visibleItems.filter { it.id in selected } }
     val selecting = picked.isNotEmpty()
+    LaunchedEffect(selecting) { if (selecting) onSelectionStart() }
+    var deleteDay by rememberSaveable { mutableStateOf(initialDeleteDay?.toEpochDay()) }
     // Back leaves selection mode first; a finished export (token bump from the route) also clears it.
     BackHandler(selecting) { selected = emptyList() }
     LaunchedEffect(clearSelectionToken) { if (clearSelectionToken > 0) selected = emptyList() }
@@ -134,7 +158,7 @@ fun HistoryListScreen(
         } else {
             TopAppBar(title = { Text(stringResource(R.string.nav_history)) })
         }
-        if (items.isEmpty()) {
+        if (visibleItems.isEmpty()) {
             Text(
                 stringResource(R.string.history_empty),
                 style = MaterialTheme.typography.bodyLarge,
@@ -166,18 +190,116 @@ fun HistoryListScreen(
             val groups = remember(shown, now, zone) { groupByDay(shown, now, zone) }
             LazyColumn(Modifier.fillMaxSize()) {
                 groups.forEach { g ->
-                    item(key = "day-${g.date}") { SectionTitle(dayTitle(g), Modifier.padding(horizontal = 16.dp)) }
-                    items(g.items, key = { it.id }) { rec ->
-                        RecordingRow(
-                            rec,
-                            onClick = { if (selecting) toggle(rec.id) else onOpen(rec.id) },
-                            selected = if (selecting) rec.id in selected else null,
-                            onLongClick = if (selecting) null else ({ toggle(rec.id) }),
+                    item(key = "day-${g.date}") {
+                        DayHeader(
+                            title = dayTitle(g),
+                            menuEnabled = !selecting,
+                            canDelete = deletableInDay(g.items).isNotEmpty(),
+                            onDelete = { deleteDay = g.date.toEpochDay() },
+                            initialMenuOpen = initialMenuDay == g.date,
                         )
+                    }
+                    items(g.items, key = { it.id }) { rec ->
+                        val text = rec.transcript?.takeIf { rec.status == RecordingStatus.DONE && it.isNotBlank() }
+                        val swipeable = !selecting && canSwipeDelete(rec)
+                        val deleteLabel = stringResource(R.string.row_swipe_delete)
+                        val copyLabel = stringResource(R.string.action_copy)
+                        val actions = buildList {
+                            if (swipeable) add(CustomAccessibilityAction(deleteLabel) { onSwipeDelete(rec.id); true })
+                            if (!selecting && text != null) add(CustomAccessibilityAction(copyLabel) { onCopy(text); true })
+                        }
+                        SwipeDeleteRow(enabled = swipeable, onDelete = { onSwipeDelete(rec.id) }) {
+                            RecordingRow(
+                                rec,
+                                onClick = { if (selecting) toggle(rec.id) else onOpen(rec.id) },
+                                selected = if (selecting) rec.id in selected else null,
+                                onLongClick = if (selecting) null else ({ toggle(rec.id) }),
+                                onDoubleClick = if (selecting || text == null) null else ({ onCopy(text) }),
+                                customActions = actions,
+                            )
+                        }
                     }
                 }
             }
+            val dayGroup = deleteDay?.let { d -> groups.firstOrNull { it.date.toEpochDay() == d } }
+            if (dayGroup != null) {
+                val doomed = deletableInDay(dayGroup.items)
+                val dayLabel = dayTitle(dayGroup)
+                if (doomed.isNotEmpty()) {
+                    AlertDialog(
+                        onDismissRequest = { deleteDay = null },
+                        title = { Text(stringResource(R.string.day_delete_title)) },
+                        text = {
+                            Text(
+                                pluralStringResource(
+                                    if (filters.active) R.plurals.day_delete_body_filtered else R.plurals.day_delete_body,
+                                    doomed.size, doomed.size, dayLabel,
+                                ),
+                            )
+                        },
+                        confirmButton = {
+                            TextButton(onClick = { deleteDay = null; onDeleteDay(doomed.map { it.id }) }) {
+                                Text(stringResource(R.string.action_delete))
+                            }
+                        },
+                        dismissButton = {
+                            TextButton(onClick = { deleteDay = null }) { Text(stringResource(R.string.action_cancel)) }
+                        },
+                    )
+                }
+            }
         }
+    }
+}
+
+/** Day title plus the "Delete this day" overflow (CONTRACT-1.2 F6); the menu is hidden in selection mode. */
+@Composable
+private fun DayHeader(title: String, menuEnabled: Boolean, canDelete: Boolean, onDelete: () -> Unit, initialMenuOpen: Boolean = false) {
+    Row(Modifier.fillMaxWidth().padding(start = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+        SectionTitle(title, Modifier.weight(1f))
+        if (menuEnabled) {
+            var open by rememberSaveable { mutableStateOf(initialMenuOpen) }
+            Box {
+                IconButton(onClick = { open = true }) {
+                    Icon(Icons.Filled.MoreVert, contentDescription = stringResource(R.string.day_menu, title))
+                }
+                DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.day_delete)) },
+                        enabled = canDelete,
+                        onClick = { open = false; onDelete() },
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** End-to-start swipe removes the row (CONTRACT-1.2 F5, D3); the caller shows the "Deleted / Undo" snackbar. */
+@Composable
+private fun SwipeDeleteRow(enabled: Boolean, onDelete: () -> Unit, content: @Composable () -> Unit) {
+    val latest by rememberUpdatedState(onDelete)
+    val state = rememberSwipeToDismissBoxState(
+        confirmValueChange = { target ->
+            if (target == SwipeToDismissBoxValue.EndToStart) { latest(); true } else false
+        },
+    )
+    SwipeToDismissBox(
+        state = state,
+        backgroundContent = { SwipeDeleteBackdrop() },
+        enableDismissFromStartToEnd = false,
+        enableDismissFromEndToStart = enabled,
+    ) { content() }
+}
+
+/** What the swipe reveals behind the row: error container with the delete icon at the trailing edge. */
+@Composable
+internal fun SwipeDeleteBackdrop(modifier: Modifier = Modifier) {
+    Box(
+        modifier.fillMaxSize().background(MaterialTheme.colorScheme.errorContainer).padding(horizontal = 20.dp),
+        contentAlignment = Alignment.CenterEnd,
+    ) {
+        Icon(Icons.Filled.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.onErrorContainer)
     }
 }
 
