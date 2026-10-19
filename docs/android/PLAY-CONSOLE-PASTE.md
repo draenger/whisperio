@@ -35,7 +35,7 @@ Grafiki (19.10: kolory teal, bramka `verify.mjs` PASS 18/18; zobacz je zanim wgr
 `C:/Users/dkwar/bees/whisperio-play-assets/`:
 - Ikona 512x512: `icon-512.png`
 - Grafika promocyjna 1024x500: `screenshots/play-feature/{en,pl}/feature.png`
-- Zrzuty telefonu 1080x1920 (4 na język): `screenshots/play-phone/{en,pl}/`
+- Zrzuty telefonu 1080x1920 (6 na język, w kolejności: home, keyboard, tile, provider, history, settings): `screenshots/play-phone/{en,pl}/`
 - Zrzuty tabletu 1920x1080 (4 na język) - wgraj te same do sekcji **7-calowy tablet** i **10-calowy tablet**:
   `screenshots/play-tablet/{en,pl}/`
 - (źródło w repo: `android/marketing/play/screenshots/`, README tam mówi jak odtworzyć)

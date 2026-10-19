@@ -24,6 +24,8 @@
       "frame": "phone",
       "shots": [
         "home",
+        "keyboard",
+        "tile",
         "provider",
         "history",
         "settings"
@@ -80,6 +82,45 @@
       "subcopy": {
         "en": "Tap the mic, speak, and the text lands where you type.",
         "pl": "Dotknij mikrofonu, mów, a tekst trafi tam, gdzie piszesz."
+      }
+    },
+    {
+      "key": "keyboard",
+      "glow": "top",
+      "source": {
+        "kind": "ios-raw",
+        "file": {
+          "en": "emulator/keyboard_en.png",
+          "pl": "emulator/keyboard_pl.png"
+        }
+      },
+      "headline": {
+        "en": "Your keyboard, <em>your voice.</em>",
+        "pl": "Twoja klawiatura, <em>twój głos.</em>"
+      },
+      "subcopy": {
+        "en": "Switch to the Whisperio keyboard in any chat and speak your reply.",
+        "pl": "Przełącz na klawiaturę Whisperio w dowolnym czacie i powiedz odpowiedź."
+      },
+      "deviceScale": 0.74
+    },
+    {
+      "key": "tile",
+      "glow": "top",
+      "source": {
+        "kind": "ios-raw",
+        "file": {
+          "en": "emulator/tile_en.png",
+          "pl": "emulator/tile_pl.png"
+        }
+      },
+      "headline": {
+        "en": "One tap from <em>Quick Settings.</em>",
+        "pl": "Jedno dotknięcie w <em>Szybkich ustawieniach.</em>"
+      },
+      "subcopy": {
+        "en": "Pull down, tap Dictate, and Whisperio starts listening.",
+        "pl": "Przesuń w dół, dotknij Dyktuj, a Whisperio zacznie słuchać."
       }
     },
     {

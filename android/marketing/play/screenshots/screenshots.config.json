@@ -30,6 +30,20 @@
           }
         },
         {
+          "file": "keyboard.png",
+          "headline": {
+            "en": "Your keyboard, your voice.",
+            "pl": "Twoja klawiatura, twój głos."
+          }
+        },
+        {
+          "file": "tile.png",
+          "headline": {
+            "en": "One tap from Quick Settings.",
+            "pl": "Jedno dotknięcie w Szybkich ustawieniach."
+          }
+        },
+        {
           "file": "provider.png",
           "headline": {
             "en": "Your key, your provider.",

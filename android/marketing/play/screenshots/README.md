@@ -10,12 +10,21 @@ node $K/tools/kit/kit.mjs all --shots shots.json          # raw/ + out/ + screen
 node $K/tools/verify.mjs --config screenshots.config.json # gate: size 1080x1920 / 1024x500, no alpha, all langs
 ```
 
-Output: `out/play-phone/{en,pl}/*.png` (4 phone shots, 1080x1920), `out/play-tablet/{en,pl}/*-tab.png` (4 tablet shots,
+Output: `out/play-phone/{en,pl}/*.png` (6 phone shots, 1080x1920), `out/play-tablet/{en,pl}/*-tab.png` (4 tablet shots,
 1920x1080, `frame: tablet-landscape` from the 1920x1200 tablet baselines; use for both the 7" and 10" tablet slots) and
 `out/play-feature/{en,pl}/feature.png` (1024x500). Theme = teal brand tokens (2026-10-19). Copy for Daniel:
 `C:/Users/dkwar/bees/whisperio-play-assets/screenshots/`.
 `raw/` and `out/` are build output (gitignored); upload to Play Console only after Daniel approves the images.
 
-TODO after the emulator smoke: add a keyboard-in-a-chat-app shot and a Quick Settings tile shot captured with the kit's
-`android` adapter (`source.kind: "android"`, explicit `serial`) - Robolectric renders the translucent tile activity
-on a grey scrim, so it is not usable as a store shot.
+`keyboard` and `tile` come from `emulator/{keyboard,tile}_{en,pl}.png` (tracked, 1080x2400), captured 2026-10-19 on the
+API 36 emulator `zryw_phone2` (read-only) with the kit's `android` adapter (demo status bar 12:00). Robolectric cannot
+render them (the IME lives in another app's window; the tile activity is translucent). To recapture:
+1. Boot the AVD, install the debug APK, run a local OpenAI-compatible mock on 127.0.0.1:8099 (`GET /v1/models` -> 200,
+   `POST /v1/audio/transcriptions` -> `{"text": ...}`), onboard with OpenAI + base URL `http://10.0.2.2:8099/v1`.
+2. Keyboard: contact via `content insert`, incoming SMS via `adb emu sms send`, open the chat, dictate once.
+   Tile: in QS edit mode drag Dictate into the first four tiles, then `cmd statusbar expand-settings`.
+3. Per language (system language switched in Settings for PL): set the scene, then temporarily give the shot
+   `"source": {"kind": "android", "serial": "emulator-5554"}` and run
+   `ADB=<sdk>/platform-tools/adb node $K/tools/kit/kit.mjs capture --shots shots.json --only keyboard --lang en`;
+   copy `raw/<key>-<lang>.png` to `emulator/<key>_<lang>.png` and restore the `ios-raw` source.
+`keyboard` uses `deviceScale: 0.74` so the mic and the keys are not cut off by the frame.
