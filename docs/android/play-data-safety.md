@@ -7,12 +7,23 @@
 > the same thing, because Play compares them.
 > **Re-read the exact Console question set at submission time** (Google changes the form) and amend this file if it differs.
 
-## 0. Definitions (Play Console Help, "Provide information for Google Play's Data safety section", answer 10787469, fetched 2026-10-17)
+## 0. Definitions - source and verbatim quotes
 
-- Collection: *"'Collect' means transmitting data from your app off a user's device."*
-- Exemptions from collection: *"User data accessed by your app that is only processed locally on the user's device"*; data *"unreadable by you or anyone other than the sender and recipient"* (end-to-end encryption); and the narrow case where the user uploads *"directly to their own external drive or cloud storage account"* and the app never accesses the data.
-- Ephemeral: *"Processing data 'ephemerally' means accessing and using it while the data is only stored in memory"* and retained no longer than needed to service the request in real time.
-- Sharing: *"'Sharing' refers to transferring user data collected from your app to a third party."* Not sharing: *"Transferring user data to a third party based on a specific user-initiated action"*.
+Source: Google Play Console Help, **"Provide information for Google Play's Data safety section"**,
+<https://support.google.com/googleplay/android-developer/answer/10787469?hl=en> (answer 10787469; first fetched
+2026-10-17, quotes re-verified 2026-10-19). Quotes below are verbatim; re-check them at submission time.
+
+| Term | Verbatim quote | What it means for Whisperio |
+|---|---|---|
+| Collection | *"'Collect' means transmitting data from your app off a user's device."* | The recording is uploaded to the user's chosen provider -> **collected**. |
+| Collection exception (on-device) | *"only processed locally on the user's device and not sent off device does not need to be disclosed."* | Covers history, settings and keys kept only on the phone (not declared). Does not cover the upload. |
+| Collection exception (E2E) | *"unreadable by you or anyone other than the sender and recipient as a result of end-to-end encryption"* | Not applicable: TLS is transport encryption; the provider can read the audio. |
+| Collection exception (own storage) | *"If the user chooses to upload their data directly to their own external drive or cloud storage account"* ... *"your app never collects or accesses the data in question"* | Not applicable: a transcription API is not the user's own storage, and the app records and reads the audio. |
+| Sharing | *"'Sharing' refers to transferring user data collected from your app to a third party."* | The provider is a third party, so the exceptions below decide. |
+| Not sharing: user-initiated | *"based on a specific user-initiated action, where the user reasonably expects the data to be shared"* | **Applies**: the user picks the provider, pastes their own key, ticks the consent box (onboarding step 2) and taps the mic for every upload -> **not shared**. |
+| Not sharing: consent | *"based on a prominent in-app disclosure and consent that meets the requirements described in our User Data policy."* | Supporting ground: onboarding step 2 discloses the transfer and requires an explicit checkbox before any upload (code evidence in section 2). |
+| Not sharing: service provider | *"Transferring user data to a 'service provider' that processes it on behalf of the developer."* | **Not relied on**: the provider works for the user (the user's own account and key), not on Whisperio's behalf. |
+| Processed ephemerally | *"accessing and using it while the data is only stored in memory and retained for no longer than necessary to service the specific request in real-time."* | **Answer No** (section 2): the recording is written to a file on the device before upload and kept by default (`keepAudio = true`), and the provider may retain API audio (e.g. OpenAI up to 30 days for abuse monitoring). Neither is "only stored in memory". |
 
 Consequence: the voice recording leaves the device (to the user's chosen provider), so by Play's definition it IS collected.
 Apple's definition differs (collected only if the developer or partners can access it beyond servicing the request in
