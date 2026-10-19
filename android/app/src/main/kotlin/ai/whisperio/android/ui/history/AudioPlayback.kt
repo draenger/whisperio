@@ -60,6 +60,8 @@ class AudioPlayer(private val context: Context, private val path: String, knownD
         val mp = player ?: prepare() ?: return
         if (!requestFocus()) return
         try {
+            // A seek made before the first play hit no player yet; apply it now.
+            if (positionMs > 0) mp.seekTo(positionMs)
             mp.start()
         } catch (_: IllegalStateException) {
             release()
