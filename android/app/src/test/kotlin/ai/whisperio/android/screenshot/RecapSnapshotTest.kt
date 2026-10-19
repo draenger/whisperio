@@ -41,7 +41,7 @@ private object RecapFx {
 open class RecapSnapshotTest {
     @get:Rule val rule = createComposeRule()
 
-    private val label: (String) -> String = { Loc.t(it.replaceFirstChar(Char::titlecase), it.replaceFirstChar(Char::titlecase)) }
+    private val label: (String) -> String = { id -> id.replaceFirstChar { c -> c.uppercase() } }
 
     @Test @Config(qualifiers = PHONE)
     fun screen() = rule.snapshot("recap_screen") { RecapScreen(RecapFx.stats, {}, {}, categoryLabel = label) }
