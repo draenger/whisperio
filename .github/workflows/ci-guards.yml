@@ -8,7 +8,7 @@ on:
       - ".github/workflows/**"
       - "scripts/ci/**"
   push:
-    branches: [master]
+    branches-ignore: [release]
     paths:
       - ".github/workflows/**"
       - "scripts/ci/**"

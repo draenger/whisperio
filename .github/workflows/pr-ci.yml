@@ -1,8 +1,12 @@
 name: pr-ci
 
-# Linux test proof for pull requests, on the PC's self-hosted runner (GitHub-hosted runners are unavailable).
+# Linux test proof on the PC's self-hosted runner (GitHub-hosted runners are unavailable).
+# whisperio has Pull Requests DISABLED and bees push branches, so the gate runs on every branch push
+# (except main/release). The pull_request trigger is kept in case PRs are ever enabled.
 # Desktop only: android/ (Gradle + SDK) and mobile/ (iOS) are not run here - they need an SDK/emulator or a Mac.
 on:
+  push:
+    branches-ignore: [main, release]
   pull_request:
   workflow_dispatch:
 
