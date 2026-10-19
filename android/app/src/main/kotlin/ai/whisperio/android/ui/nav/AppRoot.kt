@@ -51,11 +51,15 @@ import ai.whisperio.android.ui.onboarding.tryItShouldAck
 import ai.whisperio.android.ui.onboarding.tryItView
 import ai.whisperio.android.ui.settings.CategoriesActions
 import ai.whisperio.android.ui.settings.CategoriesScreen
+import ai.whisperio.android.ui.recap.RecapScreen
+import ai.whisperio.android.ui.recap.RecapShare
+import ai.whisperio.android.ui.recap.toRecapItems
 import ai.whisperio.android.ui.settings.KeyDialogState
 import ai.whisperio.android.ui.settings.SettingsActions
 import ai.whisperio.android.ui.settings.SettingsScreen
 import ai.whisperio.android.ui.settings.SettingsUiState
 import ai.whisperio.core.ExportFormat
+import ai.whisperio.core.Recap
 import ai.whisperio.core.ProviderId
 import android.Manifest
 import android.app.Activity
@@ -108,6 +112,8 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import java.time.LocalDate
+import java.time.ZoneId
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
 private object Routes {
@@ -116,6 +122,7 @@ private object Routes {
     const val SETTINGS = "settings"
     const val ABOUT = "about"
     const val CATEGORIES = "settings/categories"
+    const val RECAP = "recap"
     const val DETAIL = "history/{id}"
     fun detail(id: String) = "history/$id"
 }
@@ -331,6 +338,7 @@ private fun MainShell(g: AppGraph) {
             composable(Routes.DETAIL) { entry -> DetailRoute(g, nav, entry.arguments?.getString("id").orEmpty(), snackbar) }
             composable(Routes.SETTINGS) { SettingsRoute(g, nav) }
             composable(Routes.CATEGORIES) { CategoriesRoute(g, nav) }
+            composable(Routes.RECAP) { RecapRoute(g, nav, snackbar) }
             composable(Routes.ABOUT) {
                 val ctx = LocalContext.current
                 AboutScreen(
@@ -418,6 +426,40 @@ private fun HistoryRoute(g: AppGraph, nav: NavHostController, snackbar: Snackbar
         onExport = export,
         now = now,
         clearSelectionToken = exported,
+    )
+}
+
+@Composable
+private fun RecapRoute(g: AppGraph, nav: NavHostController, snackbar: SnackbarHostState) {
+    val ctx = LocalContext.current
+    val items by g.history.observeAll().collectAsState(initial = emptyList())
+    val zone = ZoneId.systemDefault()
+    val now = remember(items) { System.currentTimeMillis() }
+    val stats = remember(items, now, zone) { Recap.compute(items.toRecapItems(), now, zone) }
+    val scope = rememberCoroutineScope()
+    var sharing by remember { mutableStateOf(false) }
+    val failedText = stringResource(R.string.recap_share_failed)
+    RecapScreen(
+        stats = stats,
+        onBack = { nav.popBackStack() },
+        sharing = sharing,
+        onShare = {
+            if (!sharing) {
+                sharing = true
+                scope.launch {
+                    try {
+                        ctx.startActivity(RecapShare.buildChooser(ctx, stats))
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        snackbar.showSnackbar(failedText)
+                    } finally {
+                        sharing = false
+                    }
+                }
+            }
+        },
+        providerLabel = { ProviderId.fromWire(it)?.label(ctx) ?: it },
     )
 }
 
