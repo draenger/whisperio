@@ -12,7 +12,7 @@ import kotlinx.coroutines.flow.Flow
 
 enum class RecordingStatus { RECORDING, TRANSCRIBING, DONE, FAILED }
 
-enum class RecordingSource { APP, KEYBOARD, TILE, SHORTCUT }
+enum class RecordingSource { APP, KEYBOARD, TILE, SHORTCUT, WIDGET }
 
 /** CONTRACT 7.3 plus [inserted] (keyboard only: null = n/a, false = transcript was not typed into a field). */
 @Entity(tableName = "recording")

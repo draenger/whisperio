@@ -3,6 +3,34 @@ package ai.whisperio.android.ui.history
 import ai.whisperio.android.R
 import ai.whisperio.android.history.Recording
 import ai.whisperio.android.history.RecordingStatus
+import ai.whisperio.android.history.RecordingSource
+import ai.whisperio.android.ui.common.SectionTitle
+import ai.whisperio.android.ui.home.sourceLabelRes
+import ai.whisperio.core.ExportFormat
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Save
+import androidx.compose.material.icons.filled.SelectAll
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.saveable.Saver
+import androidx.compose.runtime.saveable.listSaver
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.input.ImeAction
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+import java.time.format.FormatStyle
+import java.util.Locale
+import kotlinx.coroutines.delay
 import ai.whisperio.android.ui.common.KeyValueRow
 import ai.whisperio.android.ui.common.formatDateTime
 import ai.whisperio.android.ui.common.formatElapsed
@@ -43,10 +71,59 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 
+/** Saves a [HistoryFilters] across rotation (the debounced, applied value). */
+private val FiltersSaver: Saver<HistoryFilters, Any> = listSaver(
+    save = { listOf(it.query, it.failedOnly, it.sources.map { s -> s.name }) },
+    restore = { l ->
+        HistoryFilters(l[0] as String, (l[2] as List<*>).map { RecordingSource.valueOf(it as String) }.toSet(), l[1] as Boolean)
+    },
+)
+
+internal val IdsSaver: Saver<List<String>, Any> = listSaver(save = { it }, restore = { it })
+
+/**
+ * CONTRACT-1.1 F1-F3 + F6: search, source/failed chips, day headers and a selection mode with export. Filter and
+ * selection state survive rotation. [now] and [zone] are injectable so snapshots stay deterministic; [initial] and
+ * [initialSelection] seed the state (snapshots, tests).
+ */
 @Composable
-fun HistoryListScreen(items: List<Recording>, onOpen: (String) -> Unit, modifier: Modifier = Modifier) {
+fun HistoryListScreen(
+    items: List<Recording>,
+    onOpen: (String) -> Unit,
+    modifier: Modifier = Modifier,
+    onExport: (List<Recording>, ExportFormat) -> Unit = { _, _ -> },
+    now: Long = System.currentTimeMillis(),
+    zone: ZoneId = ZoneId.systemDefault(),
+    initial: HistoryFilters = HistoryFilters(),
+    initialSelection: Set<String> = emptySet(),
+) {
+    var filters by rememberSaveable(stateSaver = FiltersSaver) { mutableStateOf(initial) }
+    var input by rememberSaveable { mutableStateOf(initial.query) }
+    var selected by rememberSaveable(stateSaver = IdsSaver) { mutableStateOf(initialSelection.toList()) }
+    // CONTRACT-1.1 F1: 250 ms debounce between typing and filtering.
+    LaunchedEffect(input) {
+        if (input != filters.query) {
+            delay(250)
+            filters = filters.copy(query = input)
+        }
+    }
+    val shown = remember(items, filters) { applyFilters(items, filters) }
+    val picked = remember(items, selected) { items.filter { it.id in selected } }
+    val selecting = picked.isNotEmpty()
+    fun toggle(id: String) { selected = if (id in selected) selected - id else selected + id }
+
     Column(modifier.fillMaxSize()) {
-        TopAppBar(title = { Text(stringResource(R.string.nav_history)) })
+        if (selecting) {
+            SelectionBar(
+                count = picked.size,
+                matching = shown.size,
+                onCancel = { selected = emptyList() },
+                onSelectAll = { selected = shown.map { it.id } },
+                onExport = { onExport(picked, it) },
+            )
+        } else {
+            TopAppBar(title = { Text(stringResource(R.string.nav_history)) })
+        }
         if (items.isEmpty()) {
             Text(
                 stringResource(R.string.history_empty),
@@ -54,11 +131,137 @@ fun HistoryListScreen(items: List<Recording>, onOpen: (String) -> Unit, modifier
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(20.dp),
             )
+            return@Column
+        }
+        if (!selecting) {
+            SearchAndChips(
+                input = input,
+                onInput = { input = it },
+                filters = filters,
+                onFilters = { filters = it },
+            )
+        }
+        if (shown.isEmpty()) {
+            Text(
+                stringResource(R.string.history_no_results),
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp),
+            )
+            TextButton(
+                onClick = { input = ""; filters = HistoryFilters() },
+                modifier = Modifier.padding(horizontal = 12.dp).heightIn(min = 48.dp),
+            ) { Text(stringResource(R.string.history_clear_filters)) }
         } else {
+            val groups = remember(shown, now, zone) { groupByDay(shown, now, zone) }
             LazyColumn(Modifier.fillMaxSize()) {
-                items(items, key = { it.id }) { RecordingRow(it, onClick = { onOpen(it.id) }) }
+                groups.forEach { g ->
+                    item(key = "day-${g.date}") { SectionTitle(dayTitle(g), Modifier.padding(horizontal = 16.dp)) }
+                    items(g.items, key = { it.id }) { rec ->
+                        RecordingRow(
+                            rec,
+                            onClick = { if (selecting) toggle(rec.id) else onOpen(rec.id) },
+                            selected = if (selecting) rec.id in selected else null,
+                            onLongClick = if (selecting) null else ({ toggle(rec.id) }),
+                        )
+                    }
+                }
             }
         }
+    }
+}
+
+@Composable
+private fun dayTitle(g: DayGroup): String = when (g.kind) {
+    DayKind.TODAY -> stringResource(R.string.day_today)
+    DayKind.YESTERDAY -> stringResource(R.string.day_yesterday)
+    DayKind.DATE -> DateTimeFormatter.ofLocalizedDate(FormatStyle.MEDIUM).withLocale(Locale.getDefault()).format(g.date)
+}
+
+@Composable
+private fun SearchAndChips(input: String, onInput: (String) -> Unit, filters: HistoryFilters, onFilters: (HistoryFilters) -> Unit) {
+    val focus = LocalFocusManager.current
+    OutlinedTextField(
+        value = input,
+        onValueChange = onInput,
+        label = { Text(stringResource(R.string.history_search_label)) },
+        leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
+        trailingIcon = if (input.isEmpty()) null else {
+            {
+                IconButton(onClick = { onInput("") }) {
+                    Icon(Icons.Filled.Close, contentDescription = stringResource(R.string.history_search_clear))
+                }
+            }
+        },
+        singleLine = true,
+        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+        keyboardActions = KeyboardActions(onSearch = { focus.clearFocus() }),
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+    )
+    Row(
+        Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 4.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        val failed = stringResource(R.string.filter_failed)
+        val failedCd = stringResource(R.string.filter_only, failed)
+        FilterChip(
+            selected = filters.failedOnly,
+            onClick = { onFilters(filters.copy(failedOnly = !filters.failedOnly)) },
+            label = { Text(failed) },
+            modifier = Modifier.semantics { contentDescription = failedCd },
+        )
+        RecordingSource.entries.forEach { src ->
+            val label = stringResource(sourceLabelRes(src))
+            val cd = stringResource(R.string.filter_only, label)
+            FilterChip(
+                selected = src in filters.sources,
+                onClick = {
+                    onFilters(filters.copy(sources = if (src in filters.sources) filters.sources - src else filters.sources + src))
+                },
+                label = { Text(label) },
+                modifier = Modifier.semantics { contentDescription = cd },
+            )
+        }
+    }
+}
+
+/** Replaces the app bar while rows are selected: count, cancel, "select all matching" and the export format menu. */
+@Composable
+private fun SelectionBar(
+    count: Int,
+    matching: Int,
+    onCancel: () -> Unit,
+    onSelectAll: () -> Unit,
+    onExport: (ExportFormat) -> Unit,
+) {
+    TopAppBar(
+        title = { Text(stringResource(R.string.select_count, count)) },
+        navigationIcon = {
+            IconButton(onClick = onCancel) {
+                Icon(Icons.Filled.Close, contentDescription = stringResource(R.string.select_cancel))
+            }
+        },
+        actions = {
+            IconButton(onClick = onSelectAll) {
+                Icon(Icons.Filled.SelectAll, contentDescription = stringResource(R.string.select_all, matching))
+            }
+            var open by remember { mutableStateOf(false) }
+            Box {
+                IconButton(onClick = { open = true }) {
+                    Icon(Icons.Filled.Save, contentDescription = stringResource(R.string.action_export))
+                }
+                ExportMenu(open, { open = false }, onExport)
+            }
+        },
+    )
+}
+
+/** The `.txt` / `.md` choice; the SAF picker itself is launched by the caller. */
+@Composable
+private fun ExportMenu(open: Boolean, onDismiss: () -> Unit, onExport: (ExportFormat) -> Unit) {
+    DropdownMenu(expanded = open, onDismissRequest = onDismiss) {
+        DropdownMenuItem(text = { Text(stringResource(R.string.export_txt)) }, onClick = { onDismiss(); onExport(ExportFormat.TXT) })
+        DropdownMenuItem(text = { Text(stringResource(R.string.export_md)) }, onClick = { onDismiss(); onExport(ExportFormat.MD) })
     }
 }
 
@@ -68,6 +271,7 @@ interface HistoryDetailActions {
     fun onShare(text: String) {}
     fun onRetry(id: String) {}
     fun onDelete(id: String) {}
+    fun onExport(rec: Recording, format: ExportFormat) {}
 }
 
 @Composable
@@ -116,6 +320,16 @@ fun HistoryDetailScreen(rec: Recording?, actions: HistoryDetailActions, modifier
                     },
                     color = MaterialTheme.colorScheme.error.takeIf { rec.status == RecordingStatus.FAILED } ?: MaterialTheme.colorScheme.onSurface,
                 )
+            }
+            if (rec.status == RecordingStatus.DONE && text != null) {
+                var exportOpen by remember { mutableStateOf(false) }
+                Box(Modifier.padding(top = 8.dp)) {
+                    OutlinedButton(onClick = { exportOpen = true }, modifier = Modifier.heightIn(min = 48.dp)) {
+                        Icon(Icons.Filled.Save, null, Modifier.padding(end = 8.dp))
+                        Text(stringResource(R.string.action_export))
+                    }
+                    ExportMenu(exportOpen, { exportOpen = false }) { actions.onExport(rec, it) }
+                }
             }
             if (rec.audioPath != null && rec.status != RecordingStatus.TRANSCRIBING && rec.status != RecordingStatus.RECORDING) {
                 OutlinedButton(onClick = { actions.onRetry(rec.id) }, modifier = Modifier.padding(top = 12.dp).heightIn(min = 48.dp)) {

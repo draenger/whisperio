@@ -9,6 +9,7 @@ import ai.whisperio.android.dictation.primaryProvider
 import ai.whisperio.android.di.AppGraph
 import ai.whisperio.android.dictate.WhisperioTileService
 import ai.whisperio.android.graph
+import ai.whisperio.android.history.Recording
 import ai.whisperio.android.history.RecordingSource
 import ai.whisperio.android.settings.AppSettings
 import ai.whisperio.android.settings.KeyEnrollment
@@ -19,6 +20,7 @@ import ai.whisperio.android.ui.common.label
 import ai.whisperio.android.ui.history.HistoryDetailActions
 import ai.whisperio.android.ui.history.HistoryDetailScreen
 import ai.whisperio.android.ui.history.HistoryListScreen
+import ai.whisperio.android.ui.history.rememberExporter
 import ai.whisperio.android.ui.home.HomeActions
 import ai.whisperio.android.ui.home.HomeScreen
 import ai.whisperio.android.ui.home.HomeState
@@ -37,6 +39,7 @@ import ai.whisperio.android.ui.settings.KeyDialogState
 import ai.whisperio.android.ui.settings.SettingsActions
 import ai.whisperio.android.ui.settings.SettingsScreen
 import ai.whisperio.android.ui.settings.SettingsUiState
+import ai.whisperio.core.ExportFormat
 import ai.whisperio.core.ProviderId
 import android.Manifest
 import android.app.Activity
@@ -62,6 +65,8 @@ import androidx.compose.material3.Icon as M3Icon
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -269,8 +274,10 @@ private fun MainShell(g: AppGraph) {
     val nav = rememberNavController()
     val backStack by nav.currentBackStackEntryAsState()
     val route = backStack?.destination?.route
+    val snackbar = remember { SnackbarHostState() }
     Scaffold(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
+        snackbarHost = { SnackbarHost(snackbar) },
         bottomBar = {
             if (route in topLevel.map { it.route }) {
                 NavigationBar {
@@ -294,8 +301,8 @@ private fun MainShell(g: AppGraph) {
     ) { padding ->
         NavHost(nav, startDestination = Routes.HOME, modifier = Modifier.padding(padding)) {
             composable(Routes.HOME) { HomeRoute(g, nav) }
-            composable(Routes.HISTORY) { HistoryRoute(g, nav) }
-            composable(Routes.DETAIL) { entry -> DetailRoute(g, nav, entry.arguments?.getString("id").orEmpty()) }
+            composable(Routes.HISTORY) { HistoryRoute(g, nav, snackbar) }
+            composable(Routes.DETAIL) { entry -> DetailRoute(g, nav, entry.arguments?.getString("id").orEmpty(), snackbar) }
             composable(Routes.SETTINGS) { SettingsRoute(g, nav) }
             composable(Routes.ABOUT) {
                 val ctx = LocalContext.current
@@ -365,16 +372,18 @@ private fun HomeRoute(g: AppGraph, nav: NavHostController) {
 }
 
 @Composable
-private fun HistoryRoute(g: AppGraph, nav: NavHostController) {
+private fun HistoryRoute(g: AppGraph, nav: NavHostController, snackbar: SnackbarHostState) {
     val items by g.history.observeAll().collectAsState(initial = emptyList())
-    HistoryListScreen(items, onOpen = { nav.navigate(Routes.detail(it)) })
+    val export = rememberExporter(g.history, snackbar)
+    HistoryListScreen(items, onOpen = { nav.navigate(Routes.detail(it)) }, onExport = export)
 }
 
 @Composable
-private fun DetailRoute(g: AppGraph, nav: NavHostController, id: String) {
+private fun DetailRoute(g: AppGraph, nav: NavHostController, id: String, snackbar: SnackbarHostState) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     val rec by g.history.observe(id).collectAsState(initial = null)
+    val export = rememberExporter(g.history, snackbar)
     run {
         HistoryDetailScreen(
             rec = rec,
@@ -388,6 +397,7 @@ private fun DetailRoute(g: AppGraph, nav: NavHostController, id: String) {
                     ctx.startActivity(Intent.createChooser(send, null))
                 }
                 override fun onRetry(id: String) = g.dictation.retry(id)
+                override fun onExport(rec: Recording, format: ExportFormat) = export(listOf(rec), format)
                 override fun onDelete(id: String) {
                     scope.launch { g.history.delete(id) }
                     nav.popBackStack()
