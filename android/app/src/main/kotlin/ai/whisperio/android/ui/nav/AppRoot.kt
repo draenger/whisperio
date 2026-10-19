@@ -293,7 +293,10 @@ private fun MainShell(g: AppGraph) {
     val snackbar = remember { SnackbarHostState() }
     // F9: a finished transcription ticks while this window is on screen (confirmHaptic ignores a detached view).
     val shellView = LocalView.current
-    LaunchedEffect(Unit) { g.dictation.results.collect { shellView.confirmHaptic() } }
+    LaunchedEffect(Unit) { g.dictation.results.collect { r ->
+        // Keyboard / DictateActivity sessions buzz in their own window; only this app's own results tick here.
+        if (r.session == null && r.source == RecordingSource.APP) shellView.confirmHaptic()
+    } }
     Scaffold(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         snackbarHost = { SnackbarHost(snackbar) },
