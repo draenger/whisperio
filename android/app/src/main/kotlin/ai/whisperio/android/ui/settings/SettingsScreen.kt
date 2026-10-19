@@ -326,7 +326,8 @@ private fun ProviderCard(
                     modifier = Modifier.padding(top = 4.dp),
                 )
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 4.dp)) {
+            // FlowRow: at large font scales the three key actions wrap instead of squeezing Remove to zero width.
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 4.dp)) {
                 OutlinedButton(onClick = { actions.onOpenKeyDialog(id) }, modifier = Modifier.heightIn(min = 48.dp)) {
                     Text(stringResource(if (hasKey) R.string.key_replace else R.string.key_add))
                 }

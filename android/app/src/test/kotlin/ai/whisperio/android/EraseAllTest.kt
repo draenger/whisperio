@@ -89,12 +89,25 @@ class EraseAllTest {
 
     private fun TestScope.appScope() = CoroutineScope(StandardTestDispatcher(testScheduler))
 
+    private lateinit var lastController: DictationController
+
     private fun TestScope.controller(scope: CoroutineScope) = DictationController(
         scope = scope, recorder = recorder, focus = FakeFocus(), transcriber = transcriber,
         settings = FakeSettings(), history = history, tidy = TextTidy { it },
         recordingsDir = recordingsDir, micGranted = { true },
         nowMs = { testScheduler.currentTime }, wallClockMs = { 1_000_000L }, newId = { "live${++ids}" },
-    )
+    ).also { lastController = it }
+
+    private fun TestScope.awaitState(done: (DictationState) -> Boolean) {
+        val dictation = lastController
+        repeat(300) {
+            runCurrent()
+            if (done(dictation.state.value)) return
+            Thread.sleep(10)
+            advanceTimeBy(100)
+        }
+        assertTrue("state=${lastController.state.value}", done(lastController.state.value))
+    }
 
     private fun graph(scope: CoroutineScope, dictation: DictationController) = AppGraph(
         AppGraph.Overrides(scope, db, secrets, settings, recordingsDir, dictation),
@@ -124,11 +137,11 @@ class EraseAllTest {
         seedEverything()
 
         dictation.start(StartOptions(RecordingSource.APP, session = "s"))
-        runCurrent()
-        advanceTimeBy(1_500); runCurrent()
+        // The real RoomHistoryStore writes on Room's own executor, so the controller only moves on after a
+        // real-time hop: interleave virtual time with short real sleeps until the state is reached (bounded).
+        awaitState { (it as? DictationState.Recording)?.let { r -> r.elapsedMs >= 1_500 } == true }
         dictation.stopAndTranscribe()
-        runCurrent()
-        assertTrue(dictation.state.value is DictationState.Transcribing)
+        awaitState { it is DictationState.Transcribing }
 
         graph(scope, dictation).eraseAllData()
         assertEquals(DictationState.Idle, dictation.state.value)

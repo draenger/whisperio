@@ -172,13 +172,17 @@ class KeyEnrollmentTest {
     @get:Rule val tmp = TemporaryFolder()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
+    private var stores = 0
+
     @After fun tearDown() = scope.cancel()
 
     private fun parts(result: KeyValidation): Triple<KeyEnrollment, InMemorySecretStore, FakeKeyChecker> {
         val secrets = InMemorySecretStore()
         val checker = FakeKeyChecker(result)
+        // One file per call: a test may build two enrollments, and two DataStores on one file throw.
+        val file = File(tmp.root, "s${++stores}.preferences_pb")
         val settings = SettingsRepository(
-            PreferenceDataStoreFactory.create(scope = scope) { File(tmp.root, "s.preferences_pb") }, secrets, FakeCatalog(),
+            PreferenceDataStoreFactory.create(scope = scope) { file }, secrets, FakeCatalog(),
         )
         return Triple(KeyEnrollment(checker, secrets, settings), secrets, checker)
     }

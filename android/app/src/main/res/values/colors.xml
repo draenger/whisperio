@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- = light scheme surface in ui/theme/Theme.kt (desktop --wsp-bg light). -->
+    <!-- = light scheme surface in ui/theme/Theme.kt (desktop CSS var wsp-bg, light). -->
     <color name="window_bg">#FFF6F8FA</color>
 </resources>

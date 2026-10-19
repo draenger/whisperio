@@ -25,10 +25,11 @@ class WhisperioTileService : TileService() {
     }
 
     // The Intent overload is only reached below API 34 (it throws from 34 on), so the lint error is a false positive.
+    // The SDK check stays inline (same rule as TileLaunch.usesPendingIntent) so lint's NewApi sees the guard.
     @SuppressLint("StartActivityAndCollapseDeprecated")
     private fun launchDictate() {
         val intent = TileLaunch.dictateIntent(this)
-        if (TileLaunch.usesPendingIntent(Build.VERSION.SDK_INT)) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
             startActivityAndCollapse(TileLaunch.pendingFor(this, intent))
         } else {
             @Suppress("DEPRECATION")
