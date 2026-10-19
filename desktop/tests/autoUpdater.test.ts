@@ -38,7 +38,7 @@ const h = vi.hoisted(() => {
   const mockNotificationIsSupported = vi.fn(() => false)
   const mockWebContentsSend = vi.fn()
   const mockIsDestroyed = vi.fn(() => false)
-  const mockGetAllWindows = vi.fn<[], unknown[]>(() => [])
+  const mockGetAllWindows = vi.fn<() => unknown[]>(() => [])
   const mockSetUpdateReady = vi.fn()
   const mockVerifyAuthenticode = vi.fn()
   const userData = { dir: '' }
