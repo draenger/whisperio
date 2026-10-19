@@ -3,6 +3,7 @@ package ai.whisperio.android.screenshot
 import ai.whisperio.android.dictate.DictateScreen
 import ai.whisperio.android.dictation.DictationError
 import ai.whisperio.android.dictation.DictationState
+import ai.whisperio.android.history.Recording
 import ai.whisperio.android.history.RecordingSource
 import ai.whisperio.android.ime.ImePanel
 import ai.whisperio.android.ime.ImePanelActions
@@ -13,6 +14,7 @@ import ai.whisperio.android.settings.ProviderSlot
 import ai.whisperio.android.ui.common.KeyEntry
 import ai.whisperio.android.ui.history.HistoryDetailActions
 import ai.whisperio.android.ui.history.HistoryDetailScreen
+import ai.whisperio.android.ui.history.HistoryFilters
 import ai.whisperio.android.ui.history.HistoryListScreen
 import ai.whisperio.android.ui.home.HomeActions
 import ai.whisperio.android.ui.home.HomeScreen
@@ -34,12 +36,23 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
+import java.time.ZoneOffset
 
 private const val PHONE = ScreenshotConfig.PHONE
 
 @Composable
 private fun DictateFixture(s: DictationState, setup: Boolean = false) =
     DictateScreen(s, {}, {}, {}, {}, {}, needsSetup = setup)
+
+/** Fixed clock and zone: day headers (Today / Yesterday / date) must not depend on the wall clock. */
+@Composable
+private fun HistoryFixture(
+    items: List<Recording> = Fx.all + Fx.notInserted,
+    initial: HistoryFilters = HistoryFilters(),
+    selection: Set<String> = emptySet(),
+) = HistoryListScreen(
+    items, onOpen = {}, now = Fx.NOW, zone = ZoneOffset.UTC, initial = initial, initialSelection = selection,
+)
 
 private val settingsFixture = AppSettings(
     order = listOf(
@@ -119,13 +132,57 @@ open class HistorySnapshotTest {
     @get:Rule val rule = createComposeRule()
 
     @Test @Config(qualifiers = PHONE)
-    fun list() = rule.snapshot("history_list") { HistoryListScreen(Fx.all + Fx.notInserted, onOpen = {}) }
+    fun list() = rule.snapshot("history_list") { HistoryFixture() }
 
     @Test @Config(qualifiers = PHONE)
-    fun listDark() = rule.snapshot("history_list", dark = true) { HistoryListScreen(Fx.all + Fx.notInserted, onOpen = {}) }
+    fun listDark() = rule.snapshot("history_list", dark = true) { HistoryFixture() }
 
     @Test @Config(qualifiers = PHONE)
-    fun empty() = rule.snapshot("history_empty") { HistoryListScreen(emptyList(), onOpen = {}) }
+    fun empty() = rule.snapshot("history_empty") { HistoryFixture(items = emptyList()) }
+
+    @Test @Config(qualifiers = PHONE)
+    fun listSearch() = rule.snapshot("history_list_search") {
+        HistoryFixture(initial = HistoryFilters(query = Loc.t("invoice", "fakturę")))
+    }
+
+    @Test @Config(qualifiers = PHONE)
+    fun listSearchNoResults() = rule.snapshot("history_list_search_empty") {
+        HistoryFixture(initial = HistoryFilters(query = "zzz"))
+    }
+
+    @Test @Config(qualifiers = PHONE)
+    fun listChips() = rule.snapshot("history_list_chips") {
+        HistoryFixture(initial = HistoryFilters(sources = setOf(RecordingSource.KEYBOARD, RecordingSource.TILE)))
+    }
+
+    @Test @Config(qualifiers = PHONE)
+    fun listChipsFailedDark() = rule.snapshot("history_list_chips_failed", dark = true) {
+        HistoryFixture(initial = HistoryFilters(failedOnly = true))
+    }
+
+    @Test @Config(qualifiers = PHONE)
+    fun listSelection() = rule.snapshot("history_list_selection") { HistoryFixture(selection = setOf("r1", "r3")) }
+
+    @Test @Config(qualifiers = PHONE)
+    fun listSelectionDark() = rule.snapshot("history_list_selection", dark = true) { HistoryFixture(selection = setOf("r1", "r3")) }
+
+    @Test @Config(qualifiers = ScreenshotConfig.TABLET)
+    fun listSearchTablet() = rule.snapshot("history_list_search_tablet") {
+        HistoryFixture(initial = HistoryFilters(query = Loc.t("invoice", "fakturę"), sources = setOf(RecordingSource.KEYBOARD)))
+    }
+
+    @Test @Config(qualifiers = ScreenshotConfig.TABLET)
+    fun listSelectionTablet() = rule.snapshot("history_list_selection_tablet") { HistoryFixture(selection = setOf("r2")) }
+
+    @Test @Config(qualifiers = PHONE)
+    fun listChipsFontScale2() = rule.snapshot("history_list_chips_font2", fontScale = 2f) {
+        HistoryFixture(initial = HistoryFilters(query = Loc.t("invoice", "fakturę"), sources = setOf(RecordingSource.KEYBOARD)))
+    }
+
+    @Test @Config(qualifiers = PHONE)
+    fun listSelectionFontScale2() = rule.snapshot("history_list_selection_font2", fontScale = 2f) {
+        HistoryFixture(selection = setOf("r1", "r3"))
+    }
 
     @Test @Config(qualifiers = PHONE)
     fun detail() = rule.snapshot("history_detail") { HistoryDetailScreen(Fx.notInserted, object : HistoryDetailActions {}) }
@@ -136,10 +193,10 @@ open class HistorySnapshotTest {
     }
 
     @Test @Config(qualifiers = ScreenshotConfig.TABLET)
-    fun listTablet() = rule.snapshot("history_list_tablet") { HistoryListScreen(Fx.all + Fx.notInserted, onOpen = {}) }
+    fun listTablet() = rule.snapshot("history_list_tablet") { HistoryFixture() }
 
     @Test @Config(qualifiers = PHONE)
-    fun listFontScale2() = rule.snapshot("history_list_font2", fontScale = 2f) { HistoryListScreen(Fx.all + Fx.notInserted, onOpen = {}) }
+    fun listFontScale2() = rule.snapshot("history_list_font2", fontScale = 2f) { HistoryFixture() }
 
     @Test @Config(qualifiers = ScreenshotConfig.TABLET)
     fun detailTablet() = rule.snapshot("history_detail_tablet") { HistoryDetailScreen(Fx.notInserted, object : HistoryDetailActions {}) }
