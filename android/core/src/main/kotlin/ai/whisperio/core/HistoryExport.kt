@@ -55,8 +55,8 @@ object HistoryExport {
         val rest = line.substring(indent)
         when {
             rest.isEmpty() -> line
-            rest[0] in "#>-+*" -> "$head\$rest"
-            setextEquals.matches(rest) -> "$head\$rest"
+            rest[0] in "#>-+*" -> "$head\\$rest"
+            setextEquals.matches(rest) -> "$head\\$rest"
             else -> orderedList.find(line)?.let { m ->
                 val p = m.groups[3]!!.range.first
                 line.substring(0, p) + "\\" + line.substring(p)
