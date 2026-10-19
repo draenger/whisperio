@@ -144,7 +144,7 @@ class EraseAllTest {
         val dictation = controller(scope)
         val shareDir = File(tmp.root, "cache/share").also { it.mkdirs() }
         File(shareDir, "recap.png").writeBytes(byteArrayOf(1, 2, 3))
-        val g = AppGraph(AppGraph.Overrides(scope, db, secrets, settings, recordingsDir, dictation, appLanguages, shareDir))
+        val g = AppGraph(AppGraph.Overrides(scope, db, secrets, settings, recordingsDir, dictation, appLanguages, shareDir = shareDir))
 
         g.eraseAllData()
 
