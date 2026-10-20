@@ -7,8 +7,10 @@ import ai.whisperio.core.Recap
 import ai.whisperio.core.RecapItem
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import androidx.core.content.FileProvider
 import androidx.test.core.app.ApplicationProvider
+import java.io.File
 import java.time.ZoneOffset
 import java.util.Locale
 import kotlinx.coroutines.runBlocking
@@ -70,7 +72,18 @@ class RecapShareTest {
     }
 
     @Test fun chooserCarriesTheStreamClipDataAndReadGrant() {
-        val chooser = runBlocking { RecapShare.buildChooser(ctx, stats) }
+        // FileProvider checks "root + '/'", so on a Windows host ('\' paths) only the real provider fails; there the
+        // URI is built by hand and the provider/paths wiring is checked on '/' hosts (and on device) instead.
+        val realProvider = File.separatorChar == '/'
+        val chooser = runBlocking {
+            if (realProvider) {
+                RecapShare.buildChooser(ctx, stats)
+            } else {
+                RecapShare.buildChooser(ctx, stats) { app, file ->
+                    Uri.Builder().scheme("content").authority(RecapShare.authority(app)).path("share/${file.name}").build()
+                }
+            }
+        }
         val send = chooser.getParcelableExtra<Intent>(Intent.EXTRA_INTENT)
         assertNotNull(send)
         assertEquals(Intent.ACTION_SEND, send!!.action)
@@ -82,7 +95,9 @@ class RecapShareTest {
         assertTrue(file.exists())
         assertTrue(file.length() > 0)
         assertEquals("${ctx.packageName}.share", RecapShare.authority(ctx))
-        val uri = FileProvider.getUriForFile(ctx, RecapShare.authority(ctx), file)
-        assertEquals(RecapShare.authority(ctx), uri.authority)
+        if (realProvider) {
+            val uri = FileProvider.getUriForFile(ctx, RecapShare.authority(ctx), file)
+            assertEquals(RecapShare.authority(ctx), uri.authority)
+        }
     }
 }

@@ -94,8 +94,10 @@ android {
         buildConfig = true
     }
 
-    // CONTRACT-1.2: MigrationTestHelper reads the exported Room schemas (schemas/<db>/<version>.json) as test assets.
-    sourceSets["test"].assets.srcDir("$projectDir/schemas")
+    // CONTRACT-1.2: MigrationTestHelper reads the exported Room schemas (schemas/<db>/<version>.json) as assets.
+    // Robolectric only sees the variant's merged assets (test-source-set assets are never merged), so they go into
+    // the debug source set: debug APK only (a few KB), release stays clean; unit tests run on Debug.
+    sourceSets["debug"].assets.srcDir("$projectDir/schemas")
 
     testOptions {
         unitTests {
@@ -119,10 +121,14 @@ ksp {
     arg("room.schemaLocation", "$projectDir/schemas")
 }
 
-// Screenshot tests need debug-only ui-test-manifest; keep them out of the release unit-test run.
+// Screenshot tests need debug-only ui-test-manifest and the Room migration test needs the debug-only schema assets;
+// keep them out of the release unit-test run.
 tasks.withType<Test>().configureEach {
     if (name.endsWith("ReleaseUnitTest")) {
-        filter { excludeTestsMatching("ai.whisperio.android.screenshot.*") }
+        filter {
+            excludeTestsMatching("ai.whisperio.android.screenshot.*")
+            excludeTestsMatching("ai.whisperio.android.RoomMigrationTest")
+        }
     }
 }
 

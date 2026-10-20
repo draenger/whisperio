@@ -1,6 +1,8 @@
 package ai.whisperio.android.screenshot
 
 import ai.whisperio.android.R
+import android.graphics.Bitmap
+import android.graphics.Canvas
 import android.view.LayoutInflater
 import android.view.View.MeasureSpec
 import android.widget.FrameLayout
@@ -25,7 +27,10 @@ open class WidgetSnapshotTest {
         val h = (heightDp * density).toInt()
         view.measure(MeasureSpec.makeMeasureSpec(w, MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(h, MeasureSpec.EXACTLY))
         view.layout(0, 0, w, h)
-        view.captureRoboImage("$SNAPSHOT_DIR/$name${if (Loc.pl) "_pl" else ""}.png")
+        // View.captureRoboImage needs a View attached to an Activity; the widget layout is drawn to a Bitmap instead.
+        val bitmap = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+        view.draw(Canvas(bitmap))
+        bitmap.captureRoboImage("$SNAPSHOT_DIR/$name${if (Loc.pl) "_pl" else ""}.png")
     }
 
     @Test @Config(qualifiers = ScreenshotConfig.PHONE)

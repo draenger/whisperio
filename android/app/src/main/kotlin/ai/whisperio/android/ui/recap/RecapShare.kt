@@ -11,6 +11,7 @@ import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.RectF
 import android.graphics.Typeface
+import android.net.Uri
 import androidx.compose.ui.graphics.toArgb
 import androidx.core.content.FileProvider
 import java.io.File
@@ -115,7 +116,12 @@ object RecapShare {
      * Draws the card, writes it to `cacheDir/share/recap.png` and builds the chooser (text + PNG through the
      * FileProvider; `ClipData` for the share-sheet preview and a read grant on the URI). Runs the file work on IO.
      */
-    suspend fun buildChooser(context: Context, stats: RecapStats): Intent = withContext(Dispatchers.IO) {
+    suspend fun buildChooser(
+        context: Context,
+        stats: RecapStats,
+        // Seam for JVM tests on Windows hosts, where FileProvider's "root + '/'" prefix check never matches a '\' path.
+        uriFor: (Context, File) -> Uri = { app, file -> FileProvider.getUriForFile(app, authority(app), file) },
+    ): Intent = withContext(Dispatchers.IO) {
         val app = context.applicationContext
         val text = RecapText(context.resources)
         val file = cardFile(app.cacheDir)
@@ -126,7 +132,7 @@ object RecapShare {
         } finally {
             bmp.recycle()
         }
-        val uri = FileProvider.getUriForFile(app, authority(app), file)
+        val uri = uriFor(app, file)
         val send = Intent(Intent.ACTION_SEND).apply {
             type = "image/png"
             putExtra(Intent.EXTRA_STREAM, uri)
