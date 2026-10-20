@@ -6,6 +6,7 @@ import java.time.ZoneId
 import java.time.ZoneOffset
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -140,6 +141,22 @@ class RecapTest {
         assertEquals(7, Recap.compute(listOf(item("a", wed, 380, durationMs = 156_000)), wed, utc).minutesSaved)
         // Talking slower than typing: clamped to 0.
         assertEquals(0, Recap.compute(listOf(item("a", wed, 10, durationMs = 600_000)), wed, utc).minutesSaved)
+    }
+
+    @Test fun savedLineShowsFromOneMinuteUp() {
+        fun stats(words: Int, ms: Long) = Recap.compute(listOf(item("a", wed, words, durationMs = ms)), wed, utc)
+        // 10 words in 10 min: slower than typing -> clamped 0 -> hidden.
+        assertEquals(0, stats(10, 600_000).minutesSaved)
+        assertFalse(stats(10, 600_000).showsSaved)
+        // 38 words = 1 min typing, spoken 0.6 min -> 0.4 -> 0 -> hidden.
+        assertEquals(0, stats(38, 36_000).minutesSaved)
+        assertFalse(stats(38, 36_000).showsSaved)
+        // 76 words = 2 min typing, spoken 1 min -> 1 -> shown.
+        assertEquals(1, stats(76, 60_000).minutesSaved)
+        assertTrue(stats(76, 60_000).showsSaved)
+        // 380 words = 10 min typing, spoken 5 min -> 5 -> shown.
+        assertEquals(5, stats(380, 300_000).minutesSaved)
+        assertTrue(stats(380, 300_000).showsSaved)
     }
 
     @Test fun noteOfTheWeekIsTheLongestAndTiesGoToTheNewest() {

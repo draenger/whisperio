@@ -70,7 +70,7 @@ private fun PlayerFixture(
 /** Fixed clock and zone: day headers (Today / Yesterday / date) must not depend on the wall clock. */
 @Composable
 private fun HistoryFixture(
-    items: List<Recording> = Fx.all + Fx.notInserted,
+    items: List<Recording> = Fx.all + Fx.notInserted + Fx.week,
     initial: HistoryFilters = HistoryFilters(),
     selection: Set<String> = emptySet(),
 ) = HistoryListScreen(

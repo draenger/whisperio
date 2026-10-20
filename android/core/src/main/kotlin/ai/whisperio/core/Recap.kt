@@ -54,6 +54,9 @@ data class RecapStats(
 ) {
     /** F1: the History card and the screen are hidden/empty when the week has no item with text. */
     val isEmpty: Boolean get() = notes == 0
+
+    /** The History card shows "about N min saved" only from 1 minute up; "about 0 minutes" reads as a failure. */
+    val showsSaved: Boolean get() = minutesSaved >= 1
 }
 
 object Recap {

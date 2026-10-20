@@ -4,6 +4,7 @@
     <string name="recap_card_summary">%1$s · %2$s</string>
     <string name="recap_card_saved">Oszczędność ok. %1$s w porównaniu z pisaniem</string>
     <string name="recap_card_cd">Ten tydzień: %1$s, %2$s, oszczędność ok. %3$s w porównaniu z pisaniem. Otwiera podsumowanie tygodnia.</string>
+    <string name="recap_card_cd_no_saved">Ten tydzień: %1$s, %2$s. Otwiera podsumowanie tygodnia.</string>
     <string name="recap_title">Podsumowanie tygodnia</string>
     <string name="recap_week">Tydzień %1$d · %2$s</string>
     <string name="recap_range">%1$s – %2$s</string>

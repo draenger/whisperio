@@ -4,6 +4,7 @@
     <string name="recap_card_summary">%1$s · %2$s</string>
     <string name="recap_card_saved">About %1$s saved vs typing</string>
     <string name="recap_card_cd">This week: %1$s, %2$s, about %3$s saved vs typing. Opens the weekly recap.</string>
+    <string name="recap_card_cd_no_saved">This week: %1$s, %2$s. Opens the weekly recap.</string>
     <string name="recap_title">Weekly recap</string>
     <string name="recap_week">Week %1$d · %2$s</string>
     <string name="recap_range">%1$s – %2$s</string>
