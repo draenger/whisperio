@@ -13,7 +13,9 @@ import ai.whisperio.android.history.RecordingStatus
 import ai.whisperio.android.settings.AppSettings
 import ai.whisperio.android.settings.SettingsSource
 import ai.whisperio.android.settings.isProviderConfigured
+import ai.whisperio.core.ChainSettings
 import ai.whisperio.core.ProviderError
+import ai.whisperio.core.ProviderId
 import ai.whisperio.core.TranscriptionRequest
 import java.io.File
 import java.util.UUID
@@ -67,6 +69,8 @@ data class StartOptions(
     val saveToHistory: Boolean = true,
     /** Opaque caller tag (the IME stores the bound field here) echoed in [DictationResult]. */
     val session: Any? = null,
+    /** One-shot language override (per-app language, F7); null = the global setting. */
+    val language: String? = null,
 )
 
 data class DictationResult(
@@ -102,6 +106,11 @@ class DictationController(
 
     private val _results = MutableSharedFlow<DictationResult>(extraBufferCapacity = 8)
     val results: SharedFlow<DictationResult> = _results.asSharedFlow()
+
+    private val _retryOutcomes = MutableSharedFlow<RetryOutcome>(extraBufferCapacity = 8)
+
+    /** Result of every [retryWith] attempt (the history detail shows failures as a snackbar). */
+    val retryOutcomes: SharedFlow<RetryOutcome> = _retryOutcomes.asSharedFlow()
 
     private var session: Job? = null
     private var stopRequested = false
@@ -188,7 +197,69 @@ class DictationController(
             currentFile = file
             currentPersist = true
             currentSessionTag = null
-            session = scope.launch { transcribe(row, file, row.durationMs, s) }
+            // Busy before the launch so a queued start() cannot slip past the busy check. APP: a retried KEYBOARD/TILE
+            // row must not show up as transcribing in the keyboard / DictateActivity (the stored source is unchanged).
+            _state.value = DictationState.Transcribing(RecordingSource.APP)
+            session = scope.launch { transcribe(row, file, row.durationMs, s, RecordingSource.APP) }
+        }
+    }
+
+    /**
+     * CONTRACT-1.1 F5: re-runs a saved clip with ONE chosen provider (no fallback chain; same consent gate and the
+     * provider upload limit as a normal run). On success the transcript, provider and model are replaced; on any
+     * failure the stored row (text, status, audio) is left exactly as it was and only [retryOutcomes] reports it.
+     */
+    fun retryWith(recordingId: String, providerId: ProviderId) {
+        scope.launch {
+            if (busy) return@launch
+            val row = history.get(recordingId) ?: return@launch
+            val file = row.audioPath?.let(::File)?.takeIf { it.exists() }
+                ?: return@launch retryFailed(recordingId, DictationError.NO_AUDIO)
+            val s = settings.current()
+            if (!s.cloudConsentGranted) return@launch retryFailed(recordingId, DictationError.CONSENT_MISSING)
+            val single = singleProviderChain(settings.chain(), providerId)
+                ?: return@launch retryFailed(recordingId, DictationError.NO_KEY)
+            currentId = recordingId
+            currentFile = file
+            currentPersist = true
+            currentSessionTag = null
+            _state.value = DictationState.Transcribing(RecordingSource.APP) // before the launch, see retry()
+            session = scope.launch { transcribeWith(row, file, s, single) }
+        }
+    }
+
+    private suspend fun retryFailed(recordingId: String, error: DictationError, detail: String? = null) {
+        _retryOutcomes.emit(RetryOutcome.Failure(recordingId, error, detail))
+    }
+
+    private suspend fun transcribeWith(row: Recording, file: File, s: AppSettings, single: ChainSettings) {
+        try {
+            val res = transcriber.transcribe(TranscriptionRequest(file, row.language, s.vocabulary), single)
+            var text = res.text.trim()
+            if (s.cleanupEnabled && text.isNotEmpty()) text = tidy.tidy(text).trim()
+            if (text.isEmpty()) {
+                _state.value = DictationState.Idle
+                return retryFailed(row.id, DictationError.NO_SPEECH)
+            }
+            // Re-read right before writing: the entry may have been deleted (or changed) while the upload ran.
+            val fresh = history.get(row.id)
+            if (fresh == null) {
+                _state.value = DictationState.Idle
+                return
+            }
+            history.upsert(
+                fresh.copy(status = RecordingStatus.DONE, provider = res.provider.wire, model = res.model, transcript = text, error = null),
+            )
+            _state.value = DictationState.Idle
+            _retryOutcomes.emit(RetryOutcome.Success(row.id))
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: UploadTooLargeException) {
+            _state.value = DictationState.Idle
+            retryFailed(row.id, DictationError.TOO_LARGE)
+        } catch (t: Throwable) {
+            _state.value = DictationState.Idle
+            retryFailed(row.id, DictationError.PROVIDER, t.message?.let { ProviderError.redactSecrets(it) }?.take(MAX_ERROR_CHARS))
         }
     }
 
@@ -202,7 +273,7 @@ class DictationController(
 
     private suspend fun startInternal(options: StartOptions) {
         if (busy) return
-        val s = settings.current()
+        val s = settings.current().let { base -> options.language?.let { base.copy(language = it) } ?: base }
         // Retry does not need the mic; recording does. precheck() covers both, so check the mic only here.
         if (!micGranted()) return fail(DictationError.PERMISSION_MISSING)
         precheck(s)?.let { return fail(it) }
@@ -286,18 +357,22 @@ class DictationController(
     private suspend fun failRecording(row: Recording, file: File, elapsed: Long, error: DictationError, persist: Boolean) {
         file.delete()
         if (persist) {
-            history.upsert(
-                row.copy(status = RecordingStatus.FAILED, durationMs = elapsed, error = error.name, audioPath = null),
-            )
+            // Re-read before writing so a category set meanwhile (or a row deleted meanwhile) is not clobbered.
+            writeBack(row) { it.copy(status = RecordingStatus.FAILED, durationMs = elapsed, error = error.name, audioPath = null) }
         }
         _state.value = DictationState.Error(error, recordingId = if (persist) row.id else null)
     }
 
-    private suspend fun transcribe(row: Recording, file: File, durationMs: Long, s: AppSettings) {
+    private suspend fun transcribe(
+        row: Recording,
+        file: File,
+        durationMs: Long,
+        s: AppSettings,
+        src: RecordingSource = row.source,
+    ) {
         val persist = currentPersist
-        val src = row.source
         _state.value = DictationState.Transcribing(src)
-        if (persist) history.upsert(row.copy(status = RecordingStatus.TRANSCRIBING, durationMs = durationMs, error = null))
+        if (persist) writeBack(row) { it.copy(status = RecordingStatus.TRANSCRIBING, durationMs = durationMs, error = null) }
         val rid = if (persist) row.id else null
         try {
             val chain = settings.chain()
@@ -308,8 +383,8 @@ class DictationController(
             val keep = persist && s.keepAudio
             if (!keep) file.delete()
             if (persist) {
-                history.upsert(
-                    row.copy(
+                writeBack(row) {
+                    it.copy(
                         status = RecordingStatus.DONE,
                         durationMs = durationMs,
                         provider = res.provider.wire,
@@ -317,8 +392,8 @@ class DictationController(
                         transcript = text,
                         error = null,
                         audioPath = if (keep) file.path else null,
-                    ),
-                )
+                    )
+                }
             }
             _state.value = DictationState.Done(text, rid, src)
             _results.emit(DictationResult(rid, text, src, currentSessionTag))
@@ -344,16 +419,22 @@ class DictationController(
         if (!keepFile) file.delete()
         if (persist) {
             // Keep the audio on failure (only when the user keeps audio) so they can retry from history.
-            history.upsert(
-                row.copy(
+            writeBack(row) {
+                it.copy(
                     status = RecordingStatus.FAILED,
                     durationMs = durationMs,
                     error = detail ?: error.name,
                     audioPath = file.path.takeIf { keepFile && file.exists() },
-                ),
-            )
+                )
+            }
         }
         _state.value = DictationState.Error(error, detail, if (persist) row.id else null)
+    }
+
+    /** Applies [change] to the CURRENT stored row; a row deleted meanwhile is never resurrected. */
+    private suspend fun writeBack(row: Recording, change: (Recording) -> Recording) {
+        val fresh = history.get(row.id) ?: return
+        history.upsert(change(fresh))
     }
 
     private fun fail(error: DictationError) {

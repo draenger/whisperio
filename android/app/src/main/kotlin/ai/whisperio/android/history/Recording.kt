@@ -8,11 +8,13 @@ import androidx.room.PrimaryKey
 import androidx.room.Query
 import androidx.room.RoomDatabase
 import androidx.room.Upsert
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 import kotlinx.coroutines.flow.Flow
 
 enum class RecordingStatus { RECORDING, TRANSCRIBING, DONE, FAILED }
 
-enum class RecordingSource { APP, KEYBOARD, TILE, SHORTCUT }
+enum class RecordingSource { APP, KEYBOARD, TILE, SHORTCUT, WIDGET }
 
 /** CONTRACT 7.3 plus [inserted] (keyboard only: null = n/a, false = transcript was not typed into a field). */
 @Entity(tableName = "recording")
@@ -29,6 +31,8 @@ data class Recording(
     @ColumnInfo(name = "audio_path") val audioPath: String? = null,
     val source: RecordingSource,
     val inserted: Boolean? = null,
+    /** CONTRACT-1.2 F3: a seed id ("work"...), a custom id ("c_" + UUID) or null = none. Written only via [RecordingDao.setCategory]. */
+    val category: String? = null,
 )
 
 @Dao
@@ -67,11 +71,26 @@ interface RecordingDao {
     @Query("SELECT * FROM recording WHERE audio_path IS NOT NULL")
     suspend fun withAudio(): List<Recording>
 
+    /** CONTRACT-1.2 F3: a dedicated UPDATE, never `copy` + upsert (the controller writes whole rows). */
+    @Query("UPDATE recording SET category = :category WHERE id = :id")
+    suspend fun setCategory(id: String, category: String?)
+
+    /** Deleting a custom category: every row carrying it goes back to none. */
+    @Query("UPDATE recording SET category = NULL WHERE category = :categoryId")
+    suspend fun clearCategory(categoryId: String): Int
+
     @Query("UPDATE recording SET audio_path = NULL WHERE audio_path IS NOT NULL")
     suspend fun clearAudioPaths()
 }
 
-@Database(entities = [Recording::class], version = 1, exportSchema = true)
+@Database(entities = [Recording::class], version = 2, exportSchema = true)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun recordings(): RecordingDao
+}
+
+/** v1 -> v2 (CONTRACT-1.2 F3): nullable `category`, no default; existing rows read null. No destructive fallback. */
+val MIGRATION_1_2: Migration = object : Migration(1, 2) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE recording ADD COLUMN category TEXT")
+    }
 }

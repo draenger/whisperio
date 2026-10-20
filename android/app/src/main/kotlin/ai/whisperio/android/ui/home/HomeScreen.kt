@@ -3,13 +3,20 @@ package ai.whisperio.android.ui.home
 import ai.whisperio.android.R
 import ai.whisperio.android.dictation.DictationState
 import ai.whisperio.android.history.Recording
+import ai.whisperio.android.history.RecordingSource
 import ai.whisperio.android.history.RecordingStatus
+import ai.whisperio.android.settings.CustomCategory
+import ai.whisperio.android.ui.common.CategoryTag
+import ai.whisperio.android.ui.common.CategoryUi
 import ai.whisperio.android.ui.common.LevelMeter
+import ai.whisperio.android.ui.common.rememberCategoryOptions
 import ai.whisperio.android.ui.common.SectionTitle
 import ai.whisperio.android.ui.common.dictationStatusText
 import ai.whisperio.android.ui.common.formatDateTime
 import ai.whisperio.android.ui.common.liveStatus
-import androidx.compose.foundation.clickable
+import androidx.annotation.StringRes
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -27,6 +34,7 @@ import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.Button
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
@@ -41,8 +49,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -52,6 +64,8 @@ data class HomeState(
     val recent: List<Recording> = emptyList(),
     val setupNeeded: Boolean = false,
     val providerLabel: String = "",
+    /** CONTRACT-1.2 F3: needed to resolve the tag of a custom category on the recent rows. */
+    val customCategories: List<CustomCategory> = emptyList(),
 )
 
 interface HomeActions {
@@ -67,6 +81,7 @@ interface HomeActions {
 @Composable
 fun HomeScreen(state: HomeState, actions: HomeActions, modifier: Modifier = Modifier) {
     val d = state.dictation
+    val categoryOptions = rememberCategoryOptions(state.customCategories)
     val recording = d is DictationState.Recording
     val transcribing = d is DictationState.Transcribing
     LazyColumn(
@@ -142,7 +157,11 @@ fun HomeScreen(state: HomeState, actions: HomeActions, modifier: Modifier = Modi
             }
         }
         items(state.recent, key = { it.id }) { rec ->
-            RecordingRow(rec, onClick = { actions.onOpen(rec.id) })
+            RecordingRow(
+                rec,
+                onClick = { actions.onOpen(rec.id) },
+                category = rec.category?.let { id -> categoryOptions.firstOrNull { it.id == id } },
+            )
         }
     }
 }
@@ -163,9 +182,34 @@ private fun ResultCard(text: String, actions: HomeActions) {
     }
 }
 
-/** Shared by Home and the History list. */
+@StringRes
+fun sourceLabelRes(source: RecordingSource): Int = when (source) {
+    RecordingSource.APP -> R.string.source_app
+    RecordingSource.KEYBOARD -> R.string.source_keyboard
+    RecordingSource.TILE -> R.string.source_tile
+    RecordingSource.SHORTCUT -> R.string.source_shortcut
+    RecordingSource.WIDGET -> R.string.source_widget
+}
+
+/**
+ * Shared by Home and the History list. [selected] non-null = selection mode (checkbox, tap toggles via [onClick]);
+ * [onLongClick] starts it.
+ */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun RecordingRow(rec: Recording, onClick: () -> Unit, modifier: Modifier = Modifier) {
+fun RecordingRow(
+    rec: Recording,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    selected: Boolean? = null,
+    onLongClick: (() -> Unit)? = null,
+    /** CONTRACT-1.2 F3: the resolved category of [rec], null when none (no tag, D2). */
+    category: CategoryUi? = null,
+    /** CONTRACT-1.2 F5: double-tap copy (History only). Delays a single tap by the double-tap timeout. */
+    onDoubleClick: (() -> Unit)? = null,
+    /** CONTRACT-1.2 F5: TalkBack custom actions (Delete, Copy). */
+    customActions: List<CustomAccessibilityAction> = emptyList(),
+) {
     val subtitle = when (rec.status) {
         RecordingStatus.DONE -> rec.transcript.orEmpty()
         RecordingStatus.FAILED -> stringResource(R.string.history_failed)
@@ -175,14 +219,28 @@ fun RecordingRow(rec: Recording, onClick: () -> Unit, modifier: Modifier = Modif
     ListItem(
         headlineContent = { Text(subtitle, maxLines = 2, overflow = TextOverflow.Ellipsis) },
         supportingContent = {
-            val src = when (rec.source) {
-                ai.whisperio.android.history.RecordingSource.APP -> R.string.source_app
-                ai.whisperio.android.history.RecordingSource.KEYBOARD -> R.string.source_keyboard
-                ai.whisperio.android.history.RecordingSource.TILE -> R.string.source_tile
-                ai.whisperio.android.history.RecordingSource.SHORTCUT -> R.string.source_shortcut
+            Column {
+                Text("${formatDateTime(rec.createdAt)} - ${stringResource(sourceLabelRes(rec.source))}")
+                if (category != null) CategoryTag(category, Modifier.padding(top = 2.dp))
             }
-            Text("${formatDateTime(rec.createdAt)} - ${stringResource(src)}")
         },
-        modifier = modifier.heightIn(min = 56.dp).clickable(onClick = onClick),
+        leadingContent = if (selected == null) null else {
+            { Checkbox(checked = selected, onCheckedChange = null) }
+        },
+        modifier = modifier.heightIn(min = 56.dp)
+            .combinedClickable(
+                onClick = onClick,
+                role = if (selected != null) Role.Checkbox else null,
+                onLongClickLabel = if (onLongClick != null) stringResource(R.string.select_row) else null,
+                onLongClick = onLongClick,
+                onDoubleClick = onDoubleClick,
+            )
+            .then(if (customActions.isEmpty()) Modifier else Modifier.semantics { this.customActions = customActions })
+            .then(
+                if (selected == null) Modifier else {
+                    val state = stringResource(if (selected) R.string.state_selected else R.string.state_not_selected)
+                    Modifier.semantics { stateDescription = state }
+                },
+            ),
     )
 }

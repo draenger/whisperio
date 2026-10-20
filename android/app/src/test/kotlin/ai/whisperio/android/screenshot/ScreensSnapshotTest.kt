@@ -3,6 +3,7 @@ package ai.whisperio.android.screenshot
 import ai.whisperio.android.dictate.DictateScreen
 import ai.whisperio.android.dictation.DictationError
 import ai.whisperio.android.dictation.DictationState
+import ai.whisperio.android.history.Recording
 import ai.whisperio.android.history.RecordingSource
 import ai.whisperio.android.ime.ImePanel
 import ai.whisperio.android.ime.ImePanelActions
@@ -13,7 +14,11 @@ import ai.whisperio.android.settings.ProviderSlot
 import ai.whisperio.android.ui.common.KeyEntry
 import ai.whisperio.android.ui.history.HistoryDetailActions
 import ai.whisperio.android.ui.history.HistoryDetailScreen
+import ai.whisperio.android.ui.history.HistoryFilters
 import ai.whisperio.android.ui.history.HistoryListScreen
+import ai.whisperio.android.ui.history.PlayerUi
+import ai.whisperio.android.ui.history.RetryChoiceUi
+import ai.whisperio.android.ui.history.RetryWithUi
 import ai.whisperio.android.ui.home.HomeActions
 import ai.whisperio.android.ui.home.HomeScreen
 import ai.whisperio.android.ui.home.HomeState
@@ -34,12 +39,43 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
+import java.time.ZoneOffset
 
 private const val PHONE = ScreenshotConfig.PHONE
 
 @Composable
 private fun DictateFixture(s: DictationState, setup: Boolean = false) =
     DictateScreen(s, {}, {}, {}, {}, {}, needsSetup = setup)
+
+@Composable
+private fun PlayerFixture(
+    playing: Boolean = false,
+    positionMs: Int = 0,
+    playerEnabled: Boolean = true,
+    player: Boolean = true,
+    audioAvailable: Boolean = true,
+    menuOpen: Boolean = false,
+    choices: List<RetryChoiceUi> = listOf(
+        RetryChoiceUi(ProviderId.OPENAI, "OpenAI", "whisper-1"),
+        RetryChoiceUi(ProviderId.GROQ, "Groq", "whisper-large-v3-turbo"),
+    ),
+) = HistoryDetailScreen(
+    rec = Fx.done,
+    actions = object : HistoryDetailActions {},
+    player = PlayerUi(playing, positionMs, 12_000, playerEnabled, onToggle = {}, onSeek = {}).takeIf { player },
+    retryWith = RetryWithUi(choices, audioAvailable),
+    initialRetryMenuOpen = menuOpen,
+)
+
+/** Fixed clock and zone: day headers (Today / Yesterday / date) must not depend on the wall clock. */
+@Composable
+private fun HistoryFixture(
+    items: List<Recording> = Fx.all + Fx.notInserted,
+    initial: HistoryFilters = HistoryFilters(),
+    selection: Set<String> = emptySet(),
+) = HistoryListScreen(
+    items, onOpen = {}, now = Fx.NOW, zone = ZoneOffset.UTC, initial = initial, initialSelection = selection,
+)
 
 private val settingsFixture = AppSettings(
     order = listOf(
@@ -119,13 +155,57 @@ open class HistorySnapshotTest {
     @get:Rule val rule = createComposeRule()
 
     @Test @Config(qualifiers = PHONE)
-    fun list() = rule.snapshot("history_list") { HistoryListScreen(Fx.all + Fx.notInserted, onOpen = {}) }
+    fun list() = rule.snapshot("history_list") { HistoryFixture() }
 
     @Test @Config(qualifiers = PHONE)
-    fun listDark() = rule.snapshot("history_list", dark = true) { HistoryListScreen(Fx.all + Fx.notInserted, onOpen = {}) }
+    fun listDark() = rule.snapshot("history_list", dark = true) { HistoryFixture() }
 
     @Test @Config(qualifiers = PHONE)
-    fun empty() = rule.snapshot("history_empty") { HistoryListScreen(emptyList(), onOpen = {}) }
+    fun empty() = rule.snapshot("history_empty") { HistoryFixture(items = emptyList()) }
+
+    @Test @Config(qualifiers = PHONE)
+    fun listSearch() = rule.snapshot("history_list_search") {
+        HistoryFixture(initial = HistoryFilters(query = Loc.t("invoice", "fakturę")))
+    }
+
+    @Test @Config(qualifiers = PHONE)
+    fun listSearchNoResults() = rule.snapshot("history_list_search_empty") {
+        HistoryFixture(initial = HistoryFilters(query = "zzz"))
+    }
+
+    @Test @Config(qualifiers = PHONE)
+    fun listChips() = rule.snapshot("history_list_chips") {
+        HistoryFixture(initial = HistoryFilters(sources = setOf(RecordingSource.KEYBOARD, RecordingSource.TILE)))
+    }
+
+    @Test @Config(qualifiers = PHONE)
+    fun listChipsFailedDark() = rule.snapshot("history_list_chips_failed", dark = true) {
+        HistoryFixture(initial = HistoryFilters(failedOnly = true))
+    }
+
+    @Test @Config(qualifiers = PHONE)
+    fun listSelection() = rule.snapshot("history_list_selection") { HistoryFixture(selection = setOf("r1", "r3")) }
+
+    @Test @Config(qualifiers = PHONE)
+    fun listSelectionDark() = rule.snapshot("history_list_selection", dark = true) { HistoryFixture(selection = setOf("r1", "r3")) }
+
+    @Test @Config(qualifiers = ScreenshotConfig.TABLET)
+    fun listSearchTablet() = rule.snapshot("history_list_search_tablet") {
+        HistoryFixture(initial = HistoryFilters(query = Loc.t("invoice", "fakturę"), sources = setOf(RecordingSource.KEYBOARD)))
+    }
+
+    @Test @Config(qualifiers = ScreenshotConfig.TABLET)
+    fun listSelectionTablet() = rule.snapshot("history_list_selection_tablet") { HistoryFixture(selection = setOf("r2")) }
+
+    @Test @Config(qualifiers = PHONE)
+    fun listChipsFontScale2() = rule.snapshot("history_list_chips_font2", fontScale = 2f) {
+        HistoryFixture(initial = HistoryFilters(query = Loc.t("invoice", "fakturę"), sources = setOf(RecordingSource.KEYBOARD)))
+    }
+
+    @Test @Config(qualifiers = PHONE)
+    fun listSelectionFontScale2() = rule.snapshot("history_list_selection_font2", fontScale = 2f) {
+        HistoryFixture(selection = setOf("r1", "r3"))
+    }
 
     @Test @Config(qualifiers = PHONE)
     fun detail() = rule.snapshot("history_detail") { HistoryDetailScreen(Fx.notInserted, object : HistoryDetailActions {}) }
@@ -136,10 +216,10 @@ open class HistorySnapshotTest {
     }
 
     @Test @Config(qualifiers = ScreenshotConfig.TABLET)
-    fun listTablet() = rule.snapshot("history_list_tablet") { HistoryListScreen(Fx.all + Fx.notInserted, onOpen = {}) }
+    fun listTablet() = rule.snapshot("history_list_tablet") { HistoryFixture() }
 
     @Test @Config(qualifiers = PHONE)
-    fun listFontScale2() = rule.snapshot("history_list_font2", fontScale = 2f) { HistoryListScreen(Fx.all + Fx.notInserted, onOpen = {}) }
+    fun listFontScale2() = rule.snapshot("history_list_font2", fontScale = 2f) { HistoryFixture() }
 
     @Test @Config(qualifiers = ScreenshotConfig.TABLET)
     fun detailTablet() = rule.snapshot("history_detail_tablet") { HistoryDetailScreen(Fx.notInserted, object : HistoryDetailActions {}) }
@@ -148,6 +228,36 @@ open class HistorySnapshotTest {
     fun detailFontScale2() = rule.snapshot("history_detail_font2", fontScale = 2f) {
         HistoryDetailScreen(Fx.notInserted, object : HistoryDetailActions {})
     }
+
+    @Test @Config(qualifiers = PHONE)
+    fun detailPlayer() = rule.snapshot("history_detail_player") { PlayerFixture() }
+
+    @Test @Config(qualifiers = PHONE)
+    fun detailPlayerPlayingDark() = rule.snapshot("history_detail_player_playing", dark = true) {
+        PlayerFixture(playing = true, positionMs = 4_000)
+    }
+
+    @Test @Config(qualifiers = PHONE)
+    fun detailPlayerDisabledWhileRecording() = rule.snapshot("history_detail_player_recording") {
+        PlayerFixture(playerEnabled = false)
+    }
+
+    @Test @Config(qualifiers = PHONE)
+    fun detailRetryMenuOpen() = rule.snapshot("history_detail_retry_menu") { PlayerFixture(menuOpen = true) }
+
+    @Test @Config(qualifiers = PHONE)
+    fun detailRetryNoAudio() = rule.snapshot("history_detail_retry_no_audio") {
+        PlayerFixture(player = false, audioAvailable = false)
+    }
+
+    @Test @Config(qualifiers = PHONE)
+    fun detailRetryNoProviders() = rule.snapshot("history_detail_retry_none") { PlayerFixture(choices = emptyList()) }
+
+    @Test @Config(qualifiers = ScreenshotConfig.TABLET)
+    fun detailPlayerTablet() = rule.snapshot("history_detail_player_tablet") { PlayerFixture() }
+
+    @Test @Config(qualifiers = PHONE)
+    fun detailPlayerFontScale2() = rule.snapshot("history_detail_player_font2", fontScale = 2f) { PlayerFixture() }
 }
 
 @RunWith(RobolectricTestRunner::class)
@@ -165,8 +275,11 @@ open class SettingsSnapshotTest {
     private fun state(
         customHost: Boolean = false,
         dialog: KeyDialogState? = null,
+        perApp: Boolean = false,
+        appLanguageCount: Int = 0,
     ) = SettingsUiState(
-        settings = if (customHost) settingsFixture.copy(baseUrls = mapOf(ProviderId.OPENAI to "http://192.168.1.20:8000/v1")) else settingsFixture,
+        settings = if (customHost) settingsFixture.copy(baseUrls = mapOf(ProviderId.OPENAI to "http://192.168.1.20:8000/v1")) else settingsFixture.copy(perAppLanguage = perApp),
+        appLanguageCount = appLanguageCount,
         configured = setOf(ProviderId.OPENAI),
         lost = setOf(ProviderId.GROQ),
         models = modelsFixture,
@@ -179,6 +292,21 @@ open class SettingsSnapshotTest {
 
     @Test @Config(qualifiers = PHONE)
     fun dark() = rule.snapshot("settings", dark = true) { SettingsScreen(state(), noop) }
+
+    @Test @Config(qualifiers = PHONE)
+    fun perAppLanguage() = rule.snapshot("settings_per_app_language") {
+        SettingsScreen(state(perApp = true, appLanguageCount = 3), noop)
+    }
+
+    @Test @Config(qualifiers = PHONE)
+    fun perAppLanguageEmpty() = rule.snapshot("settings_per_app_language_empty") {
+        SettingsScreen(state(perApp = true), noop)
+    }
+
+    @Test @Config(qualifiers = PHONE)
+    fun perAppLanguageFontScale2() = rule.snapshot("settings_per_app_language_font2", fontScale = 2f) {
+        SettingsScreen(state(perApp = true, appLanguageCount = 12), noop)
+    }
 
     @Test @Config(qualifiers = PHONE)
     fun customHost() = rule.snapshot("settings_custom_host") { SettingsScreen(state(customHost = true), noop) }
@@ -218,7 +346,8 @@ open class ImePanelSnapshotTest {
         d: DictationState = DictationState.Idle,
         password: Boolean = false,
         setup: Boolean = false,
-    ) = ImePanelState(d, password, setup, "OpenAI - whisper-1")
+        language: String = "auto",
+    ) = ImePanelState(d, password, setup, "OpenAI - whisper-1", language = language)
 
     private val rec = DictationState.Recording(0.55f, 8_000, false, RecordingSource.KEYBOARD)
 
@@ -227,6 +356,22 @@ open class ImePanelSnapshotTest {
 
     @Test @Config(qualifiers = PHONE)
     fun idleDark() = rule.snapshot("ime_idle", dark = true) { ImePanel(st(), noop) }
+
+    @Test @Config(qualifiers = PHONE)
+    fun languageChip() = rule.snapshot("ime_language_chip") { ImePanel(st(language = "pl"), noop) }
+
+    @Test @Config(qualifiers = PHONE)
+    fun languageChipDark() = rule.snapshot("ime_language_chip", dark = true) { ImePanel(st(language = "en"), noop) }
+
+    @Test @Config(qualifiers = PHONE)
+    fun languagePicker() = rule.snapshot("ime_language_picker") {
+        ImePanel(st(language = "pl"), noop, initialLanguagePickerOpen = true)
+    }
+
+    @Test @Config(qualifiers = PHONE)
+    fun languageChipFontScale2() = rule.snapshot("ime_language_chip_font2", fontScale = 2f) {
+        ImePanel(st(language = "pl"), noop)
+    }
 
     @Test @Config(qualifiers = PHONE)
     fun recording() = rule.snapshot("ime_recording") { ImePanel(st(rec), noop) }

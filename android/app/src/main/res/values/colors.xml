@@ -2,4 +2,7 @@
 <resources>
     <!-- = light scheme surface in ui/theme/Theme.kt (desktop CSS var wsp-bg, light). -->
     <color name="window_bg">#FFF6F8FA</color>
+    <!-- Widget button: brand teal with high-contrast content (Theme.kt TealDeep light, Teal dark). -->
+    <color name="widget_bg">#FF0B7469</color>
+    <color name="widget_content">#FFFFFFFF</color>
 </resources>

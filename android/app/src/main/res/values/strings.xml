@@ -9,6 +9,7 @@
     <string name="ime_subtype_voice">Voice input</string>
     <string name="provider_selfhosted">Self-hosted</string>
     <string name="language_auto">Auto-detect</string>
+    <string name="language_auto_short">Auto</string>
     <string name="nav_home">Home</string>
     <string name="nav_history">History</string>
     <string name="nav_settings">Settings</string>
@@ -48,6 +49,8 @@
     <string name="ime_backspace">Backspace</string>
     <string name="ime_space">Space</string>
     <string name="ime_enter">Enter</string>
+    <string name="ime_language_chip_desc">Dictation language: %1$s. Tap to change.</string>
+    <string name="ime_language_picker_close">Close language list</string>
     <string name="ime_switch_keyboard">Switch keyboard</string>
     <string name="ime_open_setup">Open Whisperio to finish setup</string>
     <string name="ime_open_setup_short">Open Whisperio</string>
@@ -75,6 +78,28 @@
     <string name="source_keyboard">Keyboard</string>
     <string name="source_tile">Tile</string>
     <string name="source_shortcut">Shortcut</string>
+    <string name="source_widget">Widget</string>
+    <string name="history_search_label">Search dictations</string>
+    <string name="history_search_clear">Clear search</string>
+    <string name="filter_failed">Failed</string>
+    <string name="filter_only">Show only: %1$s</string>
+    <string name="history_no_results">No dictations match your search or filters.</string>
+    <string name="history_clear_filters">Clear search and filters</string>
+    <string name="day_today">Today</string>
+    <string name="day_yesterday">Yesterday</string>
+    <string name="select_row">Select</string>
+    <string name="select_count">%1$d selected</string>
+    <string name="select_cancel">Cancel selection</string>
+    <string name="select_all">Select all %1$d matching dictations</string>
+    <string name="state_selected">Selected</string>
+    <string name="state_not_selected">Not selected</string>
+    <string name="action_export">Export</string>
+    <string name="export_txt">Plain text (.txt)</string>
+    <string name="export_md">Markdown (.md)</string>
+    <string name="export_done">Exported %1$d</string>
+    <string name="export_done_skipped">Exported %1$d, skipped %2$d without text</string>
+    <string name="export_nothing">Nothing to export: none of the selected dictations has text.</string>
+    <string name="export_failed">Could not write the file.</string>
     <string name="key_field">%1$s API key</string>
     <string name="key_field_optional">API key (optional)</string>
     <string name="url_selfhosted">Server URL</string>
@@ -82,6 +107,7 @@
     <string name="key_check_save">Check and save</string>
     <string name="key_checking">Checking...</string>
     <string name="key_valid">The key works and is saved on this device.</string>
+    <string name="server_valid">The server answers and is saved on this device.</string>
     <string name="key_invalid">The provider rejected this key.</string>
     <string name="key_network">Could not reach the provider: %1$s</string>
     <string name="key_unexpected">Unexpected answer from the provider (HTTP %1$d).</string>
@@ -128,6 +154,14 @@
     <string name="settings_custom_host_warning">Custom host - your key and audio go to this server, not to OpenAI.</string>
     <string name="settings_dictation">Dictation</string>
     <string name="settings_language">Language</string>
+    <string name="settings_per_app_language">Remember language per app</string>
+    <string name="settings_per_app_language_hint">The keyboard remembers the language you pick for each app, on this device only.</string>
+    <string name="settings_per_app_language_count">Apps with a saved language: %1$d</string>
+    <string name="settings_per_app_language_clear">Clear</string>
+    <plurals name="settings_per_app_language_clear_desc">
+        <item quantity="one">Clear the saved language for %1$d app</item>
+        <item quantity="other">Clear the saved language for %1$d apps</item>
+    </plurals>
     <string name="settings_vocabulary">Vocabulary</string>
     <string name="settings_vocabulary_hint">Comma-separated names and terms to help recognition</string>
     <string name="settings_cleanup">Tidy up text</string>
@@ -157,4 +191,76 @@
     <string name="about_support">Support</string>
     <string name="about_licences">Licences</string>
     <string name="about_licences_body">Whisperio is built with Kotlin, Jetpack Compose, Room, DataStore, OkHttp and kotlinx libraries, all under the Apache 2.0 licence.</string>
+    <string name="widget_label">Dictate</string>
+    <string name="widget_description">Start dictating with one tap. Shows no transcripts.</string>
+    <string name="widget_button_description">Dictate with Whisperio</string>
+    <string name="widget_name_1x1">Dictate (small)</string>
+    <string name="widget_name_2x1">Dictate (wide)</string>
+    <string name="player_play">Play recording</string>
+    <string name="player_pause">Pause recording</string>
+    <string name="player_position">Playback position</string>
+    <string name="player_state">%1$s of %2$s</string>
+    <string name="player_disabled_recording">Playback is unavailable while recording.</string>
+    <string name="action_retry_with">Retry with...</string>
+    <string name="retry_with_busy">Retrying...</string>
+    <string name="retry_with_none">Add an API key in Settings to retry with another provider.</string>
+    <string name="retry_failed">Retry failed, previous text kept: %1$s</string>
+    <plurals name="history_word_count">
+        <item quantity="one">%1$d word</item>
+        <item quantity="other">%1$d words</item>
+    </plurals>
+    <!-- CONTRACT-1.2 F3: categories -->
+    <string name="category_work">Work</string>
+    <string name="category_personal">Personal</string>
+    <string name="category_ideas">Ideas</string>
+    <string name="category_messages">Messages</string>
+    <string name="category_code">Code</string>
+    <string name="category_todo">To-do</string>
+    <string name="category_none">None</string>
+    <string name="category_button">Category: %1$s</string>
+    <string name="category_button_cd">Category, currently %1$s. Opens a menu.</string>
+    <string name="category_selected">Selected</string>
+    <string name="category_tag_cd">Category: %1$s</string>
+    <string name="settings_categories">Categories</string>
+    <string name="settings_categories_hint">Add your own labels for dictations.</string>
+    <string name="categories_builtin">Built-in</string>
+    <string name="categories_custom">Your categories</string>
+    <string name="categories_custom_empty">No custom categories yet.</string>
+    <string name="categories_add_label">New category name</string>
+    <string name="categories_add">Add</string>
+    <string name="categories_err_long">Use at most 24 characters.</string>
+    <string name="categories_err_duplicate">A category with this name already exists.</string>
+    <string name="categories_delete_cd">Delete category %1$s</string>
+    <string name="categories_delete_title">Delete this category?</string>
+    <string name="categories_delete_body">Dictations labelled %1$s keep their text and audio but lose the category.</string>
+    <string name="deleted_message">Deleted</string>
+    <string name="action_undo">Undo</string>
+    <string name="row_swipe_delete">Delete</string>
+    <string name="day_menu">Day options for %1$s</string>
+    <string name="day_delete">Delete this day</string>
+    <string name="day_delete_title">Delete this day?</string>
+    <plurals name="day_delete_body">
+        <item quantity="one">Delete %1$d recording from %2$s? Audio is deleted too.</item>
+        <item quantity="other">Delete %1$d recordings from %2$s? Audio is deleted too.</item>
+    </plurals>
+    <plurals name="day_delete_body_filtered">
+        <item quantity="one">Delete %1$d recording from %2$s that matches the current search and filters? Audio is deleted too.</item>
+        <item quantity="other">Delete %1$d recordings from %2$s that match the current search and filters? Audio is deleted too.</item>
+    </plurals>
+    <plurals name="day_delete_body_today">
+        <item quantity="one">Delete %1$d recording from today? Audio is deleted too.</item>
+        <item quantity="other">Delete %1$d recordings from today? Audio is deleted too.</item>
+    </plurals>
+    <plurals name="day_delete_body_today_filtered">
+        <item quantity="one">Delete %1$d recording from today that matches the current search and filters? Audio is deleted too.</item>
+        <item quantity="other">Delete %1$d recordings from today that match the current search and filters? Audio is deleted too.</item>
+    </plurals>
+    <plurals name="day_delete_body_yesterday">
+        <item quantity="one">Delete %1$d recording from yesterday? Audio is deleted too.</item>
+        <item quantity="other">Delete %1$d recordings from yesterday? Audio is deleted too.</item>
+    </plurals>
+    <plurals name="day_delete_body_yesterday_filtered">
+        <item quantity="one">Delete %1$d recording from yesterday that matches the current search and filters? Audio is deleted too.</item>
+        <item quantity="other">Delete %1$d recordings from yesterday that match the current search and filters? Audio is deleted too.</item>
+    </plurals>
 </resources>

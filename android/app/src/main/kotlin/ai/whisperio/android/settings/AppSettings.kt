@@ -24,6 +24,8 @@ data class AppSettings(
     val autoDeleteDays: Int? = null,
     val transcriptsSensitive: Boolean = false,
     val onboardingDone: Boolean = false,
+    /** F7: keyboard remembers a language per app (off by default; the map itself lives in AppLanguageStore). */
+    val perAppLanguage: Boolean = false,
 ) {
     companion object {
         const val LANGUAGE_AUTO = "auto"

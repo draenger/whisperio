@@ -28,7 +28,7 @@ open class OnboardingSnapshotTest {
         rule.snapshot(name, dark, fontScale) { OnboardingScreen(state, noop) }
 
     private val providerState =
-        OnboardingState(OnboardingStep.PROVIDER, keyInput = "sk-test-0000", keyUi = KeyUi.Valid)
+        OnboardingState(OnboardingStep.PROVIDER, keyInput = "sk-test-0000", keyUi = KeyUi.Valid())
     private val tryItDoneState = OnboardingState(
         OnboardingStep.DONE,
         dictation = DictationState.Done("Hello from my first dictation.", null, RecordingSource.APP),
@@ -46,7 +46,7 @@ open class OnboardingSnapshotTest {
     @Test @Config(qualifiers = ScreenshotConfig.PHONE)
     fun provider() = step(
         "onboarding_3_provider",
-        state = OnboardingState(OnboardingStep.PROVIDER, keyInput = "sk-test-0000", keyUi = KeyUi.Valid),
+        state = OnboardingState(OnboardingStep.PROVIDER, keyInput = "sk-test-0000", keyUi = KeyUi.Valid()),
     )
 
     @Test @Config(qualifiers = ScreenshotConfig.PHONE)

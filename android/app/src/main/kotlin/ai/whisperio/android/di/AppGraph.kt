@@ -7,11 +7,14 @@ import ai.whisperio.android.dictation.SetupStatus
 import ai.whisperio.android.dictation.computeSetupStatus
 import ai.whisperio.android.history.AppDatabase
 import ai.whisperio.android.history.HistoryStore
+import ai.whisperio.android.history.MIGRATION_1_2
 import ai.whisperio.android.history.RoomHistoryStore
 import ai.whisperio.android.security.AndroidKeystoreCipher
 import ai.whisperio.android.security.KeystoreSecretStore
 import ai.whisperio.android.security.SecretStore
+import ai.whisperio.android.settings.AppLanguageStore
 import ai.whisperio.android.settings.SettingsRepository
+import ai.whisperio.android.ui.history.PendingDeleteController
 import android.Manifest
 import android.app.Application
 import android.content.Context
@@ -31,6 +34,7 @@ import kotlinx.coroutines.launch
 
 private val Context.settingsDataStore by preferencesDataStore(name = "settings")
 private val Context.secretsDataStore by preferencesDataStore(name = "secrets")
+private val Context.appLanguagesDataStore by preferencesDataStore(name = "app_languages")
 
 /** Manual DI (no Hilt, CONTRACT 3). One instance on [ai.whisperio.android.WhisperioApp]. */
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -47,6 +51,8 @@ class AppGraph private constructor(private val appOrNull: Application?, private 
         val settings: SettingsRepository,
         val recordingsDir: File,
         val dictation: DictationController,
+        val appLanguages: AppLanguageStore? = null,
+        val shareDir: File? = null,
     )
 
     internal constructor(overrides: Overrides) : this(null, overrides)
@@ -59,14 +65,33 @@ class AppGraph private constructor(private val appOrNull: Application?, private 
 
     val recordingsDir: File by lazy { o?.recordingsDir ?: File(app.filesDir, "recordings") }
 
+    /** `cacheDir/share/`: the recap card PNG (CONTRACT-1.2 F2); deleted by [eraseAllData]. Null only in a test graph without one. */
+    private val shareDir: File? by lazy { o?.shareDir ?: appOrNull?.let { File(it.cacheDir, "share") } }
+
     val secrets: SecretStore by lazy { o?.secrets ?: KeystoreSecretStore(app.secretsDataStore, AndroidKeystoreCipher()) }
     val catalog: ModelCatalog by lazy { CoreModelCatalog() }
     val settings: SettingsRepository by lazy { o?.settings ?: SettingsRepository(app.settingsDataStore, secrets, catalog) }
 
+    /** F7 per-app language map: private DataStore, never logged or exported. */
+    val appLanguages: AppLanguageStore by lazy {
+        o?.appLanguages ?: AppLanguageStore(app.appLanguagesDataStore)
+    }
+
+    /** The "Remember language per app" switch; turning it off deletes the map (CONTRACT-1.1 F7). */
+    suspend fun setPerAppLanguage(enabled: Boolean) {
+        appScope.launch {
+            settings.setPerAppLanguage(enabled)
+            if (!enabled) appLanguages.clear()
+        }.join()
+    }
+
     private val database: AppDatabase by lazy {
-        o?.database ?: Room.databaseBuilder(app, AppDatabase::class.java, "whisperio.db").build()
+        o?.database ?: Room.databaseBuilder(app, AppDatabase::class.java, "whisperio.db").addMigrations(MIGRATION_1_2).build()
     }
     val history: HistoryStore by lazy { RoomHistoryStore(database.recordings(), recordingsDir) }
+
+    /** CONTRACT-1.2 F5: the one swiped-away History row waiting for its Undo window. */
+    val pendingDelete: PendingDeleteController by lazy { PendingDeleteController(appScope, history) }
 
     val transcriber: Transcriber by lazy { CoreTranscriber() }
     val keyChecker: KeyChecker by lazy { CoreKeyChecker() }
@@ -106,15 +131,26 @@ class AppGraph private constructor(private val appOrNull: Application?, private 
         }
     }
 
+    /** CONTRACT-1.2 F3: deletes a custom category and sets every recording that carried it back to none. */
+    suspend fun deleteCategory(id: String) {
+        appScope.launch {
+            history.clearCategory(id)
+            settings.removeCustomCategory(id)
+        }.join()
+    }
+
     /** "Erase all data" (CONTRACT 7.3): history, audio, keys and settings. */
     suspend fun eraseAllData() {
         // Runs entirely in appScope (single-threaded, never cancelled) so leaving the screen cannot stop it midway;
         // abortAll() first guarantees no in-flight transcription writes a row after the wipe.
         appScope.launch {
             dictation.abortAll()
+            pendingDelete.drop()
             history.clear()
             secrets.clear()
             settings.clear()
+            appLanguages.clear()
+            shareDir?.deleteRecursively()
         }.join()
     }
 }

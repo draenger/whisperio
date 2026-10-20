@@ -90,6 +90,12 @@ class FakeHistory(private val recordingsDir: File? = null) : HistoryStore {
     override suspend fun setInserted(id: String, inserted: Boolean) {
         rows.value[id]?.let { upsert(it.copy(inserted = inserted)) }
     }
+    override suspend fun setCategory(id: String, category: String?) {
+        rows.value[id]?.let { rows.value = rows.value + (id to it.copy(category = category)) }
+    }
+    override suspend fun clearCategory(categoryId: String) {
+        rows.value = rows.value.mapValues { (_, r) -> if (r.category == categoryId) r.copy(category = null) else r }
+    }
     override suspend fun delete(id: String) {
         rows.value[id]?.audioPath?.let { File(it).delete() }
         rows.value = rows.value - id

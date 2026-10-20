@@ -2,4 +2,6 @@
 <resources>
     <!-- = dark scheme surface in ui/theme/Theme.kt (desktop CSS var wsp-bg, dark). -->
     <color name="window_bg">#FF070D15</color>
+    <color name="widget_bg">#FF1CC8B4</color>
+    <color name="widget_content">#FF02110F</color>
 </resources>

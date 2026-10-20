@@ -9,6 +9,7 @@
     <string name="ime_subtype_voice">Wprowadzanie głosowe</string>
     <string name="provider_selfhosted">Własny serwer</string>
     <string name="language_auto">Wykryj automatycznie</string>
+    <string name="language_auto_short">Auto</string>
     <string name="nav_home">Start</string>
     <string name="nav_history">Historia</string>
     <string name="nav_settings">Ustawienia</string>
@@ -48,6 +49,8 @@
     <string name="ime_backspace">Usuń znak</string>
     <string name="ime_space">Spacja</string>
     <string name="ime_enter">Enter</string>
+    <string name="ime_language_chip_desc">Język dyktowania: %1$s. Dotknij, aby zmienić.</string>
+    <string name="ime_language_picker_close">Zamknij listę języków</string>
     <string name="ime_switch_keyboard">Zmień klawiaturę</string>
     <string name="ime_open_setup">Otwórz Whisperio, żeby dokończyć konfigurację</string>
     <string name="ime_open_setup_short">Otwórz Whisperio</string>
@@ -75,6 +78,28 @@
     <string name="source_keyboard">Klawiatura</string>
     <string name="source_tile">Kafelek</string>
     <string name="source_shortcut">Skrót</string>
+    <string name="source_widget">Widżet</string>
+    <string name="history_search_label">Szukaj w dyktowaniach</string>
+    <string name="history_search_clear">Wyczyść wyszukiwanie</string>
+    <string name="filter_failed">Z błędem</string>
+    <string name="filter_only">Pokaż tylko: %1$s</string>
+    <string name="history_no_results">Żadne dyktowanie nie pasuje do wyszukiwania ani filtrów.</string>
+    <string name="history_clear_filters">Wyczyść wyszukiwanie i filtry</string>
+    <string name="day_today">Dzisiaj</string>
+    <string name="day_yesterday">Wczoraj</string>
+    <string name="select_row">Zaznacz</string>
+    <string name="select_count">Zaznaczono: %1$d</string>
+    <string name="select_cancel">Anuluj zaznaczanie</string>
+    <string name="select_all">Zaznacz wszystkie pasujące dyktowania (%1$d)</string>
+    <string name="state_selected">Zaznaczone</string>
+    <string name="state_not_selected">Niezaznaczone</string>
+    <string name="action_export">Eksportuj</string>
+    <string name="export_txt">Zwykły tekst (.txt)</string>
+    <string name="export_md">Markdown (.md)</string>
+    <string name="export_done">Wyeksportowano: %1$d</string>
+    <string name="export_done_skipped">Wyeksportowano: %1$d, pominięto %2$d bez tekstu</string>
+    <string name="export_nothing">Nie ma czego eksportować: żadne z zaznaczonych dyktowań nie ma tekstu.</string>
+    <string name="export_failed">Nie udało się zapisać pliku.</string>
     <string name="key_field">Klucz API %1$s</string>
     <string name="key_field_optional">Klucz API (opcjonalnie)</string>
     <string name="url_selfhosted">Adres serwera</string>
@@ -82,6 +107,7 @@
     <string name="key_check_save">Sprawdź i zapisz</string>
     <string name="key_checking">Sprawdzam...</string>
     <string name="key_valid">Klucz działa i jest zapisany na tym urządzeniu.</string>
+    <string name="server_valid">Serwer odpowiada i jest zapisany na tym urządzeniu.</string>
     <string name="key_invalid">Dostawca odrzucił ten klucz.</string>
     <string name="key_network">Nie można połączyć się z dostawcą: %1$s</string>
     <string name="key_unexpected">Nieoczekiwana odpowiedź dostawcy (HTTP %1$d).</string>
@@ -128,6 +154,16 @@
     <string name="settings_custom_host_warning">Własny serwer - Twój klucz i nagrania trafiają na ten serwer, a nie do OpenAI.</string>
     <string name="settings_dictation">Dyktowanie</string>
     <string name="settings_language">Język</string>
+    <string name="settings_per_app_language">Pamiętaj język dla każdej aplikacji</string>
+    <string name="settings_per_app_language_hint">Klawiatura zapamiętuje język wybrany w danej aplikacji, tylko na tym urządzeniu.</string>
+    <string name="settings_per_app_language_count">Aplikacje z zapisanym językiem: %1$d</string>
+    <string name="settings_per_app_language_clear">Wyczyść</string>
+    <plurals name="settings_per_app_language_clear_desc">
+        <item quantity="one">Wyczyść zapisany język dla %1$d aplikacji</item>
+        <item quantity="few">Wyczyść zapisany język dla %1$d aplikacji</item>
+        <item quantity="many">Wyczyść zapisany język dla %1$d aplikacji</item>
+        <item quantity="other">Wyczyść zapisany język dla %1$d aplikacji</item>
+    </plurals>
     <string name="settings_vocabulary">Słownik</string>
     <string name="settings_vocabulary_hint">Imiona i terminy oddzielone przecinkami, które pomogą w rozpoznawaniu</string>
     <string name="settings_cleanup">Porządkuj tekst</string>
@@ -157,4 +193,90 @@
     <string name="about_support">Pomoc</string>
     <string name="about_licences">Licencje</string>
     <string name="about_licences_body">Whisperio powstało w Kotlinie z użyciem Jetpack Compose, Room, DataStore, OkHttp i bibliotek kotlinx, wszystkich na licencji Apache 2.0.</string>
+    <string name="widget_label">Dyktuj</string>
+    <string name="widget_description">Zacznij dyktować jednym dotknięciem. Nie pokazuje transkrypcji.</string>
+    <string name="widget_button_description">Dyktuj w Whisperio</string>
+    <string name="widget_name_1x1">Dyktuj (mały)</string>
+    <string name="widget_name_2x1">Dyktuj (szeroki)</string>
+    <string name="player_play">Odtwórz nagranie</string>
+    <string name="player_pause">Wstrzymaj nagranie</string>
+    <string name="player_position">Pozycja odtwarzania</string>
+    <string name="player_state">%1$s z %2$s</string>
+    <string name="player_disabled_recording">Odtwarzanie jest niedostępne podczas nagrywania.</string>
+    <string name="action_retry_with">Ponów z innym dostawcą...</string>
+    <string name="retry_with_busy">Ponawiam...</string>
+    <string name="retry_with_none">Dodaj klucz API w Ustawieniach, aby ponowić z innym dostawcą.</string>
+    <string name="retry_failed">Ponowienie nie powiodło się, poprzedni tekst zachowany: %1$s</string>
+    <plurals name="history_word_count">
+        <item quantity="one">%1$d słowo</item>
+        <item quantity="few">%1$d słowa</item>
+        <item quantity="many">%1$d słów</item>
+        <item quantity="other">%1$d słowa</item>
+    </plurals>
+    <!-- CONTRACT-1.2 F3: kategorie -->
+    <string name="category_work">Praca</string>
+    <string name="category_personal">Prywatne</string>
+    <string name="category_ideas">Pomysły</string>
+    <string name="category_messages">Wiadomości</string>
+    <string name="category_code">Kod</string>
+    <string name="category_todo">Do zrobienia</string>
+    <string name="category_none">Brak</string>
+    <string name="category_button">Kategoria: %1$s</string>
+    <string name="category_button_cd">Kategoria, obecnie %1$s. Otwiera menu.</string>
+    <string name="category_selected">Wybrana</string>
+    <string name="category_tag_cd">Kategoria: %1$s</string>
+    <string name="settings_categories">Kategorie</string>
+    <string name="settings_categories_hint">Dodaj własne etykiety dla dyktowań.</string>
+    <string name="categories_builtin">Wbudowane</string>
+    <string name="categories_custom">Twoje kategorie</string>
+    <string name="categories_custom_empty">Nie masz jeszcze własnych kategorii.</string>
+    <string name="categories_add_label">Nazwa nowej kategorii</string>
+    <string name="categories_add">Dodaj</string>
+    <string name="categories_err_long">Użyj najwyżej 24 znaków.</string>
+    <string name="categories_err_duplicate">Kategoria o tej nazwie już istnieje.</string>
+    <string name="categories_delete_cd">Usuń kategorię %1$s</string>
+    <string name="categories_delete_title">Usunąć tę kategorię?</string>
+    <string name="categories_delete_body">Dyktowania z etykietą %1$s zachowają tekst i nagranie, ale stracą kategorię.</string>
+    <string name="deleted_message">Usunięto</string>
+    <string name="action_undo">Cofnij</string>
+    <string name="row_swipe_delete">Usuń</string>
+    <string name="day_menu">Opcje dnia: %1$s</string>
+    <string name="day_delete">Usuń ten dzień</string>
+    <string name="day_delete_title">Usunąć ten dzień?</string>
+    <plurals name="day_delete_body">
+        <item quantity="one">Usunąć %1$d nagranie z dnia %2$s? Nagranie dźwiękowe też zostanie usunięte.</item>
+        <item quantity="few">Usunąć %1$d nagrania z dnia %2$s? Nagrania dźwiękowe też zostaną usunięte.</item>
+        <item quantity="many">Usunąć %1$d nagrań z dnia %2$s? Nagrania dźwiękowe też zostaną usunięte.</item>
+        <item quantity="other">Usunąć %1$d nagrania z dnia %2$s? Nagrania dźwiękowe też zostaną usunięte.</item>
+    </plurals>
+    <plurals name="day_delete_body_filtered">
+        <item quantity="one">Usunąć %1$d nagranie z dnia %2$s pasujące do bieżącego wyszukiwania i filtrów? Nagranie dźwiękowe też zostanie usunięte.</item>
+        <item quantity="few">Usunąć %1$d nagrania z dnia %2$s pasujące do bieżącego wyszukiwania i filtrów? Nagrania dźwiękowe też zostaną usunięte.</item>
+        <item quantity="many">Usunąć %1$d nagrań z dnia %2$s pasujących do bieżącego wyszukiwania i filtrów? Nagrania dźwiękowe też zostaną usunięte.</item>
+        <item quantity="other">Usunąć %1$d nagrania z dnia %2$s pasujące do bieżącego wyszukiwania i filtrów? Nagrania dźwiękowe też zostaną usunięte.</item>
+    </plurals>
+    <plurals name="day_delete_body_today">
+        <item quantity="one">Usunąć %1$d nagranie z dzisiaj? Nagranie dźwiękowe też zostanie usunięte.</item>
+        <item quantity="few">Usunąć %1$d nagrania z dzisiaj? Nagrania dźwiękowe też zostaną usunięte.</item>
+        <item quantity="many">Usunąć %1$d nagrań z dzisiaj? Nagrania dźwiękowe też zostaną usunięte.</item>
+        <item quantity="other">Usunąć %1$d nagrania z dzisiaj? Nagrania dźwiękowe też zostaną usunięte.</item>
+    </plurals>
+    <plurals name="day_delete_body_today_filtered">
+        <item quantity="one">Usunąć %1$d nagranie z dzisiaj pasujące do bieżącego wyszukiwania i filtrów? Nagranie dźwiękowe też zostanie usunięte.</item>
+        <item quantity="few">Usunąć %1$d nagrania z dzisiaj pasujące do bieżącego wyszukiwania i filtrów? Nagrania dźwiękowe też zostaną usunięte.</item>
+        <item quantity="many">Usunąć %1$d nagrań z dzisiaj pasujących do bieżącego wyszukiwania i filtrów? Nagrania dźwiękowe też zostaną usunięte.</item>
+        <item quantity="other">Usunąć %1$d nagrania z dzisiaj pasujące do bieżącego wyszukiwania i filtrów? Nagrania dźwiękowe też zostaną usunięte.</item>
+    </plurals>
+    <plurals name="day_delete_body_yesterday">
+        <item quantity="one">Usunąć %1$d nagranie z wczoraj? Nagranie dźwiękowe też zostanie usunięte.</item>
+        <item quantity="few">Usunąć %1$d nagrania z wczoraj? Nagrania dźwiękowe też zostaną usunięte.</item>
+        <item quantity="many">Usunąć %1$d nagrań z wczoraj? Nagrania dźwiękowe też zostaną usunięte.</item>
+        <item quantity="other">Usunąć %1$d nagrania z wczoraj? Nagrania dźwiękowe też zostaną usunięte.</item>
+    </plurals>
+    <plurals name="day_delete_body_yesterday_filtered">
+        <item quantity="one">Usunąć %1$d nagranie z wczoraj pasujące do bieżącego wyszukiwania i filtrów? Nagranie dźwiękowe też zostanie usunięte.</item>
+        <item quantity="few">Usunąć %1$d nagrania z wczoraj pasujące do bieżącego wyszukiwania i filtrów? Nagrania dźwiękowe też zostaną usunięte.</item>
+        <item quantity="many">Usunąć %1$d nagrań z wczoraj pasujących do bieżącego wyszukiwania i filtrów? Nagrania dźwiękowe też zostaną usunięte.</item>
+        <item quantity="other">Usunąć %1$d nagrania z wczoraj pasujące do bieżącego wyszukiwania i filtrów? Nagrania dźwiękowe też zostaną usunięte.</item>
+    </plurals>
 </resources>

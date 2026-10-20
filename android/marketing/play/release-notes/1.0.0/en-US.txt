@@ -1,5 +1,7 @@
 First release of Whisperio for Android.
-- Dictation keyboard, Quick Settings tile and launcher shortcut
-- Bring your own API key: OpenAI, Groq, Mistral, ElevenLabs, Deepgram, AssemblyAI or your own server
-- Local history with copy, share and retry
+- Dictation keyboard, Quick Settings tile, launcher shortcut and home-screen widget
+- Bring your own key: OpenAI, Groq, Mistral, ElevenLabs, Deepgram, AssemblyAI or your own server
+- History with search, categories, export to .txt or .md and audio playback
+- Weekly recap with streaks and minutes saved
+- Swipe to delete with Undo, double-tap to copy
 - Free, no account, no ads, no analytics

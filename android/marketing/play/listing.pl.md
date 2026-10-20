@@ -49,7 +49,16 @@ CO DOSTAJESZ
 - Język wykrywany automatycznie albo wybrany: polski, angielski, niemiecki, hiszpański, francuski, włoski, portugalski, niderlandzki, rosyjski, ukraiński
 - Własny słownik na imiona i terminy (wysyłany do dostawców, którzy to obsługują)
 - Opcjonalne porządkowanie tekstu: poprawia odstępy i powtórzone słowa, nie przepisuje tego, co powiedziałeś
-- Lokalna historia dyktowań: kopiuj, udostępniaj, ponów transkrypcję, usuwaj
+- Lokalna historia dyktowań: wyszukiwanie, grupowanie po dniach, filtrowanie po źródle i nieudanych dyktowaniach, kopiowanie, udostępnianie, usuwanie
+- Tygodniowe podsumowanie: słowa, notatki, zaoszczędzone minuty i serie, z kartą z samymi liczbami do udostępnienia
+- Kategorie: sześć wbudowanych i własne, widoczne przy każdym nagraniu, z filtrem i wyszukiwaniem
+- Liczba słów przy każdej transkrypcji
+- Gesty na liście: usuwanie przesunięciem (z opcją Cofnij), kopiowanie dwukrotnym stuknięciem i usuwanie całego dnia
+- Eksport transkrypcji do .txt lub .md przez systemowy wybór pliku
+- Odtwarzanie zapisanego nagrania i ponawianie transkrypcji u innego dostawcy
+- Widżet na ekranie głównym do szybkiego dyktowania
+- Delikatna wibracja przy kopiowaniu, wstawieniu i gotowym tekście
+- Opcjonalnie: pamiętanie języka dyktowania dla każdej aplikacji (domyślnie wyłączone, tylko na tym urządzeniu)
 - Opcjonalne automatyczne zatrzymanie przy ciszy i czyszczenie historii po 1, 7 lub 30 dniach
 - Ciemny i jasny motyw, interfejs po polsku i angielsku
 
@@ -68,18 +77,20 @@ Polityka prywatności: https://whisperio.danielkasprzyk.com/privacy.html
 Regulamin: https://whisperio.danielkasprzyk.com/terms.html
 Pomoc: https://whisperio.danielkasprzyk.com/support.html
 ```
-Znaków: 3037/4000
+Znaków: 3856/4000
 
 ## Informacje o wersji 1.0.0 (<=500)
 
 ```
 Pierwsza wersja Whisperio na Androida.
-- Klawiatura do dyktowania, kafelek w szybkich ustawieniach i skrót na ekranie głównym
+- Klawiatura do dyktowania, kafelek szybkich ustawień, skrót i widżet
 - Własny klucz API: OpenAI, Groq, Mistral, ElevenLabs, Deepgram, AssemblyAI lub własny serwer
-- Lokalna historia z kopiowaniem, udostępnianiem i ponawianiem
+- Historia z wyszukiwaniem, kategoriami, eksportem do .txt lub .md i odtwarzaniem nagrań
+- Tygodniowe podsumowanie z seriami i zaoszczędzonymi minutami
+- Usuwanie przesunięciem z opcją Cofnij, kopiowanie dwukrotnym stuknięciem
 - Za darmo, bez konta, reklam i analityki
 ```
-Znaków: 324/500
+Znaków: 471/500
 
 ## Kategoria i kontakt
 

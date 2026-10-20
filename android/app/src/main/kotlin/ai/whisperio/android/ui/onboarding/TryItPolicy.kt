@@ -8,7 +8,8 @@ import ai.whisperio.android.history.RecordingSource
  * helpers keep the try-it session from touching - or leaking into - anything it did not start.
  *
  * [active] = the try-it mic started the current dictation. [pendingAck] = the user left onboarding while it was still
- * transcribing, so its Done/Error must be acknowledged silently when it lands (never shown on Home).
+ * transcribing, so its Done/Error must be acknowledged silently when it lands (never shown on Home). A pending ack is dropped as stale ([tryItPendingStale]) if the controller
+ * goes Idle/Recording without a result (Erase all, process death), so it can never swallow an unrelated later Done.
  */
 internal data class TryItSession(val active: Boolean = false, val pendingAck: Boolean = false)
 
@@ -47,6 +48,14 @@ internal fun tryItLeave(s: DictationState, t: TryItSession): TryItLeave {
 /** True when an abandoned (left-while-transcribing) try-it has now finished and its result must be dropped. */
 internal fun tryItShouldAck(s: DictationState, t: TryItSession): Boolean =
     t.pendingAck && (s is DictationState.Error || (s is DictationState.Done && s.source == RecordingSource.APP))
+
+/**
+ * True when a pending ack can no longer be satisfied: a result only lands from Transcribing, so Idle or Recording means
+ * the abandoned try-it is gone. Clear the flag WITHOUT acknowledging. Transcribing (still in flight) and Done/Error
+ * (the ack path, [tryItShouldAck]) are never stale.
+ */
+internal fun tryItPendingStale(s: DictationState, t: TryItSession): Boolean =
+    t.pendingAck && (s is DictationState.Idle || s is DictationState.Recording)
 
 /** Stop only ends a recording the try-it itself started. */
 internal fun tryItCanStop(s: DictationState, t: TryItSession): Boolean = tryItView(s, t) is DictationState.Recording

@@ -68,5 +68,40 @@
                 <action android:name="android.service.quicksettings.action.QS_TILE" />
             </intent-filter>
         </service>
+
+        <!-- Home-screen widget (CONTRACT-1.1 F8). The receivers are exported because the launcher sends APPWIDGET_UPDATE;
+             they hold no data, and the click PendingIntent is explicit and immutable. -->
+        <receiver
+            android:name=".widget.DictateWidget1x1"
+            android:exported="true"
+            android:label="@string/widget_name_1x1">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_dictate_1x1_info" />
+        </receiver>
+        <receiver
+            android:name=".widget.DictateWidget2x1"
+            android:exported="true"
+            android:label="@string/widget_name_2x1">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_dictate_2x1_info" />
+        </receiver>
+        <!-- CONTRACT-1.2 F2: shares the recap card PNG (cacheDir/share/ only). Not exported; the share intent grants read per URI. -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.share"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/share_paths" />
+        </provider>
     </application>
 </manifest>

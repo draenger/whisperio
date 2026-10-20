@@ -7,6 +7,7 @@ import ai.whisperio.android.dictation.DictationState
 import ai.whisperio.android.dictation.StartOptions
 import ai.whisperio.android.graph
 import ai.whisperio.android.history.RecordingSource
+import ai.whisperio.android.ui.common.confirmHaptic
 import ai.whisperio.android.ui.common.copyPlainText
 import ai.whisperio.android.ui.theme.WhisperioTheme
 import android.Manifest
@@ -26,7 +27,7 @@ import androidx.lifecycle.repeatOnLifecycle
 import kotlinx.coroutines.launch
 
 /**
- * Translucent record-and-copy surface for the QS tile and the launcher shortcut (CONTRACT 6). All state lives in
+ * Translucent record-and-copy surface for the QS tile, the launcher shortcut and the home-screen widget (CONTRACT 6). All state lives in
  * the app-scoped DictationController, so rotation never restarts an upload.
  */
 class DictateActivity : ComponentActivity() {
@@ -66,7 +67,10 @@ class DictateActivity : ComponentActivity() {
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
                 controller.results.collect { r ->
-                    if (r.session == SESSION_TAG) copyToClipboard(r.text)
+                    if (r.session == SESSION_TAG) {
+                        copyToClipboard(r.text)
+                        window.decorView.confirmHaptic()
+                    }
                 }
             }
         }
@@ -110,9 +114,12 @@ class DictateActivity : ComponentActivity() {
         const val EXTRA_SOURCE = "source"
         const val SESSION_TAG = "dictate-activity"
 
-        /** Intent extra -> source; anything but "shortcut" (tile, null, garbage) is the tile. */
-        internal fun sourceFor(extra: String?): RecordingSource =
-            if (extra == "shortcut") RecordingSource.SHORTCUT else RecordingSource.TILE
+        /** Intent extra -> source; "shortcut" and "widget" are exact matches, anything else (tile, null, garbage) is the tile. */
+        internal fun sourceFor(extra: String?): RecordingSource = when (extra) {
+            "shortcut" -> RecordingSource.SHORTCUT
+            "widget" -> RecordingSource.WIDGET
+            else -> RecordingSource.TILE
+        }
 
         private val SETUP_ERRORS = setOf(DictationError.CONSENT_MISSING, DictationError.NO_KEY, DictationError.PERMISSION_MISSING)
     }
