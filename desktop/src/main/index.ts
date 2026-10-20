@@ -85,6 +85,13 @@ if (!app.isPackaged && process.env['WHISPERIO_USER_DATA_DIR']) {
   app.setPath('userData', process.env['WHISPERIO_USER_DATA_DIR'])
 }
 
+// Electron 38+ defaults to --ozone-platform=auto, i.e. a native Wayland client on
+// Wayland sessions, where globalShortcut needs a portal and the overlay's
+// alwaysOnTop/positioning are ignored. Keep the Electron 34 behaviour (XWayland).
+if (process.platform === 'linux') {
+  app.commandLine.appendSwitch('ozone-platform', 'x11')
+}
+
 // Prevent multiple instances — if another instance is already running, focus it
 const gotSingleInstanceLock = app.requestSingleInstanceLock()
 if (!gotSingleInstanceLock) {

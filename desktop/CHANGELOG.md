@@ -5,8 +5,10 @@
 ### Electron 41
 - Electron 34 -> 41.10.6 (pinned exactly). Picks up Chromium/V8/Node 24 security
   fixes that 34 (out of support) no longer receives.
-- macOS: `NSAudioCaptureUsageDescription` added for system-audio capture; macOS 12+
-  (Electron 38 dropped macOS 11).
+- macOS: `NSAudioCaptureUsageDescription` and a Whisperio-specific microphone prompt;
+  macOS 12+ (Electron 38 dropped macOS 11).
+- Linux: forced to X11/XWayland (`ozone-platform=x11`) as on Electron 34, so global
+  hotkeys and the always-on-top overlay keep working on Wayland sessions.
 - active-win's macOS helper and Windows N-API binding are unpacked from app.asar explicitly.
 
 ### Context-aware tone (branch `feat/p1.1-context-tone`, merge-hold until v1.5 ships)

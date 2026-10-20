@@ -55,9 +55,11 @@ mac:
   # The inherit file carries the mic entitlement into Chromium's audio child process.
   entitlements: build/entitlements.mac.plist
   entitlementsInherit: build/entitlements.mac.inherit.plist
-  # System-audio capture (getDisplayMedia audio: 'loopback', src/main/index.ts) goes through the
-  # CoreAudio tap API on Electron 39+ / macOS 14.2+, which requires this usage string.
+  # System-audio capture (getDisplayMedia audio: 'loopback', src/main/index.ts): the usage string
+  # is required if/when Chromium uses the CoreAudio-tap loopback path (macOS 14.2+); harmless otherwise.
+  # The mic string replaces Electron's generic default prompt text.
   extendInfo:
+    NSMicrophoneUsageDescription: Whisperio uses the microphone only while you dictate, to transcribe your speech with the provider you chose.
     NSAudioCaptureUsageDescription: Whisperio records system audio only while you use the system-audio recording hotkey, to transcribe it with the provider you chose.
   # Sign with Developer ID + notarize so macOS auto-update validates (Squirrel.Mac
   # rejects ad-hoc/unsigned updates). Credentials come from CI env / GitHub Secrets;
