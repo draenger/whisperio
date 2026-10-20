@@ -20,7 +20,7 @@ License is PolyForm Noncommercial 1.0.0 (`LICENSE.md`); name/logo are trademarke
 
 | Layer | Tech | Where |
 |---|---|---|
-| Desktop runtime | Electron 34 + React 19 + TypeScript | `desktop/package.json:28` |
+| Desktop runtime | Electron 41 + React 19 + TypeScript | `desktop/package.json:28` |
 | Desktop build | electron-vite (3 entries: main, preload, renderer) | `desktop/electron.vite.config.ts:10` |
 | Desktop packaging | electron-builder (NSIS / dmg+zip / AppImage+deb) | `.devops/electron-builder.yml:1` |
 | Desktop tests | Vitest + v8 coverage gate | `desktop/vitest.config.ts:31` |

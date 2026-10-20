@@ -7,6 +7,11 @@ files:
   - out/**/*
 asarUnpack:
   - "node_modules/koffi/**"
+  # active-win: macOS execFile()s its Swift helper `main` and Windows loads a N-API .node via
+  # node-pre-gyp; neither can run from inside app.asar, so unpack both explicitly instead of
+  # relying on smart-unpack heuristics.
+  - "node_modules/active-win/main"
+  - "node_modules/active-win/lib/binding/**"
 extraResources:
   - from: icons/whisperio.ico
     to: icons/whisperio.ico
@@ -50,6 +55,10 @@ mac:
   # The inherit file carries the mic entitlement into Chromium's audio child process.
   entitlements: build/entitlements.mac.plist
   entitlementsInherit: build/entitlements.mac.inherit.plist
+  # System-audio capture (getDisplayMedia audio: 'loopback', src/main/index.ts) goes through the
+  # CoreAudio tap API on Electron 39+ / macOS 14.2+, which requires this usage string.
+  extendInfo:
+    NSAudioCaptureUsageDescription: Whisperio records system audio only while you use the system-audio recording hotkey, to transcribe it with the provider you chose.
   # Sign with Developer ID + notarize so macOS auto-update validates (Squirrel.Mac
   # rejects ad-hoc/unsigned updates). Credentials come from CI env / GitHub Secrets;
   # the Team ID is passed via the APPLE_TEAM_ID env var (electron-builder deprecated
