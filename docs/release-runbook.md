@@ -113,6 +113,15 @@ gh release edit vX.Y.Z --draft=false
 ```
 Never export the private key. Modelled on Suzie's `scripts/release-desktop.mjs`.
 
+**Bitdefender check before `--publish` (no heavy lock needed): HASH ONLY, never launch the copy.** Copy
+`dist\Whisperio-Setup-X.Y.Z.exe` + `dist\win-unpacked\` to `C:\Users\dkwar\bees\whisperio-desktop-X.Y.Z\`, sha256 every
+exe/dll/node/asar, wait 15 min, re-hash: all files present, hashes unchanged, no BD quarantine event -> publish.
+Do **not** run the copied `Whisperio.exe`: overriding `APPDATA`/`LOCALAPPDATA` does NOT isolate a packaged Electron app on
+Windows (`app.getPath('appData')` comes from the Known Folder API), so it opens Daniel's real `%APPDATA%\Whisperio`,
+runs the new version's migrations on it (2026-10-20: 1.5.1 moved his provider keys out of `settings.json` while his
+installed 1.3.0 still reads them from there) and pokes his running instance via the single-instance lock. A launch
+smoke of a release build happens only with Daniel's OK in the moment.
+
 **Failure mode if an installed app rejects an update**: the app shows "Version X couldn't be verified - download it
 from the Releases page", remembers X (`userData/rejected-update.json`) and stops re-downloading it. Fix = publish a
 correctly signed X+1.
