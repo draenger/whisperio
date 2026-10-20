@@ -18,7 +18,7 @@ jobs:
   no-macos-runners:
     runs-on: [self-hosted, pc]
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       # Owner rule: never build iOS/macOS on GitHub Actions (macOS minutes burned the whole
       # budget). iOS gates run locally on the Mac.
       - name: No macOS runners or Apple build steps
