@@ -55,7 +55,7 @@ function assertKey(key: Buffer): void {
 export function encryptWithKey(key: Buffer, plaintext: string): SecretEnvelope {
   assertKey(key)
   const iv = randomBytes(IV_BYTES)
-  const cipher = createCipheriv('aes-256-gcm', key, iv)
+  const cipher = createCipheriv('aes-256-gcm', key, iv, { authTagLength: TAG_BYTES })
   const ct = Buffer.concat([cipher.update(plaintext, 'utf8'), cipher.final()])
   const tag = cipher.getAuthTag()
   return {
@@ -81,7 +81,9 @@ export function decryptWithKey(key: Buffer, env: SecretEnvelope): string {
   const tag = Buffer.from(env.tag, 'base64')
   if (iv.length !== IV_BYTES) throw new Error('Bad IV length in secret envelope')
   if (tag.length !== TAG_BYTES) throw new Error('Bad auth tag length in secret envelope')
-  const decipher = createDecipheriv('aes-256-gcm', key, iv)
+  // Pin the tag length in the decipher too, so a truncated tag can never be accepted even if the
+  // explicit length check above is ever refactored away.
+  const decipher = createDecipheriv('aes-256-gcm', key, iv, { authTagLength: TAG_BYTES })
   decipher.setAuthTag(tag)
   const pt = Buffer.concat([decipher.update(ct), decipher.final()])
   return pt.toString('utf8')
