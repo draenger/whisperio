@@ -28,7 +28,7 @@ def resolve_playwright(candidate: str) -> str:
     resolved = shutil.which(candidate)
     if not resolved or not pathlib.Path(resolved).name.lower().startswith("playwright"):
         sys.exit(f"compose_ios: Playwright CLI not found or not a playwright binary: {candidate!r} (set PLAYWRIGHT_BIN)")
-    return str(pathlib.Path(resolved).resolve())
+    return str(pathlib.Path(resolved).absolute())
 OUT_HTML = HERE / "html"; OUT_HTML.mkdir(exist_ok=True)
 SHOTS_DIR = HERE.parent / "screenshots"
 
@@ -124,6 +124,7 @@ def main():
             out = out_dir / f"{i:02d}-{key.replace('ipad-', '')}.png"
             # Argument list, no shell: every element is either a constant, an int from DEVICES or a path
             # this script built under OUT_HTML / SHOTS_DIR.
+            # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-tainted-env-args.dangerous-subprocess-use-tainted-env-args -- argv list, shell=False, executable resolved + name-checked by resolve_playwright(); developer-only script
             subprocess.run([playwright, "screenshot", f"--viewport-size={int(d['w'])},{int(d['h'])}",
                             "--wait-for-timeout=800", html.resolve().as_uri(), str(out.resolve())], check=True,
                            shell=False, stdout=subprocess.DEVNULL)

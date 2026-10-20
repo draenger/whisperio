@@ -6,7 +6,7 @@ useDefault = true
 [allowlist]
 description = "UserDefaults key names flagged by generic-api-key (not secrets)"
 regexes = [
-  '''whisperio\.launchSentinel\.earlyDeaths\.v1''',
-  '''whisperio\.launchSentinel\.inFlightAt\.v1''',
-  '''whisperio\.digestPrompts\.v1''',
+  '''^whisperio\.launchSentinel\.earlyDeaths\.v1$''',
+  '''^whisperio\.launchSentinel\.inFlightAt\.v1$''',
+  '''^whisperio\.digestPrompts\.v1$''',
 ]
