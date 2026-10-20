@@ -10,7 +10,7 @@ node_modules already carry playwright + chromium) at the exact ASC pixel size:
   iPad 13"     2064x2752  -> ../screenshots/ipad/en/NN-key.png
 Fonts come from the app bundle (Space Grotesk / IBM Plex Sans / JetBrains Mono) via file://.
 """
-import argparse, os, pathlib, subprocess, sys
+import argparse, os, pathlib, shutil, subprocess, sys
 
 HERE = pathlib.Path(__file__).resolve().parent
 ROOT = HERE.parent.parent.parent
@@ -21,6 +21,14 @@ FONTS = ROOT / "mobile/WhisperioApp/Sources/WhisperioApp/Fonts"
 PLAYWRIGHT = os.environ.get("PLAYWRIGHT_BIN") or next(
     (p for p in (os.path.expanduser("~/Projects/husar/node_modules/.bin/playwright"),
                  str(ROOT / "desktop/node_modules/.bin/playwright")) if os.path.exists(p)), "playwright")
+
+
+def resolve_playwright(candidate: str) -> str:
+    """Absolute path of the Playwright CLI; refuses anything that isn't an executable named playwright*."""
+    resolved = shutil.which(candidate)
+    if not resolved or not pathlib.Path(resolved).name.lower().startswith("playwright"):
+        sys.exit(f"compose_ios: Playwright CLI not found or not a playwright binary: {candidate!r} (set PLAYWRIGHT_BIN)")
+    return str(pathlib.Path(resolved).absolute())
 OUT_HTML = HERE / "html"; OUT_HTML.mkdir(exist_ok=True)
 SHOTS_DIR = HERE.parent / "screenshots"
 
@@ -93,7 +101,8 @@ def main():
     ap.add_argument("--raw", default=os.path.join(os.environ.get("TMPDIR", "/tmp"), "whisperio-ios-raw"))
     ap.add_argument("--only", choices=["iphone", "ipad"])
     args = ap.parse_args()
-    raw = pathlib.Path(args.raw)
+    raw = pathlib.Path(args.raw).resolve()
+    playwright = resolve_playwright(PLAYWRIGHT)
     for device, keys in SHOTS.items():
         if args.only and device != args.only:
             continue
@@ -113,9 +122,12 @@ def main():
                                         h1=d["h1"], sub=d["sub"], gap=int(d["sub"] * 0.9), dev_pos=dev_pos,
                                         dev_w=dev_w, radius=radius, h1text=h1text, sub_text=sub_text, img=img))
             out = out_dir / f"{i:02d}-{key.replace('ipad-', '')}.png"
-            subprocess.run([PLAYWRIGHT, "screenshot", f"--viewport-size={d['w']},{d['h']}",
-                            "--wait-for-timeout=800", f"file://{html}", str(out)], check=True,
-                           stdout=subprocess.DEVNULL)
+            # Argument list, no shell: every element is either a constant, an int from DEVICES or a path
+            # this script built under OUT_HTML / SHOTS_DIR.
+            # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-tainted-env-args.dangerous-subprocess-use-tainted-env-args -- argv list, shell=False, executable resolved + name-checked by resolve_playwright(); developer-only script
+            subprocess.run([playwright, "screenshot", f"--viewport-size={int(d['w'])},{int(d['h'])}",
+                            "--wait-for-timeout=800", html.resolve().as_uri(), str(out.resolve())], check=True,
+                           shell=False, stdout=subprocess.DEVNULL)
             print("wrote", out)
 
 

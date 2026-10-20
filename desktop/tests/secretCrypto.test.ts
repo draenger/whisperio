@@ -70,6 +70,15 @@ describe('secretCrypto', () => {
     expect(() => decryptWithKey(key, { ...env, tag: tag.toString('base64') })).toThrow()
   })
 
+  it('rejects a truncated auth tag (GCM tag length pinned to 16 bytes)', () => {
+    const key = generateDataKey()
+    const env = encryptWithKey(key, 'secret')
+    for (const len of [4, 8, 12, 15]) {
+      const short = Buffer.from(env.tag, 'base64').subarray(0, len).toString('base64')
+      expect(() => decryptWithKey(key, { ...env, tag: short })).toThrow()
+    }
+  })
+
   it('rejects invalid key sizes', () => {
     // @ts-expect-error deliberately wrong size
     expect(() => encryptWithKey(Buffer.alloc(16), 'x')).toThrow()
