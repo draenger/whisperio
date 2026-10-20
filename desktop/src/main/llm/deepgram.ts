@@ -6,6 +6,7 @@
 // transcript is nested in the JSON response. Mirrors
 // mobile/WhisperioApp/Sources/WhisperioApp/Engine/DeepgramProvider.swift.
 import { net, app } from 'electron'
+import { guardRedirects, GUARDED_REDIRECT } from './redirectGuard'
 import { handleTranscriptionError } from '../errorHandler'
 import { deepgramSegments, type SpeakerSegment, type DeepgramUtterance } from '../dictation/conversation'
 
@@ -55,7 +56,7 @@ function deepgramRequest(url: string, apiKey: string, audioBuffer: Buffer): Prom
       }
     }
 
-    const request = net.request({ method: 'POST', url })
+    const request = net.request({ method: 'POST', url, redirect: GUARDED_REDIRECT })
     request.setHeader('Authorization', `Token ${apiKey}`)
     request.setHeader('Content-Type', 'application/octet-stream')
 
@@ -89,6 +90,10 @@ function deepgramRequest(url: string, apiKey: string, audioBuffer: Buffer): Prom
       })
     })
 
+    guardRedirects(request, url, (err) => {
+      handleTranscriptionError(err, 'deepgram')
+      settle(reject)(err)
+    })
     request.on('error', (err: Error) => {
       handleTranscriptionError(err, 'deepgram')
       settle(reject)(err)

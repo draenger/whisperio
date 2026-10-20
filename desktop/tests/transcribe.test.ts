@@ -178,7 +178,8 @@ describe('transcribeAudio', () => {
     expect(result).toBe('transcribed text')
     expect(mockNetRequest).toHaveBeenCalledWith({
       method: 'POST',
-      url: 'https://api.elevenlabs.io/v1/speech-to-text'
+      url: 'https://api.elevenlabs.io/v1/speech-to-text',
+      redirect: 'manual'
     })
     expect(mockReq.setHeader).toHaveBeenCalledWith('xi-api-key', 'xi-test-key')
 
@@ -310,7 +311,8 @@ describe('selfhosted (directUrl) provider', () => {
     expect(result).toBe('local text')
     expect(mockNetRequest).toHaveBeenCalledWith({
       method: 'POST',
-      url: 'http://localhost:8080/inference'
+      url: 'http://localhost:8080/inference',
+      redirect: 'manual'
     })
 
     const bodyStr = (mockReq.write.mock.calls[0][0] as Buffer).toString()
@@ -335,7 +337,8 @@ describe('selfhosted (directUrl) provider', () => {
     await transcribeAudio(Buffer.from('audio'), 'rec.webm')
     expect(mockNetRequest).toHaveBeenCalledWith({
       method: 'POST',
-      url: 'http://localhost:1234/v1/audio/transcriptions'
+      url: 'http://localhost:1234/v1/audio/transcriptions',
+      redirect: 'manual'
     })
   })
 
@@ -425,7 +428,7 @@ describe('selfhosted (directUrl) provider', () => {
 
       const result = await transcribeAudio(Buffer.from('audio'), 'rec.webm')
       expect(result).toBe('ok')
-      expect(mockNetRequest).toHaveBeenCalledWith({ method: 'POST', url: `http://${host}/inference` })
+      expect(mockNetRequest).toHaveBeenCalledWith({ method: 'POST', url: `http://${host}/inference`, redirect: 'manual' })
     }
   })
 

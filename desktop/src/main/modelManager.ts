@@ -1,6 +1,7 @@
 import { app, net } from 'electron'
 import { existsSync, mkdirSync, unlinkSync, readdirSync, statSync, createWriteStream, renameSync } from 'fs'
 import { join, basename, resolve, sep } from 'path'
+import { isLocalHost } from './llm/provider'
 
 export interface ModelInfo {
   id: string
@@ -420,6 +421,27 @@ export function deleteModel(modelId: string): boolean {
   return false
 }
 
+/**
+ * Custom model downloads feed a native parser (whisper-server), so the bytes must not be
+ * swappable on-path: require https:, allowing plain http: only for loopback/private hosts.
+ * Throws a readable Error otherwise. Also used for every redirect hop.
+ */
+export function assertSecureModelUrl(url: string): void {
+  let parsed: URL
+  try {
+    parsed = new URL(url)
+  } catch {
+    throw new Error('Invalid download URL')
+  }
+  if (parsed.protocol === 'https:') return
+  if (parsed.protocol === 'http:' && isLocalHost(parsed.hostname)) return
+  throw new Error(
+    parsed.protocol === 'http:'
+      ? `Refusing insecure http:// model download from non-local host '${parsed.hostname}'. Use https://.`
+      : `Unsupported download URL protocol: ${parsed.protocol}`
+  )
+}
+
 export function downloadCustomModel(url: string, filename: string): Promise<string> {
   // Validate the renderer-supplied filename and confine it to the models dir
   // before building any filesystem path (prevents path traversal).
@@ -429,14 +451,11 @@ export function downloadCustomModel(url: string, filename: string): Promise<stri
   } catch (err) {
     return Promise.reject(err instanceof Error ? err : new Error(String(err)))
   }
-  // Only allow http(s) downloads — reject file:, etc.
+  // https only (http allowed for loopback/private hosts); rejects file:, ftp:, etc.
   try {
-    const proto = new URL(url).protocol
-    if (proto !== 'http:' && proto !== 'https:') {
-      return Promise.reject(new Error(`Unsupported download URL protocol: ${proto}`))
-    }
-  } catch {
-    return Promise.reject(new Error('Invalid download URL'))
+    assertSecureModelUrl(url)
+  } catch (err) {
+    return Promise.reject(err instanceof Error ? err : new Error(String(err)))
   }
 
   const tempPath = filepath + '.downloading'
@@ -449,7 +468,23 @@ export function downloadCustomModel(url: string, filename: string): Promise<stri
   return new Promise<string>((resolve, reject) => {
     let aborted = false
 
-    const request = net.request({ url, redirect: 'follow' })
+    // redirect:'manual': Chromium would otherwise follow 3xx itself and the policy check below
+    // could never run. Electron emits 'redirect' for every hop; we must call followRedirect().
+    const request = net.request({ url, redirect: 'manual' })
+
+    request.on('redirect', (_status, _method, newUrl) => {
+      try {
+        assertSecureModelUrl(newUrl)
+      } catch (err) {
+        aborted = true
+        request.abort()
+        activeDownloads.delete(customId)
+        try { unlinkSync(tempPath) } catch { /* ignore */ }
+        reject(err instanceof Error ? err : new Error(String(err)))
+        return
+      }
+      request.followRedirect()
+    })
 
     activeDownloads.set(customId, {
       // Pre-response cancel: no write stream exists yet, so aborting the
@@ -465,18 +500,6 @@ export function downloadCustomModel(url: string, filename: string): Promise<stri
     })
 
     request.on('response', (response) => {
-      if (response.statusCode === 302 || response.statusCode === 301) {
-        const location = response.headers['location']
-        const redirectUrl = Array.isArray(location) ? location[0] : location
-        if (redirectUrl) {
-          activeDownloads.delete(customId)
-          downloadFromUrl(customId, redirectUrl, filepath, tempPath)
-            .then(resolve)
-            .catch(reject)
-          return
-        }
-      }
-
       if (response.statusCode !== 200) {
         activeDownloads.delete(customId)
         reject(new Error(`Download failed: HTTP ${response.statusCode}`))

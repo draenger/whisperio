@@ -1,0 +1,12 @@
+# Gitleaks config (used by Sentinel's secret scan). Default rules + a narrow allowlist of
+# known false positives, each pinned to its exact value - never a path or rule-wide skip.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "UserDefaults key names flagged by generic-api-key (not secrets)"
+regexes = [
+  '''^whisperio\.launchSentinel\.earlyDeaths\.v1$''',
+  '''^whisperio\.launchSentinel\.inFlightAt\.v1$''',
+  '''^whisperio\.digestPrompts\.v1$''',
+]

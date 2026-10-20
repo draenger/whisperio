@@ -36,7 +36,8 @@ const BASE_SETTINGS = {
   replicateApiKey: '',
   sttApiKey: '',
   transcriptionPrompt: '',
-  launchAtStartup: true
+  launchAtStartup: true,
+  checkForUpdates: true
 }
 
 describe('keyAccessor', () => {

@@ -66,13 +66,81 @@ Smoke list: hotkey → record → paste into another app · Settings opens/persi
 ```bash
 git push origin main:release
 ```
-`.github/workflows/build.yml` (trigger: push to `release`) runs test → 3-OS build matrix → publishes a
-GitHub Release tagged from `package.json`. macOS leg signs + notarizes (secrets `CSC_LINK`,
-`CSC_KEY_PASSWORD`, `APPLE_API_KEY_*` in GitHub Secrets). Watch: `gh run watch` /
-`gh release view vX.Y.Z`. Auto-update picks it up from `latest*.yml` in the release assets.
+`.github/workflows/build.yml` (trigger: push to `release`) runs test -> 3-OS build matrix -> creates a
+**DRAFT** GitHub Release tagged from `package.json`, containing the mac zips + Linux AppImage/deb/`latest-linux.yml`
+but deliberately **not** the Windows `.exe` / `latest.yml` (CI cannot sign Windows builds; see 1.4). macOS leg signs +
+notarizes (secrets `CSC_LINK`, `CSC_KEY_PASSWORD`, `APPLE_API_KEY_*` in GitHub Secrets). Watch: `gh run watch`.
+The release is **not live** until you finish 1.4 and publish the draft. Installed apps only see a release once it is
+published.
 
 If the mac leg hangs on notarization it times out at 25 min and the release job doesn't publish —
 re-run the failed job, don't re-push.
+
+### 1.4 Signed Windows release (local, Daniel's PC only) - required step of every desktop release
+GitHub-hosted runners have no signing cert, so CI never publishes the Windows installer or `latest.yml` (the draft
+from 1.3 has none). Installed apps verify every downloaded Windows update against the pinned release signer
+(`desktop/src/main/updateSignature/updateVerifier.ts`: SHA-256 of the signer's **SubjectPublicKeyInfo**, plus the
+cert thumbprint `2A917C6457B67B928C52413DB00FA34CAAF15206` as a secondary pin; subject `CN=Jarvis (Daniel Kasprzyk)`,
+valid to 2031-08-06, in `Cert:\CurrentUser\My`; sha256 only) and **reject** unsigned or foreign-signed installers.
+The app also re-verifies the downloaded file right before `quitAndInstall`.
+
+**Preferred: the script** (dry-run by default; Windows + Daniel's PC only):
+```powershell
+cd desktop
+npm run typecheck; npm run test:coverage
+npm run release:desktop                          # dry run: preflight checks + plan, builds/uploads nothing
+npm run release:desktop -- --execute             # build:win:signed -> verify:signed + latest.yml sha512 check -> upload to the DRAFT
+npm run release:desktop -- --execute --publish   # same, then gh release edit vX.Y.Z --draft=false
+```
+Without `--publish` it stops after the upload and prints the publish command. Exit codes: 0 ok, 1 preflight/verify
+failure, 2 usage. Must run from `main`/`release` up to date with origin, clean tree.
+
+**Manual fallback** (exactly what the script does):
+```powershell
+cd desktop
+npm run typecheck; npm run test:coverage
+npm run build:win:signed        # signs with the store cert (signtool via electron-builder), sha256
+# verify with the app's OWN verifier (no Windows SDK, no trusted root needed):
+npm run verify:signed -- dist\Whisperio-Setup-X.Y.Z.exe     # must print PASS + the pinned SPKI sha256; exit 0
+# optional extra check (signtool /pa needs the self-signed root trusted on this machine, else it
+# reports "not trusted" even for a good signature - the Node check above is the authoritative one):
+signtool verify /pa /v dist\Whisperio-Setup-X.Y.Z.exe
+```
+Then add the signed files to the draft and publish it:
+```powershell
+gh release upload vX.Y.Z --clobber dist\Whisperio-Setup-X.Y.Z.exe dist\latest.yml     # latest.yml sha512 must match the signed file
+gh release edit vX.Y.Z --draft=false
+```
+Never export the private key. Modelled on Suzie's `scripts/release-desktop.mjs`.
+
+**Bitdefender check before `--publish` (no heavy lock needed): HASH ONLY, never launch the copy.** Copy
+`dist\Whisperio-Setup-X.Y.Z.exe` + `dist\win-unpacked\` to `C:\Users\dkwar\bees\whisperio-desktop-X.Y.Z\`, sha256 every
+exe/dll/node/asar, wait 15 min, re-hash: all files present, hashes unchanged, no BD quarantine event -> publish.
+Do **not** run the copied `Whisperio.exe`: overriding `APPDATA`/`LOCALAPPDATA` does NOT isolate a packaged Electron app on
+Windows (`app.getPath('appData')` comes from the Known Folder API), so it opens Daniel's real `%APPDATA%\Whisperio`,
+runs the new version's migrations on it (2026-10-20: 1.5.1 moved his provider keys out of `settings.json` while his
+installed 1.3.0 still reads them from there) and pokes his running instance via the single-instance lock. A launch
+smoke of a release build happens only with Daniel's OK in the moment.
+
+**Failure mode if an installed app rejects an update**: the app shows "Version X couldn't be verified - download it
+from the Releases page", remembers X (`userData/rejected-update.json`) and stops re-downloading it. Fix = publish a
+correctly signed X+1.
+
+**Certificate renewal / key rotation.** Pins are a list (`PINNED_UPDATE_SIGNERS.spkiSha256`). Order matters:
+1. Compute the new cert's SPKI hash (`openssl x509 -in new.cer -pubkey -noout | openssl pkey -pubin -outform der | openssl dgst -sha256`,
+   or sign once and read it from `npm run verify:signed`'s output with the new pin temporarily added).
+2. Ship a release **signed with the OLD cert** whose `updateVerifier.ts` pin list contains BOTH old and new hashes.
+3. Wait until users have updated, then sign releases with the new cert; the old pin can be dropped later.
+Skipping step 2 strands every installed app (they would reject the new-cert update; users must reinstall manually).
+There is **no revocation path** other than shipping a new pin list in a release signed by a still-pinned key; if the
+private key is stolen, an attacker who can also control the update feed could push updates until users move off
+affected builds, so protect the key and the GitHub release permissions.
+
+**Accepted risks (documented, not fixed):**
+- **Linux AppImage updates are unauthenticated** (TLS + sha512 from the same feed; no detached signatures). The app
+  therefore never downloads or installs them: it shows "update available - download from Releases" with a link.
+  Revisit when detached signatures (e.g. minisign/GPG over the AppImage, verified in-app) exist.
+- macOS relies on Apple code signing + notarization (Squirrel.Mac checks the signature).
 
 ---
 

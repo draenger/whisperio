@@ -6,6 +6,7 @@ import { AppSettings, getActiveVocabulary, type ProviderId, type CleanupMode } f
 // when OS secure storage is available. See secure/keyAccessor.ts.
 import { getEffectiveSettings } from './secure/keyAccessor'
 import { handleTranscriptionError, notifyInfo } from './errorHandler'
+import { guardRedirects, GUARDED_REDIRECT } from './llm/redirectGuard'
 import { OpenAICompatibleProvider, AnthropicProvider, ReplicateProvider, selectProvider, isLocalHost, type LLMProvider } from './llm/provider'
 import { cleanupTranscription, cleanupTranscriptionDetailed, formatTranscription, rewriteSelection, type CleanupResult } from './postprocess'
 import { getServerStatus } from './localServer'
@@ -741,9 +742,11 @@ function whisperTranscribe(apiKey: string, audioBuffer: Buffer, filename: string
       }
     }
 
+    const targetUrl = directUrl ? baseUrl : `${baseUrl}/audio/transcriptions`
     const request = net.request({
       method: 'POST',
-      url: directUrl ? baseUrl : `${baseUrl}/audio/transcriptions`
+      url: targetUrl,
+      redirect: GUARDED_REDIRECT
     })
 
     if (apiKey) {
@@ -799,6 +802,12 @@ function whisperTranscribe(apiKey: string, audioBuffer: Buffer, filename: string
         handleTranscriptionError(err, 'openai')
         settle(reject)(err)
       })
+    })
+
+    // Never follow a redirect that downgrades to http / changes host (would leak key + audio).
+    guardRedirects(request, targetUrl, (err) => {
+      handleTranscriptionError(err, 'selfhosted')
+      settle(reject)(err)
     })
 
     request.on('error', (err: Error) => {
@@ -866,9 +875,11 @@ function elevenLabsTranscribe(apiKey: string, audioBuffer: Buffer, filename: str
       }
     }
 
+    const targetUrl = ELEVENLABS_STT_URL
     const request = net.request({
       method: 'POST',
-      url: ELEVENLABS_STT_URL
+      url: targetUrl,
+      redirect: GUARDED_REDIRECT
     })
 
     request.setHeader('xi-api-key', apiKey)
@@ -912,6 +923,12 @@ function elevenLabsTranscribe(apiKey: string, audioBuffer: Buffer, filename: str
         handleTranscriptionError(err, 'elevenlabs')
         settle(reject)(err)
       })
+    })
+
+    // Never follow a redirect that downgrades to http / changes host (would leak key + audio).
+    guardRedirects(request, targetUrl, (err) => {
+      handleTranscriptionError(err, 'elevenlabs')
+      settle(reject)(err)
     })
 
     request.on('error', (err: Error) => {
@@ -1013,9 +1030,11 @@ function elevenLabsTranscribeDiarized(
       }
     }
 
+    const targetUrl = ELEVENLABS_STT_URL
     const request = net.request({
       method: 'POST',
-      url: ELEVENLABS_STT_URL
+      url: targetUrl,
+      redirect: GUARDED_REDIRECT
     })
 
     request.setHeader('xi-api-key', apiKey)
@@ -1058,6 +1077,12 @@ function elevenLabsTranscribeDiarized(
         handleTranscriptionError(err, 'elevenlabs')
         settle(reject)(err)
       })
+    })
+
+    // Never follow a redirect that downgrades to http / changes host (would leak key + audio).
+    guardRedirects(request, targetUrl, (err) => {
+      handleTranscriptionError(err, 'elevenlabs')
+      settle(reject)(err)
     })
 
     request.on('error', (err: Error) => {
@@ -1137,9 +1162,11 @@ function openAITranscribeDiarized(
       }
     }
 
+    const targetUrl = `${DEFAULT_OPENAI_BASE}/audio/transcriptions`
     const request = net.request({
       method: 'POST',
-      url: `${DEFAULT_OPENAI_BASE}/audio/transcriptions`
+      url: targetUrl,
+      redirect: GUARDED_REDIRECT
     })
 
     request.setHeader('Authorization', `Bearer ${apiKey}`)
@@ -1175,6 +1202,12 @@ function openAITranscribeDiarized(
         handleTranscriptionError(err, 'openai')
         settle(reject)(err)
       })
+    })
+
+    // Never follow a redirect that downgrades to http / changes host (would leak key + audio).
+    guardRedirects(request, targetUrl, (err) => {
+      handleTranscriptionError(err, 'openai')
+      settle(reject)(err)
     })
 
     request.on('error', (err: Error) => {
@@ -1307,7 +1340,8 @@ async function replicateTranscribe(
         Prefer: 'wait'
       },
       body: JSON.stringify({ input }),
-      signal: controller.signal
+      signal: controller.signal,
+      redirect: 'error'
     })
   } catch (err) {
     const error = err instanceof Error ? err : new Error(String(err))

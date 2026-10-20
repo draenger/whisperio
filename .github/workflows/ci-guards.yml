@@ -1,14 +1,14 @@
 name: ci-guards
 
 # Cheap Linux-only guards for the CI configuration itself. Runs only when workflow files
-# change, so it costs seconds of ubuntu time and never triggers a deploy.
+# change, so it costs seconds on the self-hosted PC runner and never triggers a deploy.
 on:
   pull_request:
     paths:
       - ".github/workflows/**"
       - "scripts/ci/**"
   push:
-    branches: [master]
+    branches-ignore: [release]
     paths:
       - ".github/workflows/**"
       - "scripts/ci/**"
@@ -16,9 +16,9 @@ on:
 
 jobs:
   no-macos-runners:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, pc]
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       # Owner rule: never build iOS/macOS on GitHub Actions (macOS minutes burned the whole
       # budget). iOS gates run locally on the Mac.
       - name: No macOS runners or Apple build steps

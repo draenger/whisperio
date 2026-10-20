@@ -69,7 +69,8 @@ describe('mistralTranscribe', () => {
 
     expect(mockNetRequest).toHaveBeenCalledWith({
       method: 'POST',
-      url: 'https://api.mistral.ai/v1/audio/transcriptions'
+      url: 'https://api.mistral.ai/v1/audio/transcriptions',
+      redirect: 'manual'
     })
   })
 

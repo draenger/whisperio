@@ -50,7 +50,7 @@ async function assemblyRequest(url: string, init: RequestInit, step: string): Pr
   const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
   let response: Response
   try {
-    response = await fetch(url, { ...init, signal: controller.signal })
+    response = await fetch(url, { ...init, signal: controller.signal, redirect: 'error' })
   } catch (err) {
     const error = err instanceof Error ? err : new Error(String(err))
     handleTranscriptionError(error, 'assemblyai')
