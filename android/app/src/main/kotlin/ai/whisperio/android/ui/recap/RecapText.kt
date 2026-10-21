@@ -56,9 +56,22 @@ class RecapText(private val res: Resources, private val locale: Locale = Locale.
         return res.getString(R.string.recap_week, stats.weekNumber, range)
     }
 
-    /** Share-sheet text: words, notes, minutes saved, streak (iOS `shareText`). Numbers only. */
-    fun shareText(stats: RecapStats): String = res.getString(
-        R.string.recap_share_text,
-        words(stats.words), notes(stats.notes), minutes(stats.minutesSaved), days(stats.streakCurrent),
-    )
+    /** Big number on the screen and the share card: minutes saved, or the week's words below 1 minute (never "0 minutes"). */
+    fun heroValue(stats: RecapStats): String = num(if (stats.showsSaved) stats.minutesSaved else stats.words)
+
+    fun heroCaption(stats: RecapStats): String = if (stats.showsSaved) {
+        savedCaption(stats.minutesSaved)
+    } else {
+        res.getQuantityString(R.plurals.recap_words_caption, stats.words)
+    }
+
+    /** Share-sheet text: words, notes, minutes saved (from 1 minute up), streak (iOS `shareText`). Numbers only. */
+    fun shareText(stats: RecapStats): String = if (stats.showsSaved) {
+        res.getString(
+            R.string.recap_share_text,
+            words(stats.words), notes(stats.notes), minutes(stats.minutesSaved), days(stats.streakCurrent),
+        )
+    } else {
+        res.getString(R.string.recap_share_text_no_saved, words(stats.words), notes(stats.notes), days(stats.streakCurrent))
+    }
 }

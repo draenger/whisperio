@@ -101,7 +101,7 @@ fun RecapScreen(
                 style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            Hero(t.num(stats.minutesSaved), t.savedCaption(stats.minutesSaved))
+            Hero(t.heroValue(stats), t.heroCaption(stats))
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 StatTile(t.num(stats.words), stringResource(R.string.recap_tile_words), Modifier.weight(1f))
                 StatTile(t.num(stats.notes), stringResource(R.string.recap_tile_notes), Modifier.weight(1f))

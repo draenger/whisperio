@@ -12,6 +12,7 @@
     <string name="recap_share_chooser">Udostępnij swój tydzień</string>
     <string name="recap_share_failed">Nie udało się udostępnić podsumowania.</string>
     <string name="recap_share_text">Mój tydzień z Whisperio: %1$s, %2$s, oszczędność ok. %3$s w porównaniu z pisaniem. Seria: %4$s.</string>
+    <string name="recap_share_text_no_saved">Mój tydzień z Whisperio: %1$s, %2$s. Seria: %3$s.</string>
     <string name="recap_empty">W tym tygodniu nie ma jeszcze notatek z tekstem. Podyktuj coś, a pojawi się tutaj.</string>
     <string name="recap_tile_words">Słowa</string>
     <string name="recap_tile_notes">Notatki</string>
@@ -59,5 +60,11 @@
         <item quantity="few">minuty zaoszczędzone w porównaniu z pisaniem</item>
         <item quantity="many">minut zaoszczędzonych w porównaniu z pisaniem</item>
         <item quantity="other">minuty zaoszczędzone w porównaniu z pisaniem</item>
+    </plurals>
+    <plurals name="recap_words_caption">
+        <item quantity="one">słowo podyktowane w tym tygodniu</item>
+        <item quantity="few">słowa podyktowane w tym tygodniu</item>
+        <item quantity="many">słów podyktowanych w tym tygodniu</item>
+        <item quantity="other">słowa podyktowanego w tym tygodniu</item>
     </plurals>
 </resources>

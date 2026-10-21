@@ -38,8 +38,8 @@ data class RecapCardContent(
 
 fun recapCardContent(stats: RecapStats, t: RecapText, context: Context): RecapCardContent = RecapCardContent(
     weekLabel = t.weekLabel(stats),
-    heroValue = t.num(stats.minutesSaved),
-    heroCaption = t.savedCaption(stats.minutesSaved),
+    heroValue = t.heroValue(stats),
+    heroCaption = t.heroCaption(stats),
     tiles = listOf(
         RecapCardTile(t.num(stats.words), context.getString(R.string.recap_tile_words)),
         RecapCardTile(t.num(stats.notes), context.getString(R.string.recap_tile_notes)),
@@ -90,7 +90,7 @@ object RecapShare {
         text(content.footer, margin, 130f, 52f, accent, true, inner)
         text(content.weekLabel, margin, 200f, 40f, muted, false, inner)
 
-        // Hero: minutes saved.
+        // Hero: minutes saved, or the week's words below 1 minute.
         text(content.heroValue, WIDTH / 2f, 500f, 260f, ink, true, inner, center = true)
         text(content.heroCaption, WIDTH / 2f, 590f, 46f, accent, false, inner, center = true)
 
