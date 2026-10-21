@@ -38,8 +38,8 @@ data class RecapCardContent(
 
 fun recapCardContent(stats: RecapStats, t: RecapText, context: Context): RecapCardContent = RecapCardContent(
     weekLabel = t.weekLabel(stats),
-    heroValue = t.num(stats.minutesSaved),
-    heroCaption = t.savedCaption(stats.minutesSaved),
+    heroValue = t.heroValue(stats),
+    heroCaption = t.heroCaption(stats),
     tiles = listOf(
         RecapCardTile(t.num(stats.words), context.getString(R.string.recap_tile_words)),
         RecapCardTile(t.num(stats.notes), context.getString(R.string.recap_tile_notes)),

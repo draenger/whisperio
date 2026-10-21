@@ -63,12 +63,40 @@ class RecapShareTest {
         assertEquals("2", content.tiles[1].value)
     }
 
+    /** 380 words spoken in 5 minutes: 10 minutes of typing -> 5 minutes saved. */
+    private val longWeek get() = Recap.compute(
+        listOf(RecapItem("l", now - 1000, 300_000, List(380) { "word" }.joinToString(" "), true, "openai")),
+        now, ZoneOffset.UTC,
+    )
+
     @Test fun shareTextHasWordsNotesMinutesAndStreak() {
-        val text = RecapText(ctx.resources, Locale.US).shareText(stats)
+        val text = RecapText(ctx.resources, Locale.US).shareText(longWeek)
+        assertTrue(text, text.contains("380 words"))
+        assertTrue(text, text.contains("1 note"))
+        assertTrue(text, text.contains("about 5 minutes saved"))
+        assertTrue(text, text.contains("1 day"))
+    }
+
+    @Test fun shortWeekNeverSaysZeroMinutes() {
+        // 13 words in 90 s: slower than typing -> 0 minutes saved.
+        assertEquals(0, stats.minutesSaved)
+        val t = RecapText(ctx.resources, Locale.US)
+        val text = t.shareText(stats)
         assertTrue(text, text.contains("13 words"))
         assertTrue(text, text.contains("2 notes"))
         assertTrue(text, text.contains("2 days"))
+        assertFalse(text, text.contains("minute"))
         assertFalse(text.contains("secret"))
+        assertEquals("13", t.heroValue(stats))
+        assertEquals("words dictated this week", t.heroCaption(stats))
+        val card = recapCardContent(stats, t, ctx).allText.joinToString("\n")
+        assertFalse(card, card.contains("saved")) // "Words per minute" tile stays; no minutes-saved hero
+    }
+
+    @Test fun heroShowsMinutesSavedFromOneMinuteUp() {
+        val t = RecapText(ctx.resources, Locale.US)
+        assertEquals("5", t.heroValue(longWeek))
+        assertEquals("minutes saved vs typing", t.heroCaption(longWeek))
     }
 
     @Test fun chooserCarriesTheStreamClipDataAndReadGrant() {

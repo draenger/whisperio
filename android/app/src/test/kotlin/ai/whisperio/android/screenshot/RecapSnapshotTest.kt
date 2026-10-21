@@ -33,6 +33,9 @@ private object RecapFx {
     )
     val stats: RecapStats get() = Recap.compute(items, Fx.NOW, ZoneOffset.UTC)
     val empty: RecapStats get() = Recap.compute(emptyList(), Fx.NOW, ZoneOffset.UTC)
+
+    /** Under 1 minute saved: the hero shows the week's words, the card hides the saved line. */
+    val short: RecapStats get() = Recap.compute(listOf(item("s", 0, 25, 20_000, "openai", null)), Fx.NOW, ZoneOffset.UTC)
 }
 
 @RunWith(RobolectricTestRunner::class)
@@ -51,6 +54,12 @@ open class RecapSnapshotTest {
 
     @Test @Config(qualifiers = PHONE)
     fun screenEmpty() = rule.snapshot("recap_screen_empty") { RecapScreen(RecapFx.empty, {}, {}) }
+
+    @Test @Config(qualifiers = PHONE)
+    fun screenShortWeek() = rule.snapshot("recap_screen_short") { RecapScreen(RecapFx.short, {}, {}, categoryLabel = label) }
+
+    @Test @Config(qualifiers = PHONE)
+    fun cardShortWeek() = rule.snapshot("recap_card_short") { RecapCard(RecapFx.short, onClick = {}) }
 
     @Test @Config(qualifiers = ScreenshotConfig.TABLET)
     fun screenTablet() = rule.snapshot("recap_screen_tablet") { RecapScreen(RecapFx.stats, {}, {}, categoryLabel = label) }
