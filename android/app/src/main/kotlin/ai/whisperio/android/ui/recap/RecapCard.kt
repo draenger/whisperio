@@ -51,7 +51,11 @@ fun RecapCard(stats: RecapStats, onClick: () -> Unit, modifier: Modifier = Modif
     val words = t.words(stats.words)
     val notes = t.notes(stats.notes)
     val saved = t.minutes(stats.minutesSaved)
-    val cd = stringResource(R.string.recap_card_cd, words, notes, saved)
+    val cd = if (stats.showsSaved) {
+        stringResource(R.string.recap_card_cd, words, notes, saved)
+    } else {
+        stringResource(R.string.recap_card_cd_no_saved, words, notes)
+    }
     Card(
         onClick = onClick,
         modifier = modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp).semantics { contentDescription = cd },
@@ -72,11 +76,13 @@ fun RecapCard(stats: RecapStats, onClick: () -> Unit, modifier: Modifier = Modif
                     style = MaterialTheme.typography.bodyLarge,
                     color = MaterialTheme.colorScheme.onPrimaryContainer,
                 )
-                Text(
-                    stringResource(R.string.recap_card_saved, saved),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer,
-                )
+                if (stats.showsSaved) {
+                    Text(
+                        stringResource(R.string.recap_card_saved, saved),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                    )
+                }
             }
             Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null)
         }
