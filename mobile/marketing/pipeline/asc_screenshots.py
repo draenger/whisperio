@@ -52,8 +52,10 @@ def upload_one(set_id, path):
     for op in reserve["data"]["attributes"]["uploadOperations"]:
         chunk = data[op["offset"]:op["offset"] + op["length"]]
         asc.call(op["method"], op["url"], raw_headers={h["name"]: h["value"] for h in op["requestHeaders"]}, data=chunk)
+    # ASC requires an MD5 sourceFileChecksum (upload integrity, not security).
+    checksum = hashlib.md5(data, usedforsecurity=False).hexdigest()
     asc.call("PATCH", f"{asc.API}/appScreenshots/{sid}", {"data": {"type": "appScreenshots", "id": sid,
-             "attributes": {"uploaded": True, "sourceFileChecksum": hashlib.md5(data).hexdigest()}}})
+             "attributes": {"uploaded": True, "sourceFileChecksum": checksum}}})
     return sid
 
 
