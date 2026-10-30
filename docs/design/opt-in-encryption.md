@@ -183,12 +183,16 @@ Parallelism: Android and desktop are independent after the spec. iOS needs the M
 | R8 | Store policy and export rules (Apple export compliance, French encryption declaration if applicable) | Check in the first week, before iOS work starts |
 | R9 | New dependency (Tink) vs. the "no third-party SDK" privacy stance and `PrivacyGateTest` | Tink is a local crypto library with no network code; if not acceptable, implement the segment scheme in `:core` (about 200 lines + vectors) |
 
-## 8. Decisions needed from Daniel
+## 8. Decisions (taken 2026-10-30 on Daniel's instruction: recommended option wherever safer at equal cost)
 
-1. Default OFF (recommended) or ON?
-2. Phase 1 scope: transcripts + audio on Android and desktop; iOS device-only mode (recommended) vs. iCloud E2E now.
-3. SQLCipher (whole DB, hides metadata, heavier) vs. field-level (recommended).
-4. Tink vs. own segment scheme for audio.
-5. Biometric lock in phase 2 (recommended) or in the first release.
-6. Recovery key: yes/no (changes the "we cannot recover anything" promise only if we hold a copy, which we will not).
-7. Fix the desktop plaintext key fallback now, independently of this feature.
+| # | Decision | Choice | Why |
+|---|---|---|---|
+| 1 | Default | **OFF**, offered as a card after onboarding and in Settings > Privacy | Data-loss risk is asymmetric (R1); mobile threat model already covered by FBE/Data Protection; one story on all platforms |
+| 2 | Phase 1 scope | Transcripts + audio on **Android and desktop**; iOS = device-only mode, no iCloud E2E | Smallest surface first; iCloud E2E needs key sync and recovery design |
+| 3 | DB encryption | **Field-level** (not SQLCipher) | Keeps metadata plaintext so lists render and an undecryptable row degrades to "unreadable"; no native DB dependency |
+| 4 | Audio scheme | **Tink streaming AEAD on Android**; Node crypto segmented AES-256-GCM on desktop (no cross-platform file exchange, so formats need not match) | Audited library over our own 200 lines; Tink has no network code (R9), `PrivacyGateTest` re-checked |
+| 5 | Biometric lock | **Phase 2** | Needs write-without-auth design (3.4); keeps phase 1 testable |
+| 6 | Recovery key | **Yes, phase 2, user-held only** (Argon2id-derived wrap, we never hold a copy) | Mitigates R1 without changing the "we cannot recover anything" promise |
+| 7 | Desktop plaintext key fallback | **Fixed now**, independent of this feature (PR #19) | Bug-class fix |
+
+Still owned by Daniel (not decided here): everything in Play Console (RECORD_AUDIO declaration, Data safety submission), legal texts (privacy policy, terms), desktop release 1.5.2.
