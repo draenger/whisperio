@@ -126,6 +126,26 @@ describe('keyAccessor', () => {
       warn.mockRestore()
     })
 
+    it('adds the keyring instruction to the warning on Linux only', () => {
+      mockIsEncryptionAvailable.mockReturnValue(false)
+      mockLoadSettings.mockReturnValue({ ...BASE_SETTINGS })
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+      const listener = vi.fn()
+      setSecureStorageWarningListener(listener)
+      const platform = Object.getOwnPropertyDescriptor(process, 'platform')!
+      try {
+        Object.defineProperty(process, 'platform', { value: 'linux' })
+        saveSettingsWithKeys({ openaiApiKey: 'sk-linux' })
+        expect(listener).toHaveBeenLastCalledWith(expect.stringContaining('gnome-keyring or KWallet'))
+        Object.defineProperty(process, 'platform', { value: 'win32' })
+        saveSettingsWithKeys({ openaiApiKey: 'sk-win' })
+        expect(listener).toHaveBeenLastCalledWith(expect.not.stringContaining('KWallet'))
+      } finally {
+        Object.defineProperty(process, 'platform', platform)
+        warn.mockRestore()
+      }
+    })
+
     it('serves the session key from getEffectiveSettings but not from disk', () => {
       mockIsEncryptionAvailable.mockReturnValue(false)
       mockLoadSettings.mockReturnValue({ ...BASE_SETTINGS })
@@ -189,14 +209,22 @@ describe('keyAccessor', () => {
       expect(mockSaveSettings).toHaveBeenCalledWith({ openaiApiKey: '' })
     })
 
-    it('keeps the plaintext in settings.json when round-trip verification fails', () => {
+    it('fails closed when round-trip verification fails: session-only, nothing in settings.json', () => {
       mockIsEncryptionAvailable.mockReturnValue(true)
       mockSetKey.mockImplementation(() => {})
       mockGetKey.mockReturnValue('SOMETHING-ELSE') // simulate a corrupted/garbled write
+      const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+      const listener = vi.fn()
+      setSecureStorageWarningListener(listener)
 
-      saveSettingsWithKeys({ openaiApiKey: 'sk-new' })
+      const result = saveSettingsWithKeys({ openaiApiKey: 'sk-new' })
 
-      expect(mockSaveSettings).toHaveBeenCalledWith({ openaiApiKey: 'sk-new' })
+      expect(mockSaveSettings).toHaveBeenCalledWith({ openaiApiKey: '' })
+      expect(result.openaiApiKey).toBe('sk-new')
+      expect(listener).toHaveBeenCalledWith(expect.stringContaining('kept for this session only'))
+      errSpy.mockRestore()
+      warn.mockRestore()
     })
 
     it('clearing a field (empty string) deletes it from the key store and clears settings.json', () => {
@@ -208,17 +236,22 @@ describe('keyAccessor', () => {
       expect(mockSaveSettings).toHaveBeenCalledWith({ openaiApiKey: '' })
     })
 
-    it('keeps the plaintext in settings.json when the key store write itself throws', () => {
+    it('fails closed when the key store write itself throws: session-only, served from getEffectiveSettings', () => {
       mockIsEncryptionAvailable.mockReturnValue(true)
       mockSetKey.mockImplementation(() => {
         throw new Error('disk full')
       })
+      mockGetKey.mockReturnValue(null)
+      mockLoadSettings.mockReturnValue({ ...BASE_SETTINGS })
       const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
 
       saveSettingsWithKeys({ openaiApiKey: 'sk-new' })
 
-      expect(mockSaveSettings).toHaveBeenCalledWith({ openaiApiKey: 'sk-new' })
+      expect(mockSaveSettings).toHaveBeenCalledWith({ openaiApiKey: '' })
+      expect(getEffectiveSettings().openaiApiKey).toBe('sk-new')
       errSpy.mockRestore()
+      warn.mockRestore()
     })
 
     it('still blanks settings.json when deleting a cleared field from the key store throws (best-effort)', () => {
