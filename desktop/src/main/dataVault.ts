@@ -31,7 +31,12 @@ function keyPath(): string {
 function atomicWrite(filePath: string, data: string): void {
   const tmp = `${filePath}.${process.pid}.${Date.now()}.tmp`
   writeFileSync(tmp, data, 'utf-8')
-  renameSync(tmp, filePath)
+  try {
+    renameSync(tmp, filePath)
+  } catch (err) {
+    try { unlinkSync(tmp) } catch { /* best-effort cleanup */ }
+    throw err
+  }
 }
 
 export function isDataVaultAvailable(): DataVaultAvailability {

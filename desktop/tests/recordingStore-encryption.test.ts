@@ -196,4 +196,34 @@ describe('recordingStore - sealed index', () => {
     expect(readFileSync(INDEX, 'utf-8')).not.toContain(SECRET)
     expect(getHistoryEncryptionStatus().enabled).toBe(true)
   })
+
+  it('sealing is sticky: flag lost (settings reset) does not downgrade a sealed index to plain', async () => {
+    await setHistoryEncryption(true)
+    const id = await seed()
+    setEncryptHistoryReader(() => false) // e.g. corrupt settings.json reset to defaults
+    await updateRecording(id, { cleanedText: 'edited' })
+    const raw = readFileSync(INDEX, 'utf-8')
+    expect(raw).not.toContain(SECRET)
+    expect(raw).not.toContain('edited')
+    expect(getRecording(id)?.cleanedText).toBe('edited')
+    // The explicit switch is still the only way back to plain.
+    expect(await setHistoryEncryption(false)).toEqual({ ok: true })
+    expect(readFileSync(INDEX, 'utf-8')).toContain(SECRET)
+  })
+
+  it('unparseable index is moved aside as .corrupt-<ts> and never overwritten', async () => {
+    mkdirSync(RECORDINGS_DIR, { recursive: true })
+    writeFileSync(INDEX, '{"v":1,"alg":"aes-256-gcm","iv":"tru', 'utf-8')
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      expect(getRecordings()).toEqual([])
+      const backups = readdirSync(RECORDINGS_DIR).filter((f) => f.startsWith('index.json.corrupt-'))
+      expect(backups).toHaveLength(1)
+      expect(readFileSync(join(RECORDINGS_DIR, backups[0]), 'utf-8')).toBe('{"v":1,"alg":"aes-256-gcm","iv":"tru')
+      await seed()
+      expect(getRecordings()).toHaveLength(1)
+    } finally {
+      err.mockRestore()
+    }
+  })
 })

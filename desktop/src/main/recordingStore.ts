@@ -193,7 +193,21 @@ function readIndexState(): IndexState {
   let parsed: unknown
   try {
     parsed = JSON.parse(readFileSync(indexPath, 'utf-8'))
-  } catch {
+  } catch (err) {
+    // Unparseable index (truncated by power loss, bit rot; plain or sealed): move it aside as
+    // `.corrupt-<ts>` so the next save cannot overwrite the only copy, then start empty.
+    try {
+      const backupPath = `${indexPath}.corrupt-${Date.now()}`
+      renameSync(indexPath, backupPath)
+      console.error(
+        `[Whisperio] recordings index was unreadable (${err instanceof Error ? err.message : String(err)}); ` +
+          `backed up to ${backupPath}.`
+      )
+    } catch (backupErr) {
+      // Could not move it aside: refuse writes rather than overwrite it.
+      console.error('[Whisperio] Failed to back up unreadable recordings index:', backupErr)
+      return { index: { recordings: [] }, sealedOnDisk: false, locked: true }
+    }
     return { index: { recordings: [] }, sealedOnDisk: false, locked: false }
   }
   if (looksSealed(parsed)) {
@@ -253,8 +267,11 @@ function isTransientRenameError(err: unknown): boolean {
 
 export function saveIndex(index: RecordingIndex): void {
   // Never overwrite a sealed index we cannot open (would destroy the user's history).
-  if (readIndexState().locked) throw new HistoryLockedError()
-  writeIndexFile(index, encryptHistoryReader())
+  const st = readIndexState()
+  if (st.locked) throw new HistoryLockedError()
+  // Sealing is sticky: a sealed index stays sealed even if the flag reads OFF (e.g. settings.json
+  // was reset to defaults after corruption). Only setHistoryEncryption(false) writes plain over it.
+  writeIndexFile(index, st.sealedOnDisk || encryptHistoryReader())
 }
 
 function writeIndexFile(index: RecordingIndex, seal: boolean): void {
