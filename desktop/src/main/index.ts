@@ -29,8 +29,11 @@ import {
   deleteAllRecordings,
   deleteRecordingsByDate,
   getRecordingAudio,
-  updateRecording
+  updateRecording,
+  getHistoryEncryptionStatus,
+  setHistoryEncryption
 } from './recordingStore'
+import { isDataVaultAvailable } from './dataVault'
 import { searchTranscripts } from './searchService'
 import {
   getAvailableModels,
@@ -260,7 +263,11 @@ app.whenReady().then(() => {
     }
   })
   ipcMain.handle('settings:load', () => getEffectiveSettings())
-  ipcMain.handle('settings:save', (_event, newSettings) => {
+  ipcMain.handle('settings:save', (_event, incoming) => {
+    // encryptHistory is owned by history:encryption:set (which proves the key works and rewrites the
+    // index). The generic setter must never flip it, so drop it from whatever the renderer sent.
+    const newSettings = { ...(incoming as Parameters<typeof saveSettingsWithKeys>[0]) }
+    delete newSettings.encryptHistory
     const prevChecks = loadSettings().checkForUpdates !== false
     const saved = saveSettingsWithKeys(newSettings)
     // Only touch the update schedule when the flag actually changed (a settings save for any
@@ -348,6 +355,13 @@ app.whenReady().then(() => {
 
   // Recording store IPC handlers
   ipcMain.on('recordings:openWindow', () => openRecordingsWindow())
+  ipcMain.handle('history:encryption:get', () => ({
+    ...getHistoryEncryptionStatus(),
+    vault: isDataVaultAvailable()
+  }))
+  ipcMain.handle('history:encryption:set', (_e, enabled: unknown) =>
+    setHistoryEncryption(enabled === true)
+  )
   ipcMain.handle('recordings:list', () => getRecordings())
   ipcMain.handle('recordings:get', (_e, id: string) => getRecording(id))
   ipcMain.handle('recordings:save', async (_e, audioBuffer: Buffer, metadata: { duration: number; provider: string }) => {

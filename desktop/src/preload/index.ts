@@ -394,10 +394,29 @@ export interface ContextAPI {
   enableWindowTitleMatching: () => Promise<AppSettings>
 }
 
+export interface HistoryEncryptionStatus {
+  enabled: boolean
+  sealedOnDisk: boolean
+  locked: boolean
+  vault: { ok: true } | { ok: false; reason: 'unavailable' | 'weak-backend' }
+}
+
+export type SetHistoryEncryptionResult =
+  | { ok: true }
+  | { ok: false; reason: 'unavailable' | 'weak-backend' | 'locked' }
+
+export interface HistoryAPI {
+  /** Encryption status of the saved-history index plus OS key-vault availability. */
+  getEncryption: () => Promise<HistoryEncryptionStatus>
+  /** Opt in/out of history encryption. Fails closed (flag stays unchanged) on any non-ok result. */
+  setEncryption: (enabled: boolean) => Promise<SetHistoryEncryptionResult>
+}
+
 export interface WhisperioAPI {
   dictation: DictationAPI
   settings: SettingsAPI
   recordings: RecordingsAPI
+  history: HistoryAPI
   models: ModelsAPI
   server: ServerAPI
   errors: ErrorAPI
@@ -479,6 +498,11 @@ const settingsApi: SettingsAPI = {
       ipcRenderer.removeListener('settings:set-tab', handler)
     }
   }
+}
+
+const historyApi: HistoryAPI = {
+  getEncryption: () => ipcRenderer.invoke('history:encryption:get'),
+  setEncryption: (enabled) => ipcRenderer.invoke('history:encryption:set', enabled)
 }
 
 const recordingsApi: RecordingsAPI = {
@@ -597,6 +621,7 @@ contextBridge.exposeInMainWorld('api', {
   dictation: dictationApi,
   settings: settingsApi,
   recordings: recordingsApi,
+  history: historyApi,
   models: modelsApi,
   server: serverApi,
   errors: errorsApi,

@@ -35,6 +35,8 @@ export interface SecretEnvelope {
   ct: string
   /** Base64 GCM authentication tag (16 bytes) — integrity + authenticity. */
   tag: string
+  /** Optional key id (additive; absent on every pre-existing envelope). Informational only. */
+  kid?: string
 }
 
 /** Generate a fresh 256-bit data key. Caller is responsible for storing it securely. */
@@ -53,18 +55,39 @@ function assertKey(key: Buffer): void {
  * A random IV is generated per call — never encrypt twice with the same (key, IV).
  */
 export function encryptWithKey(key: Buffer, plaintext: string): SecretEnvelope {
+  return sealInternal(key, plaintext, undefined, undefined)
+}
+
+/**
+ * Like encryptWithKey but binds the ciphertext to `aad` (GCM additional authenticated data), so an
+ * envelope sealed for one purpose cannot be opened as another. `kid` is an optional informational
+ * key id stored in the envelope. The AAD itself is NOT stored; the opener must supply it.
+ */
+export function encryptWithKeyAad(key: Buffer, plaintext: string, aad: string, kid?: string): SecretEnvelope {
+  return sealInternal(key, plaintext, aad, kid)
+}
+
+function sealInternal(
+  key: Buffer,
+  plaintext: string,
+  aad: string | undefined,
+  kid: string | undefined
+): SecretEnvelope {
   assertKey(key)
   const iv = randomBytes(IV_BYTES)
   const cipher = createCipheriv('aes-256-gcm', key, iv, { authTagLength: TAG_BYTES })
+  if (aad !== undefined) cipher.setAAD(Buffer.from(aad, 'utf8'))
   const ct = Buffer.concat([cipher.update(plaintext, 'utf8'), cipher.final()])
   const tag = cipher.getAuthTag()
-  return {
+  const env: SecretEnvelope = {
     v: 1,
     alg: 'AES-256-GCM',
     iv: iv.toString('base64'),
     ct: ct.toString('base64'),
     tag: tag.toString('base64')
   }
+  if (kid !== undefined) env.kid = kid
+  return env
 }
 
 /**
@@ -72,6 +95,15 @@ export function encryptWithKey(key: Buffer, plaintext: string): SecretEnvelope {
  * tampered with (GCM tag mismatch), or the envelope is malformed/unsupported.
  */
 export function decryptWithKey(key: Buffer, env: SecretEnvelope): string {
+  return openInternal(key, env, undefined)
+}
+
+/** Open an envelope sealed with encryptWithKeyAad. Throws on a wrong/missing AAD. */
+export function decryptWithKeyAad(key: Buffer, env: SecretEnvelope, aad: string): string {
+  return openInternal(key, env, aad)
+}
+
+function openInternal(key: Buffer, env: SecretEnvelope, aad: string | undefined): string {
   assertKey(key)
   if (!env || env.v !== 1 || env.alg !== 'AES-256-GCM') {
     throw new Error('Unsupported or malformed secret envelope')
@@ -84,6 +116,7 @@ export function decryptWithKey(key: Buffer, env: SecretEnvelope): string {
   // Pin the tag length in the decipher too, so a truncated tag can never be accepted even if the
   // explicit length check above is ever refactored away.
   const decipher = createDecipheriv('aes-256-gcm', key, iv, { authTagLength: TAG_BYTES })
+  if (aad !== undefined) decipher.setAAD(Buffer.from(aad, 'utf8'))
   decipher.setAuthTag(tag)
   const pt = Buffer.concat([decipher.update(ct), decipher.final()])
   return pt.toString('utf8')
