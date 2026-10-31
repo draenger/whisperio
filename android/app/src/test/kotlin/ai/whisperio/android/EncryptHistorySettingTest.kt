@@ -23,6 +23,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
@@ -146,8 +147,8 @@ class EncryptHistorySettingTest {
     @Test fun backToBackTogglesEndInAConsistentState() = runBlocking {
         val g = graph()
         for (i in 1..5) g.history.upsert(row("r$i", "text $i"))
-        val a = kotlinx.coroutines.async(Dispatchers.Default) { g.setEncryptHistory(true) }
-        val b = kotlinx.coroutines.async(Dispatchers.Default) { g.setEncryptHistory(false) }
+        val a = async(Dispatchers.Default) { g.setEncryptHistory(true) }
+        val b = async(Dispatchers.Default) { g.setEncryptHistory(false) }
         a.await(); b.await()
         val on = settings.current().encryptHistory
         // Whichever toggle ran last wins, and every row matches the flag (no half-migrated mix).
