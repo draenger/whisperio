@@ -241,17 +241,29 @@ class AppGraph private constructor(private val appOrNull: Application?, private 
 
     /** Best effort per step: a Keystore error must not stop Erase all from deleting the data itself. */
     private suspend fun shredDataKey() {
+        var wrappedKeyLeft = false
         try {
             dataCipher?.shred()
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            // Wrapped key could not be deleted; the KEK deletion below still makes it unusable.
+            wrappedKeyLeft = true // the KEK deletion below still makes it unusable, but it must not stay behind
         }
         try {
             dataKek?.deleteKey()
         } catch (e: Exception) {
             // Keystore unavailable: the wrapped DEK is already gone (or will be with the DataStore files).
+        }
+        if (wrappedKeyLeft) {
+            // A dead wrapped DEK left behind would make DataCipher refuse to mint a new key (it never replaces an
+            // existing one), so the feature would stay "not available" for good. One more try, best effort.
+            try {
+                dataCipher?.shred()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // Still failing: the rest of the erase goes on.
+            }
         }
     }
 

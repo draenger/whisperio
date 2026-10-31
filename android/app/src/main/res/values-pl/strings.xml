@@ -181,7 +181,7 @@
     <string name="settings_sensitive">Traktuj transkrypcje jako poufne</string>
     <string name="settings_sensitive_hint">Ukrywa skopiowany tekst w podglądach schowka.</string>
     <string name="settings_encrypt">Szyfruj historię</string>
-    <string name="settings_encrypt_hint">Transkrypcje i zachowane nagrania są szyfrowane na tym urządzeniu kluczem przechowywanym w Android Keystore. Data, długość, dostawca i kategoria pozostają niezaszyfrowane. Jeśli klucz zostanie utracony (np. po przywróceniu ustawień fabrycznych), zaszyfrowanej historii nie da się odzyskać. Nie dotyczy tekstu kopiowanego lub wstawianego do innych aplikacji ani nagrań wysyłanych do Twojego dostawcy.</string>
+    <string name="settings_encrypt_hint">Transkrypcje i zachowane nagrania są szyfrowane na tym urządzeniu kluczem przechowywanym w Android Keystore. Data, długość, dostawca, model, język, źródło i kategoria pozostają niezaszyfrowane. Jeśli klucz zostanie utracony (np. po przywróceniu ustawień fabrycznych), zaszyfrowanej historii nie da się odzyskać. Nie dotyczy tekstu kopiowanego lub wstawianego do innych aplikacji ani nagrań wysyłanych do Twojego dostawcy.</string>
     <string name="settings_encrypt_on_title">Włączyć szyfrowanie?</string>
     <string name="settings_encrypt_on_body">Twoja dotychczasowa historia zostanie zaszyfrowana na tym urządzeniu. Jeśli klucz szyfrowania zostanie utracony, np. po przywróceniu ustawień fabrycznych albo awarii magazynu kluczy urządzenia, zaszyfrowanych transkrypcji i nagrań nie da się odzyskać. Szyfrowanie możesz wyłączyć w każdej chwili.</string>
     <string name="settings_encrypt_on_confirm">Włącz</string>
