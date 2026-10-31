@@ -54,8 +54,8 @@ class AudioCipherTest {
         assertTrue(AudioCipher.isEncrypted("/x/r1.m4a.wea"))
         assertFalse(AudioCipher.isEncrypted("/x/r1.m4a"))
         assertFalse(AudioCipher.isEncrypted("/x/r1.m4a.wea.tmp"))
-        assertEquals("/x/r1.m4a.wea", AudioCipher.encryptedFor(File("/x/r1.m4a")).path.replace('\', '/'))
-        assertEquals("/x/r1.m4a", AudioCipher.plainFor(File("/x/r1.m4a.wea")).path.replace('\', '/'))
+        assertEquals("/x/r1.m4a.wea", AudioCipher.encryptedFor(File("/x/r1.m4a")).path.replace('\\', '/'))
+        assertEquals("/x/r1.m4a", AudioCipher.plainFor(File("/x/r1.m4a.wea")).path.replace('\\', '/'))
     }
 
     @Test fun roundTripOfAMultiSegmentFile() = runBlocking {
