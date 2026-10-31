@@ -6,6 +6,8 @@ import java.util.Base64
 import javax.crypto.Cipher
 import javax.crypto.spec.GCMParameterSpec
 import javax.crypto.spec.SecretKeySpec
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 /** Where the wrapped (Keystore-encrypted) data key lives. Deleting it is the crypto-shred. */
 interface WrappedKeyStore {
@@ -39,30 +41,39 @@ class DataCipher(
 ) {
     @Volatile private var cachedDek: ByteArray? = null
 
+    /** Serializes key acquisition and shred so two first seals cannot each mint a DEK. */
+    private val keyLock = Mutex()
+
     /** Returns the DEK, creating and persisting a wrapped one if none exists yet. */
     private suspend fun dekForEncrypt(): ByteArray {
         cachedDek?.let { return it }
-        val existing = keys.read()
-        if (existing != null) {
-            // An existing but unwrappable key must NOT be silently replaced: that would orphan all data.
-            return wrapper.decrypt(existing).also { cachedDek = it }
+        return keyLock.withLock {
+            cachedDek?.let { return@withLock it }
+            val existing = keys.read()
+            if (existing != null) {
+                // An existing but unwrappable key must NOT be silently replaced: that would orphan all data.
+                return@withLock wrapper.decrypt(existing).also { cachedDek = it }
+            }
+            val fresh = ByteArray(DEK_BYTES).also(random::nextBytes)
+            keys.write(wrapper.encrypt(fresh))
+            cachedDek = fresh
+            fresh
         }
-        val fresh = ByteArray(DEK_BYTES).also(random::nextBytes)
-        keys.write(wrapper.encrypt(fresh))
-        cachedDek = fresh
-        return fresh
     }
 
     /** Null when there is no key or it cannot be unwrapped (lost Keystore key). */
     private suspend fun dekForDecrypt(): ByteArray? {
         cachedDek?.let { return it }
-        val wrapped = keys.read() ?: return null
-        return try {
-            wrapper.decrypt(wrapped).also { cachedDek = it }
-        } catch (e: kotlinx.coroutines.CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            null
+        return keyLock.withLock {
+            cachedDek?.let { return@withLock it }
+            val wrapped = keys.read() ?: return@withLock null
+            try {
+                wrapper.decrypt(wrapped).also { cachedDek = it }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                null
+            }
         }
     }
 
@@ -99,14 +110,12 @@ class DataCipher(
     suspend fun sealText(plain: String, aad: String = ""): String =
         TEXT_PREFIX + Base64.getEncoder().encodeToString(seal(plain.toByteArray(Charsets.UTF_8), aad.toByteArray()))
 
-    /** Text that does not start with [TEXT_PREFIX] is plaintext (not yet migrated) and is returned as is. */
+    /**
+     * Text that is not strictly a sealed envelope (see [isSealedText]) is plaintext (not yet migrated) and is
+     * returned as is, so a user's own "WE1: notes" is never mistaken for ciphertext.
+     */
     suspend fun openText(stored: String, aad: String = ""): Decrypted<String> {
-        if (!isSealedText(stored)) return Decrypted.Ok(stored)
-        val blob = try {
-            Base64.getDecoder().decode(stored.removePrefix(TEXT_PREFIX))
-        } catch (e: IllegalArgumentException) {
-            return Decrypted.Unreadable
-        }
+        val blob = sealedBlobOrNull(stored) ?: return Decrypted.Ok(stored)
         return when (val r = open(blob, aad.toByteArray())) {
             is Decrypted.Ok -> Decrypted.Ok(String(r.value, Charsets.UTF_8))
             Decrypted.Unreadable -> Decrypted.Unreadable
@@ -115,14 +124,33 @@ class DataCipher(
 
     /** Crypto-shred: destroy the wrapped key first; everything sealed with it is gone for good. */
     suspend fun shred() {
-        cachedDek?.fill(0)
-        cachedDek = null
-        keys.delete()
+        keyLock.withLock {
+            cachedDek?.fill(0)
+            cachedDek = null
+            keys.delete()
+        }
     }
 
     companion object {
         const val TEXT_PREFIX = "WE1:"
-        fun isSealedText(s: String): Boolean = s.startsWith(TEXT_PREFIX)
+
+        /**
+         * Strict: the [TEXT_PREFIX], then valid Base64 whose bytes start with the envelope magic and are at least
+         * magic + nonce + tag long. Anything else (even starting with "WE1:") is plain user text.
+         */
+        fun isSealedText(s: String): Boolean = sealedBlobOrNull(s) != null
+
+        private fun sealedBlobOrNull(s: String): ByteArray? {
+            if (!s.startsWith(TEXT_PREFIX)) return null
+            val blob = try {
+                Base64.getDecoder().decode(s.substring(TEXT_PREFIX.length))
+            } catch (e: IllegalArgumentException) {
+                return null
+            }
+            if (blob.size < MAGIC.size + NONCE_BYTES + TAG_BITS / 8) return null
+            if (!blob.copyOfRange(0, MAGIC.size).contentEquals(MAGIC)) return null
+            return blob
+        }
 
         private val MAGIC = byteArrayOf(0x57, 0x45, 0x01)
         private val EMPTY = ByteArray(0)

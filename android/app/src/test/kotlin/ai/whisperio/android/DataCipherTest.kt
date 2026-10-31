@@ -8,6 +8,9 @@ import java.security.SecureRandom
 import javax.crypto.Cipher
 import javax.crypto.spec.GCMParameterSpec
 import javax.crypto.spec.SecretKeySpec
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -34,9 +37,10 @@ private class FakeWrapper(var broken: Boolean = false) : SecretCipher {
 }
 
 private class MemKeys : WrappedKeyStore {
-    var blob: ByteArray? = null
+    @Volatile var blob: ByteArray? = null
+    val writes = java.util.concurrent.atomic.AtomicInteger()
     override suspend fun read() = blob
-    override suspend fun write(wrapped: ByteArray) { blob = wrapped }
+    override suspend fun write(wrapped: ByteArray) { writes.incrementAndGet(); kotlinx.coroutines.yield(); blob = wrapped }
     override suspend fun delete() { blob = null }
 }
 
@@ -74,7 +78,6 @@ class DataCipherTest {
         assertEquals(Decrypted.Unreadable, c.open(flipped))
         assertEquals(Decrypted.Unreadable, c.open(blob.copyOf(5)))
         assertEquals(Decrypted.Unreadable, c.open(ByteArray(0)))
-        assertEquals(Decrypted.Unreadable, c.openText("WE1:%%%not-base64"))
         val badMagic = blob.copyOf().also { it[2] = 9 }
         assertEquals(Decrypted.Unreadable, c.open(badMagic))
     }
@@ -109,5 +112,28 @@ class DataCipherTest {
         // A new key after shred must not resurrect old data.
         c.sealText("again")
         assertEquals(Decrypted.Unreadable, c.openText(sealed))
+    }
+
+    @Test fun lookalikePlaintextIsNotCiphertext() = runBlocking {
+        val (c) = cipher()
+        for (text in listOf("WE1: hello world", "WE1:", "WE1:%%%not-base64", "WE1:AAAA")) {
+            assertFalse(DataCipher.isSealedText(text))
+            assertEquals(Decrypted.Ok(text), c.openText(text))
+        }
+        val sealed = c.sealText("WE1: hello world", "r1:t")
+        assertTrue(DataCipher.isSealedText(sealed))
+        assertEquals(Decrypted.Ok("WE1: hello world"), c.openText(sealed, "r1:t"))
+    }
+
+    @Test fun concurrentFirstSealsMintExactlyOneDek() = runBlocking {
+        val (c, _, k) = cipher()
+        val sealed = (1..16).map { i ->
+            async(Dispatchers.Default) { i to c.sealText("text $i", "r$i") }
+        }.awaitAll()
+        sealed.forEach { (i, s) -> assertEquals(Decrypted.Ok("text $i"), c.openText(s, "r$i")) }
+        assertEquals(1, k.writes.get())
+        // A fresh instance over the same store (cold cache) reads them all too.
+        val cold = DataCipher(FakeWrapper(), k)
+        sealed.forEach { (i, s) -> assertEquals(Decrypted.Ok("text $i"), cold.openText(s, "r$i")) }
     }
 }
