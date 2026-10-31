@@ -188,6 +188,27 @@ class DictationControllerTest {
         assertEquals("hello world", (c.state.value as DictationState.Done).text)
     }
 
+    @Test fun retryDoesNotWriteBackAStaleAudioPathAfterAMigration() = runTest {
+        transcriber.failure = IllegalStateException("boom")
+        val c = controller()
+        c.start(StartOptions(RecordingSource.APP))
+        runCurrent(); advance(500)
+        c.stopAndTranscribe(); advance(200)
+        assertEquals(RecordingStatus.FAILED, history.rows.value["id1"]!!.status)
+
+        transcriber.failure = null
+        transcriber.latencyMs = 1_000
+        c.retry("id1"); runCurrent()
+        // A migration converts the clip while the retry is uploading: the row now points at the new file.
+        val converted = File(File(tmp.root, "recordings"), "id1.m4a.wea").also { it.writeBytes(byteArrayOf(1)) }
+        history.upsert(history.rows.value["id1"]!!.copy(audioPath = converted.path))
+        advance(1_000)
+
+        val row = history.rows.value["id1"]!!
+        assertEquals(RecordingStatus.DONE, row.status)
+        assertEquals(converted.path, row.audioPath)
+    }
+
     @Test fun cancelWhileRecordingDiscardsEverything() = runTest {
         val c = controller()
         c.start(StartOptions(RecordingSource.KEYBOARD))

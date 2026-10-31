@@ -92,6 +92,13 @@ interface RecordingDao {
             "WHERE id = :id AND transcript IS :oldTranscript AND error IS :oldError",
     )
     suspend fun swapText(id: String, oldTranscript: String?, oldError: String?, newTranscript: String?, newError: String?): Int
+
+    /**
+     * Audio migration: points the row at the converted clip only if it still points at [old] (compare-and-swap, so a
+     * row rewritten or whose clip was deleted meanwhile is left alone: returns 0). Touches nothing else.
+     */
+    @Query("UPDATE recording SET audio_path = :new WHERE id = :id AND audio_path IS :old")
+    suspend fun swapAudioPath(id: String, old: String?, new: String?): Int
 }
 
 @Database(entities = [Recording::class], version = 2, exportSchema = true)

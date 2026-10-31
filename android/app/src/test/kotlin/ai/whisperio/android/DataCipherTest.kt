@@ -136,4 +136,40 @@ class DataCipherTest {
         val cold = DataCipher(FakeWrapper(), k)
         sealed.forEach { (i, s) -> assertEquals(Decrypted.Ok("text $i"), cold.openText(s, "r$i")) }
     }
+
+    @Test fun subkeyIsDeterministicPerInfoAndNeverTheDek() = runBlocking {
+        val (c, w, k) = cipher()
+        val a = c.subkey("whisperio/audio/v1", create = true)!!
+        assertEquals(32, a.size)
+        assertTrue(a.contentEquals(c.subkey("whisperio/audio/v1", create = false)!!))
+        assertTrue(a.contentEquals(c.subkey("whisperio/audio/v1", create = true)!!))
+        assertFalse(a.contentEquals(c.subkey("whisperio/other/v1", create = true)!!))
+        // A fresh DataCipher over the same wrapped key derives the same subkey; it is not the DEK itself.
+        val again = DataCipher(w, k).subkey("whisperio/audio/v1", create = false)!!
+        assertTrue(a.contentEquals(again))
+        assertFalse(a.contentEquals(w.decrypt(k.blob!!)))
+    }
+
+    @Test fun subkeyWithoutKeyIsNullUnlessCreating() = runBlocking {
+        val (c, _, k) = cipher()
+        assertEquals(null, c.subkey("x", create = false))
+        assertTrue(k.blob == null)
+        assertEquals(32, c.subkey("x", create = true)!!.size)
+        assertTrue(k.blob != null)
+    }
+
+    @Test fun subkeyIsNullAfterShredAndForALostKey() = runBlocking {
+        val (c, w, k) = cipher()
+        assertTrue(c.subkey("x", create = true) != null)
+        c.shred()
+        assertEquals(null, c.subkey("x", create = false))
+
+        val c2 = DataCipher(w, k)
+        c2.subkey("x", create = true)
+        w.broken = true
+        val lost = DataCipher(w, k)
+        assertEquals(null, lost.subkey("x", create = false))
+        val threw = try { lost.subkey("x", create = true); false } catch (e: Exception) { true }
+        assertTrue(threw)
+    }
 }

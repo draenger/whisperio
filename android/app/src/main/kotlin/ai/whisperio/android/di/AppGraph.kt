@@ -6,12 +6,14 @@ import ai.whisperio.android.dictation.DictationController
 import ai.whisperio.android.dictation.SetupStatus
 import ai.whisperio.android.dictation.computeSetupStatus
 import ai.whisperio.android.history.AppDatabase
+import ai.whisperio.android.history.AudioMigration
 import ai.whisperio.android.history.EncryptingHistoryStore
 import ai.whisperio.android.history.HistoryStore
 import ai.whisperio.android.history.MIGRATION_1_2
 import ai.whisperio.android.history.MigrationReport
 import ai.whisperio.android.history.RoomHistoryStore
 import ai.whisperio.android.security.AndroidKeystoreCipher
+import ai.whisperio.android.security.AudioCipher
 import ai.whisperio.android.security.DataCipher
 import ai.whisperio.android.security.DataStoreWrappedKeyStore
 import ai.whisperio.android.security.Decrypted
@@ -117,6 +119,17 @@ class AppGraph private constructor(private val appOrNull: Application?, private 
         }
     }
 
+    /** Kept clips (`<id>.m4a.wea`); shares the history data key. Null only in a test graph without a cipher. */
+    val audioCipher: AudioCipher? by lazy { dataCipher?.let(::AudioCipher) }
+
+    private val audioMigration: AudioMigration? by lazy { audioCipher?.let { AudioMigration(database.recordings(), it) } }
+
+    /** Seals/opens the kept clips after the row text; the active recording's own file is left for the next run. */
+    private suspend fun migrateAudio(enabled: Boolean, report: MigrationReport): MigrationReport {
+        val a = audioMigration?.migrate(enabled, dictation.activeId()) ?: return report
+        return report.copy(audioConverted = a.converted, audioUnreadable = a.unreadable)
+    }
+
     /** Transcripts are sealed on write only while [AppSettings.encryptHistory] is ON; reads always decrypt what they find. */
     private val encryptingHistory: EncryptingHistoryStore? by lazy {
         dataCipher?.let { c ->
@@ -151,6 +164,8 @@ class AppGraph private constructor(private val appOrNull: Application?, private 
             recordingsDir = recordingsDir,
             micGranted = ::micGranted,
             nowMs = SystemClock::elapsedRealtime,
+            audioCipher = audioCipher,
+            encryptAudio = { settings.current().encryptHistory },
         )
     }
 
@@ -172,7 +187,7 @@ class AppGraph private constructor(private val appOrNull: Application?, private 
                 val store = encryptingHistory ?: return@withLock
                 if (enabled && !dataKeyUsable()) return@withLock
                 settings.setEncryptHistory(enabled)
-                result = EncryptHistoryResult.Done(store.migrate(enabled))
+                result = EncryptHistoryResult.Done(migrateAudio(enabled, store.migrate(enabled)))
             }
         }.join()
         return result
@@ -205,7 +220,7 @@ class AppGraph private constructor(private val appOrNull: Application?, private 
                 // (no-op when every row is already in place). Last, so a slow pass never delays the sweeps above.
                 encryptingHistory?.let { store ->
                     val on = settings.current().encryptHistory
-                    if (!on || dataKeyUsable()) store.migrate(on)
+                    if (!on || dataKeyUsable()) migrateAudio(on, store.migrate(on))
                 }
             }
         }

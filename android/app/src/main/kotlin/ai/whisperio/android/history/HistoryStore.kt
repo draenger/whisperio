@@ -78,8 +78,12 @@ class RoomHistoryStore(
         val referenced = dao.withAudio().mapNotNull { it.audioPath }.map { File(it).absoluteFile }.toSet()
         val skip = exclude?.absoluteFile
         var n = 0
+        // Everything unreferenced goes, which includes the leftovers of an interrupted encrypt/decrypt (`*.tmp`) and of
+        // an interrupted retry upload (`<id>.retry.m4a`). The active recording's own files are spared by name prefix:
+        // its `<id>.m4a` may be getting encrypted to `<id>.m4a.wea(.tmp)` right now.
         recordingsDir.listFiles()?.forEach { f ->
-            if (f.isFile && f.absoluteFile !in referenced && f.absoluteFile != skip && f.delete()) n++
+            val active = skip != null && (f.absoluteFile == skip || f.name.startsWith(skip.name + "."))
+            if (f.isFile && f.absoluteFile !in referenced && !active && f.delete()) n++
         }
         return n
     }

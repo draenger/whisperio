@@ -528,7 +528,10 @@ private fun DetailRoute(g: AppGraph, nav: NavHostController, id: String, snackba
     val audioPath = rec?.audioPath
     val audioExists = remember(audioPath, rec?.status) { audioPath != null && File(audioPath).exists() }
     val availability = playerAvailability(audioExists, recording = dictation is DictationState.Recording)
-    val player = rememberAudioPlayer(audioPath.orEmpty(), (rec?.durationMs ?: 0L).toInt(), stop = shouldStopPlayback(dictation))
+    val player = rememberAudioPlayer(
+        audioPath.orEmpty(), (rec?.durationMs ?: 0L).toInt(), stop = shouldStopPlayback(dictation),
+        audioCipher = g.audioCipher, recordingId = id,
+    )
     val playerUi = if (availability == PlayerAvailability.HIDDEN) null else PlayerUi(
         playing = player.playing,
         positionMs = player.positionMs,
