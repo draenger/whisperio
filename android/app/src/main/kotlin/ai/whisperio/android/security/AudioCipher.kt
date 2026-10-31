@@ -71,7 +71,12 @@ class AudioCipher(private val data: DataCipher) {
         var raw: FileInputStream? = null
         try {
             raw = FileInputStream(enc)
-            aead.newSeekableDecryptingChannel(raw.channel, aad(recordingId))
+            val ch = aead.newSeekableDecryptingChannel(raw.channel, aad(recordingId))
+            // Tink reads and authenticates the header lazily; read the first byte now so a garbage, truncated,
+            // moved (wrong AAD) or wrong-key file is refused here instead of failing inside MediaPlayer.
+            ch.read(java.nio.ByteBuffer.allocate(1))
+            ch.position(0)
+            ch
         } catch (e: kotlinx.coroutines.CancellationException) {
             raw?.close()
             throw e
