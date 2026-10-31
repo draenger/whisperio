@@ -95,6 +95,8 @@ export interface AppSettings {
   anthropicApiKey: string
   launchAtStartup: boolean
   checkForUpdates: boolean
+  // Read-only here: switched only via history:encryption:set (settings:save strips it).
+  encryptHistory: boolean
   dictationHotkey: string
   dictateAndSendHotkey: string
   commandHotkey: string
