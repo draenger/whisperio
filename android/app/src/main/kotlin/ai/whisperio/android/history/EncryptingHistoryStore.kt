@@ -29,8 +29,32 @@ class EncryptingHistoryStore(
     override suspend fun get(id: String): Recording? = inner.get(id)?.let { reveal(it) }
 
     override suspend fun upsert(recording: Recording) {
-        inner.upsert(if (enabled()) (tryConceal(recording) ?: recording) else recording)
+        val kept = keepUnreadable(recording)
+        inner.upsert(if (enabled()) (tryConceal(kept) ?: kept) else kept)
     }
+
+    /**
+     * [reveal] hands out an unreadable row with a null transcript / [UNREADABLE] error, and callers write such rows
+     * back after a status change. If the stored value is sealed and does not open with the current key, and the
+     * incoming value is only that placeholder, keep the stored ciphertext: it may be readable again once the
+     * Keystore recovers. A real new value always wins. (An incoming null error is a legitimate "cleared", so only
+     * the sentinel protects the error field.)
+     */
+    private suspend fun keepUnreadable(incoming: Recording): Recording {
+        val stored = dao.get(incoming.id) ?: return incoming
+        val keepTranscript = isStoredUnreadable(stored.transcript, stored.id, TRANSCRIPT) &&
+            (incoming.transcript == null || incoming.transcript == UNREADABLE)
+        val keepError = isStoredUnreadable(stored.error, stored.id, ERROR) && incoming.error == UNREADABLE
+        if (!keepTranscript && !keepError) return incoming
+        return incoming.copy(
+            transcript = if (keepTranscript) stored.transcript else incoming.transcript,
+            error = if (keepError) stored.error else incoming.error,
+        )
+    }
+
+    private suspend fun isStoredUnreadable(stored: String?, id: String, field: String): Boolean =
+        stored != null && DataCipher.isSealedText(stored) &&
+            cipher.openText(stored, "$id:$field") == Decrypted.Unreadable
 
     /**
      * Rewrites every row to sealed ([encrypt]=true) or plain form. One row at a time, each verified before it is

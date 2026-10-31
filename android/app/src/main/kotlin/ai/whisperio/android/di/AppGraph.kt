@@ -37,6 +37,8 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 private val Context.settingsDataStore by preferencesDataStore(name = "settings")
 private val Context.secretsDataStore by preferencesDataStore(name = "secrets")
@@ -164,13 +166,20 @@ class AppGraph private constructor(private val appOrNull: Application?, private 
     suspend fun setEncryptHistory(enabled: Boolean): EncryptHistoryResult {
         var result: EncryptHistoryResult = EncryptHistoryResult.KeystoreUnavailable
         appScope.launch {
-            val store = encryptingHistory ?: return@launch
-            if (enabled && !dataKeyUsable()) return@launch
-            settings.setEncryptHistory(enabled)
-            result = EncryptHistoryResult.Done(store.migrate(enabled))
+            // Suspending coroutines interleave even on a single-parallelism dispatcher, so switches and
+            // maintenance are serialised by this lock instead.
+            maintenanceLock.withLock {
+                val store = encryptingHistory ?: return@withLock
+                if (enabled && !dataKeyUsable()) return@withLock
+                settings.setEncryptHistory(enabled)
+                result = EncryptHistoryResult.Done(store.migrate(enabled))
+            }
         }.join()
         return result
     }
+
+    /** Held for the whole of [setEncryptHistory] and [runMaintenance]: no migration or sweep overlaps another. */
+    private val maintenanceLock = Mutex()
 
     private suspend fun dataKeyUsable(): Boolean {
         val c = dataCipher ?: return false
@@ -186,16 +195,18 @@ class AppGraph private constructor(private val appOrNull: Application?, private 
     /** Startup sweep (CONTRACT 6) and retention (CONTRACT 7.3). Safe to call repeatedly. */
     fun runMaintenance() {
         appScope.launch {
-            history.sweepInterrupted(dictation.activeId())
-            history.sweepOrphanAudio(dictation.activeFile())
-            settings.current().autoDeleteDays?.let { days ->
-                history.deleteOlderThan(System.currentTimeMillis() - days * 86_400_000L)
-            }
-            // Finish an encryption switch interrupted by process death, or seal rows written while the key failed
-            // (no-op when every row is already in place). Last, so a slow pass never delays the sweeps above.
-            encryptingHistory?.let { store ->
-                val on = settings.current().encryptHistory
-                if (!on || dataKeyUsable()) store.migrate(on)
+            maintenanceLock.withLock {
+                history.sweepInterrupted(dictation.activeId())
+                history.sweepOrphanAudio(dictation.activeFile())
+                settings.current().autoDeleteDays?.let { days ->
+                    history.deleteOlderThan(System.currentTimeMillis() - days * 86_400_000L)
+                }
+                // Finish an encryption switch interrupted by process death, or seal rows written while the key failed
+                // (no-op when every row is already in place). Last, so a slow pass never delays the sweeps above.
+                encryptingHistory?.let { store ->
+                    val on = settings.current().encryptHistory
+                    if (!on || dataKeyUsable()) store.migrate(on)
+                }
             }
         }
     }

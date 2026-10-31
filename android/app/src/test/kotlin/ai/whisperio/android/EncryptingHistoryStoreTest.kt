@@ -135,4 +135,36 @@ class EncryptingHistoryStoreTest {
         assertEquals(0, rep.converted)
         assertEquals(sealed, raw("a").transcript)
     }
+
+    @Test fun unreadableRowWrittenBackKeepsCiphertextAndRecoversWithKey() = runBlocking {
+        on = true
+        store.upsert(row("a", "tajne", "boom"))
+        val sealedT = raw("a").transcript
+        val sealedE = raw("a").error
+        // Keystore currently unavailable: a second cipher over the same wrapped key cannot unwrap it.
+        val brokenStore = EncryptingHistoryStore(
+            RoomHistoryStore(db.recordings(), File(tmp.root, "r")), db.recordings(),
+            DataCipher(object : SecretCipher {
+                override fun encrypt(plain: ByteArray): ByteArray = throw java.security.KeyStoreException("down")
+                override fun decrypt(blob: ByteArray): ByteArray = throw java.security.KeyStoreException("down")
+            }, keys),
+            { on },
+        )
+        val shown = brokenStore.get("a")!!
+        assertNull(shown.transcript)
+        assertEquals(EncryptingHistoryStore.UNREADABLE, shown.error)
+        // Retry-style write-back of the revealed row with a status change must not destroy the ciphertext.
+        brokenStore.upsert(shown.copy(status = RecordingStatus.TRANSCRIBING))
+        assertEquals(sealedT, raw("a").transcript)
+        assertEquals(sealedE, raw("a").error)
+        assertEquals(RecordingStatus.TRANSCRIBING, raw("a").status)
+        // Key recovers: the original is readable again.
+        val back = store.get("a")!!
+        assertEquals("tajne", back.transcript)
+        assertEquals("boom", back.error)
+        // A real new value still overwrites.
+        brokenStore.upsert(shown.copy(transcript = "fresh", error = null))
+        assertEquals("fresh", store.get("a")!!.transcript)
+        assertNull(store.get("a")!!.error)
+    }
 }

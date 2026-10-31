@@ -143,6 +143,18 @@ class EncryptHistorySettingTest {
         assertEquals("one", raw("a"))
     }
 
+    @Test fun backToBackTogglesEndInAConsistentState() = runBlocking {
+        val g = graph()
+        for (i in 1..5) g.history.upsert(row("r$i", "text $i"))
+        val a = kotlinx.coroutines.async(Dispatchers.Default) { g.setEncryptHistory(true) }
+        val b = kotlinx.coroutines.async(Dispatchers.Default) { g.setEncryptHistory(false) }
+        a.await(); b.await()
+        val on = settings.current().encryptHistory
+        // Whichever toggle ran last wins, and every row matches the flag (no half-migrated mix).
+        assertTrue((1..5).all { sealed(raw("r$it")) == on })
+        assertEquals((1..5).map { "text $it" }, (1..5).map { g.history.get("r$it")!!.transcript })
+    }
+
     @Test fun graphWithoutCipherKeepsPlainHistoryAndRefuses() = runBlocking {
         val g = graph(cipher = null)
         g.history.upsert(row("a", "one"))
