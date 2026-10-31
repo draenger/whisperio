@@ -115,7 +115,7 @@ class AppGraph private constructor(private val appOrNull: Application?, private 
         if (o != null) {
             o.dataCipher
         } else {
-            DataCipher(AndroidKeystoreCipher(DataStoreWrappedKeyStore.DATA_KEK_ALIAS), DataStoreWrappedKeyStore(app.dataKeyDataStore))
+            DataCipher(dataKek!!, DataStoreWrappedKeyStore(app.dataKeyDataStore))
         }
     }
 
@@ -128,6 +128,11 @@ class AppGraph private constructor(private val appOrNull: Application?, private 
     private suspend fun migrateAudio(enabled: Boolean, report: MigrationReport): MigrationReport {
         val a = audioMigration?.migrate(enabled, dictation.activeId()) ?: return report
         return report.copy(audioConverted = a.converted, audioUnreadable = a.unreadable)
+    }
+
+    /** The Keystore key that wraps the history DEK; null in a test graph (no Android Keystore on the JVM). */
+    private val dataKek: AndroidKeystoreCipher? by lazy {
+        if (o != null) null else AndroidKeystoreCipher(DataStoreWrappedKeyStore.DATA_KEK_ALIAS)
     }
 
     /** Transcripts are sealed on write only while [AppSettings.encryptHistory] is ON; reads always decrypt what they find. */
@@ -234,17 +239,38 @@ class AppGraph private constructor(private val appOrNull: Application?, private 
         }.join()
     }
 
+    /** Best effort per step: a Keystore error must not stop Erase all from deleting the data itself. */
+    private suspend fun shredDataKey() {
+        try {
+            dataCipher?.shred()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            // Wrapped key could not be deleted; the KEK deletion below still makes it unusable.
+        }
+        try {
+            dataKek?.deleteKey()
+        } catch (e: Exception) {
+            // Keystore unavailable: the wrapped DEK is already gone (or will be with the DataStore files).
+        }
+    }
+
     private companion object {
         const val KEY_PROBE = "whisperio-key-probe"
     }
 
-    /** "Erase all data" (CONTRACT 7.3): history, audio, keys and settings. */
+    /**
+     * "Erase all data" (CONTRACT 7.3): history, audio, keys and settings. Crypto-shred first (design 4.3): the wrapped
+     * history key and its Keystore key go before any row or file, so even if the rest is interrupted or flash keeps
+     * old blocks, everything that was encrypted stays unreadable.
+     */
     suspend fun eraseAllData() {
         // Runs entirely in appScope (single-threaded, never cancelled) so leaving the screen cannot stop it midway;
         // abortAll() first guarantees no in-flight transcription writes a row after the wipe.
         appScope.launch {
             dictation.abortAll()
             pendingDelete.drop()
+            shredDataKey()
             history.clear()
             secrets.clear()
             settings.clear()

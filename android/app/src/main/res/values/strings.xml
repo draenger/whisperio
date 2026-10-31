@@ -178,10 +178,26 @@
     <string name="settings_days">%1$d d</string>
     <string name="settings_sensitive">Treat transcripts as sensitive</string>
     <string name="settings_sensitive_hint">Hides copied text from clipboard previews.</string>
+    <string name="settings_encrypt">Encrypt history</string>
+    <string name="settings_encrypt_hint">Transcripts and kept audio are encrypted on this device with a key held by the Android Keystore. Date, length, provider and category stay unencrypted. If the key is lost (for example after a factory reset), encrypted history cannot be recovered. Text you copy or insert into other apps and audio sent to your provider are not affected.</string>
+    <string name="settings_encrypt_on_title">Turn on encryption?</string>
+    <string name="settings_encrypt_on_body">Your existing history will be encrypted on this device. If the encryption key is lost, for example after a factory reset or a failure of the device key store, encrypted transcripts and audio cannot be recovered. You can turn this off at any time.</string>
+    <string name="settings_encrypt_on_confirm">Turn on</string>
+    <string name="settings_encrypt_off_title">Turn off encryption?</string>
+    <string name="settings_encrypt_off_body">Your history and audio will be decrypted and stored unencrypted in the app\'s private storage again.</string>
+    <string name="settings_encrypt_off_confirm">Turn off</string>
+    <string name="settings_encrypt_busy_on">Encrypting history…</string>
+    <string name="settings_encrypt_busy_off">Decrypting history…</string>
+    <string name="settings_encrypt_unavailable_title">Encryption not available</string>
+    <string name="settings_encrypt_unavailable_body">This device\'s key store could not create or use the encryption key, so encryption was not turned on. Nothing was changed.</string>
+    <plurals name="settings_encrypt_unreadable">
+        <item quantity="one">%1$d item could not be read and was left unchanged.</item>
+        <item quantity="other">%1$d items could not be read and were left unchanged.</item>
+    </plurals>
     <string name="settings_delete_audio">Delete all audio</string>
     <string name="settings_delete_audio_body">Audio files are removed. Transcripts stay in History.</string>
     <string name="settings_erase_all">Erase all data</string>
-    <string name="settings_erase_all_body">Deletes history, audio, API keys and settings from this device. This cannot be undone.</string>
+    <string name="settings_erase_all_body">Deletes history, audio, API keys and settings from this device. If encryption is on, the encryption key is destroyed first, so encrypted history cannot be recovered. This cannot be undone.</string>
     <string name="settings_erase_confirm">Erase everything</string>
     <string name="about_tagline">Dictation with your own API key. No account, no tracking.</string>
     <string name="about_version">Version</string>

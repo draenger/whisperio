@@ -55,7 +55,9 @@ import ai.whisperio.android.ui.settings.CategoriesScreen
 import ai.whisperio.android.ui.recap.RecapScreen
 import ai.whisperio.android.ui.recap.RecapShare
 import ai.whisperio.android.ui.recap.toRecapItems
+import ai.whisperio.android.ui.settings.EncryptNotice
 import ai.whisperio.android.ui.settings.KeyDialogState
+import ai.whisperio.android.ui.settings.encryptNoticeFor
 import ai.whisperio.android.ui.settings.SettingsActions
 import ai.whisperio.android.ui.settings.SettingsScreen
 import ai.whisperio.android.ui.settings.SettingsUiState
@@ -619,6 +621,8 @@ private fun SettingsRoute(g: AppGraph, nav: NavHostController) {
     val appLanguageCount by g.appLanguages.count.collectAsState(initial = 0)
     var dialog by remember { mutableStateOf<KeyDialogState?>(null) }
     var keyChecks by remember { mutableStateOf<Map<ProviderId, KeyUi>>(emptyMap()) }
+    var encryptBusy by remember { mutableStateOf<Boolean?>(null) }
+    var encryptNotice by remember { mutableStateOf<EncryptNotice?>(null) }
     val enrollment = remember { KeyEnrollment(g.keyChecker, g.secrets, g.settings) }
     val models = remember { ProviderId.entries.associateWith { g.catalog.models(it) } }
     val openAiUrl = settings.baseUrls[ProviderId.OPENAI]
@@ -670,6 +674,20 @@ private fun SettingsRoute(g: AppGraph, nav: NavHostController) {
         override fun onKeepAudio(value: Boolean) { scope.launch { g.settings.setKeepAudio(value) } }
         override fun onAutoDelete(days: Int?) { scope.launch { g.settings.setAutoDeleteDays(days) } }
         override fun onSensitive(value: Boolean) { scope.launch { g.settings.setSensitive(value) } }
+        override fun onEncryptHistory(value: Boolean) {
+            if (encryptBusy != null) return
+            encryptBusy = value
+            // The migration itself runs in appScope (never cancelled), so leaving the screen does not stop it.
+            scope.launch {
+                val result = try {
+                    g.setEncryptHistory(value)
+                } finally {
+                    encryptBusy = null
+                }
+                encryptNotice = encryptNoticeFor(result)
+            }
+        }
+        override fun onEncryptNoticeDismiss() { encryptNotice = null }
         override fun onConsent(value: Boolean) { scope.launch { g.settings.setConsent(value) } }
         override fun onDeleteAllAudio() { scope.launch { g.history.deleteAllAudio() } }
         override fun onEraseAll() { scope.launch { g.eraseAllData() } }
@@ -687,6 +705,8 @@ private fun SettingsRoute(g: AppGraph, nav: NavHostController) {
                 keyDialog = dialog,
                 keyChecks = keyChecks,
                 appLanguageCount = appLanguageCount,
+                encryptBusy = encryptBusy,
+                encryptNotice = encryptNotice,
             ),
             actions = actions,
         )

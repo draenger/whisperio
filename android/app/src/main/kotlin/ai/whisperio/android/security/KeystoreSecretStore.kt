@@ -58,6 +58,11 @@ class AndroidKeystoreCipher(private val alias: String = ALIAS) : SecretCipher {
         return cipher.doFinal(blob, IV_BYTES, blob.size - IV_BYTES)
     }
 
+    /** Removes the Keystore key itself (crypto-shred of whatever it wrapped). Absent alias = no-op. */
+    fun deleteKey() {
+        keyStore().deleteEntry(alias)
+    }
+
     private fun keyStore(): KeyStore = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
 
     private fun loadKey(): SecretKey? = keyStore().getKey(alias, null) as? SecretKey
