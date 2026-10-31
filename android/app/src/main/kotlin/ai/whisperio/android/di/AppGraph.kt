@@ -282,12 +282,15 @@ class AppGraph private constructor(private val appOrNull: Application?, private 
         appScope.launch {
             dictation.abortAll()
             pendingDelete.drop()
-            shredDataKey()
-            history.clear()
-            secrets.clear()
-            settings.clear()
-            appLanguages.clear()
-            shareDir?.deleteRecursively()
+            // Waits for a running encryption switch / maintenance pass, so none writes a file after the wipe.
+            maintenanceLock.withLock {
+                shredDataKey()
+                history.clear()
+                secrets.clear()
+                settings.clear()
+                appLanguages.clear()
+                shareDir?.deleteRecursively()
+            }
         }.join()
     }
 }
