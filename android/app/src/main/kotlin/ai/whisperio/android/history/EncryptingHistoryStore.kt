@@ -2,11 +2,12 @@ package ai.whisperio.android.history
 
 import ai.whisperio.android.security.DataCipher
 import ai.whisperio.android.security.Decrypted
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 
-/** Result of [EncryptingHistoryStore.migrate]: rows rewritten, and rows left as they were because they cannot be read. */
+/** Result of [EncryptingHistoryStore.migrate]: rows rewritten, and rows left as they were (cannot be read, or the key failed). */
 data class MigrationReport(val converted: Int, val unreadable: Int)
 
 /**
@@ -31,7 +32,12 @@ class EncryptingHistoryStore(
         inner.upsert(if (enabled()) (tryConceal(recording) ?: recording) else recording)
     }
 
-    /** Rewrites every row to sealed ([encrypt]=true) or plain form. One row at a time, each verified before it is saved. */
+    /**
+     * Rewrites every row to sealed ([encrypt]=true) or plain form. One row at a time, each verified before it is
+     * saved, and saved through [RecordingDao.swapText] so only transcript/error change and a row written
+     * concurrently by dictation is skipped (it is then written in the right form by [upsert] anyway; a later run
+     * picks up whatever is left).
+     */
     suspend fun migrate(encrypt: Boolean): MigrationReport {
         var converted = 0
         var unreadable = 0
@@ -40,8 +46,8 @@ class EncryptingHistoryStore(
             when {
                 target == null -> unreadable++
                 target != raw -> {
-                    dao.upsert(target)
-                    converted++
+                    val n = dao.swapText(raw.id, raw.transcript, raw.error, target.transcript, target.error)
+                    if (n > 0) converted++
                 }
             }
         }
@@ -59,7 +65,15 @@ class EncryptingHistoryStore(
 
     private suspend fun seal(plain: String?, id: String, field: String): Field? {
         if (plain == null || DataCipher.isSealedText(plain)) return Field(plain)
-        val sealed = cipher.sealText(plain, "$id:$field")
+        // A Keystore failure must not lose the row being written: null keeps it as it is (plaintext on write,
+        // untouched in a migration), and the next maintenance run seals it once the key works again.
+        val sealed = try {
+            cipher.sealText(plain, "$id:$field")
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            return null
+        }
         return if (cipher.openText(sealed, "$id:$field") == Decrypted.Ok(plain)) Field(sealed) else null
     }
 

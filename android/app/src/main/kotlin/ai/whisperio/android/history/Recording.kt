@@ -81,6 +81,17 @@ interface RecordingDao {
 
     @Query("UPDATE recording SET audio_path = NULL WHERE audio_path IS NOT NULL")
     suspend fun clearAudioPaths()
+
+    /**
+     * Encryption migration: swaps only transcript/error, and only if they still hold what the migration read
+     * (compare-and-swap). A row the dictation pipeline rewrote in the meantime is left alone (returns 0), so a
+     * migration never puts back a stale status or text.
+     */
+    @Query(
+        "UPDATE recording SET transcript = :newTranscript, error = :newError " +
+            "WHERE id = :id AND transcript IS :oldTranscript AND error IS :oldError",
+    )
+    suspend fun swapText(id: String, oldTranscript: String?, oldError: String?, newTranscript: String?, newError: String?): Int
 }
 
 @Database(entities = [Recording::class], version = 2, exportSchema = true)
