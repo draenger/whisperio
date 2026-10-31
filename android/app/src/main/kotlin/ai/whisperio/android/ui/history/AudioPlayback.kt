@@ -29,6 +29,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -90,9 +91,18 @@ class AudioPlayer(
         val sc = scope ?: return
         if (opening?.isActive == true) return
         opening = sc.launch {
-            val ds = withContext(Dispatchers.IO) { open(path) } ?: return@launch
-            val mp = prepare(ds) ?: return@launch
-            startPlayback(mp)
+            // withContext can return a source and then throw CancellationException (release() cancelled us), which
+            // would drop the value on the floor; hold it here and close it unless prepare() took ownership.
+            var ds: MediaDataSource? = null
+            try {
+                withContext(Dispatchers.IO) { ds = open(path) }
+                val src = ds ?: return@launch
+                ensureActive()
+                val mp = try { prepare(src) } finally { ds = null } // prepare() closes src itself on failure
+                startPlayback(mp ?: return@launch)
+            } finally {
+                closeQuietly(ds)
+            }
         }
     }
 

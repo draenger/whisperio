@@ -441,7 +441,7 @@ class DictationController(
                         model = res.model,
                         transcript = text,
                         error = null,
-                        audioPath = keptPath,
+                        audioPath = settledAudioPath(row, it, keptPath),
                     )
                 }
             }
@@ -481,7 +481,7 @@ class DictationController(
                     status = RecordingStatus.FAILED,
                     durationMs = durationMs,
                     error = detail ?: error.name,
-                    audioPath = keptPath,
+                    audioPath = settledAudioPath(row, it, keptPath),
                 )
             }
         }
@@ -518,6 +518,15 @@ class DictationController(
             file.path
         }
     }
+
+    /**
+     * The audio path to store when a run finishes. [started] is the row as the run began; if a migration re-pointed the
+     * clip meanwhile ([fresh] no longer has the path the run started from) the fresh path wins, so a dead path is never
+     * written. A null [kept] (clip not kept) always clears it. A file this run produced that is then unreferenced is
+     * left for the orphan sweep.
+     */
+    private fun settledAudioPath(started: Recording, fresh: Recording, kept: String?): String? =
+        if (kept == null) null else if (fresh.audioPath == started.audioPath) kept else fresh.audioPath
 
     /** Applies [change] to the CURRENT stored row; a row deleted meanwhile is never resurrected. */
     private suspend fun writeBack(row: Recording, change: (Recording) -> Recording) {
