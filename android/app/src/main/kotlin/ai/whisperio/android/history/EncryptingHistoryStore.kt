@@ -7,8 +7,11 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 
-/** Result of [EncryptingHistoryStore.migrate]: rows rewritten, and rows left as they were (cannot be read, or the key failed). */
-data class MigrationReport(val converted: Int, val unreadable: Int)
+/**
+ * Result of a migration: rows rewritten, and rows left as they were (cannot be read, or the key failed). The audio
+ * counters count kept clips converted to / from `.wea` and clips left as they were (unreadable or key failed).
+ */
+data class MigrationReport(val converted: Int, val unreadable: Int, val audioConverted: Int = 0, val audioUnreadable: Int = 0)
 
 /**
  * Opt-in field-level encryption of transcript and error (docs/design/opt-in-encryption.md). Metadata stays plain.

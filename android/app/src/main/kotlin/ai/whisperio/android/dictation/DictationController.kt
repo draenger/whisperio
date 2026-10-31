@@ -10,6 +10,7 @@ import ai.whisperio.android.history.HistoryStore
 import ai.whisperio.android.history.Recording
 import ai.whisperio.android.history.RecordingSource
 import ai.whisperio.android.history.RecordingStatus
+import ai.whisperio.android.security.AudioCipher
 import ai.whisperio.android.settings.AppSettings
 import ai.whisperio.android.settings.SettingsSource
 import ai.whisperio.android.settings.isProviderConfigured
@@ -100,6 +101,10 @@ class DictationController(
     private val wallClockMs: () -> Long = System::currentTimeMillis,
     private val newId: () -> String = { UUID.randomUUID().toString() },
     private val pollMs: Long = POLL_MS,
+    /** Encrypts kept clips to `<id>.m4a.wea` (opt-in setting); null = clips stay plain. */
+    private val audioCipher: AudioCipher? = null,
+    /** Asked once per kept clip: is "Encrypt history and recordings" ON right now? */
+    private val encryptAudio: suspend () -> Boolean = { false },
 ) {
     private val _state = MutableStateFlow<DictationState>(DictationState.Idle)
     val state: StateFlow<DictationState> = _state.asStateFlow()
@@ -193,14 +198,27 @@ class DictationController(
             }
             val s = settings.current()
             precheck(s)?.let { _state.value = DictationState.Error(it, recordingId = recordingId); return@launch }
+            // An encrypted clip is uploaded from a short-lived plaintext copy; the stored `.wea` row stays as it is.
+            val encrypted = AudioCipher.isEncrypted(file.path)
+            val upload = if (encrypted) retryTemp(recordingId) else file
             currentId = recordingId
-            currentFile = file
+            currentFile = upload
             currentPersist = true
             currentSessionTag = null
             // Busy before the launch so a queued start() cannot slip past the busy check. APP: a retried KEYBOARD/TILE
             // row must not show up as transcribing in the keyboard / DictateActivity (the stored source is unchanged).
             _state.value = DictationState.Transcribing(RecordingSource.APP)
-            session = scope.launch { transcribe(row, file, row.durationMs, s, RecordingSource.APP) }
+            session = scope.launch {
+                try {
+                    if (encrypted && !decryptForRetry(recordingId, file, upload)) {
+                        _state.value = DictationState.Error(DictationError.NO_AUDIO, recordingId = recordingId)
+                        return@launch
+                    }
+                    transcribe(row, upload, row.durationMs, s, RecordingSource.APP, retained = file.takeIf { encrypted })
+                } finally {
+                    if (encrypted) upload.delete()
+                }
+            }
         }
     }
 
@@ -219,12 +237,42 @@ class DictationController(
             if (!s.cloudConsentGranted) return@launch retryFailed(recordingId, DictationError.CONSENT_MISSING)
             val single = singleProviderChain(settings.chain(), providerId)
                 ?: return@launch retryFailed(recordingId, DictationError.NO_KEY)
+            val encrypted = AudioCipher.isEncrypted(file.path)
+            val upload = if (encrypted) retryTemp(recordingId) else file
             currentId = recordingId
-            currentFile = file
+            currentFile = upload
             currentPersist = true
             currentSessionTag = null
             _state.value = DictationState.Transcribing(RecordingSource.APP) // before the launch, see retry()
-            session = scope.launch { transcribeWith(row, file, s, single) }
+            session = scope.launch {
+                try {
+                    if (encrypted && !decryptForRetry(recordingId, file, upload)) {
+                        _state.value = DictationState.Idle
+                        return@launch retryFailed(recordingId, DictationError.NO_AUDIO)
+                    }
+                    transcribeWith(row, upload, s, single)
+                } finally {
+                    if (encrypted) upload.delete()
+                }
+            }
+        }
+    }
+
+    private fun retryTemp(recordingId: String) = File(recordingsDir, "$recordingId.retry.m4a")
+
+    /** Plaintext copy of an encrypted clip for one upload. False (nothing left behind) when the key is gone or the clip is unreadable. */
+    private suspend fun decryptForRetry(recordingId: String, stored: File, temp: File): Boolean {
+        val cipher = audioCipher ?: return false
+        return try {
+            recordingsDir.mkdirs()
+            cipher.decryptToFile(stored, temp, recordingId)
+            true
+        } catch (e: CancellationException) {
+            temp.delete()
+            throw e
+        } catch (e: Exception) {
+            temp.delete()
+            false
         }
     }
 
@@ -369,6 +417,8 @@ class DictationController(
         durationMs: Long,
         s: AppSettings,
         src: RecordingSource = row.source,
+        /** The stored `.wea` clip when [file] is only its temporary plaintext copy (retry). */
+        retained: File? = null,
     ) {
         val persist = currentPersist
         _state.value = DictationState.Transcribing(src)
@@ -379,9 +429,9 @@ class DictationController(
             val res = transcriber.transcribe(TranscriptionRequest(file, s.language, s.vocabulary), chain)
             var text = res.text.trim()
             if (s.cleanupEnabled && text.isNotEmpty()) text = tidy.tidy(text).trim()
-            if (text.isEmpty()) return failTranscription(row, durationMs, DictationError.NO_SPEECH, null, persist, file)
+            if (text.isEmpty()) return failTranscription(row, durationMs, DictationError.NO_SPEECH, null, persist, file, retained)
             val keep = persist && s.keepAudio
-            if (!keep) file.delete()
+            val keptPath = settleAudio(row.id, file, retained, keep)
             if (persist) {
                 writeBack(row) {
                     it.copy(
@@ -391,7 +441,7 @@ class DictationController(
                         model = res.model,
                         transcript = text,
                         error = null,
-                        audioPath = if (keep) file.path else null,
+                        audioPath = keptPath,
                     )
                 }
             }
@@ -401,9 +451,9 @@ class DictationController(
             throw e
         } catch (_: UploadTooLargeException) {
             // The size limit is enforced by :core; the port maps it so the UI keeps its dedicated message.
-            failTranscription(row, durationMs, DictationError.TOO_LARGE, null, persist, file)
+            failTranscription(row, durationMs, DictationError.TOO_LARGE, null, persist, file, retained)
         } catch (t: Throwable) {
-            failTranscription(row, durationMs, DictationError.PROVIDER, t.message?.let { ProviderError.redactSecrets(it) }?.take(MAX_ERROR_CHARS), persist, file)
+            failTranscription(row, durationMs, DictationError.PROVIDER, t.message?.let { ProviderError.redactSecrets(it) }?.take(MAX_ERROR_CHARS), persist, file, retained)
         }
     }
 
@@ -414,9 +464,16 @@ class DictationController(
         detail: String?,
         persist: Boolean,
         file: File,
+        retained: File? = null,
     ) {
         val keepFile = persist && settings.current().keepAudio
-        if (!keepFile) file.delete()
+        val keptPath = if (retained != null) {
+            file.delete()
+            if (keepFile && retained.exists()) retained.path else { retained.delete(); null }
+        } else {
+            if (!keepFile) file.delete()
+            if (keepFile && file.exists()) sealClip(row.id, file) else null
+        }
         if (persist) {
             // Keep the audio on failure (only when the user keeps audio) so they can retry from history.
             writeBack(row) {
@@ -424,11 +481,42 @@ class DictationController(
                     status = RecordingStatus.FAILED,
                     durationMs = durationMs,
                     error = detail ?: error.name,
-                    audioPath = file.path.takeIf { keepFile && file.exists() },
+                    audioPath = keptPath,
                 )
             }
         }
         _state.value = DictationState.Error(error, detail, if (persist) row.id else null)
+    }
+
+    /** The path to store for a finished clip: [retained] when it is a retry, else the clip itself (sealed if ON), or null (not kept). */
+    private suspend fun settleAudio(id: String, file: File, retained: File?, keep: Boolean): String? {
+        if (retained != null) {
+            file.delete()
+            if (!keep) { retained.delete(); return null }
+            return retained.path
+        }
+        if (!keep) { file.delete(); return null }
+        return sealClip(id, file)
+    }
+
+    /**
+     * Encrypts a kept clip to `<id>.m4a.wea` and deletes the plaintext, only when the setting is ON. If that fails
+     * for any reason (Keystore) the plaintext clip stays and is what the row points at: audio is never lost, and
+     * maintenance seals it later.
+     */
+    private suspend fun sealClip(id: String, file: File): String {
+        val cipher = audioCipher ?: return file.path
+        return try {
+            if (!encryptAudio()) return file.path
+            val enc = AudioCipher.encryptedFor(file)
+            cipher.encryptFile(file, enc, id)
+            file.delete()
+            enc.path
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            file.path
+        }
     }
 
     /** Applies [change] to the CURRENT stored row; a row deleted meanwhile is never resurrected. */
