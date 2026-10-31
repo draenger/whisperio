@@ -110,7 +110,7 @@ function writeKeyField(field: ProviderKeyField, value: string): boolean {
     const readBack = getKey(field)
     if (readBack === value) return true
     console.error(
-      `[Whisperio] round-trip verification failed for provider key "${field}" — keeping the plaintext copy in settings.json.`
+      `[Whisperio] round-trip verification failed for provider key "${field}" — not stored in the key store.`
     )
     return false
   } catch (err) {
@@ -137,11 +137,19 @@ export function saveSettingsWithKeys(partial: Partial<AppSettings>): AppSettings
   const jsonPatch: Partial<AppSettings> = { ...partial }
   if (isEncryptionAvailable()) {
     let sessionOnly = false
+    let onDisk: AppSettings | null = null
     for (const field of PROVIDER_KEY_FIELDS) {
       if (!(field in partial)) continue
       const value = (partial[field] as string | undefined) ?? ''
       sessionKeys.delete(field)
       if (!writeKeyField(field, value)) {
+        onDisk ??= loadSettings()
+        if (value === (onDisk[field] ?? '')) {
+          // Unchanged legacy plaintext copy (its migration failed too): leave it where it is
+          // and retry on the next launch. Blanking it here would lose the only persisted copy.
+          delete (jsonPatch as Record<string, unknown>)[field]
+          continue
+        }
         // FAIL CLOSED: the key store refused the write (or the read-back did
         // not match). Never fall back to plaintext on disk; keep the key in
         // memory for this session and tell the renderer.

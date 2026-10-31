@@ -286,8 +286,9 @@ app.whenReady().then(() => {
   })
   // Tells the renderer whether OS secure storage is usable, so it can show
   // an honest hint next to API key fields ("keys are encrypted..." vs.
-  // "...unavailable, stored in the local settings file"). Never gates any
-  // functionality — the settings.json fallback always works either way.
+  // "...unavailable, new keys are kept for this session only"). Never gates
+  // any functionality — keys entered while storage is unavailable still work
+  // for the session, they are just not persisted (fail closed).
   ipcMain.handle('settings:keyStorageAvailable', () => isKeyStoreAvailable())
 
   // Pause/resume hotkeys during shortcut recording in settings

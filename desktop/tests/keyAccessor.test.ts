@@ -254,6 +254,29 @@ describe('keyAccessor', () => {
       warn.mockRestore()
     })
 
+    it('leaves an unchanged legacy plaintext key in settings.json when the key store write fails', () => {
+      // Startup migration failed, so the legacy key is still on disk; an unrelated settings save
+      // re-sends it. A failing key store must not blank the only persisted copy.
+      mockIsEncryptionAvailable.mockReturnValue(true)
+      mockSetKey.mockImplementation(() => {
+        throw new Error('disk full')
+      })
+      mockGetKey.mockReturnValue(null)
+      mockLoadSettings.mockReturnValue({ ...BASE_SETTINGS, openaiApiKey: 'sk-legacy' })
+      const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+      const listener = vi.fn()
+      setSecureStorageWarningListener(listener)
+
+      saveSettingsWithKeys({ openaiApiKey: 'sk-legacy', launchAtStartup: false })
+
+      expect(mockSaveSettings).toHaveBeenCalledWith({ launchAtStartup: false })
+      expect(listener).not.toHaveBeenCalled()
+      expect(getEffectiveSettings().openaiApiKey).toBe('sk-legacy')
+      errSpy.mockRestore()
+      warn.mockRestore()
+    })
+
     it('still blanks settings.json when deleting a cleared field from the key store throws (best-effort)', () => {
       mockIsEncryptionAvailable.mockReturnValue(true)
       mockDeleteKey.mockImplementation(() => {
