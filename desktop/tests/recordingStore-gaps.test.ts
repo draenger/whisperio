@@ -34,6 +34,12 @@ vi.mock('fs', async (importOriginal) => {
       if (h.failRename && h.failRename.test(String(a))) throw new Error('rename-denied')
       return real.renameSync(a, b)
     },
+    // D1 falls back to copying the corrupt index aside when rename fails; failRename also denies
+    // that copy so the "no backup possible -> refuse" path is what these tests exercise.
+    copyFileSync: (a: string, b: string, ...rest: unknown[]) => {
+      if (h.failRename && h.failRename.test(String(a))) throw new Error('copy-denied')
+      return (real.copyFileSync as (...x: unknown[]) => void)(a, b, ...rest)
+    },
     unlinkSync: (p: string) => {
       if (h.failUnlink && h.failUnlink.test(String(p))) throw new Error('unlink-denied')
       return real.unlinkSync(p)
@@ -46,6 +52,7 @@ vi.mock('fs', async (importOriginal) => {
 })
 
 import {
+  IndexUnavailableError,
   saveRecording,
   updateRecording,
   deleteRecording,
@@ -146,8 +153,8 @@ describe('index state: locked variants', () => {
     writeFileSync(INDEX, '{ not json')
     h.failRename = /index\.json$/
     expect(getHistoryEncryptionStatus()).toMatchObject({ sealedOnDisk: false, locked: true })
-    await expect(seed()).rejects.toBeInstanceOf(HistoryLockedError)
-    await expect(deleteAllRecordings()).rejects.toBeInstanceOf(HistoryLockedError)
+    await expect(seed()).rejects.toBeInstanceOf(IndexUnavailableError)
+    await expect(deleteAllRecordings()).rejects.toBeInstanceOf(IndexUnavailableError)
     expect(readFileSync(INDEX, 'utf-8')).toBe('{ not json')
     // plain-but-unparsable is not "lost key" data: reset must refuse and delete nothing
     expect(await resetLockedHistory()).toEqual({ ok: false, undeleted: 0 })
@@ -250,7 +257,7 @@ describe('plain-mode record operations', () => {
     await setHistoryEncryption(true).catch(() => undefined)
     writeFileSync(INDEX, '{ bad')
     h.failRename = /index\.json$/
-    await expect(deleteRecordingsByDate('2000-01-01')).rejects.toBeInstanceOf(HistoryLockedError)
+    await expect(deleteRecordingsByDate('2000-01-01')).rejects.toBeInstanceOf(IndexUnavailableError)
     expect(webms()).toHaveLength(1)
   })
 

@@ -191,8 +191,8 @@ describe('recordingStore - erase = crypto-shred, locked reset, progress (D3)', (
   it('reset is refused for an unparsable PLAIN index (no sealed data): files intact', async () => {
     await seed()
     writeFileSync(INDEX, '{ truncated plain json')
-    h.failIndexRename = true // AV keeps it from being moved aside -> status reads as locked
-    expect(getHistoryEncryptionStatus().locked).toBe(true)
+    h.failIndexRename = true // AV keeps it from being moved aside -> D1 copies it aside, reads as empty (not locked)
+    expect(getHistoryEncryptionStatus().locked).toBe(false)
     expect((await resetLockedHistory()).ok).toBe(false)
     expect(audioCount()).toBe(1)
     expect(existsSync(INDEX)).toBe(true)
@@ -269,6 +269,20 @@ describe('recordingStore - erase = crypto-shred, locked reset, progress (D3)', (
     expect(existsSync(b2)).toBe(false)
   })
 
+  it('erase and locked reset delete index.json.corrupt-*.sealed.json backups too', async () => {
+    await seed()
+    const s1 = join(RECORDINGS_DIR, 'index.json.corrupt-5.sealed.json')
+    writeFileSync(s1, '{"sealed":true}')
+    await deleteAllRecordings()
+    expect(existsSync(s1)).toBe(false)
+    await seed()
+    await setHistoryEncryption(true)
+    const s2 = join(RECORDINGS_DIR, 'index.json.corrupt-6.sealed.json')
+    writeFileSync(s2, '{"sealed":true}')
+    await deleteAllRecordings()
+    expect(existsSync(s2)).toBe(false)
+  })
+
   it('non-erase paths keep index.json.corrupt-* (save, delete one, encryption toggle)', async () => {
     await seed()
     const b = join(RECORDINGS_DIR, 'index.json.corrupt-9')
@@ -276,7 +290,8 @@ describe('recordingStore - erase = crypto-shred, locked reset, progress (D3)', (
     await seed()
     await setHistoryEncryption(true)
     await setHistoryEncryption(false)
-    expect(existsSync(b)).toBe(true)
+    // D1: encryption ON seals the plaintext backup in place (<name>.sealed.json); either way it is kept
+    expect(existsSync(b) || existsSync(`${b}.sealed.json`)).toBe(true)
   })
 
   it('status while migrating answers from cached counters (no index read needed)', async () => {

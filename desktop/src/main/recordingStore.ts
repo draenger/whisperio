@@ -6,9 +6,11 @@ import {
   readFileSync,
   unlinkSync,
   renameSync,
+  copyFileSync,
+  statSync,
   readdirSync
 } from 'fs'
-import { join, basename, isAbsolute } from 'path'
+import { join, dirname, basename, isAbsolute } from 'path'
 import type { SpeakerSegment } from './dictation/conversation'
 import { loadSettings, saveSettings } from './settingsManager'
 import {
@@ -32,6 +34,7 @@ import {
   atomicWriteFileSync,
   renameWithRetry,
   unlinkWithRetry,
+  isTransientRenameError,
   peekIsEncryptedAudio,
   AudioVaultError
 } from './audioVault'
@@ -241,32 +244,100 @@ interface IndexState {
   locked: boolean
 }
 
+/**
+ * Thrown when index.json exists but cannot be used safely right now (persistent read error such
+ * as an AV/backup lock, or a corrupt file we could not back up). Callers must NOT treat this as
+ * "empty history": a following saveIndex() would overwrite the only copy. Same contract as the
+ * fix/corrupt-index-json change (PR #34) so the two merge mechanically.
+ */
+export const INDEX_UNAVAILABLE_CODE = 'INDEX_UNAVAILABLE'
+
+export class IndexUnavailableError extends Error {
+  readonly code = INDEX_UNAVAILABLE_CODE
+  constructor(message: string) {
+    // ipcMain.handle keeps only the message, so the code is embedded as a matchable prefix.
+    super(`[${INDEX_UNAVAILABLE_CODE}] ${message}`)
+    this.name = 'IndexUnavailableError'
+  }
+}
+
+const READ_RETRIES = 5
+
+// Signature (mtime+size) of a corrupt index already COPIED aside (rename failed), so repeated
+// reads do not pile up identical backups.
+let copiedCorruptSignature: string | null = null
+
+function fileSignature(path: string): string | null {
+  try {
+    const st = statSync(path)
+    return `${st.mtimeMs}:${st.size}`
+  } catch {
+    return null
+  }
+}
+
+// Move an unreadable index aside so the next save cannot overwrite the only copy. Never deletes.
+// Returns false when no backup could be made (caller must then refuse, not go empty).
+function quarantineCorruptIndex(indexPath: string): boolean {
+  const name = `index.json.corrupt-${Date.now()}`
+  const backup = join(dirname(indexPath), name)
+  try {
+    renameSync(indexPath, backup)
+    copiedCorruptSignature = null
+    console.warn(`[recordingStore] recordings index unreadable; moved aside to ${name}`)
+    return true
+  } catch {
+    /* fall through to copy */
+  }
+  const sig = fileSignature(indexPath)
+  if (sig !== null && sig === copiedCorruptSignature) return true // already backed up
+  try {
+    copyFileSync(indexPath, backup)
+    copiedCorruptSignature = sig
+    console.warn(`[recordingStore] recordings index unreadable; copied aside to ${name}`)
+    return true
+  } catch {
+    return false
+  }
+}
+
+function readIndexText(indexPath: string): string {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return readFileSync(indexPath, 'utf-8')
+    } catch (err) {
+      // A transient lock (Defender, an indexer, OneDrive) must never be mistaken for corruption:
+      // retry, then refuse rather than go empty. Only the error code is logged/reported.
+      if (attempt < READ_RETRIES - 1 && isTransientRenameError(err)) continue
+      const code = (err as NodeJS.ErrnoException | null)?.code ?? 'unknown'
+      throw new IndexUnavailableError(`Recordings index could not be read (${code}); history left untouched.`)
+    }
+  }
+}
+
+function quarantineOrThrow(indexPath: string): IndexState {
+  if (quarantineCorruptIndex(indexPath)) {
+    return { index: { recordings: [] }, sealedOnDisk: false, locked: false }
+  }
+  throw new IndexUnavailableError('Recordings index is unreadable and could not be backed up; history left untouched.')
+}
+
 // Self-describing read: a parsed object with `recordings` is plain, one with v/alg/iv/ct/tag is a
-// sealed envelope. Corrupt/unreadable plain JSON keeps its historical behaviour (empty list).
+// sealed envelope. Read errors (locks) refuse via IndexUnavailableError; only a JSON SyntaxError or
+// a wrong shape is quarantined (moved/copied aside, never deleted).
 function readIndexState(): IndexState {
   const indexPath = getIndexPath()
   if (!existsSync(indexPath)) {
     return { index: { recordings: [] }, sealedOnDisk: false, locked: false }
   }
+  const raw = readIndexText(indexPath)
   let parsed: unknown
   try {
-    parsed = JSON.parse(readFileSync(indexPath, 'utf-8'))
+    parsed = JSON.parse(raw)
   } catch (err) {
-    // Unparseable index (truncated by power loss, bit rot; plain or sealed): move it aside as
-    // `.corrupt-<ts>` so the next save cannot overwrite the only copy, then start empty.
-    try {
-      const backupPath = `${indexPath}.corrupt-${Date.now()}`
-      renameSync(indexPath, backupPath)
-      console.error(
-        `[Whisperio] recordings index was unreadable (${err instanceof Error ? err.message : String(err)}); ` +
-          `backed up to ${backupPath}.`
-      )
-    } catch (backupErr) {
-      // Could not move it aside: refuse writes rather than overwrite it.
-      console.error('[Whisperio] Failed to back up unreadable recordings index:', backupErr)
-      return { index: { recordings: [] }, sealedOnDisk: false, locked: true }
-    }
-    return { index: { recordings: [] }, sealedOnDisk: false, locked: false }
+    // Log only the error name: JSON.parse messages can embed a fragment of transcript text.
+    console.error(`[Whisperio] recordings index is not valid JSON (${err instanceof Error ? err.name : 'Error'})`)
+    return quarantineOrThrow(indexPath)
   }
   if (looksSealed(parsed)) {
     const lockedState: IndexState = { index: { recordings: [] }, sealedOnDisk: true, locked: true }
@@ -279,6 +350,14 @@ function readIndexState(): IndexState {
     } catch {
       return lockedState
     }
+  }
+  if (
+    parsed === null ||
+    typeof parsed !== 'object' ||
+    Array.isArray(parsed) ||
+    !Array.isArray((parsed as { recordings?: unknown }).recordings)
+  ) {
+    return quarantineOrThrow(indexPath)
   }
   return { index: parsed as RecordingIndex, sealedOnDisk: false, locked: false }
 }
@@ -295,7 +374,15 @@ function loadIndexForWrite(): RecordingIndex {
 }
 
 export function getHistoryEncryptionStatus(): HistoryEncryptionStatus {
-  const st = readIndexState()
+  let st: IndexState
+  let unavailable = false
+  try {
+    st = readIndexState()
+  } catch {
+    // IndexUnavailableError (persistent read error): never 'unrecoverable' - nothing was proven lost.
+    unavailable = true
+    st = { index: { recordings: [] }, sealedOnDisk: false, locked: true }
+  }
   let enabled = false
   try {
     enabled = encryptHistoryReader()
@@ -303,7 +390,7 @@ export function getHistoryEncryptionStatus(): HistoryEncryptionStatus {
     enabled = false
   }
   return st.locked
-    ? { enabled, sealedOnDisk: st.sealedOnDisk, locked: true, lockKind: lockKindNow() }
+    ? { enabled, sealedOnDisk: st.sealedOnDisk, locked: true, lockKind: unavailable ? 'transient' : lockKindNow() }
     : { enabled, sealedOnDisk: st.sealedOnDisk, locked: false }
 }
 
@@ -590,7 +677,14 @@ export function sweepShreddedOrphans(): ShredReport {
   const left: string[] = []
   // Files the current, readable index references are live data (a reused name after a clock
   // rollback, a new recording): never delete them, just forget the stale orphan entry.
-  const st = readIndexState()
+  let st: IndexState
+  try {
+    st = readIndexState()
+  } catch (err) {
+    // Index unreadable right now: delete nothing, keep the orphan list for the next startup.
+    if (err instanceof IndexUnavailableError) return { undeleted: names.length }
+    throw err
+  }
   const live = new Set<string>()
   if (!st.locked) {
     for (const r of st.index.recordings) {
@@ -672,7 +766,13 @@ export interface ResetReport extends ShredReport {
  */
 export function resetLockedHistory(confirmDestroy?: boolean): Promise<ResetReport> {
   return enqueue((): ResetReport => {
-    if (!readIndexState().locked) return { ok: false, undeleted: 0 }
+    try {
+      if (!readIndexState().locked) return { ok: false, undeleted: 0 }
+    } catch (err) {
+      // Index unreadable (persistent read error / no backup possible): not proven lost -> refuse.
+      if (err instanceof IndexUnavailableError) return { ok: false, undeleted: 0 }
+      throw err
+    }
     if (!sealedDataExists()) return { ok: false, undeleted: 0 }
     if (dataKeyFileExists() && confirmDestroy !== true) {
       return { ok: false, undeleted: 0, needsConfirmDestroy: true }
@@ -701,7 +801,13 @@ export function getEncryptionProgress(): EncryptionProgress {
   if (migrationRunning && migrationCounts) {
     return { state: 'migrating', done: migrationCounts.done, total: migrationCounts.total }
   }
-  const st = readIndexState()
+  let st: IndexState
+  try {
+    st = readIndexState()
+  } catch (err) {
+    if (err instanceof IndexUnavailableError) return { state: 'locked-transient', done: 0, total: 0 }
+    throw err
+  }
   if (st.locked) {
     return { state: lockKindNow() === 'transient' ? 'locked-transient' : 'locked', done: 0, total: 0 }
   }
@@ -889,8 +995,43 @@ export async function resumeAudioMigration(): Promise<AudioMigrationResult | nul
   }
 }
 
+/**
+ * index.json.corrupt-* backups hold PLAINTEXT history. When encryption is turned ON they are
+ * sealed in place via the same envelope (av=2) and renamed to <name>.sealed.json, then the
+ * plaintext copy is removed. A backup that cannot be sealed is left and counted (never silent).
+ * There is no read path for recovering a sealed backup yet: the data is preserved, not browsable.
+ */
+function sealCorruptBackups(): { sealed: number; left: number } {
+  let sealed = 0
+  let left = 0
+  let names: string[] = []
+  try {
+    names = readdirSync(getRecordingsDir()).filter(
+      (n) => n.startsWith('index.json.corrupt-') && !n.endsWith('.sealed.json')
+    )
+  } catch {
+    return { sealed, left }
+  }
+  for (const n of names) {
+    const p = join(getRecordingsDir(), n)
+    try {
+      const key = getDataKeyForEncrypt()
+      const out = `${p}.sealed.json`
+      const tmp = `${out}.tmp`
+      writeFileSync(tmp, serializeEnvelope(sealIndexPayload(key, readFileSync(p, 'utf-8'))), 'utf-8')
+      renameSync(tmp, out)
+      unlinkSync(p) // only after the sealed copy is in place
+      sealed++
+    } catch {
+      left++
+      console.error(`[Whisperio] could not seal plaintext index backup ${n}`)
+    }
+  }
+  return { sealed, left }
+}
+
 export type SetHistoryEncryptionResult =
-  | { ok: true }
+  | { ok: true; sealedBackups?: number; plainBackupsLeft?: number }
   | { ok: false; reason: 'unavailable' | 'weak-backend' | 'locked' }
 
 /**
@@ -937,6 +1078,10 @@ export function setHistoryEncryption(enabled: boolean): Promise<SetHistoryEncryp
     } catch (err) {
       try { saveSettings({ encryptHistory: prevFlag }) } catch { /* best-effort rollback */ }
       throw err
+    }
+    if (enabled) {
+      const r = sealCorruptBackups()
+      if (r.sealed || r.left) return { ok: true, sealedBackups: r.sealed, plainBackupsLeft: r.left }
     }
     return { ok: true }
   })
