@@ -6,6 +6,7 @@ import { AppSettings, getActiveVocabulary, type ProviderId, type CleanupMode } f
 // when OS secure storage is available. See secure/keyAccessor.ts.
 import { getEffectiveSettings } from './secure/keyAccessor'
 import { handleTranscriptionError, notifyInfo } from './errorHandler'
+import { noteTranscriptionActivity } from './dictation/watchdog'
 import { guardRedirects, GUARDED_REDIRECT } from './llm/redirectGuard'
 import { OpenAICompatibleProvider, AnthropicProvider, ReplicateProvider, selectProvider, isLocalHost, type LLMProvider } from './llm/provider'
 import { cleanupTranscription, cleanupTranscriptionDetailed, formatTranscription, rewriteSelection, type CleanupResult } from './postprocess'
@@ -476,6 +477,7 @@ export async function transcribeAudio(
 
   for (let i = 0; i < configuredChain.length; i++) {
     const provider = configuredChain[i]
+    noteTranscriptionActivity()
     try {
       const text = await transcribeWithProvider(settings, provider, audioBuffer, filename)
       // PACZKA METERING (v1.6): report usage after every successful STT call,
@@ -488,6 +490,7 @@ export async function transcribeAudio(
         audioSeconds: estimateAudioSeconds(audioBuffer, filename),
         isLocal: provider === 'selfhosted'
       })
+      noteTranscriptionActivity() // cleanup starting
       return await applyCleanup(settings, text, context)
     } catch (err) {
       if (!firstError) firstError = err instanceof Error ? err : new Error(String(err))
