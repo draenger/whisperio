@@ -11,10 +11,13 @@ import { useKeyStorageAvailable } from '../../hooks/useKeyStorageAvailable'
 export function KeyStorageHint({ s }: { s: { hint: CSSProperties } }): ReactElement | null {
   const available = useKeyStorageAvailable()
   const [warning, setWarning] = useState<string | null>(null)
+  const [keyringWarning, setKeyringWarning] = useState<string | null>(null)
   useEffect(() => {
     const api = typeof window !== 'undefined' ? window.api?.settings : undefined
+    api?.linuxKeyringWarning?.().then(setKeyringWarning).catch(() => setKeyringWarning(null))
     return api?.onSecureStorageWarning?.(setWarning)
   }, [])
+  if (keyringWarning) return <span style={{ ...s.hint, color: '#e5484d' }}>{keyringWarning}</span>
   if (warning) return <span style={{ ...s.hint, color: '#e5484d' }}>{warning}</span>
   if (available === null) return null
   return (

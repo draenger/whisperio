@@ -126,6 +126,7 @@ export interface SettingsAPI {
   // src/main/secure/keyStore.ts). Informational only — used to render an
   // honest hint next to key fields; never gates saving/loading.
   keyStorageAvailable: () => Promise<boolean>
+  linuxKeyringWarning: () => Promise<string | null>
   onSecureStorageWarning: (callback: (message: string) => void) => () => void
 }
 

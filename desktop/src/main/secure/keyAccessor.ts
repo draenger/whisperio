@@ -1,5 +1,14 @@
 import { loadSettings, saveSettings, type AppSettings } from '../settingsManager'
-import { getKey, setKey, deleteKey, isEncryptionAvailable } from './keyStore'
+import {
+  getKey,
+  setKey,
+  deleteKey,
+  isEncryptionAvailable,
+  isWeakLinuxBackend,
+  hasWrappedEntries,
+  dropWrappedEntry,
+  readWeakBackendKeys
+} from './keyStore'
 
 /**
  * The AppSettings fields that hold provider API keys — the ONLY fields this
@@ -40,6 +49,15 @@ function unavailableMessage(): string {
  * memory) until the app quits.
  */
 const sessionKeys = new Map<ProviderKeyField, string>()
+
+/** Delete a superseded wrapped store entry (ciphertext only; never writes plaintext). */
+function dropStaleWrapped(field: ProviderKeyField): void {
+  try {
+    dropWrappedEntry(field)
+  } catch (err) {
+    console.error(`[Whisperio] could not drop stale wrapped key "${field}":`, err)
+  }
+}
 
 let secureStorageWarningListener: ((message: string) => void) | null = null
 
@@ -177,7 +195,9 @@ export function saveSettingsWithKeys(partial: Partial<AppSettings>): AppSettings
     if (!(field in partial)) continue
     const value = (partial[field] as string | undefined) ?? ''
     if (value === '') {
-      sessionKeys.delete(field)
+      // Only a key that was present this session counts as an explicit clear; an empty
+      // field for a key that failed to decrypt must not delete the recoverable entry.
+      if (sessionKeys.delete(field)) dropStaleWrapped(field)
       continue // clearing is always safe to persist
     }
     if (value === (onDisk[field] ?? '')) {
@@ -187,6 +207,7 @@ export function saveSettingsWithKeys(partial: Partial<AppSettings>): AppSettings
     if (sessionKeys.get(field) !== value) {
       sessionKeys.set(field, value)
       sessionOnly = true
+      dropStaleWrapped(field) // replaced: the old wrapped copy must not come back
     }
     // Never persist the new secret; also clear any legacy plaintext copy it replaces.
     ;(jsonPatch as Record<string, unknown>)[field] = ''
@@ -234,4 +255,63 @@ export function migrateProviderKeysToKeyStore(): void {
   } else {
     console.log('[Whisperio] provider-key migration: nothing to migrate.')
   }
+}
+
+export const LINUX_KEYRING_WARNING =
+  "No secure keyring found (GNOME Keyring/KWallet). Your API keys can't be stored securely; install/unlock a keyring, or re-enter keys each session."
+
+function legacyPlaintextPresent(): boolean {
+  const settings = loadSettings()
+  return PROVIDER_KEY_FIELDS.some((f) => !!settings[f])
+}
+
+/**
+ * Linux without a real keyring AND the user has keys that can no longer be
+ * stored securely: a store entry wrapped earlier (1.5.x basic_text) or legacy
+ * plaintext still in settings.json. Always false on Windows/macOS and whenever
+ * a real keyring backend is in use.
+ */
+export function isLinuxKeyringIssue(): boolean {
+  if (process.platform !== 'linux') return false
+  try {
+    if (!isWeakLinuxBackend()) return false
+    return hasWrappedEntries() || legacyPlaintextPresent()
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Session rescue (startup, Linux weak backend only): keys wrapped by an earlier
+ * version are decrypted into the in-memory session map so dictation keeps
+ * working this session. Never persisted: the wrapped store file and any legacy
+ * plaintext copy in settings.json are left untouched (retry once a real keyring
+ * exists). Legacy plaintext needs no rescue - getEffectiveSettings passes it
+ * through. Returns the number of keys rescued from the wrapped store.
+ */
+export function rescueWeakLinuxKeys(): number {
+  if (!isLinuxKeyringIssue()) return 0
+  const settings = loadSettings()
+  const wrapped = readWeakBackendKeys()
+  let n = 0
+  for (const field of PROVIDER_KEY_FIELDS) {
+    const value = wrapped[field]
+    if (!value || settings[field] || sessionKeys.has(field)) continue
+    sessionKeys.set(field, value)
+    n++
+  }
+  if (n > 0) console.log(`[Whisperio] kept ${n} provider key(s) in memory for this session (no secure keyring).`)
+  return n
+}
+
+/**
+ * Show the keyring warning at most once per app version. `notify` shows the
+ * OS notification. Returns true when it fired.
+ */
+export function maybeWarnLinuxKeyring(version: string, notify: (message: string) => void): boolean {
+  if (!isLinuxKeyringIssue()) return false
+  if (loadSettings().linuxKeyringWarningShownFor === version) return false
+  notify(LINUX_KEYRING_WARNING)
+  saveSettings({ linuxKeyringWarningShownFor: version })
+  return true
 }
