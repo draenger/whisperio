@@ -9,7 +9,7 @@ import { handleTranscriptionError, notifyInfo } from './errorHandler'
 import { guardRedirects, GUARDED_REDIRECT } from './llm/redirectGuard'
 import { OpenAICompatibleProvider, AnthropicProvider, ReplicateProvider, selectProvider, isLocalHost, type LLMProvider } from './llm/provider'
 import { cleanupTranscription, cleanupTranscriptionDetailed, formatTranscription, rewriteSelection, type CleanupResult } from './postprocess'
-import { getServerStatus } from './localServer'
+import { getServerStatus, ensureManagedServerForUrl } from './localServer'
 import { recordSTT, estimateAudioSeconds } from './usageTracker'
 import { getRecording, updateRecording } from './recordingStore'
 // Context-aware tone (v1.5 Work Item B). resolveToneProfile is the only
@@ -589,6 +589,16 @@ async function transcribeWithProvider(
     // Bearer token for a private/self-hosted server that requires auth — empty
     // (the default) preserves today's no-Authorization-header behavior.
     const sttApiKey = settings.sttApiKey?.trim() || ''
+    // The managed local server is stopped after idle (and not started at app
+    // launch): (re)start it on demand so this request does not hit a refused
+    // connection. Best-effort: a failed ensure must not block the request (the
+    // user's own server may be up); if the request fails the chain falls
+    // through as usual.
+    try {
+      await ensureManagedServerForUrl(baseUrl, model)
+    } catch (err) {
+      if (isDev()) console.warn('[Whisperio] Could not ensure local whisper server:', err)
+    }
     return whisperTranscribe(sttApiKey, audioBuffer, filename, prompt, endpoint, model, true, lang)
   }
 
