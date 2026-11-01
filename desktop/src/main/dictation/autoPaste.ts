@@ -1,5 +1,13 @@
 import { clipboard, systemPreferences, Notification, app } from 'electron'
 import { execFile } from 'child_process'
+import { loadSettings } from '../settingsManager'
+import {
+  snapshotClipboard,
+  restoreClipboardIfUnchanged,
+  DEFAULT_RESTORE_DELAY_MS,
+  type ClipboardLike,
+  type ClipboardSnapshot
+} from './clipboardRestore'
 
 // True only in unpackaged (development) builds; gates logging of dictated
 // content so user speech never reaches production stdout. Guarded so it
@@ -21,7 +29,8 @@ function isMac(): boolean {
 }
 
 // Platform-specific keystroke simulation
-let sendKeystroke: (vk: 'paste' | 'enter') => void
+// Returns a promise on macOS (osascript is async) so callers can await completion.
+let sendKeystroke: (vk: 'paste' | 'enter') => void | Promise<void>
 
 if (isWindows()) {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -52,10 +61,13 @@ if (isWindows()) {
     const script = vk === 'paste'
       ? 'tell application "System Events" to keystroke "v" using command down'
       : 'tell application "System Events" to key code 36'
-    execFile('osascript', ['-e', script], (err, _stdout, stderr) => {
-      if (err || stderr) {
-        console.error('[Whisperio] keystroke failed (Accessibility permission?):', stderr || err?.message)
-      }
+    return new Promise<void>((resolve) => {
+      execFile('osascript', ['-e', script], (err, _stdout, stderr) => {
+        if (err || stderr) {
+          console.error('[Whisperio] keystroke failed (Accessibility permission?):', stderr || err?.message)
+        }
+        resolve()
+      })
     })
   }
 } else {
@@ -82,13 +94,28 @@ export function restoreTargetWindow(): void {
   // No-op — focus was never stolen, nothing to restore.
 }
 
-export async function autoPaste(text: string): Promise<void> {
+function readRestoreSetting(): boolean {
+  try {
+    return loadSettings().restoreClipboard === true
+  } catch {
+    return false
+  }
+}
+
+export async function autoPaste(
+  text: string,
+  opts: { restoreClipboard?: boolean; restoreDelayMs?: number } = {}
+): Promise<void> {
   // Never log dictated content in production (privacy); log length only.
   if (isDev()) {
     console.log(`[Whisperio] autoPaste: "${text.substring(0, 80)}..."`)
   } else {
     console.log(`[Whisperio] autoPaste: ${text.length} chars`)
   }
+  const restore = opts.restoreClipboard ?? readRestoreSetting()
+  const cb = clipboard as unknown as ClipboardLike
+  // Snapshot BEFORE overwriting the clipboard with the dictated text.
+  const snapshot: ClipboardSnapshot | null = restore ? snapshotClipboard(cb) : null
   clipboard.writeText(text)
 
   // macOS: without Accessibility permission the ⌘V keystroke silently no-ops.
@@ -105,7 +132,17 @@ export async function autoPaste(text: string): Promise<void> {
   // Wait for modifier keys from hotkey to release
   await new Promise((r) => setTimeout(r, 300))
 
-  sendKeystroke('paste')
+  // await: on macOS this resolves when osascript finished (a no-op on Windows/Linux).
+  await sendKeystroke('paste')
+
+  if (snapshot) {
+    // The target app reads the clipboard asynchronously after the keystroke;
+    // restoring too early would make it paste the OLD content. Wait, then
+    // restore only if the clipboard still holds exactly what we pasted.
+    await new Promise((r) => setTimeout(r, opts.restoreDelayMs ?? DEFAULT_RESTORE_DELAY_MS))
+    const status = restoreClipboardIfUnchanged(cb, snapshot, text)
+    console.log(`[Whisperio] clipboard restore: ${status}`)
+  }
   console.log('[Whisperio] autoPaste done')
 }
 
