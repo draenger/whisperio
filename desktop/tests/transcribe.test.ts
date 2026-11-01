@@ -80,6 +80,8 @@ beforeEach(() => {
 })
 
 const WAV_BUF = Buffer.concat([Buffer.from('RIFF'), Buffer.from([0, 0, 0, 0]), Buffer.from('WAVEfmt ')])
+// Live dictation sends a WAV rendition alongside the WebM; whisper.cpp (selfhosted) needs it (#54).
+const LIVE_WAV = { buffer: WAV_BUF, filename: 'audio.wav' }
 
 describe('transcribeAudio', () => {
   beforeEach(() => {
@@ -309,7 +311,7 @@ describe('selfhosted (directUrl) provider', () => {
     const mockReq = createMockNetRequest(200, JSON.stringify({ text: 'local text' }))
     mockNetRequest.mockReturnValue(mockReq)
 
-    const result = await transcribeAudio(Buffer.from('audio'), 'rec.webm')
+    const result = await transcribeAudio(Buffer.from('audio'), 'rec.webm', null, LIVE_WAV)
     expect(result).toBe('local text')
     expect(mockNetRequest).toHaveBeenCalledWith({
       method: 'POST',
@@ -336,7 +338,7 @@ describe('selfhosted (directUrl) provider', () => {
     const mockReq = createMockNetRequest(200, JSON.stringify({ text: 'v1 text' }))
     mockNetRequest.mockReturnValue(mockReq)
 
-    await transcribeAudio(Buffer.from('audio'), 'rec.webm')
+    await transcribeAudio(Buffer.from('audio'), 'rec.webm', null, LIVE_WAV)
     expect(mockNetRequest).toHaveBeenCalledWith({
       method: 'POST',
       url: 'http://localhost:1234/v1/audio/transcriptions',
@@ -353,7 +355,7 @@ describe('selfhosted (directUrl) provider', () => {
     const mockReq = createMockNetRequest(200, JSON.stringify({ text: 'ok' }))
     mockNetRequest.mockReturnValue(mockReq)
 
-    await transcribeAudio(Buffer.from('audio'), 'rec.webm')
+    await transcribeAudio(Buffer.from('audio'), 'rec.webm', null, LIVE_WAV)
     const bodyStr = (mockReq.write.mock.calls[0][0] as Buffer).toString()
     expect(bodyStr).toContain('name="language"')
     expect(bodyStr).toContain('en')
@@ -367,14 +369,14 @@ describe('selfhosted (directUrl) provider', () => {
     const mockReq = createMockNetRequest(500, 'boom')
     mockNetRequest.mockReturnValue(mockReq)
 
-    await expect(transcribeAudio(Buffer.from('audio'), 'rec.webm')).rejects.toThrow(
+    await expect(transcribeAudio(Buffer.from('audio'), 'rec.webm', null, LIVE_WAV)).rejects.toThrow(
       'OpenAI API error 500'
     )
   })
 
   it('throws when self-hosted base url is missing', async () => {
     mockLoadSettings.mockReturnValue({ sttProvider: 'selfhosted', openaiBaseUrl: '' })
-    await expect(transcribeAudio(Buffer.from('audio'), 'rec.webm')).rejects.toThrow(
+    await expect(transcribeAudio(Buffer.from('audio'), 'rec.webm', null, LIVE_WAV)).rejects.toThrow(
       'No self-hosted server URL configured'
     )
   })
@@ -388,7 +390,7 @@ describe('selfhosted (directUrl) provider', () => {
     const mockReq = createMockNetRequest(200, JSON.stringify({ text: 'ok' }))
     mockNetRequest.mockReturnValue(mockReq)
 
-    await transcribeAudio(Buffer.from('audio'), 'rec.webm')
+    await transcribeAudio(Buffer.from('audio'), 'rec.webm', null, LIVE_WAV)
     expect(mockReq.setHeader).toHaveBeenCalledWith('Authorization', 'Bearer priv-secret-key')
   })
 
@@ -401,7 +403,7 @@ describe('selfhosted (directUrl) provider', () => {
     const mockReq = createMockNetRequest(200, JSON.stringify({ text: 'ok' }))
     mockNetRequest.mockReturnValue(mockReq)
 
-    await transcribeAudio(Buffer.from('audio'), 'rec.webm')
+    await transcribeAudio(Buffer.from('audio'), 'rec.webm', null, LIVE_WAV)
     expect(mockReq.setHeader).not.toHaveBeenCalledWith('Authorization', expect.anything())
   })
 
@@ -412,7 +414,7 @@ describe('selfhosted (directUrl) provider', () => {
       fallbackEnabled: false
     })
 
-    await expect(transcribeAudio(Buffer.from('audio'), 'rec.webm')).rejects.toThrow(
+    await expect(transcribeAudio(Buffer.from('audio'), 'rec.webm', null, LIVE_WAV)).rejects.toThrow(
       'must use https://'
     )
     expect(mockNetRequest).not.toHaveBeenCalled()
@@ -428,7 +430,7 @@ describe('selfhosted (directUrl) provider', () => {
       const mockReq = createMockNetRequest(200, JSON.stringify({ text: 'ok' }))
       mockNetRequest.mockReturnValue(mockReq)
 
-      const result = await transcribeAudio(Buffer.from('audio'), 'rec.webm')
+      const result = await transcribeAudio(Buffer.from('audio'), 'rec.webm', null, LIVE_WAV)
       expect(result).toBe('ok')
       expect(mockNetRequest).toHaveBeenCalledWith({ method: 'POST', url: `http://${host}/inference`, redirect: 'manual' })
     }
@@ -442,7 +444,7 @@ describe('selfhosted (directUrl) provider', () => {
     const mockReq = createMockNetRequest(200, JSON.stringify({ text: 'secure ok' }))
     mockNetRequest.mockReturnValue(mockReq)
 
-    const result = await transcribeAudio(Buffer.from('audio'), 'rec.webm')
+    const result = await transcribeAudio(Buffer.from('audio'), 'rec.webm', null, LIVE_WAV)
     expect(result).toBe('secure ok')
   })
 })
@@ -767,7 +769,7 @@ describe('isProviderConfigured edges', () => {
     })
     mockNetRequest.mockReturnValue(createMockNetRequest(200, JSON.stringify({ text: 'from local' })))
 
-    await expect(transcribeAudio(Buffer.from('audio'), 'rec.webm')).resolves.toBe('from local')
+    await expect(transcribeAudio(Buffer.from('audio'), 'rec.webm', null, LIVE_WAV)).resolves.toBe('from local')
     expect(mockNetRequest).toHaveBeenCalledTimes(1)
     expect(mockNetRequest.mock.calls[0][0]).toMatchObject({
       url: 'http://127.0.0.1:9000/inference'
