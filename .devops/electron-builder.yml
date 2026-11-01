@@ -1,5 +1,10 @@
 appId: com.whisperio.app
 productName: Whisperio
+# whisperio:// links (CFBundleURLTypes on macOS, registry entry via the NSIS installer on Windows)
+protocols:
+  - name: Whisperio
+    schemes:
+      - whisperio
 directories:
   buildResources: build
   output: dist

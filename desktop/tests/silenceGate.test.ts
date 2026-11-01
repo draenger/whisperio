@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest'
-import { analyzeSpeech, mixToMono } from '../src/renderer/audio/silenceGate'
+import {
+  analyzeSpeech, mixToMono, clampThresholdDbfs, shouldApplySilenceGate,
+  DEFAULT_THRESHOLD_DBFS
+} from '../src/renderer/audio/silenceGate'
 
 const SR = 16000
 const amp = (dbfs: number): number => Math.pow(10, dbfs / 20)
@@ -97,10 +100,95 @@ describe('analyzeSpeech', () => {
   })
 })
 
+describe('analyzeSpeech edge cases', () => {
+  it('rejects null/undefined samples and NaN/negative sample rates', () => {
+    expect(analyzeSpeech(null as unknown as Float32Array, SR).hasSpeech).toBe(false)
+    expect(analyzeSpeech(tone(500, -20), NaN).hasSpeech).toBe(false)
+    expect(analyzeSpeech(tone(500, -20), -16000).hasSpeech).toBe(false)
+  })
+
+  it('treats Infinity samples as silence', () => {
+    const r = analyzeSpeech(new Float32Array(SR).fill(Infinity), SR)
+    expect(r.hasSpeech).toBe(false)
+    expect(r.peakDbfs).toBe(-Infinity)
+  })
+
+  it('thresholdDbfs option moves the gate: -60 dBFS noise passes at -70 but not at default', () => {
+    const buf = noise(1000, -60)
+    expect(analyzeSpeech(buf, SR).hasSpeech).toBe(false)
+    expect(analyzeSpeech(buf, SR, { thresholdDbfs: -70 }).hasSpeech).toBe(true)
+  })
+
+  it('voicedMs is counted in whole frames and a trailing partial frame is ignored', () => {
+    // 25 ms frame @16k = 400 samples. 3 full voiced frames + 399 extra loud samples.
+    const buf = concat(tone(75, -20), tone(24, -20))
+    const r = analyzeSpeech(buf, SR)
+    expect(r.voicedMs).toBeCloseTo(75, 5)
+  })
+
+  it('frameMs option changes the frame granularity', () => {
+    // 100 ms tone, 50 ms frames -> exactly 2 voiced frames = 100 ms
+    const r = analyzeSpeech(tone(100, -20), SR, { frameMs: 50, minVoicedMs: 100 })
+    expect(r.voicedMs).toBeCloseTo(100, 5)
+    expect(r.hasSpeech).toBe(true)
+  })
+
+  it('frameMs smaller than one sample falls back to 1-sample frames without crashing', () => {
+    const r = analyzeSpeech(tone(300, -20), SR, { frameMs: 0 })
+    expect(r.hasSpeech).toBe(true)
+  })
+
+  it('the threshold boundary separates just-above from just-below frames', () => {
+    const above = new Float32Array(SR).fill(amp(-49.9))
+    const below = new Float32Array(SR).fill(amp(-50.1))
+    expect(analyzeSpeech(above, SR).hasSpeech).toBe(true)
+    expect(analyzeSpeech(below, SR).hasSpeech).toBe(false)
+  })
+})
+
 describe('mixToMono', () => {
+  it('single channel is returned as-is (no copy)', () => {
+    const ch = new Float32Array([0.1, 0.2])
+    expect(mixToMono([ch])).toBe(ch)
+  })
+
+  it('three channels average to the mean', () => {
+    const m = mixToMono([new Float32Array([0.3, 0]), new Float32Array([0.3, 0.3]), new Float32Array([0.3, 0.6])])
+    expect(m[0]).toBeCloseTo(0.3, 6)
+    expect(m[1]).toBeCloseTo(0.3, 6)
+  })
+
   it('averages channels', () => {
     const m = mixToMono([new Float32Array([1, 0]), new Float32Array([0, 1])])
     expect(Array.from(m)).toEqual([0.5, 0.5])
     expect(mixToMono([]).length).toBe(0)
+  })
+})
+
+describe('configurable threshold', () => {
+  it('defaults to -50 dBFS so quiet speech at -48 is kept', () => {
+    expect(DEFAULT_THRESHOLD_DBFS).toBe(-50)
+    expect(analyzeSpeech(tone(500, -48), SR).hasSpeech).toBe(true)
+  })
+  it('passes thresholdDbfs through: same clip gated at -40, kept at -60', () => {
+    const quiet = tone(500, -48)
+    expect(analyzeSpeech(quiet, SR, { thresholdDbfs: -40 }).hasSpeech).toBe(false)
+    expect(analyzeSpeech(quiet, SR, { thresholdDbfs: -60 }).hasSpeech).toBe(true)
+  })
+  it('clampThresholdDbfs bounds to -70..-30, junk -> default', () => {
+    expect(clampThresholdDbfs(-100)).toBe(-70)
+    expect(clampThresholdDbfs(-5)).toBe(-30)
+    expect(clampThresholdDbfs(-55)).toBe(-55)
+    expect(clampThresholdDbfs(undefined)).toBe(-50)
+    expect(clampThresholdDbfs(NaN)).toBe(-50)
+  })
+})
+
+describe('shouldApplySilenceGate (acts only when the recording is saved)', () => {
+  it('acts only when enabled AND saved', () => {
+    expect(shouldApplySilenceGate(true, true)).toBe(true)
+    expect(shouldApplySilenceGate(true, false)).toBe(false)
+    expect(shouldApplySilenceGate(false, true)).toBe(false)
+    expect(shouldApplySilenceGate(undefined, true)).toBe(false)
   })
 })

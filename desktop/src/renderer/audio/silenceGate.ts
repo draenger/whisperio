@@ -17,13 +17,32 @@ export interface SpeechAnalysis {
 export interface SilenceGateOptions {
   /** Frame length in ms (default 25). */
   frameMs?: number
-  /** Absolute voiced threshold in dBFS (default -45). */
+  /** Absolute voiced threshold in dBFS (default -50). */
   thresholdDbfs?: number
   /** Minimum voiced duration to count as speech (default 200 ms). */
   minVoicedMs?: number
 }
 
-const DEFAULTS = { frameMs: 25, thresholdDbfs: -45, minVoicedMs: 200 }
+export const DEFAULT_THRESHOLD_DBFS = -50
+export const MIN_THRESHOLD_DBFS = -70
+export const MAX_THRESHOLD_DBFS = -30
+
+const DEFAULTS = { frameMs: 25, thresholdDbfs: DEFAULT_THRESHOLD_DBFS, minVoicedMs: 200 }
+
+/** Clamp a user-supplied threshold into the supported range; junk -> default. */
+export function clampThresholdDbfs(v: unknown): number {
+  const n = typeof v === 'number' ? v : Number.NaN
+  if (!Number.isFinite(n)) return DEFAULT_THRESHOLD_DBFS
+  return Math.min(MAX_THRESHOLD_DBFS, Math.max(MIN_THRESHOLD_DBFS, n))
+}
+
+/**
+ * The gate may only drop a clip when it is enabled AND the clip is safely on
+ * disk: with no saved copy a misjudged drop would lose the audio forever.
+ */
+export function shouldApplySilenceGate(enabled: boolean | undefined, recordingSaved: boolean): boolean {
+  return enabled === true && recordingSaved
+}
 
 function toDbfs(rms: number): number {
   return rms > 0 ? 20 * Math.log10(rms) : -Infinity

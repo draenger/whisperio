@@ -11,12 +11,20 @@ const mockExistsSync = vi.fn()
 const mockReadFileSync = vi.fn()
 const mockWriteFileSync = vi.fn()
 const mockRenameSync = vi.fn()
+const mockOpenSync = vi.fn(() => 42)
+const mockFsyncSync = vi.fn()
+const mockCloseSync = vi.fn()
+const mockUnlinkSync = vi.fn()
 
 vi.mock('fs', () => ({
   existsSync: (...args: unknown[]) => mockExistsSync(...args),
   readFileSync: (...args: unknown[]) => mockReadFileSync(...args),
   writeFileSync: (...args: unknown[]) => mockWriteFileSync(...args),
-  renameSync: (...args: unknown[]) => mockRenameSync(...args)
+  renameSync: (...args: unknown[]) => mockRenameSync(...args),
+  openSync: (...args: unknown[]) => mockOpenSync(...args),
+  fsyncSync: (...args: unknown[]) => mockFsyncSync(...args),
+  closeSync: (...args: unknown[]) => mockCloseSync(...args),
+  unlinkSync: (...args: unknown[]) => mockUnlinkSync(...args)
 }))
 
 import {
@@ -24,6 +32,8 @@ import {
   saveSettings,
   getSetting,
   getActiveVocabulary,
+  areSettingsUnavailable,
+  setSleepSyncForTests,
   DEFAULT_VOCABULARY_TERMS,
   DEFAULT_CLEANUP_TEMPLATES,
   DEFAULT_TONE_MAP,
@@ -67,16 +77,20 @@ const DEFAULT_SETTINGS = {
   aiModel: '',
   anthropicApiKey: '',
   launchAtStartup: true,
+  allowUrlControl: false,
+  allowUrlStart: false,
   checkForUpdates: true,
   dictationHotkey: '',
   dictateAndSendHotkey: '',
   commandHotkey: 'Ctrl+Shift+C',
+  hotkeyMode: 'toggle',
   theme: 'dark',
   accentColor: 'blue',
   inputDeviceId: '',
   outputDeviceId: '',
   saveRecordings: true,
-  silenceGate: true,
+  silenceGate: false,
+  silenceGateThresholdDbfs: -50,
   trimSilence: false,
   outputRecordingHotkey: '',
   fallbackEnabled: false,
@@ -89,7 +103,9 @@ const SETTINGS_PATH = join('/mock/userData', 'settings.json')
 
 describe('settingsManager', () => {
   beforeEach(() => {
-    vi.clearAllMocks()
+    vi.resetAllMocks()
+    mockOpenSync.mockReturnValue(42)
+    setSleepSyncForTests(() => {})
   })
 
   describe('loadSettings', () => {
@@ -135,6 +151,123 @@ describe('settingsManager', () => {
       expect(content).toBe(JSON.stringify(result, null, 2))
       expect(enc).toBe('utf-8')
       expect(mockRenameSync).toHaveBeenCalledWith(tmpPath, SETTINGS_PATH)
+    })
+  })
+
+  describe('read errors vs corruption + durable saves', () => {
+    const ebusy = (): Error => Object.assign(new Error('busy'), { code: 'EBUSY' })
+
+    it('persistent EBUSY: defaults in memory, save refused, file untouched', () => {
+      mockExistsSync.mockReturnValue(true)
+      mockReadFileSync.mockImplementation(() => { throw ebusy() })
+      expect(loadSettings()).toEqual(DEFAULT_SETTINGS)
+      expect(areSettingsUnavailable()).toBe(true)
+      expect(() => saveSettings({ openaiApiKey: 'sk-x' })).toThrow(/refusing to overwrite/)
+      expect(mockRenameSync).not.toHaveBeenCalled()
+      expect(mockWriteFileSync).not.toHaveBeenCalled()
+      expect(mockUnlinkSync).not.toHaveBeenCalled()
+    })
+
+    it('logs the error code only on read failure', () => {
+      const spy = vi.spyOn(console, 'error').mockImplementation(() => {})
+      mockExistsSync.mockReturnValue(true)
+      mockReadFileSync.mockImplementation(() => { throw ebusy() })
+      loadSettings()
+      const logged = spy.mock.calls.flat().join(' ')
+      expect(logged).toContain('EBUSY')
+      expect(logged).not.toContain('busy')
+      spy.mockRestore()
+    })
+
+    it('transient EBUSY once: retries and returns real settings', () => {
+      mockExistsSync.mockReturnValue(true)
+      mockReadFileSync
+        .mockImplementationOnce(() => { throw ebusy() })
+        .mockReturnValue(JSON.stringify({ openaiApiKey: 'sk-real' }))
+      const r = loadSettings()
+      expect(r.openaiApiKey).toBe('sk-real')
+      expect(areSettingsUnavailable()).toBe(false)
+    })
+
+    it('recovers on next load after unavailable', () => {
+      mockExistsSync.mockReturnValue(true)
+      mockReadFileSync.mockImplementation(() => { throw ebusy() })
+      loadSettings()
+      expect(areSettingsUnavailable()).toBe(true)
+      mockReadFileSync.mockReset()
+      mockReadFileSync.mockReturnValue(JSON.stringify({ openaiApiKey: 'sk-real' }))
+      expect(loadSettings().openaiApiKey).toBe('sk-real')
+      expect(areSettingsUnavailable()).toBe(false)
+    })
+
+    it('corrupt JSON: timestamped backup, defaults', () => {
+      mockExistsSync.mockImplementation((p: string) => p === SETTINGS_PATH)
+      mockReadFileSync.mockReturnValue('{"a":')
+      expect(loadSettings()).toEqual(DEFAULT_SETTINGS)
+      expect(mockRenameSync).toHaveBeenCalledTimes(1)
+      const [from, to] = mockRenameSync.mock.calls[0]
+      expect(from).toBe(SETTINGS_PATH)
+      expect(String(to)).toMatch(/settings\.corrupt-\d+\.json$/)
+      expect(areSettingsUnavailable()).toBe(false)
+    })
+
+    it('wrong shape (array) counts as corrupt', () => {
+      mockExistsSync.mockImplementation((p: string) => p === SETTINGS_PATH)
+      mockReadFileSync.mockReturnValue('[1,2]')
+      expect(loadSettings()).toEqual(DEFAULT_SETTINGS)
+      expect(mockRenameSync).toHaveBeenCalledTimes(1)
+    })
+
+    it('never overwrites an existing backup', () => {
+      vi.spyOn(Date, 'now').mockReturnValue(1000)
+      const taken = join('/mock/userData', 'settings.corrupt-1000.json')
+      mockExistsSync.mockImplementation((p: string) => p === SETTINGS_PATH || p === taken)
+      mockReadFileSync.mockReturnValue('nope')
+      loadSettings()
+      const to = String(mockRenameSync.mock.calls[0][1])
+      expect(to).not.toBe(taken)
+      expect(to).toMatch(/settings\.corrupt-1000-1\.json$/)
+      vi.restoreAllMocks()
+    })
+
+    it('corrupt file that cannot be moved aside: unavailable, no overwrite', () => {
+      const spy = vi.spyOn(console, 'error').mockImplementation(() => {})
+      mockExistsSync.mockImplementation((p: string) => p === SETTINGS_PATH)
+      mockReadFileSync.mockReturnValue('nope')
+      mockRenameSync.mockImplementation(() => { throw ebusy() })
+      loadSettings()
+      expect(areSettingsUnavailable()).toBe(true)
+      expect(() => saveSettings({})).toThrow()
+      spy.mockRestore()
+    })
+
+    it('fsync happens after write and before rename', () => {
+      mockExistsSync.mockReturnValue(false)
+      const order: string[] = []
+      mockWriteFileSync.mockImplementation(() => { order.push('write') })
+      mockOpenSync.mockImplementation(() => { order.push('open'); return 7 })
+      mockFsyncSync.mockImplementation(() => { order.push('fsync') })
+      mockCloseSync.mockImplementation(() => { order.push('close') })
+      mockRenameSync.mockImplementation(() => { order.push('rename') })
+      saveSettings({})
+      expect(order).toEqual(['write', 'open', 'fsync', 'close', 'rename'])
+      expect(mockFsyncSync).toHaveBeenCalledWith(7)
+    })
+
+    it('removes tmp when rename fails', () => {
+      mockExistsSync.mockReturnValue(false)
+      mockRenameSync.mockImplementation(() => { throw Object.assign(new Error('x'), { code: 'ENOSPC' }) })
+      expect(() => saveSettings({})).toThrow()
+      expect(mockUnlinkSync).toHaveBeenCalledTimes(1)
+      expect(String(mockUnlinkSync.mock.calls[0][0]).endsWith('.tmp')).toBe(true)
+    })
+
+    it('retries a transient rename error then succeeds', () => {
+      mockExistsSync.mockReturnValue(false)
+      mockRenameSync.mockImplementationOnce(() => { throw ebusy() }).mockImplementation(() => {})
+      expect(() => saveSettings({})).not.toThrow()
+      expect(mockRenameSync).toHaveBeenCalledTimes(2)
+      expect(mockUnlinkSync).not.toHaveBeenCalled()
     })
   })
 
@@ -486,5 +619,46 @@ describe('settingsManager', () => {
 
       expect(seededTwice.toneMap).toEqual(seededOnce.toneMap)
     })
+  })
+})
+
+describe('allowUrlControl / allowUrlStart defaults (fail closed)', () => {
+  it('both default to false when absent from the file', () => {
+    mockExistsSync.mockReturnValue(true)
+    mockReadFileSync.mockReturnValue(JSON.stringify({ openaiApiKey: 'sk-x' }))
+    const r = loadSettings()
+    expect(r.allowUrlControl).toBe(false)
+    expect(r.allowUrlStart).toBe(false)
+  })
+  it('keeps an explicit true', () => {
+    mockExistsSync.mockReturnValue(true)
+    mockReadFileSync.mockReturnValue(JSON.stringify({ allowUrlControl: true, allowUrlStart: true }))
+    const r = loadSettings()
+    expect(r.allowUrlControl).toBe(true)
+    expect(r.allowUrlStart).toBe(true)
+  })
+})
+
+describe('silenceGate defaults and threshold clamp', () => {
+  function loadWith(obj: unknown): AppSettings {
+    mockExistsSync.mockReturnValue(true)
+    mockReadFileSync.mockReturnValue(JSON.stringify(obj))
+    return loadSettings()
+  }
+  it('is opt-in (false) with threshold -50 when absent', () => {
+    const r = loadWith({ openaiApiKey: 'sk-x' })
+    expect(r.silenceGate).toBe(false)
+    expect(r.silenceGateThresholdDbfs).toBe(-50)
+  })
+  it('keeps an in-range threshold and an explicit true gate', () => {
+    const r = loadWith({ silenceGate: true, silenceGateThresholdDbfs: -60 })
+    expect(r.silenceGate).toBe(true)
+    expect(r.silenceGateThresholdDbfs).toBe(-60)
+  })
+  it('clamps to -70..-30 and replaces junk with the default', () => {
+    expect(loadWith({ silenceGateThresholdDbfs: -120 }).silenceGateThresholdDbfs).toBe(-70)
+    expect(loadWith({ silenceGateThresholdDbfs: 0 }).silenceGateThresholdDbfs).toBe(-30)
+    expect(loadWith({ silenceGateThresholdDbfs: 'loud' }).silenceGateThresholdDbfs).toBe(-50)
+    expect(loadWith({ silenceGateThresholdDbfs: null }).silenceGateThresholdDbfs).toBe(-50)
   })
 })
