@@ -1,4 +1,5 @@
 import { useRef, useCallback, useState } from 'react'
+import { StartGuard, decideAfterGetUserMediaFailure } from '../audio/startGuard'
 
 async function webmToWav(webmBuffer: ArrayBuffer): Promise<ArrayBuffer> {
   const audioCtx = new AudioContext({ sampleRate: 16000 })
@@ -50,6 +51,7 @@ export function useDictation(): UseDictationReturn {
   const chunksRef = useRef<Blob[]>([])
   const streamRef = useRef<MediaStream | null>(null)
   const recordingStartTimeRef = useRef<number>(0)
+  const startGuardRef = useRef(new StartGuard())
 
   const stopTracks = useCallback(() => {
     streamRef.current?.getTracks().forEach((t) => t.stop())
@@ -60,31 +62,57 @@ export function useDictation(): UseDictationReturn {
 
   const startRecording = useCallback(async () => {
     console.log('[Whisperio] startRecording called')
+    // Supersede any earlier in-flight start and release a stream/recorder left
+    // from a previous session so a second press never leaks the first mic.
+    const token = startGuardRef.current.begin()
+    const prevRecorder = mediaRecorderRef.current
+    if (prevRecorder && prevRecorder.state !== 'inactive') {
+      try { prevRecorder.stop() } catch { /* already stopped */ }
+    }
+    stopTracks()
+    // Main is waiting in 'recording'; on a failed start tell the user and
+    // reset main to idle instead of staying silent.
+    const failStart = async (message: string): Promise<void> => {
+      try { await window.api.dictation.reportError?.('Microphone unavailable', message) } catch { /* best effort */ }
+      try { await window.api.dictation.sendResult('') } catch { /* best effort */ }
+    }
     try {
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
         console.error('[Whisperio] getUserMedia not available in this context')
+        await failStart('Audio capture is not available.')
         return
       }
 
       // Honor the user's selected input device (Settings > Audio > Input
-      // Device). Previously this setting was saved/loaded by SettingsForm but
-      // never actually consumed anywhere — picking a non-default mic silently
-      // had no effect (caught by tests/settings-loop.spec.ts's P0.5 guard).
-      // Empty string means "System Default": omit the constraint so
-      // getUserMedia falls back to the OS default, matching prior behavior.
+      // Device). Empty string means "System Default": omit the constraint.
       const settings = await window.api.settings.load()
-      const audioConstraints: MediaTrackConstraints = {
+      if (!startGuardRef.current.isCurrent(token)) return
+      const baseConstraints: MediaTrackConstraints = {
         sampleRate: 16000,
         echoCancellation: true,
         noiseSuppression: true
       }
-      if (settings.inputDeviceId) {
-        audioConstraints.deviceId = { exact: settings.inputDeviceId }
+      const usedSpecificDevice = !!settings.inputDeviceId
+      let stream: MediaStream
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          audio: usedSpecificDevice
+            ? { ...baseConstraints, deviceId: { exact: settings.inputDeviceId } }
+            : baseConstraints
+        })
+      } catch (err) {
+        if (decideAfterGetUserMediaFailure(err, usedSpecificDevice) !== 'retry-default') throw err
+        console.warn('[Whisperio] Selected input device unavailable, falling back to system default:', err)
+        if (!startGuardRef.current.isCurrent(token)) return
+        stream = await navigator.mediaDevices.getUserMedia({ audio: baseConstraints })
       }
-
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: audioConstraints
-      })
+      // Stopped/cancelled/superseded while getUserMedia was pending: release
+      // the mic immediately instead of recording with nobody listening.
+      if (!startGuardRef.current.isCurrent(token)) {
+        stream.getTracks().forEach((t) => t.stop())
+        console.log('[Whisperio] Start superseded — released freshly acquired stream')
+        return
+      }
       console.log('[Whisperio] Got audio stream:', stream.getAudioTracks().length, 'tracks')
       streamRef.current = stream
       chunksRef.current = []
@@ -113,8 +141,12 @@ export function useDictation(): UseDictationReturn {
       console.log('[Whisperio] Recording started')
     } catch (err) {
       console.error('[Whisperio] Failed to start recording:', err)
+      if (startGuardRef.current.isCurrent(token)) {
+        stopTracks()
+        await failStart(err instanceof Error ? err.message : String(err))
+      }
     }
-  }, [])
+  }, [stopTracks])
 
   const startOutputRecording = useCallback(async () => {
     console.log('[Whisperio] startOutputRecording called (system audio)')
@@ -169,6 +201,8 @@ export function useDictation(): UseDictationReturn {
 
   const stopAndTranscribe = useCallback(async (sessionId?: number) => {
     console.log('[Whisperio] stopAndTranscribe called')
+    // A start still awaiting getUserMedia must not begin recording after this.
+    startGuardRef.current.invalidate()
     // Hoisted so the catch can mark a saved recording as failed instead of
     // leaving it stuck on 'pending' (rendered forever as "Processing...").
     let savedRecordingId: string | null = null
@@ -292,6 +326,7 @@ export function useDictation(): UseDictationReturn {
   }, [stopTracks])
 
   const cancelRecording = useCallback(() => {
+    startGuardRef.current.invalidate()
     const recorder = mediaRecorderRef.current
     if (recorder && recorder.state !== 'inactive') {
       recorder.stop()

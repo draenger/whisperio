@@ -14,6 +14,7 @@ export interface DictationAPI {
   onStateChanged: (callback: (state: string) => void) => () => void
   onOverlayInfo: (callback: (info: OverlayInfo) => void) => () => void
   sendResult: (text: string, sessionId?: number) => Promise<void>
+  reportError?: (title: string, body: string) => Promise<void>
   transcribe: (audioData: ArrayBuffer, filename: string) => Promise<string>
 }
 
@@ -457,6 +458,8 @@ const dictationApi: DictationAPI = {
   },
   sendResult: (text: string, sessionId?: number) =>
     ipcRenderer.invoke('dictation:result', text, sessionId),
+  reportError: (title: string, body: string) =>
+    ipcRenderer.invoke('dictation:error', title, body),
   transcribe: (audioData: ArrayBuffer, filename: string) =>
     ipcRenderer.invoke('dictation:transcribe', Buffer.from(audioData), filename)
 }
