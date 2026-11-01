@@ -41,6 +41,7 @@ import {
   loadIndex,
   saveIndex,
   IndexUnavailableError,
+  setSleepSyncForTests,
   setMaxDiskBytes,
   getMaxDiskBytes
 } from '../src/main/recordingStore'
@@ -474,6 +475,13 @@ describe('recordingStore', () => {
       expect(backups()).toHaveLength(0)
     })
 
+    const sleeps: number[] = []
+    beforeEach(() => {
+      sleeps.length = 0
+      setSleepSyncForTests((ms) => { sleeps.push(ms) })
+    })
+    afterEach(() => setSleepSyncForTests())
+
     const ebusy = (): never => {
       const e = new Error('EBUSY: resource busy or locked') as NodeJS.ErrnoException
       e.code = 'EBUSY'
@@ -512,6 +520,64 @@ describe('recordingStore', () => {
       vi.mocked(readFileSync).mockImplementationOnce((() => ebusy()) as never)
       expect(loadIndex()).toEqual(idx)
       expect(backups()).toHaveLength(0)
+    })
+
+    it('read retries back off (25,50,100,200) and attempt count is unchanged', () => {
+      writeFileSync(indexFile(), JSON.stringify({ recordings: [] }), 'utf-8')
+      const m = vi.mocked(readFileSync)
+      const before = m.mock.calls.length
+      m.mockImplementation((() => ebusy()) as never)
+      try {
+        expect(() => loadIndex()).toThrow(IndexUnavailableError)
+      } finally {
+        const calls = m.mock.calls.length - before
+        m.mockReset()
+        expect(calls).toBe(5)
+      }
+      expect(sleeps).toEqual([25, 50, 100, 200])
+    })
+
+    it('saveRecording with unavailable index writes no audio file', async () => {
+      writeFileSync(indexFile(), JSON.stringify({ recordings: [] }), 'utf-8')
+      const actual = await vi.importActual<typeof import('fs')>('fs')
+      vi.mocked(readFileSync).mockImplementation(((path: string, ...rest: unknown[]) => {
+        if (String(path).endsWith('index.json')) ebusy()
+        return (actual.readFileSync as (...a: unknown[]) => unknown)(path, ...rest)
+      }) as never)
+      try {
+        await expect(saveRecording(Buffer.from('x'), { duration: 1, provider: 'openai' })).rejects.toThrow(IndexUnavailableError)
+      } finally {
+        await restoreFs()
+      }
+      expect(readdirSync(getRecordingsDir()).filter((f) => f.endsWith('.webm'))).toHaveLength(0)
+    })
+
+    it('index write failure removes the just-written audio', async () => {
+      const actual = await vi.importActual<typeof import('fs')>('fs')
+      vi.mocked(renameSync).mockImplementation(((from: string, to: string) => {
+        if (String(to).endsWith('index.json')) {
+          const e = new Error('ENOSPC') as NodeJS.ErrnoException
+          e.code = 'ENOSPC'
+          throw e
+        }
+        return actual.renameSync(from, to)
+      }) as never)
+      try {
+        await expect(saveRecording(Buffer.from('x'), { duration: 1, provider: 'openai' })).rejects.toThrow('ENOSPC')
+      } finally {
+        await restoreFs()
+      }
+      expect(readdirSync(getRecordingsDir()).filter((f) => f.endsWith('.webm'))).toHaveLength(0)
+    })
+
+    it('entries dropped by the id filter are backed up once to index.filtered-<ts>.json', () => {
+      const original = JSON.stringify({ recordings: [{ id: 'rec-1' }, { nope: true }, null] })
+      writeFileSync(indexFile(), original, 'utf-8')
+      expect(loadIndex().recordings).toEqual([{ id: 'rec-1' }])
+      expect(loadIndex().recordings).toEqual([{ id: 'rec-1' }])
+      const f = readdirSync(getRecordingsDir()).filter((n) => n.startsWith('index.filtered-'))
+      expect(f).toHaveLength(1)
+      expect(readFileSync(join(getRecordingsDir(), f[0]), 'utf-8')).toBe(original)
     })
 
     it('corrupt index that can be neither renamed nor copied: throws and a save does not overwrite it', async () => {

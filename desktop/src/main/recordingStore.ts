@@ -139,6 +139,22 @@ export class IndexUnavailableError extends Error {
 }
 
 const READ_RETRIES = 5
+// Bounded backoff between index read retries (total 25+50+100+200 = 375 ms).
+const READ_BACKOFF_MS = [25, 50, 100, 200]
+
+let sleepImpl: (ms: number) => void = (ms) => {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms)
+}
+
+/** Blocking sleep (main process, tiny bounded waits only). */
+export function sleepSync(ms: number): void {
+  sleepImpl(ms)
+}
+
+/** Test hook: replace the sleep implementation; call with no arg to restore. */
+export function setSleepSyncForTests(fn?: (ms: number) => void): void {
+  sleepImpl = fn ?? ((ms) => { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms) })
+}
 
 // Signature (mtime+size) of a corrupt index we already COPIED aside (rename
 // failed), so repeated reads don't pile up identical backups.
@@ -186,7 +202,10 @@ function readIndexText(indexPath: string): string {
     } catch (err) {
       // A transient lock (Defender, an indexer, OneDrive) must never be
       // mistaken for corruption: retry, then refuse rather than go empty.
-      if (attempt < READ_RETRIES - 1 && isTransientRenameError(err)) continue
+      if (attempt < READ_RETRIES - 1 && isTransientRenameError(err)) {
+        sleepSync(READ_BACKOFF_MS[Math.min(attempt, READ_BACKOFF_MS.length - 1)])
+        continue
+      }
       const code = (err as NodeJS.ErrnoException | null)?.code ?? 'unknown'
       throw new IndexUnavailableError(`Recordings index could not be read (${code}); history left untouched.`)
     }
@@ -222,7 +241,26 @@ export function loadIndex(): RecordingIndex {
   const valid = obj.recordings.filter(
     (r) => r !== null && typeof r === 'object' && typeof (r as { id?: unknown }).id === 'string'
   )
-  return valid.length === obj.recordings.length ? obj : { ...obj, recordings: valid }
+  if (valid.length === obj.recordings.length) return obj
+  backupBeforeFilter(indexPath, obj.recordings.length - valid.length, obj.recordings.length)
+  return { ...obj, recordings: valid }
+}
+
+// Entries without a string id are dropped from the in-memory list; the next
+// saveIndex() would erase them for good. Keep a copy of the original first
+// (never deleted), once per distinct file state. Logs counts only.
+let filteredBackupSignature: string | null = null
+function backupBeforeFilter(indexPath: string, dropped: number, total: number): void {
+  const sig = fileSignature(indexPath)
+  if (sig !== null && sig === filteredBackupSignature) return
+  const name = `index.filtered-${Date.now()}.json`
+  try {
+    copyFileSync(indexPath, join(dirname(indexPath), name))
+  } catch {
+    throw new IndexUnavailableError('Recordings index has invalid entries and could not be backed up; history left untouched.')
+  }
+  filteredBackupSignature = sig
+  console.warn(`[recordingStore] dropped ${dropped} of ${total} invalid index entries; original copied to ${name}`)
 }
 
 // Windows hands out a transient EPERM/EBUSY for a rename when another process
@@ -306,6 +344,13 @@ export function saveRecording(
   const filename = `recording-${formatTimestamp(timestamp)}.webm`
   const filepath = join(dir, filename)
 
+  // Refuse before touching disk when the index is unusable, so no orphan audio.
+  try {
+    loadIndex()
+  } catch (err) {
+    return Promise.reject(err)
+  }
+
   // The audio file has a unique name, so writing it outside the lock is safe.
   writeFileSync(filepath, audioBuffer)
 
@@ -326,11 +371,16 @@ export function saveRecording(
   }
 
   return enqueue(() => {
-    const index = loadIndex()
-    index.recordings.push(entry)
-    evictToQuota(index, entry.id)
-    saveIndex(index)
-    return entry
+    try {
+      const index = loadIndex()
+      index.recordings.push(entry)
+      evictToQuota(index, entry.id)
+      saveIndex(index)
+      return entry
+    } catch (err) {
+      try { unlinkSync(filepath) } catch { /* best-effort: drop the just-written audio */ }
+      throw err
+    }
   })
 }
 
