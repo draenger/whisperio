@@ -35,7 +35,8 @@ import {
   HistoryLockedError
 } from '../src/main/recordingStore'
 import { loadSettings } from '../src/main/settingsManager'
-import { shredDataKey } from '../src/main/dataVault'
+import { shredDataKey, getDataKeyForEncrypt } from '../src/main/dataVault'
+import { encryptWithKeyAad, serializeEnvelope } from '../src/main/secretCrypto'
 
 const RECORDINGS_DIR = join(testDir, 'recordings')
 const INDEX = join(RECORDINGS_DIR, 'index.json')
@@ -225,5 +226,62 @@ describe('recordingStore - sealed index', () => {
     } finally {
       err.mockRestore()
     }
+  })
+
+  describe('envelope format v2 (kid bound into AAD)', () => {
+    it('writes v2: av=2 and a kid; round-trips', async () => {
+      const id = await seed()
+      await setHistoryEncryption(true)
+      const env = JSON.parse(readFileSync(INDEX, 'utf-8'))
+      expect(env.av).toBe(2)
+      expect(env.kid).toBe('hist-1')
+      expect(getRecording(id)?.transcription).toBe(SECRET)
+    })
+
+    it('tampering kid (still v2) -> locked, file untouched', async () => {
+      await seed()
+      await setHistoryEncryption(true)
+      const env = JSON.parse(readFileSync(INDEX, 'utf-8'))
+      env.kid = 'hist-2'
+      writeFileSync(INDEX, JSON.stringify(env), 'utf-8')
+      const bytes = readFileSync(INDEX)
+      expect(getRecordings()).toEqual([])
+      expect(getHistoryEncryptionStatus().locked).toBe(true)
+      expect(readFileSync(INDEX).equals(bytes)).toBe(true)
+    })
+
+    it('removing kid, downgrading av, or unknown av -> locked', async () => {
+      await seed()
+      await setHistoryEncryption(true)
+      const orig = JSON.parse(readFileSync(INDEX, 'utf-8'))
+      for (const mut of [
+        (e: any) => { delete e.kid },
+        (e: any) => { delete e.av },
+        (e: any) => { e.av = 3 }
+      ]) {
+        const e = JSON.parse(JSON.stringify(orig))
+        mut(e)
+        writeFileSync(INDEX, JSON.stringify(e), 'utf-8')
+        expect(getHistoryEncryptionStatus().locked).toBe(true)
+      }
+    })
+
+    it('still reads a legacy v1 envelope (no av, kid not in AAD) and the next write upgrades to v2', async () => {
+      const id = await seed()
+      await setHistoryEncryption(true)
+      const key = getDataKeyForEncrypt()
+      const plain = { recordings: getRecordings() }
+      writeFileSync(
+        INDEX,
+        serializeEnvelope(encryptWithKeyAad(key, JSON.stringify(plain), 'whisperio/index/v1', 'hist-1')),
+        'utf-8'
+      )
+      expect(JSON.parse(readFileSync(INDEX, 'utf-8')).av).toBeUndefined()
+      expect(getHistoryEncryptionStatus()).toEqual({ enabled: true, sealedOnDisk: true, locked: false })
+      expect(getRecording(id)?.transcription).toBe(SECRET)
+      await updateRecording(id, { cleanedText: 'x' })
+      expect(JSON.parse(readFileSync(INDEX, 'utf-8')).av).toBe(2)
+      expect(getRecording(id)?.cleanedText).toBe('x')
+    })
   })
 })
