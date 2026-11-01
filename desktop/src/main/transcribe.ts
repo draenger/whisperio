@@ -32,6 +32,7 @@ import { groqTranscribe } from './llm/groq'
 import { deepgramTranscribe, deepgramTranscribeDiarized } from './llm/deepgram'
 import { assemblyAITranscribe, assemblyAITranscribeDiarized } from './llm/assembly'
 import { mistralTranscribe } from './llm/mistral'
+import { audioMimeFromFilename } from './llm/audioMime'
 // Conversation mode (group/multi-speaker transcription) — ported from
 // mobile/WhisperioKit/Sources/WhisperioKit/Conversation.swift. Pure segment
 // logic lives in dictation/conversation.ts; this file only picks the
@@ -685,7 +686,7 @@ function whisperTranscribe(apiKey: string, audioBuffer: Buffer, filename: string
   const safeLanguage = sanitizeMultipartField(language)
 
   parts.push(Buffer.from(
-    `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="${safeFilename}"\r\nContent-Type: audio/webm\r\n\r\n`
+    `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="${safeFilename}"\r\nContent-Type: ${audioMimeFromFilename(filename, audioBuffer)}\r\n\r\n`
   ))
   parts.push(audioBuffer)
   parts.push(Buffer.from('\r\n'))
@@ -826,7 +827,7 @@ function elevenLabsTranscribe(apiKey: string, audioBuffer: Buffer, filename: str
   const safeLanguage = sanitizeMultipartField(language)
 
   parts.push(Buffer.from(
-    `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="${safeFilename}"\r\nContent-Type: audio/webm\r\n\r\n`
+    `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="${safeFilename}"\r\nContent-Type: ${audioMimeFromFilename(filename, audioBuffer)}\r\n\r\n`
   ))
   parts.push(audioBuffer)
   parts.push(Buffer.from('\r\n'))
@@ -978,7 +979,7 @@ function elevenLabsTranscribeDiarized(
   const safeLanguage = sanitizeMultipartField(language)
 
   parts.push(Buffer.from(
-    `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="${safeFilename}"\r\nContent-Type: audio/webm\r\n\r\n`
+    `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="${safeFilename}"\r\nContent-Type: ${audioMimeFromFilename(filename, audioBuffer)}\r\n\r\n`
   ))
   parts.push(audioBuffer)
   parts.push(Buffer.from('\r\n'))
@@ -1120,7 +1121,7 @@ function openAITranscribeDiarized(
   const safeLanguage = sanitizeMultipartField(language)
 
   parts.push(Buffer.from(
-    `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="${safeFilename}"\r\nContent-Type: audio/webm\r\n\r\n`
+    `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="${safeFilename}"\r\nContent-Type: ${audioMimeFromFilename(filename, audioBuffer)}\r\n\r\n`
   ))
   parts.push(audioBuffer)
   parts.push(Buffer.from('\r\n'))
@@ -1316,7 +1317,7 @@ async function replicateTranscribe(
   prompt: string,
   language: string
 ): Promise<string> {
-  const dataUri = `data:audio/webm;base64,${audioBuffer.toString('base64')}`
+  const dataUri = `data:${audioMimeFromFilename('', audioBuffer)};base64,${audioBuffer.toString('base64')}`
   const input: Record<string, unknown> = {
     audio: dataUri,
     // Forces the official openai/whisper model's output.transcription to be a

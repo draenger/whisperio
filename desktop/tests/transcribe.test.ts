@@ -79,6 +79,8 @@ beforeEach(() => {
   __resetCleanupCandidatesCacheForTests()
 })
 
+const WAV_BUF = Buffer.concat([Buffer.from('RIFF'), Buffer.from([0, 0, 0, 0]), Buffer.from('WAVEfmt ')])
+
 describe('transcribeAudio', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -492,6 +494,39 @@ describe('replicate provider', () => {
     const body = JSON.parse(init.body as string)
     const expectedDataUri = `data:audio/webm;base64,${Buffer.from('audio-bytes').toString('base64')}`
     expect(body.input.audio).toBe(expectedDataUri)
+  })
+
+  it('sends a WAV buffer as audio/wav to OpenAI', async () => {
+    mockLoadSettings.mockReturnValue({ openaiApiKey: 'sk-test', transcriptionPrompt: '' })
+    const mockReq = createMockNetRequest(200, JSON.stringify({ text: 'hello' }))
+    mockNetRequest.mockReturnValue(mockReq)
+    await transcribeAudio(WAV_BUF, 'recording.wav')
+    const bodyStr = (mockReq.write.mock.calls[0][0] as Buffer).toString('latin1')
+    expect(bodyStr).toContain('Content-Type: audio/wav')
+    expect(bodyStr).not.toContain('Content-Type: audio/webm')
+  })
+
+  it('sends a WAV buffer as audio/wav to ElevenLabs', async () => {
+    mockLoadSettings.mockReturnValue({ sttProvider: 'elevenlabs', elevenlabsApiKey: 'xi-test-key' })
+    const mockReq = createMockNetRequest(200, JSON.stringify({ text: 'hello' }))
+    mockNetRequest.mockReturnValue(mockReq)
+    await transcribeAudio(WAV_BUF, 'recording.wav')
+    const bodyStr = (mockReq.write.mock.calls[0][0] as Buffer).toString('latin1')
+    expect(bodyStr).toContain('Content-Type: audio/wav')
+    expect(bodyStr).not.toContain('Content-Type: audio/webm')
+  })
+
+  it('sends a WAV buffer as an audio/wav data URI to Replicate', async () => {
+    mockLoadSettings.mockReturnValue({ providerChain: ['replicate'], replicateApiKey: 'r8_test_key', transcriptionPrompt: '', customVocabulary: '' })
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      text: async () => JSON.stringify({ status: 'succeeded', output: { transcription: 'x' } })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    await transcribeAudio(WAV_BUF, 'recording.wav')
+    const body = JSON.parse((fetchMock.mock.calls[0] as [string, RequestInit])[1].body as string)
+    expect(body.input.audio.startsWith('data:audio/wav;base64,')).toBe(true)
   })
 
   it('uses the user-configured sttReplicateModel instead of the default', async () => {
