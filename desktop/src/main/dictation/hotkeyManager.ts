@@ -9,7 +9,7 @@ import {
 } from './overlayWindow'
 import { autoPaste, captureTargetWindow, restoreTargetWindow, sendEnter } from './autoPaste'
 import { loadSettings } from '../settingsManager'
-import { watchKeyRelease } from './keyHold'
+import { watchKeyRelease, setKeyHoldNotifier } from './keyHold'
 // COMMAND mode (v1.7): rewrite the clipboard per a spoken instruction instead
 // of inserting the spoken words — reuses the same LLM candidate chain as
 // transcript cleanup (buildCleanupCandidates/selectProvider), it just runs a
@@ -21,6 +21,8 @@ import { watchKeyRelease } from './keyHold'
 import { rewriteClipboardForCommand } from '../transcribe'
 import { handleCommandError, notifyInfo } from '../errorHandler'
 import { createWatchdog, onTranscriptionActivity } from './watchdog'
+
+setKeyHoldNotifier((title, body) => notifyInfo(title, body))
 
 export type DictationState = 'idle' | 'recording' | 'transcribing' | 'pasting' | 'command'
 
@@ -52,13 +54,21 @@ let currentSessionId = 0
 /** Start a fresh session and return its id. */
 function startSession(): number {
   cancelHoldWatch()
+  clearSessionFlags()
   return ++currentSessionId
 }
 
 /** Invalidate any in-flight session so a late result is dropped. */
 function invalidateSession(): void {
   cancelHoldWatch()
+  clearSessionFlags()
   currentSessionId++
+}
+
+/** Clear per-session flags; called by every start/reset/invalidate path. */
+function clearSessionFlags(): void {
+  sendEnterForSession = null
+  activeSessionIsCommand = false
 }
 
 /**
@@ -67,6 +77,8 @@ function invalidateSession(): void {
  * unavailable on this platform -> plain toggle fallback).
  */
 let holdCancel: (() => void) | null = null
+/** True once the watcher gave up (macOS Input Monitoring heuristic): the session continues in toggle semantics. */
+let holdDegraded = false
 /** A hold shorter than this is treated as an accidental tap and cancelled. */
 const MIN_HOLD_MS = 250
 /** After a hold release, ignore presses this long: a queued auto-repeat press
@@ -79,10 +91,12 @@ function cancelHoldWatch(): void {
     holdCancel()
     holdCancel = null
   }
+  holdDegraded = false
 }
 
-/** When true, press Enter after pasting the result */
-let sendEnterOnResult = false
+/** Session id for which Enter must be pressed after pasting (dictate-and-send),
+ * or null. Bound to a session id so a stale flag can never apply to a later one. */
+let sendEnterForSession: number | null = null
 
 /** When true, the in-flight session was started via the COMMAND hotkey — its
  * transcript is a spoken REWRITE INSTRUCTION for the clipboard, not text to
@@ -132,29 +146,47 @@ async function activate(): Promise<void> {
 function startHoldWatch(accel: string | null, pressedAt: number): void {
   if (!accel || loadSettings().hotkeyMode !== 'hold') return
   const sessionId = currentSessionId
-  const cancelFn = watchKeyRelease(accel, () => {
-    holdCancel = null
-    if (state !== 'recording' || sessionId !== currentSessionId) return
-    if (Date.now() - pressedAt < MIN_HOLD_MS) {
-      console.log('[Whisperio] Hold shorter than minimum — treating as accidental tap, cancelling')
-      cancel()
-      return
+  holdDegraded = false
+  const cancelFn = watchKeyRelease(
+    accel,
+    () => {
+      holdCancel = null
+      if (state !== 'recording' || sessionId !== currentSessionId) return
+      if (Date.now() - pressedAt < MIN_HOLD_MS) {
+        console.log('[Whisperio] Hold shorter than minimum — treating as accidental tap, cancelling')
+        cancel()
+        return
+      }
+      unregisterEscape()
+      holdReleasedAt = Date.now()
+      setState('transcribing')
+      sendToPrimaryOverlay('dictation:deactivate', currentSessionId)
+    },
+    {
+      // Hold detection judged unreliable (macOS): keep recording, next press stops
+      // (toggle semantics), and tell the overlays to show the toggle hint.
+      onFallback: () => {
+        if (state !== 'recording' || sessionId !== currentSessionId) return
+        holdDegraded = true
+        broadcastToOverlays('dictation:overlay-info', {
+          sourceName: 'System Default',
+          stopHotkey: activeHotkey || 'hotkey',
+          hold: false,
+          recordingType: 'input' as const
+        })
+      }
     }
-    unregisterEscape()
-    holdReleasedAt = Date.now()
-    setState('transcribing')
-    sendToPrimaryOverlay('dictation:deactivate', currentSessionId)
-  })
+  )
   holdCancel = cancelFn
 }
 
-async function activateWith(accel: string | null): Promise<void> {
+async function activateWith(accel: string | null, sendEnter = false): Promise<void> {
   try {
     const pressedAt = Date.now()
     console.log(`[Whisperio] Hotkey pressed — current state: ${state}`)
     // Hold mode: auto-repeated press callbacks while the key is held must not
     // act as a second tap — the release watcher ends the recording.
-    if (holdCancel && state === 'recording') return
+    if (holdCancel && !holdDegraded && state === 'recording') return
     if (state === 'transcribing' && holdReleasedAt && pressedAt - holdReleasedAt < POST_RELEASE_IGNORE_MS) return
     if (state === 'idle') {
       // First tap — capture target window, ensure overlay, start recording
@@ -165,6 +197,7 @@ async function activateWith(accel: string | null): Promise<void> {
         return
       }
       startSession()
+      if (sendEnter) sendEnterForSession = currentSessionId
       setState('recording')
       showOverlay()
       // Only the primary overlay records audio; all overlays show visual state
@@ -183,6 +216,7 @@ async function activateWith(accel: string | null): Promise<void> {
       startHoldWatch(accel, pressedAt)
     } else if (state === 'recording') {
       // Second tap — stop recording, transcribe
+      if (sendEnter) sendEnterForSession = currentSessionId
       unregisterEscape()
       setState('transcribing')
       // Tag the result the renderer is about to produce with this session id.
@@ -209,8 +243,7 @@ async function activateWith(accel: string | null): Promise<void> {
 }
 
 async function activateAndSend(): Promise<void> {
-  sendEnterOnResult = true
-  await activateWith(activeSendHotkey)
+  await activateWith(activeSendHotkey, true)
 }
 
 async function activateOutput(): Promise<void> {
@@ -324,8 +357,6 @@ function cancel(): void {
   // Invalidate so any in-flight transcription's result is dropped rather than
   // pasted after the user cancelled.
   invalidateSession()
-  sendEnterOnResult = false
-  activeSessionIsCommand = false
   unregisterEscape()
   sendToPrimaryOverlay('dictation:cancel')
   setState('idle')
@@ -341,8 +372,7 @@ export async function cliToggle(): Promise<void> {
 }
 
 export async function cliSend(): Promise<void> {
-  sendEnterOnResult = true
-  await activateWith(null)
+  await activateWith(null, true)
 }
 
 export async function cliStart(): Promise<void> {
@@ -374,15 +404,15 @@ async function handleResult(
   // timed out. Without this, a slow transcription that resolves after the user
   // moved on would auto-paste (and possibly Enter) stale, potentially sensitive
   // text into whatever window now has focus. Checked FIRST so a stale result
-  // can't consume the current session's sendEnterOnResult flag.
+  // can't consume the current session's sendEnterForSession flag.
   if (typeof sessionId === 'number' && sessionId !== currentSessionId) {
     console.warn(
       `[Whisperio] Dropping stale transcription result (session ${sessionId} ≠ current ${currentSessionId})`
     )
     return
   }
-  const shouldSend = sendEnterOnResult
-  sendEnterOnResult = false
+  const shouldSend = sendEnterForSession !== null && sendEnterForSession === currentSessionId
+  sendEnterForSession = null
   const isCommand = activeSessionIsCommand
   activeSessionIsCommand = false
   unregisterEscape()
