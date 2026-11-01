@@ -295,10 +295,30 @@ function handleDownloadResponse(
   const fail = (err: unknown): void => {
     if (failed) return
     failed = true
-    writeStream.destroy()
-    activeDownloads.delete(modelId)
-    try { unlinkSync(tempPath) } catch { /* ignore */ }
-    reject(err instanceof Error ? err : new Error(String(err)))
+    const error = err instanceof Error ? err : new Error(String(err))
+    // destroy() closes the fd ASYNCHRONOUSLY. Unlinking right away fails on
+    // Windows (file still open -> EBUSY/EPERM, swallowed) and on any OS can lose
+    // the race with a still-pending open() that re-creates the file — either
+    // way the `.downloading` file leaked (flaky CI on Dependabot PR #25).
+    // Unlink + reject only once the stream has really closed.
+    let settled = false
+    const cleanupAndReject = (): void => {
+      if (settled) return
+      settled = true
+      try { unlinkSync(tempPath) } catch { /* ignore */ }
+      // Free the slot only now: a retry started before the temp file is gone
+      // would otherwise have its fresh .downloading file deleted by us.
+      activeDownloads.delete(modelId)
+      reject(error)
+    }
+    if (writeStream.closed) {
+      cleanupAndReject()
+    } else {
+      writeStream.once('close', cleanupAndReject)
+      writeStream.destroy()
+      // Safety net: never leave the caller hanging if 'close' doesn't come.
+      setTimeout(cleanupAndReject, 2000).unref?.()
+    }
   }
 
   // Take over cancellation now that a write stream exists. The registration
