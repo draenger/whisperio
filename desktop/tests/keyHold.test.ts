@@ -278,42 +278,11 @@ describe('keyHold gap coverage', () => {
   })
 })
 
-describe('layout-aware Windows mapping (VkKeyScanExW)', () => {
-  beforeEach(() => _resetKeyHoldWarnings())
-
-  it('uses the scanner for OEM punctuation and letters when available', () => {
-    const scan = vi.fn((ch: string) => (ch === ';' ? 0xbc : ch === 'z' ? 0x5a : null))
-    expect(winVirtualKey(';', scan)).toBe(0xbc) // QWERTZ: ';' lives on VK_OEM_COMMA
-    expect(winVirtualKey('Z', scan)).toBe(0x5a)
-    expect(scan).toHaveBeenCalledWith(';')
-  })
-  it('punctuation the layout cannot type -> null (toggle), not a wrong static key', () => {
-    expect(winVirtualKey(';', () => null)).toBeNull()
-  })
-  it('falls back to the static table with no scanner / failing scanner / unscannable letter', () => {
-    expect(winVirtualKey(';', null)).toBe(0xba)
-    expect(winVirtualKey('A', () => null)).toBe(0x41)
-    expect(
-      winVirtualKey('5', () => {
-        throw new Error('x')
-      })
-    ).toBe(0x35)
-  })
-  it('named keys never go through the scanner', () => {
-    const scan = vi.fn(() => 1)
-    expect(winVirtualKey('SPACE', scan)).toBe(0x20)
-    expect(winVirtualKey('F5', scan)).toBe(0x74)
-    expect(scan).not.toHaveBeenCalled()
-  })
-  it('createKeyStateReader resolves via the injected scanner on win32', () => {
-    const scan = vi.fn(() => 0xbc)
-    const raw = vi.fn(() => true)
-    _setKeyHoldDeps({ loadWinScanner: () => scan })
-    // inject a fake backend via the cache path is not possible; just verify the scanner is consulted
-    vi.spyOn(console, 'warn').mockImplementation(() => {})
-    createKeyStateReader(';', 'win32')
-    expect(scan).toHaveBeenCalledWith(';')
-    void raw
+describe('Windows mapping is the static Electron-compatible table', () => {
+  it('keeps OEM punctuation on Electron fixed VK codes regardless of layout', () => {
+    expect(winVirtualKey(';')).toBe(0xba)
+    expect(winVirtualKey('-')).toBe(0xbd)
+    expect(winVirtualKey('Z')).toBe(0x5a)
   })
 })
 
@@ -334,21 +303,53 @@ describe('macOS Input Monitoring detection', () => {
     return onRelease
   }
 
-  it('first-poll-up twice in a row -> no release, one notification, then toggle fallback', () => {
+  it('first-poll-up 3 times in a row -> no release, onFallback, one notification, then toggle fallback', () => {
     const notify = vi.fn()
+    const onFallback = vi.fn()
     _setKeyHoldDeps({ notify, checkInputMonitoring: () => 2 })
-    expect(run(false)).toHaveBeenCalledTimes(1) // 1st: could be a genuine quick tap
-    expect(run(false)).not.toHaveBeenCalled() // 2nd: assume broken, stay recording
+    const go = (): ReturnType<typeof vi.fn> => {
+      const onRelease = vi.fn()
+      watchKeyRelease('Ctrl+Space', onRelease, { platform: 'darwin', isKeyDown: () => false, onFallback })
+      vi.advanceTimersByTime(100)
+      return onRelease
+    }
+    expect(go()).toHaveBeenCalledTimes(1)
+    expect(go()).toHaveBeenCalledTimes(1)
+    expect(notify).not.toHaveBeenCalled()
+    expect(go()).not.toHaveBeenCalled() // 3rd: assume broken, stay recording
+    expect(onFallback).toHaveBeenCalledTimes(1)
     expect(notify).toHaveBeenCalledTimes(1)
     expect(notify.mock.calls[0][1]).toContain('Input Monitoring')
-    // degraded: hold unavailable for later sessions, no extra notification
     expect(createKeyStateReader('SPACE', 'darwin')).toBeNull()
     expect(watchKeyRelease('Ctrl+Space', vi.fn(), { platform: 'darwin' })).toBeNull()
     expect(notify).toHaveBeenCalledTimes(1)
   })
+  it('fallback keeps the safety timer: onRelease fires at max duration', () => {
+    _setKeyHoldDeps({ notify: vi.fn(), checkInputMonitoring: () => 2 })
+    run(false)
+    run(false)
+    const onRelease = vi.fn()
+    watchKeyRelease('Ctrl+Space', onRelease, { platform: 'darwin', isKeyDown: () => false, maxDurationMs: 5000 })
+    vi.advanceTimersByTime(100)
+    expect(onRelease).not.toHaveBeenCalled()
+    vi.advanceTimersByTime(5000)
+    expect(onRelease).toHaveBeenCalledTimes(1)
+  })
+  it('Input Monitoring granted: heuristic falls back silently (no misleading warning)', () => {
+    const notify = vi.fn()
+    const onFallback = vi.fn()
+    _setKeyHoldDeps({ notify, checkInputMonitoring: () => 0 })
+    for (let i = 0; i < 3; i++) {
+      watchKeyRelease('Ctrl+Space', vi.fn(), { platform: 'darwin', isKeyDown: () => false, onFallback })
+      vi.advanceTimersByTime(100)
+    }
+    expect(onFallback).toHaveBeenCalledTimes(1)
+    expect(notify).not.toHaveBeenCalled()
+  })
   it('a session that reads key down on first poll resets the streak', () => {
     const notify = vi.fn()
     _setKeyHoldDeps({ notify })
+    run(false)
     run(false)
     let down = true
     const onRelease = vi.fn()

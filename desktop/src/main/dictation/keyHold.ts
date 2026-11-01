@@ -126,37 +126,17 @@ const WIN_NAMED: Record<string, number> = {
 }
 
 /**
- * Resolves a single character to a virtual-key code under the CURRENT keyboard
- * layout (VkKeyScanExW), or null when the layout has no key for it.
- */
-export type WinCharScanner = (ch: string) => number | null
-
-/**
  * Windows virtual-key code for a normalised main key, or null if unknown.
  *
- * VK_A..VK_Z (0x41..0x5A) and VK_0..VK_9 (0x30..0x39) are defined by Windows as
- * the ASCII codes of the character, so the static value is already
- * layout-independent for letters/digits on Latin layouts. OEM punctuation VKs
- * (VK_OEM_1..8) are NOT: ';' is VK_OEM_1 on US but VK_OEM_COMMA (+Shift) on
- * QWERTZ. Electron resolves accelerator characters through the current layout,
- * so when a `scan` function is given we resolve the same way (VkKeyScanExW) and
- * fall back to the static table only for letters/digits or when no scanner
- * exists. For punctuation a scanner that finds no key yields null (toggle mode)
- * rather than polling a wrong key.
+ * Deliberately a STATIC table, not VkKeyScanExW: Electron maps accelerator
+ * characters to virtual keys with its own fixed table (e.g. ';' -> VK_OEM_1,
+ * '-' -> VK_OEM_MINUS) and registers via RegisterHotKey with that code, so the
+ * key that triggers the hotkey is the fixed-table VK regardless of keyboard
+ * layout. Polling that same VK keeps press and release detection on one key.
+ * (A layout-aware lookup would poll a different physical key on QWERTZ/AZERTY.)
+ * VK_A..Z / VK_0..9 are the ASCII codes by definition.
  */
-export function winVirtualKey(key: string, scan?: WinCharScanner | null): number | null {
-  const isLetterOrDigit = /^[A-Z0-9]$/.test(key)
-  const isPunct = key in WIN_PUNCT
-  if (scan && (isLetterOrDigit || isPunct)) {
-    let vk: number | null = null
-    try {
-      vk = scan(key.toLowerCase())
-    } catch {
-      vk = null
-    }
-    if (vk !== null) return vk
-    if (isPunct) return null
-  }
+export function winVirtualKey(key: string): number | null {
   if (/^[A-Z]$/.test(key)) return key.charCodeAt(0) // 0x41..0x5A
   if (/^[0-9]$/.test(key)) return key.charCodeAt(0) // 0x30..0x39
   const f = /^F(\d{1,2})$/.exec(key)
@@ -201,7 +181,6 @@ export function _resetKeyHoldWarnings(): void {
   warned = new Set<string>()
   backendCache.clear()
   deps = { ...defaultDeps }
-  winScannerCache = null
   inputMonCache = null
   firstPollUpStreak = 0
   macDegraded = false
@@ -218,12 +197,10 @@ const MSG_INPUT_MONITORING =
 
 // Overridable seams (tests inject fakes; production resolves natives lazily).
 interface Deps {
-  loadWinScanner: () => WinCharScanner | null
   checkInputMonitoring: () => InputMonitoringAccess | null
   notify: (title: string, body: string) => void
 }
 const defaultDeps: Deps = {
-  loadWinScanner: () => loadWinScannerNative(),
   checkInputMonitoring: () => checkInputMonitoringNative(),
   notify: () => {}
 }
@@ -236,31 +213,6 @@ export function setKeyHoldNotifier(fn: (title: string, body: string) => void): v
 /** Test helper: override native seams. Reset with _resetKeyHoldWarnings(). */
 export function _setKeyHoldDeps(over: Partial<Deps>): void {
   deps = { ...deps, ...over }
-}
-
-let winScannerCache: { value: WinCharScanner | null } | null = null
-function loadWinScannerNative(): WinCharScanner | null {
-  if (winScannerCache) return winScannerCache.value
-  let value: WinCharScanner | null = null
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const koffi = require('koffi')
-    const user32 = koffi.load('user32.dll')
-    const VkKeyScanExW = user32.func('int16 __stdcall VkKeyScanExW(uint16 ch, void *dwhkl)')
-    const GetKeyboardLayout = user32.func('void * __stdcall GetKeyboardLayout(uint32 idThread)')
-    value = (ch) => {
-      // Layout is re-read per resolution so a layout switch between sessions is honoured.
-      const r = VkKeyScanExW(ch.charCodeAt(0), GetKeyboardLayout(0)) as number
-      if (r === -1) return null // no key produces this char in the layout
-      const vk = r & 0xff
-      return vk === 0xff ? null : vk
-    }
-  } catch (err) {
-    warnOnce(`VkKeyScanExW unavailable (${err instanceof Error ? err.message : String(err)}) — using static key table`)
-    value = null
-  }
-  winScannerCache = { value }
-  return value
 }
 
 let inputMonCache: { value: (() => InputMonitoringAccess) | null } | null = null
@@ -291,7 +243,7 @@ function checkInputMonitoringNative(): InputMonitoringAccess | null {
 
 // macOS: CGEventSourceKeyState reads "up" for everything without Input
 // Monitoring, which would look like an instant release -> silent cancel.
-const FIRST_POLL_UP_LIMIT = 2
+const FIRST_POLL_UP_LIMIT = 3
 let firstPollUpStreak = 0
 let macDegraded = false
 let notified = false
@@ -357,7 +309,7 @@ export function createKeyStateReader(
       return null
     }
   }
-  const code = platform === 'win32' ? winVirtualKey(key, deps.loadWinScanner()) : macKeyCode(key)
+  const code = platform === 'win32' ? winVirtualKey(key) : macKeyCode(key)
   if (code === null) {
     warnOnce(`Hold-to-talk: unsupported key "${key}" — using toggle mode`)
     return null
@@ -376,6 +328,12 @@ export interface WatchOptions {
   isKeyDown?: () => boolean
   /** Injectable platform (tests). */
   platform?: NodeJS.Platform
+  /**
+   * Called when hold detection is judged unreliable mid-session (macOS first-poll
+   * heuristic). The watcher stops polling but KEEPS its safety timer; the caller
+   * must continue the recording with toggle semantics (next press stops).
+   */
+  onFallback?: () => void
 }
 
 export const DEFAULT_POLL_MS = 25
@@ -435,8 +393,17 @@ export function watchKeyRelease(
         // Key read as up immediately in consecutive sessions: permission or layout
         // problem. Stay in toggle mode (do NOT release/cancel) and tell the user once.
         macDegraded = true
-        stop()
-        notifyInputMonitoringOnce()
+        if (poll) clearInterval(poll)
+        poll = null // keep `max` (safety timer) running; `stop` still clears it
+        // Warn about Input Monitoring only if the OS does not say it is granted
+        // (denied / unknown / API unavailable); granted means a different cause.
+        if (deps.checkInputMonitoring() !== 0) notifyInputMonitoringOnce()
+        else console.warn('[Whisperio] Hold-to-talk: key reads up immediately although Input Monitoring is granted — using toggle mode')
+        try {
+          opts.onFallback?.()
+        } catch (err) {
+          console.warn('[Whisperio] Hold-to-talk fallback callback failed:', err)
+        }
         return
       }
     }
