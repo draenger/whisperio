@@ -297,7 +297,8 @@ class AppGraph private constructor(private val appOrNull: Application?, private 
                 if (settings.current().encryptHistory) enableSecureDelete()
                 // A failed attempt is retried at most once a day; fresh plaintext skips the wait.
                 val waited = System.currentTimeMillis() - settings.compactionFailedAt()
-                if (settings.needsCompaction() && (sealedNow || waited >= COMPACTION_RETRY_MS)) compactDatabase()
+                // waited < 0: the clock moved backwards since the failure — don't stall, retry now.
+                if (settings.needsCompaction() && (sealedNow || waited < 0 || waited >= COMPACTION_RETRY_MS)) compactDatabase()
             }
         }
     }
