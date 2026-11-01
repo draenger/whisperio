@@ -1,6 +1,7 @@
 package ai.whisperio.android.ui.history
 
 import ai.whisperio.android.R
+import ai.whisperio.android.history.EncryptingHistoryStore
 import ai.whisperio.android.history.Recording
 import ai.whisperio.android.history.RecordingStatus
 import ai.whisperio.android.history.RecordingSource
@@ -674,7 +675,9 @@ fun HistoryDetailScreen(
             } else {
                 Text(
                     when (rec.status) {
-                        RecordingStatus.FAILED -> rec.error?.takeIf { it.isNotBlank() } ?: stringResource(R.string.history_failed)
+                        RecordingStatus.FAILED -> rec.error?.takeIf { it.isNotBlank() }?.let {
+                            if (it == EncryptingHistoryStore.UNREADABLE) stringResource(R.string.history_unreadable) else it
+                        } ?: stringResource(R.string.history_failed)
                         RecordingStatus.TRANSCRIBING -> stringResource(R.string.history_transcribing)
                         else -> stringResource(R.string.history_recording)
                     },

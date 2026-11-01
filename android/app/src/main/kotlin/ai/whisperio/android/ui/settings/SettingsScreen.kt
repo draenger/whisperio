@@ -81,6 +81,10 @@ data class SettingsUiState(
     val encryptBusy: Boolean? = null,
     /** Result of the last switch that needs the user's attention; null = nothing to show. */
     val encryptNotice: EncryptNotice? = null,
+    /** Items still stored in plaintext while encryption is ON, waiting for the next pass to seal them. */
+    val encryptPending: Int = 0,
+    /** Encrypted data exists but its key is missing: new items cannot be encrypted and old ones cannot be read. */
+    val encryptLocked: Boolean = false,
 )
 
 /** What the "Encrypt history" switch reports back after a run. */
@@ -256,6 +260,30 @@ fun SettingsScreen(state: SettingsUiState, actions: SettingsActions, modifier: M
                 { confirmEncrypt = it },
                 enabled = state.encryptBusy == null,
             )
+            if (state.encryptBusy == null) {
+                val status = when {
+                    state.encryptLocked -> stringResource(R.string.settings_encrypt_locked)
+                    s.encryptHistory && state.encryptPending > 0 ->
+                        pluralStringResource(R.plurals.settings_encrypt_pending, state.encryptPending, state.encryptPending)
+                    s.encryptHistory && state.encryptPending == 0 -> stringResource(R.string.settings_encrypt_status_on)
+                    else -> null
+                }
+                status?.let {
+                    Text(
+                        it,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (state.encryptLocked) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.liveStatus(),
+                    )
+                }
+                if (state.encryptLocked) {
+                    // Recovery: opens the same confirmation as the Erase all button below.
+                    OutlinedButton(
+                        onClick = { confirmErase = true },
+                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp).heightIn(min = 48.dp),
+                    ) { Text(stringResource(R.string.settings_encrypt_locked_action), color = MaterialTheme.colorScheme.error) }
+                }
+            }
             state.encryptBusy?.let { target ->
                 Text(
                     stringResource(if (target) R.string.settings_encrypt_busy_on else R.string.settings_encrypt_busy_off),

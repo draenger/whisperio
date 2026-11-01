@@ -1,11 +1,18 @@
 package ai.whisperio.android.history
 
+import ai.whisperio.android.security.AudioCipher
 import ai.whisperio.android.security.DataCipher
 import ai.whisperio.android.security.Decrypted
 import kotlinx.coroutines.CancellationException
+import java.io.File
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 /**
  * Result of a migration: rows rewritten, and rows left as they were (cannot be read, or the key failed). The audio
@@ -24,6 +31,10 @@ class EncryptingHistoryStore(
     private val dao: RecordingDao,
     private val cipher: DataCipher,
     private val enabled: suspend () -> Boolean,
+    /** The clip being recorded right now (null = none); its row is not "waiting to be encrypted". */
+    private val activeFile: () -> File? = { null },
+    /** Id of the dictation in progress (null = none). */
+    private val activeId: () -> String? = { null },
 ) : HistoryStore by inner {
     override fun observeAll(): Flow<List<Recording>> = inner.observeAll().map { rows -> rows.map { reveal(it) } }
     override fun observeRecent(limit: Int): Flow<List<Recording>> =
@@ -31,9 +42,63 @@ class EncryptingHistoryStore(
     override fun observe(id: String): Flow<Recording?> = inner.observe(id).map { it?.let { r -> reveal(r) } }
     override suspend fun get(id: String): Recording? = inner.get(id)?.let { reveal(it) }
 
+    private val _pending = MutableStateFlow(PENDING_UNKNOWN)
+
+    /** One count at a time: a slow older count can never overwrite a newer one (latest wins). */
+    private val pendingLock = Mutex()
+
+    override suspend fun delete(id: String) {
+        inner.delete(id)
+        cipher.recheckLocked()
+    }
+
+    override suspend fun deleteOlderThan(cutoffEpochMs: Long): Int =
+        inner.deleteOlderThan(cutoffEpochMs).also { cipher.recheckLocked() }
+
+    override suspend fun deleteAllAudio() {
+        inner.deleteAllAudio()
+        cipher.recheckLocked()
+    }
+
+    override suspend fun clear() {
+        inner.clear()
+        cipher.recheckLocked()
+    }
+
+    /**
+     * Items (rows with plaintext text, kept clips not yet `.wea`) that are still plain while the switch is ON,
+     * e.g. written while the Keystore failed. [runMaintenance][ai.whisperio.android.di.AppGraph.runMaintenance]
+     * seals them. 0 while the switch is OFF. [PENDING_UNKNOWN] until the first [refreshPending] (not "all encrypted").
+     * The clip of a dictation in progress is not counted. Updated by [refreshPending].
+     */
+    val pendingEncryption: StateFlow<Int> = _pending.asStateFlow()
+
     override suspend fun upsert(recording: Recording) {
         val kept = keepUnreadable(recording)
-        inner.upsert(if (enabled()) (tryConceal(kept) ?: kept) else kept)
+        val on = enabled()
+        val concealed = if (on) tryConceal(kept) else null
+        // Fail-soft: a Keystore failure never loses the dictation, it is stored plain and counted as pending.
+        inner.upsert(concealed ?: kept)
+        // Recount only when something plain may have been stored (or a count is open): not on every status update.
+        if (on && (concealed == null || _pending.value != 0 || kept.audioPath?.endsWith(".m4a") == true)) refreshPending()
+    }
+
+    /** Recounts the plaintext items. Cheap enough to run after a write or a migration. */
+    suspend fun refreshPending() {
+        pendingLock.withLock {
+            val on = enabled()
+            val activePath = activeFile()?.absolutePath
+            val activeRecording = activeId()
+            _pending.value = if (on) {
+                dao.observeAll().first().count { r ->
+                    r.id != activeRecording &&
+                        (activePath == null || r.audioPath?.let { File(it).absolutePath } != activePath) &&
+                        r.hasPlaintextData()
+                }
+            } else {
+                0
+            }
+        }
     }
 
     /**
@@ -78,6 +143,7 @@ class EncryptingHistoryStore(
                 }
             }
         }
+        refreshPending()
         return MigrationReport(converted, unreadable)
     }
 
@@ -129,8 +195,27 @@ class EncryptingHistoryStore(
     }
 
     companion object {
+        /**
+         * Stable sentinel stored in [Recording.error] of an unreadable row's in-memory copy. It is NOT shown as is:
+         * the History screen maps it to the localised `history_unreadable` string.
+         */
         const val UNREADABLE = "Encrypted data cannot be read"
+
+        /** [EncryptingHistoryStore.pendingEncryption] before the first count: nothing may be claimed yet. */
+        const val PENDING_UNKNOWN = -1
         private const val TRANSCRIPT = "transcript"
         private const val ERROR = "error"
     }
 }
+
+/** A text field, or a kept clip that still exists as `.m4a`, that is not sealed (what maintenance will convert). */
+internal fun Recording.hasPlaintextData(): Boolean =
+    (transcript != null && !DataCipher.isSealedText(transcript)) ||
+        (error != null && !DataCipher.isSealedText(error)) ||
+        (audioPath != null && audioPath.endsWith(".m4a") && File(audioPath).exists())
+
+/** Any field or clip carrying the sealed marker: the data key must not be replaced while this is true. */
+internal fun Recording.hasSealedData(): Boolean =
+    (transcript != null && DataCipher.isSealedText(transcript)) ||
+        (error != null && DataCipher.isSealedText(error)) ||
+        (audioPath != null && AudioCipher.isEncrypted(audioPath))

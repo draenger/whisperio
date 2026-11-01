@@ -15,6 +15,7 @@ import ai.whisperio.android.history.MIGRATION_1_2
 import ai.whisperio.android.history.MigrationReport
 import ai.whisperio.android.history.RoomHistoryStore
 import ai.whisperio.android.history.SecureDeleteCallback
+import ai.whisperio.android.history.hasSealedData
 import ai.whisperio.android.security.AndroidKeystoreCipher
 import ai.whisperio.android.security.AudioCipher
 import ai.whisperio.android.security.DataCipher
@@ -40,6 +41,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -131,9 +133,12 @@ class AppGraph private constructor(private val appOrNull: Application?, private 
         if (o != null) {
             o.dataCipher
         } else {
-            DataCipher(dataKek!!, DataStoreWrappedKeyStore(app.dataKeyDataStore))
+            DataCipher(dataKek!!, DataStoreWrappedKeyStore(app.dataKeyDataStore), sealedDataExists = ::sealedDataExists)
         }
     }
+
+    /** Probe for [DataCipher]: any sealed row or clip means a missing data key must never be replaced silently. */
+    private suspend fun sealedDataExists(): Boolean = database.recordings().sealedCandidates().any { it.hasSealedData() }
 
     /** Kept clips (`<id>.m4a.wea`); shares the history data key. Null only in a test graph without a cipher. */
     val audioCipher: AudioCipher? by lazy { dataCipher?.let(::AudioCipher) }
@@ -142,7 +147,9 @@ class AppGraph private constructor(private val appOrNull: Application?, private 
 
     /** Seals/opens the kept clips after the row text; the active recording's own file is left for the next run. */
     private suspend fun migrateAudio(enabled: Boolean, report: MigrationReport): MigrationReport {
-        val a = audioMigration?.migrate(enabled, dictation.activeId()) ?: return report
+        val a = audioMigration?.migrate(enabled, dictation.activeId())
+        encryptingHistory?.refreshPending()
+        a ?: return report
         return report.copy(audioConverted = a.converted, audioUnreadable = a.unreadable)
     }
 
@@ -154,9 +161,11 @@ class AppGraph private constructor(private val appOrNull: Application?, private 
     /** Transcripts are sealed on write only while [AppSettings.encryptHistory] is ON; reads always decrypt what they find. */
     private val encryptingHistory: EncryptingHistoryStore? by lazy {
         dataCipher?.let { c ->
-            EncryptingHistoryStore(RoomHistoryStore(database.recordings(), recordingsDir), database.recordings(), c) {
-                settings.current().encryptHistory
-            }
+            EncryptingHistoryStore(RoomHistoryStore(database.recordings(), recordingsDir), database.recordings(), c,
+                enabled = { settings.current().encryptHistory },
+                activeFile = { dictation.activeFile() },
+                activeId = { dictation.activeId() },
+            )
         }
     }
 
@@ -224,7 +233,12 @@ class AppGraph private constructor(private val appOrNull: Application?, private 
      * Shared by Settings and the Home card: the busy / notice state lives here (process scoped), so it survives
      * rotation and a screen change while a migration runs.
      */
-    val encryptSwitch: EncryptSwitch by lazy { EncryptSwitch(appScope, ::setEncryptHistory) }
+    val encryptSwitch: EncryptSwitch by lazy { EncryptSwitch(
+            appScope,
+            ::setEncryptHistory,
+            pending = encryptingHistory?.pendingEncryption ?: MutableStateFlow(0),
+            locked = dataCipher?.locked ?: MutableStateFlow(false),
+        ) }
 
     /** Held for the whole of [setEncryptHistory] and [runMaintenance]: no migration or sweep overlaps another. */
     private val maintenanceLock = Mutex()
@@ -275,6 +289,8 @@ class AppGraph private constructor(private val appOrNull: Application?, private 
     fun runMaintenance() {
         appScope.launch {
             maintenanceLock.withLock {
+                // First, so Settings never claims "all encrypted" before the first count exists.
+                encryptingHistory?.refreshPending()
                 history.sweepInterrupted(dictation.activeId())
                 history.sweepOrphanAudio(dictation.activeFile())
                 settings.current().autoDeleteDays?.let { days ->
@@ -294,6 +310,8 @@ class AppGraph private constructor(private val appOrNull: Application?, private 
                         }
                     }
                 }
+                // Items still plain while ON (key failed earlier) show up in Settings until a pass seals them.
+                encryptingHistory?.refreshPending()
                 if (settings.current().encryptHistory) enableSecureDelete()
                 // A failed attempt is retried at most once a day; fresh plaintext skips the wait.
                 val waited = System.currentTimeMillis() - settings.compactionFailedAt()
@@ -363,6 +381,8 @@ class AppGraph private constructor(private val appOrNull: Application?, private 
                 settings.clear()
                 appLanguages.clear()
                 shareDir?.deleteRecursively()
+                dataCipher?.recheckLocked()
+                encryptingHistory?.refreshPending()
             }
         }.join()
     }

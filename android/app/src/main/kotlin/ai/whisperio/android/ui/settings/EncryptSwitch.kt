@@ -16,6 +16,10 @@ import kotlinx.coroutines.launch
 class EncryptSwitch(
     private val scope: CoroutineScope,
     private val run: suspend (Boolean) -> EncryptHistoryResult,
+    /** Items still stored in plaintext while the switch is ON (written while the Keystore failed). */
+    val pending: StateFlow<Int> = MutableStateFlow(0),
+    /** True when sealed data exists but its data key is missing (no new key is minted over it). */
+    val locked: StateFlow<Boolean> = MutableStateFlow(false),
 ) {
     private val _busy = MutableStateFlow<Boolean?>(null)
     private val _notice = MutableStateFlow<EncryptNotice?>(null)
