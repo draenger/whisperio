@@ -412,6 +412,16 @@ export interface HistoryAPI {
   getEncryption: () => Promise<HistoryEncryptionStatus>
   /** Opt in/out of history encryption. Fails closed (flag stays unchanged) on any non-ok result. */
   setEncryption: (enabled: boolean) => Promise<SetHistoryEncryptionResult>
+  /** Coarse state plus audio conversion progress (done of total files) for the Privacy panel. */
+  getEncryptionStatus: () => Promise<HistoryEncryptionProgress>
+  /** Locked history only: crypto-shred, delete the history files, encryption OFF. false = refused. */
+  resetLocked: () => Promise<boolean>
+}
+
+export interface HistoryEncryptionProgress {
+  state: 'off' | 'on' | 'migrating' | 'locked'
+  done: number
+  total: number
 }
 
 export interface WhisperioAPI {
@@ -504,7 +514,9 @@ const settingsApi: SettingsAPI = {
 
 const historyApi: HistoryAPI = {
   getEncryption: () => ipcRenderer.invoke('history:encryption:get'),
-  setEncryption: (enabled) => ipcRenderer.invoke('history:encryption:set', enabled)
+  setEncryption: (enabled) => ipcRenderer.invoke('history:encryption:set', enabled),
+  getEncryptionStatus: () => ipcRenderer.invoke('history:encryption:status'),
+  resetLocked: () => ipcRenderer.invoke('history:reset')
 }
 
 const recordingsApi: RecordingsAPI = {

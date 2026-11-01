@@ -1,12 +1,24 @@
 import { app } from 'electron'
-import { existsSync, mkdirSync, writeFileSync, readFileSync, unlinkSync, renameSync, readdirSync } from 'fs'
+import {
+  existsSync,
+  mkdirSync,
+  writeFileSync,
+  readFileSync,
+  unlinkSync,
+  renameSync,
+  readdirSync,
+  openSync,
+  readSync,
+  closeSync
+} from 'fs'
 import { join } from 'path'
 import type { SpeakerSegment } from './dictation/conversation'
 import { loadSettings, saveSettings } from './settingsManager'
 import {
   isDataVaultAvailable,
   getDataKeyForEncrypt,
-  getDataKeyForDecrypt
+  getDataKeyForDecrypt,
+  shredDataKey
 } from './dataVault'
 import {
   encryptWithKeyAad,
@@ -454,9 +466,20 @@ export function deleteRecording(id: string): Promise<boolean> {
   })
 }
 
+/**
+ * Erase all history. When history is encrypted (sealed index on disk or the flag ON) this is a
+ * crypto-shred (design 4.3): (1) destroy the wrapped data key FIRST, so everything sealed is
+ * unreadable even if the next steps are interrupted or the disk keeps old blocks; (2) delete the
+ * audio files; (3) drop the index. A later save mints a fresh key. Plain history keeps the old path.
+ */
 export function deleteAllRecordings(): Promise<void> {
   return enqueue(() => {
-    const index = loadIndexForWrite()
+    const st = readIndexState()
+    if (st.locked) throw new HistoryLockedError()
+    const index = st.index
+    const shred = st.sealedOnDisk || encryptHistoryReader()
+
+    if (shred) shredDataKey() // step 1: key first
 
     for (const entry of index.recordings) {
       if (existsSync(entry.filepath)) {
@@ -468,8 +491,84 @@ export function deleteAllRecordings(): Promise<void> {
       }
     }
 
+    if (shred) {
+      try {
+        const p = getIndexPath()
+        if (existsSync(p)) unlinkSync(p)
+      } catch {
+        /* the key is gone, so a leftover sealed index is unreadable anyway; next save replaces it */
+      }
+      return
+    }
     saveIndex({ recordings: [] })
   })
+}
+
+/**
+ * Locked-history recovery: the index is sealed but cannot be opened (key lost / keychain gone).
+ * Crypto-shred (key first), delete every history file, switch encryption OFF and start fresh.
+ * Refuses (returns false) unless the history really is locked, so it cannot be used as a silent
+ * erase of readable data.
+ */
+export function resetLockedHistory(): Promise<boolean> {
+  return enqueue((): boolean => {
+    if (!readIndexState().locked) return false
+    shredDataKey() // step 1
+    try {
+      const dir = getRecordingsDir()
+      for (const f of readdirSync(dir)) {
+        if (f.endsWith('.webm') || f.endsWith('.tmp') || f.startsWith('index.json')) {
+          try { unlinkSync(join(dir, f)) } catch { /* best-effort */ }
+        }
+      }
+    } catch { /* best-effort */ }
+    saveSettings({ encryptHistory: false })
+    return true
+  })
+}
+
+export type EncryptionUiState = 'off' | 'on' | 'migrating' | 'locked'
+
+export interface EncryptionProgress {
+  state: EncryptionUiState
+  done: number
+  total: number
+}
+
+function audioIsSealed(filepath: string): boolean | null {
+  let fd: number | null = null
+  try {
+    fd = openSync(filepath, 'r')
+    const buf = Buffer.alloc(HEADER_PROBE_BYTES)
+    const n = readSync(fd, buf, 0, HEADER_PROBE_BYTES, 0)
+    return isEncryptedAudio(buf.subarray(0, n))
+  } catch {
+    return null
+  } finally {
+    if (fd !== null) {
+      try { closeSync(fd) } catch { /* ignore */ }
+    }
+  }
+}
+const HEADER_PROBE_BYTES = 16
+
+/** Status for the Privacy panel: coarse state plus audio conversion progress (done of total files). */
+export function getEncryptionProgress(): EncryptionProgress {
+  const st = readIndexState()
+  if (st.locked) return { state: 'locked', done: 0, total: 0 }
+  let enabled = false
+  try { enabled = encryptHistoryReader() } catch { enabled = false }
+  let done = 0
+  let total = 0
+  for (const r of st.index.recordings) {
+    if (r.deletedAt || !existsSync(r.filepath)) continue
+    const sealed = audioIsSealed(r.filepath)
+    if (sealed === null) continue
+    total++
+    if (sealed === enabled) done++
+  }
+  const state: EncryptionUiState = migrationRunning ? 'migrating' : enabled ? 'on' : 'off'
+  return { state, done, total }
 }
 
 export function deleteRecordingsByDate(dateStr: string): Promise<void> {

@@ -3,6 +3,7 @@ import { useTheme } from '../../ThemeContext'
 import { TitleBar } from '../common/TitleBar'
 import { TranscriptSearch } from './TranscriptSearch'
 import type { Theme } from '../../theme'
+import { LOCKED_MESSAGE, RESET_CONFIRM, shouldShowLockedNotice } from '../settings/privacyState'
 
 // Group-conversation mode (multi-speaker transcription) — mirrors
 // src/main/dictation/conversation.ts's SpeakerSegment exactly. See that
@@ -111,6 +112,18 @@ export function RecordingsView(): ReactElement {
   // Surfaces a delete/reprocess IPC rejection instead of letting it become an
   // unhandled promise rejection with the confirm/loading state left stale.
   const [actionError, setActionError] = useState<string | null>(null)
+  // Sealed history that cannot be opened (key/keychain gone): explicit state + Reset, never an
+  // empty list that silently starts new history. Fail-soft if the bridge is absent.
+  const [historyLocked, setHistoryLocked] = useState(false)
+  const [resetConfirm, setResetConfirm] = useState(false)
+  const refreshLocked = useCallback(async () => {
+    try {
+      const st = await window.api.history?.getEncryption()
+      setHistoryLocked(shouldShowLockedNotice(st))
+    } catch {
+      setHistoryLocked(false)
+    }
+  }, [])
 
   // On-demand cleanup UI state (v1.4 PR2). `cleanupResults` holds the
   // in-memory result of the most recent "Clean up" call per recording id —
@@ -180,7 +193,23 @@ export function RecordingsView(): ReactElement {
 
   useEffect(() => {
     loadRecordings()
-  }, [loadRecordings])
+    refreshLocked()
+  }, [loadRecordings, refreshLocked])
+
+  const handleResetLocked = useCallback(async () => {
+    if (!resetConfirm) {
+      setResetConfirm(true)
+      return
+    }
+    try {
+      await window.api.history.resetLocked()
+    } catch {
+      setActionError('Failed to reset history. Please try again.')
+    }
+    setResetConfirm(false)
+    await refreshLocked()
+    await loadRecordings()
+  }, [resetConfirm, refreshLocked, loadRecordings])
 
   useEffect(() => {
     let cancelled = false
@@ -586,6 +615,38 @@ export function RecordingsView(): ReactElement {
           }}
         >
           {actionError}
+        </div>
+      )}
+
+      {historyLocked && (
+        <div
+          role="alert"
+          data-testid="recordings-locked"
+          style={{
+            margin: '0 14px 10px',
+            padding: '10px 12px',
+            borderRadius: 8,
+            fontSize: 12,
+            color: theme.text,
+            border: `1px solid ${theme.danger}`
+          }}
+        >
+          <div style={{ fontWeight: 600 }}>{LOCKED_MESSAGE}</div>
+          {resetConfirm && <div style={{ margin: '4px 0', color: theme.textMuted }}>{RESET_CONFIRM.body}</div>}
+          <button
+            onClick={handleResetLocked}
+            style={{
+              marginTop: 6,
+              background: resetConfirm ? theme.danger : 'transparent',
+              color: resetConfirm ? '#ffffff' : theme.danger,
+              border: `1px solid ${theme.danger}`,
+              borderRadius: 8,
+              padding: '5px 12px',
+              cursor: 'pointer'
+            }}
+          >
+            {resetConfirm ? 'Confirm reset' : 'Reset history'}
+          </button>
         </div>
       )}
 

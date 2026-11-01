@@ -45,7 +45,8 @@ const SETTINGS_UI_FILES = [
   path.join(DESKTOP_ROOT, 'src/renderer/components/settings/SettingsForm.tsx'),
   path.join(DESKTOP_ROOT, 'src/renderer/components/settings/CleanupPanel.tsx'),
   path.join(DESKTOP_ROOT, 'src/renderer/components/settings/ModelPicker.tsx'),
-  path.join(DESKTOP_ROOT, 'src/renderer/components/settings/UsagePanel.tsx')
+  path.join(DESKTOP_ROOT, 'src/renderer/components/settings/UsagePanel.tsx'),
+  path.join(DESKTOP_ROOT, 'src/renderer/components/settings/PrivacyPanel.tsx')
 ].filter((f) => fs.existsSync(f))
 
 // theme/accentColor are the one pair whose actual save-on-change control
@@ -88,10 +89,6 @@ const CONSUMER_ALLOWLIST: Record<string, string> = {
 }
 
 const CONTROL_ALLOWLIST: Record<string, string> = {
-  encryptHistory:
-    'Opt-in history encryption (PR #24, D1). Deliberately NOT settable via settings:save (stripped in ' +
-    'index.ts); switched only through history:encryption:set, whose UI lands in D3 with the confirm ' +
-    'dialog and the locked-history reset path.',
   githubUser:
     "Controlled via the GitHub tab's connect/select-repo OAuth-device-flow buttons in " +
     'SettingsForm.tsx (window.api.github.connect/poll/selectRepo, ~line 2221+), but the ' +
