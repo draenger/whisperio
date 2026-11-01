@@ -12,6 +12,9 @@ files:
   - out/**/*
 asarUnpack:
   - "node_modules/koffi/**"
+  # EXPERIMENTAL Parakeet (#47): sherpa-onnx native addon + per-platform binary packages
+  - "node_modules/sherpa-onnx-node/**"
+  - "node_modules/sherpa-onnx-*/**"
   # active-win: macOS execFile()s its Swift helper `main` and Windows loads a N-API .node via
   # node-pre-gyp; neither can run from inside app.asar, so unpack both explicitly instead of
   # relying on smart-unpack heuristics.
