@@ -67,7 +67,7 @@ import {
 } from '../src/main/recordingStore'
 import { loadSettings } from '../src/main/settingsManager'
 import { shredDataKey } from '../src/main/dataVault'
-import { writeFileSync } from 'fs'
+import { writeFileSync, unlinkSync } from 'fs'
 
 const RECORDINGS_DIR = join(testDir, 'recordings')
 const INDEX = join(RECORDINGS_DIR, 'index.json')
@@ -317,8 +317,15 @@ describe('recordingStore - erase = crypto-shred, locked reset, progress (D3)', (
       vi.setSystemTime(new Date(2026, 0, 2, 3, 4, 5))
       await seed()
       const written = readdirSync(RECORDINGS_DIR).find((f) => f.endsWith('.webm'))!
+      // File still on disk: a same-second save picks a -2 name (never overwrites), list untouched.
       writeFileSync(ORPHANS, JSON.stringify({ files: [written, 'other.webm'] }))
       vi.setSystemTime(new Date(2026, 0, 2, 3, 4, 5)) // same second again
+      await seed()
+      expect(readdirSync(RECORDINGS_DIR).filter((f) => f.endsWith('-2.webm'))).toHaveLength(1)
+      expect(JSON.parse(readFileSync(ORPHANS, 'utf-8')).files).toEqual([written, 'other.webm'])
+      // Listed name no longer on disk: the save reuses it and forgets the stale entry.
+      unlinkSync(join(RECORDINGS_DIR, written))
+      vi.setSystemTime(new Date(2026, 0, 2, 3, 4, 5))
       await seed()
     } finally {
       vi.useRealTimers()
