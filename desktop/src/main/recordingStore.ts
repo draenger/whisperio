@@ -211,11 +211,24 @@ export function saveRecording(
   const dir = getRecordingsDir()
   const id = generateId()
   const timestamp = Date.now()
-  const filename = `recording-${formatTimestamp(timestamp)}.webm`
-  const filepath = join(dir, filename)
-
-  // The audio file has a unique name, so writing it outside the lock is safe.
-  writeFileSync(filepath, audioBuffer)
+  // Names have one-second resolution: two saves in the same second (or a clock
+  // stepped back) used to share a path, so the second write overwrote the first
+  // recording's audio and deleting one entry removed the other's file. Create
+  // exclusively ('wx') and add a -2, -3 ... suffix on collision. The exclusive
+  // create also makes writing outside the lock safe.
+  const base = `recording-${formatTimestamp(timestamp)}`
+  let filename = `${base}.webm`
+  let filepath = join(dir, filename)
+  for (let n = 2; ; n++) {
+    try {
+      writeFileSync(filepath, audioBuffer, { flag: 'wx' })
+      break
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException | null)?.code !== 'EEXIST' || n > 1000) throw err
+      filename = `${base}-${n}.webm`
+      filepath = join(dir, filename)
+    }
+  }
 
   const entry: RecordingEntry = {
     id,
