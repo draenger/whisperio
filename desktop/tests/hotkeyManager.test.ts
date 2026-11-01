@@ -111,7 +111,8 @@ vi.mock('../src/main/errorHandler', () => ({
 const mockWatchKeyRelease = vi.fn()
 
 vi.mock('../src/main/dictation/keyHold', () => ({
-  watchKeyRelease: (...args: unknown[]) => mockWatchKeyRelease(...args)
+  watchKeyRelease: (...args: unknown[]) => mockWatchKeyRelease(...args),
+  setKeyHoldNotifier: vi.fn()
 }))
 
 // --- Fresh module per test (resets module-level state) ---
@@ -1063,6 +1064,7 @@ describe('hotkeyManager', () => {
   })
 
   describe('hold-to-talk mode', () => {
+    let fallback: () => void = () => {}
     let release: () => void
     const cancelWatch = vi.fn()
 
@@ -1071,10 +1073,13 @@ describe('hotkeyManager', () => {
       release = () => {}
       cancelWatch.mockReset()
       mockWatchKeyRelease.mockReset()
-      mockWatchKeyRelease.mockImplementation((_accel: string, cb: () => void) => {
-        release = cb
-        return cancelWatch
-      })
+      mockWatchKeyRelease.mockImplementation(
+        (_accel: string, cb: () => void, opts?: { onFallback?: () => void }) => {
+          release = cb
+          fallback = opts?.onFallback ?? (() => {})
+          return cancelWatch
+        }
+      )
       mockSettings.hotkeyMode = 'hold'
     })
     afterEach(() => vi.useRealTimers())
@@ -1084,11 +1089,27 @@ describe('hotkeyManager', () => {
       return mockRegister.mock.calls[0][1] as () => Promise<void>
     }
 
+    it('watcher fallback keeps recording in toggle semantics: overlay hint updated, next press stops', async () => {
+      const activate = await setup()
+      await activate()
+      expect(mod.getState()).toBe('recording')
+      mockBroadcastToOverlays.mockClear()
+      fallback()
+      expect(mod.getState()).toBe('recording')
+      expect(mockBroadcastToOverlays).toHaveBeenCalledWith(
+        'dictation:overlay-info',
+        expect.objectContaining({ hold: false })
+      )
+      // an auto-repeat guard must no longer swallow the press: second tap stops
+      await activate()
+      expect(mod.getState()).toBe('transcribing')
+    })
+
     it('press starts recording and watches for release; release stops', async () => {
       const activate = await setup()
       await activate()
       expect(mod.getState()).toBe('recording')
-      expect(mockWatchKeyRelease).toHaveBeenCalledWith('Ctrl+Shift+Space', expect.any(Function))
+      expect(mockWatchKeyRelease).toHaveBeenCalledWith('Ctrl+Shift+Space', expect.any(Function), expect.any(Object))
       vi.advanceTimersByTime(600)
       release()
       expect(mod.getState()).toBe('transcribing')
@@ -1255,7 +1276,7 @@ describe('hotkeyManager', () => {
       mod.registerHotkey()
       const send = mockRegister.mock.calls.find((c) => c[0] === 'Ctrl+Alt+S')![1] as () => Promise<void>
       await send()
-      expect(mockWatchKeyRelease).toHaveBeenCalledWith('Ctrl+Alt+S', expect.any(Function))
+      expect(mockWatchKeyRelease).toHaveBeenCalledWith('Ctrl+Alt+S', expect.any(Function), expect.any(Object))
     })
   })
 })

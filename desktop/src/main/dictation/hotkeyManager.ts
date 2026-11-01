@@ -9,7 +9,7 @@ import {
 } from './overlayWindow'
 import { autoPaste, captureTargetWindow, restoreTargetWindow, sendEnter } from './autoPaste'
 import { loadSettings } from '../settingsManager'
-import { watchKeyRelease } from './keyHold'
+import { watchKeyRelease, setKeyHoldNotifier } from './keyHold'
 // COMMAND mode (v1.7): rewrite the clipboard per a spoken instruction instead
 // of inserting the spoken words — reuses the same LLM candidate chain as
 // transcript cleanup (buildCleanupCandidates/selectProvider), it just runs a
@@ -21,6 +21,8 @@ import { watchKeyRelease } from './keyHold'
 import { rewriteClipboardForCommand } from '../transcribe'
 import { handleCommandError, notifyInfo } from '../errorHandler'
 import { createWatchdog, onTranscriptionActivity } from './watchdog'
+
+setKeyHoldNotifier((title, body) => notifyInfo(title, body))
 
 export type DictationState = 'idle' | 'recording' | 'transcribing' | 'pasting' | 'command'
 
@@ -75,6 +77,8 @@ function clearSessionFlags(): void {
  * unavailable on this platform -> plain toggle fallback).
  */
 let holdCancel: (() => void) | null = null
+/** True once the watcher gave up (macOS Input Monitoring heuristic): the session continues in toggle semantics. */
+let holdDegraded = false
 /** A hold shorter than this is treated as an accidental tap and cancelled. */
 const MIN_HOLD_MS = 250
 /** After a hold release, ignore presses this long: a queued auto-repeat press
@@ -87,6 +91,7 @@ function cancelHoldWatch(): void {
     holdCancel()
     holdCancel = null
   }
+  holdDegraded = false
 }
 
 /** Session id for which Enter must be pressed after pasting (dictate-and-send),
@@ -141,19 +146,37 @@ async function activate(): Promise<void> {
 function startHoldWatch(accel: string | null, pressedAt: number): void {
   if (!accel || loadSettings().hotkeyMode !== 'hold') return
   const sessionId = currentSessionId
-  const cancelFn = watchKeyRelease(accel, () => {
-    holdCancel = null
-    if (state !== 'recording' || sessionId !== currentSessionId) return
-    if (Date.now() - pressedAt < MIN_HOLD_MS) {
-      console.log('[Whisperio] Hold shorter than minimum — treating as accidental tap, cancelling')
-      cancel()
-      return
+  holdDegraded = false
+  const cancelFn = watchKeyRelease(
+    accel,
+    () => {
+      holdCancel = null
+      if (state !== 'recording' || sessionId !== currentSessionId) return
+      if (Date.now() - pressedAt < MIN_HOLD_MS) {
+        console.log('[Whisperio] Hold shorter than minimum — treating as accidental tap, cancelling')
+        cancel()
+        return
+      }
+      unregisterEscape()
+      holdReleasedAt = Date.now()
+      setState('transcribing')
+      sendToPrimaryOverlay('dictation:deactivate', currentSessionId)
+    },
+    {
+      // Hold detection judged unreliable (macOS): keep recording, next press stops
+      // (toggle semantics), and tell the overlays to show the toggle hint.
+      onFallback: () => {
+        if (state !== 'recording' || sessionId !== currentSessionId) return
+        holdDegraded = true
+        broadcastToOverlays('dictation:overlay-info', {
+          sourceName: 'System Default',
+          stopHotkey: activeHotkey || 'hotkey',
+          hold: false,
+          recordingType: 'input' as const
+        })
+      }
     }
-    unregisterEscape()
-    holdReleasedAt = Date.now()
-    setState('transcribing')
-    sendToPrimaryOverlay('dictation:deactivate', currentSessionId)
-  })
+  )
   holdCancel = cancelFn
 }
 
@@ -163,7 +186,7 @@ async function activateWith(accel: string | null, sendEnter = false): Promise<vo
     console.log(`[Whisperio] Hotkey pressed — current state: ${state}`)
     // Hold mode: auto-repeated press callbacks while the key is held must not
     // act as a second tap — the release watcher ends the recording.
-    if (holdCancel && state === 'recording') return
+    if (holdCancel && !holdDegraded && state === 'recording') return
     if (state === 'transcribing' && holdReleasedAt && pressedAt - holdReleasedAt < POST_RELEASE_IGNORE_MS) return
     if (state === 'idle') {
       // First tap — capture target window, ensure overlay, start recording
