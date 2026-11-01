@@ -153,7 +153,26 @@ function getIndexPath(): string {
 }
 
 /** AAD binding a sealed index envelope to its purpose (design doc 1.2/3.2). */
-const INDEX_AAD = 'whisperio/index/v1'
+const INDEX_AAD_V1 = 'whisperio/index/v1'
+const INDEX_AAD_VERSION = 2
+/** v2 AAD binds the format tag AND the key id, so kid cannot be swapped without failing the GCM tag. */
+function indexAadV2(kid: string): string {
+  return `whisperio/index/v2|kid=${kid}`
+}
+/** Seal an index payload (v2: kid bound into AAD). */
+function sealIndexPayload(key: Buffer, plaintext: string): SecretEnvelope {
+  const env = encryptWithKeyAad(key, plaintext, indexAadV2(INDEX_KID), INDEX_KID)
+  env.av = INDEX_AAD_VERSION
+  return env
+}
+/** Open v2 (kid from envelope bound into AAD) or legacy v1 (no av; written by the unreleased D1 draft). */
+function openIndexPayload(key: Buffer, env: SecretEnvelope): string {
+  if (env.av === undefined) return decryptWithKeyAad(key, env, INDEX_AAD_V1)
+  if (env.av !== INDEX_AAD_VERSION || typeof env.kid !== 'string') {
+    throw new Error('Unsupported index envelope format')
+  }
+  return decryptWithKeyAad(key, env, indexAadV2(env.kid))
+}
 const INDEX_KID = 'hist-1'
 
 /**
@@ -243,7 +262,7 @@ function readIndexState(): IndexState {
     try {
       const key = getDataKeyForDecrypt()
       if (!key) return lockedState
-      const plain = JSON.parse(decryptWithKeyAad(key, parsed, INDEX_AAD)) as RecordingIndex
+      const plain = JSON.parse(openIndexPayload(key, parsed)) as RecordingIndex
       if (!plain || !Array.isArray(plain.recordings)) return lockedState
       return { index: plain, sealedOnDisk: true, locked: false }
     } catch {
@@ -278,7 +297,7 @@ export function getHistoryEncryptionStatus(): HistoryEncryptionStatus {
 function serializeIndex(index: RecordingIndex, seal: boolean): string {
   if (!seal) return JSON.stringify(index, null, 2)
   const key = getDataKeyForEncrypt() // throws when the vault is unavailable: fail closed, never plain
-  return serializeEnvelope(encryptWithKeyAad(key, JSON.stringify(index), INDEX_AAD, INDEX_KID))
+  return serializeEnvelope(sealIndexPayload(key, JSON.stringify(index)))
 }
 
 export function saveIndex(index: RecordingIndex): void {
@@ -858,8 +877,8 @@ export function setHistoryEncryption(enabled: boolean): Promise<SetHistoryEncryp
         // Prove the key works (create/unwrap + seal + open a probe) before committing anything.
         const key = getDataKeyForEncrypt()
         const probe = 'probe'
-        const sealed = encryptWithKeyAad(key, probe, INDEX_AAD, INDEX_KID)
-        if (decryptWithKeyAad(key, sealed, INDEX_AAD) !== probe) {
+        const sealed = sealIndexPayload(key, probe)
+        if (openIndexPayload(key, sealed) !== probe) {
           return { ok: false, reason: 'unavailable' }
         }
       } catch {
