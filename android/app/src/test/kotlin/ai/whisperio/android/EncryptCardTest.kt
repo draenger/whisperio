@@ -14,6 +14,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -69,6 +70,7 @@ class EncryptCardTest {
             EncryptHistoryResult.Done(MigrationReport(converted = 1, unreadable = 0))
         }
         sw.request(true)
+        sw.busy.first { it == null } // the run has finished
         assertTrue(r.current().encryptHistory)
         assertFalse(offered(r))
     }
