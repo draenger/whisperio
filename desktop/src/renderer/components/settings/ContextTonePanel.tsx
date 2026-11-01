@@ -92,6 +92,8 @@ export function ContextTonePanel({
       setWindowTitlePermissionEnabled(
         (settings as unknown as { windowTitlePermissionEnabled?: boolean }).windowTitlePermissionEnabled ?? true
       )
+    } catch {
+      // Main refused the save (settings file locked): leave the toggle unchanged.
     } finally {
       setPermBusy(false)
     }
