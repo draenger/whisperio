@@ -1,7 +1,8 @@
-import { app, BrowserWindow, desktopCapturer, ipcMain, session, shell } from 'electron'
+import { app, BrowserWindow, desktopCapturer, dialog, ipcMain, session, shell } from 'electron'
 import { initDictation, cleanupDictation, reRegisterHotkeys, pauseHotkeys, resumeHotkeys } from './dictation'
 import { createTray, destroyTray } from './tray'
 import { loadSettings, saveSettings } from './settingsManager'
+import { applyLaunchAtStartup, handleStartupFailure } from './startupSettings'
 import {
   getEffectiveSettings,
   saveSettingsWithKeys,
@@ -234,19 +235,18 @@ app.whenReady().then(() => {
   // (see secure/keyAccessor.ts). Must run before anything below reads
   // settings, and before the settings:load/settings:save IPC handlers are
   // registered, so the renderer never observes the pre-migration state.
-  migrateProviderKeysToKeyStore()
+  try {
+    migrateProviderKeysToKeyStore()
+  } catch (err) {
+    console.error('[Whisperio] provider-key migration failed (' + ((err as NodeJS.ErrnoException | null)?.code ?? 'unknown') + '); continuing startup.')
+  }
 
   // Apply auto-launch setting (uses Windows Registry HKCU\...\Run)
   // Skip in dev mode — process.execPath points to bare electron.exe which
   // creates a bogus "Electron" autostart entry instead of "Whisperio".
-  const settings = loadSettings()
+  // Skipped while settings.json is locked/unreadable (defaults must not re-enable autostart).
   const isPackaged = app.isPackaged
-  if (isPackaged) {
-    app.setLoginItemSettings({
-      openAtLogin: settings.launchAtStartup,
-      path: process.execPath,
-    })
-  }
+  applyLaunchAtStartup(app, isPackaged, process.execPath)
 
   // Register settings IPC handlers. load/save go through the key-accessor
   // (secure/keyAccessor.ts) rather than settingsManager directly, so
@@ -501,6 +501,8 @@ app.whenReady().then(() => {
   initAutoUpdater(loadSettings().checkForUpdates !== false)
 
   console.log('[Whisperio] Ready — press hotkey to dictate')
+}).catch((err) => {
+  handleStartupFailure(err, dialog, app)
 })
 
 // macOS: the app runs as a menubar/tray app with no persistent main window.
