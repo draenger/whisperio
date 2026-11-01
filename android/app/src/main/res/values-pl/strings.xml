@@ -140,13 +140,13 @@
     <string name="onboarding_add_tile">Dodaj kafelek szybkich ustawień</string>
     <string name="onboarding_skippable">Możesz to pominąć i zrobić później.</string>
     <string name="onboarding_skip">Pomiń</string>
-    <string name="onboarding_done_title">Gotowe</string>
+    <string name="onboarding_done_title">Wszystko gotowe</string>
     <string name="onboarding_done_body">Dotknij mikrofonu na ekranie głównym albo przełącz się na klawiaturę Whisperio w dowolnej aplikacji.</string>
     <string name="onboarding_finish">Zacznij dyktować</string>
     <string name="onboarding_try_hint">Dotknij mikrofonu, aby wypróbować pierwsze dyktowanie, albo zakończ teraz. Możesz to zrobić później na ekranie głównym.</string>
     <string name="onboarding_try_again">Spróbuj ponownie</string>
     <string name="settings_providers">Dostawcy</string>
-    <string name="settings_providers_hint">Dostawcy są używani w tej kolejności. Brane są pod uwagę tylko ci z kluczem.</string>
+    <string name="settings_providers_hint">Dostawcy są używani w tej kolejności. Używani są tylko ci z kluczem.</string>
     <string name="settings_fallback">Przełączaj na następnego dostawcę</string>
     <string name="settings_fallback_hint">Gdy pierwszy dostawca zawiedzie, spróbuj kolejnego. Domyślnie wyłączone.</string>
     <string name="settings_move_up">Przesuń %1$s w górę</string>
