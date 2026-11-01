@@ -110,6 +110,7 @@ export interface AppSettings {
   outputDeviceId: string
   saveRecordings: boolean
   silenceGate: boolean
+  trimSilence: boolean
   outputRecordingHotkey: string
   fallbackEnabled: boolean
   githubUser: string

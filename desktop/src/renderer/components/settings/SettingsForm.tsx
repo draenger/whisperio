@@ -598,6 +598,7 @@ export function SettingsForm(): ReactElement {
   const [outputDeviceId, setOutputDeviceId] = useState('')
   const [saveRecordings, setSaveRecordings] = useState(true)
   const [silenceGate, setSilenceGate] = useState(true)
+  const [trimSilence, setTrimSilence] = useState(false)
   const [inputDevices, setInputDevices] = useState<MediaDeviceOption[]>([])
   const [outputDevices, setOutputDevices] = useState<MediaDeviceOption[]>([])
 
@@ -641,6 +642,7 @@ export function SettingsForm(): ReactElement {
       setOutputDeviceId(settings.outputDeviceId ?? '')
       setSaveRecordings(settings.saveRecordings ?? true)
       setSilenceGate(settings.silenceGate ?? true)
+      setTrimSilence(settings.trimSilence ?? false)
       setOutputRecordingHotkey(settings.outputRecordingHotkey ?? '')
       setCleanupEnabled(settings.cleanupEnabled ?? false)
       setCleanupMode(settings.cleanupMode ?? 'light')
@@ -730,6 +732,7 @@ export function SettingsForm(): ReactElement {
       outputDeviceId,
       saveRecordings,
       silenceGate,
+      trimSilence,
       outputRecordingHotkey,
       fallbackEnabled: providerChain.length > 1,
       cleanupEnabled,
@@ -765,7 +768,7 @@ export function SettingsForm(): ReactElement {
     groqApiKey, deepgramApiKey, assemblyaiApiKey, mistralApiKey,
     sttApiKey, transcriptionLanguage, prompt,
     vocabulary, removedDefaultVocabulary, aiPostProcessing, launchAtStartup, checkForUpdates, dictationHotkey,
-    dictateAndSendHotkey, commandHotkey, inputDeviceId, outputDeviceId, saveRecordings, silenceGate,
+    dictateAndSendHotkey, commandHotkey, inputDeviceId, outputDeviceId, saveRecordings, silenceGate, trimSilence,
     outputRecordingHotkey, cleanupEnabled, cleanupMode, cleanupAuto, cleanupTemplates,
     aiProvider, aiBaseUrl, aiModel, anthropicApiKey,
     contextAwareTone, toneMap, windowTitlePermissionEnabled
@@ -997,6 +1000,8 @@ export function SettingsForm(): ReactElement {
                       saveRecordings={saveRecordings}
                       silenceGate={silenceGate}
                       setSilenceGate={setSilenceGate}
+                      trimSilence={trimSilence}
+                      setTrimSilence={setTrimSilence}
                       setSaveRecordings={setSaveRecordings}
                       inputDevices={inputDevices}
                       outputDevices={outputDevices}
@@ -2010,7 +2015,7 @@ function AudioTab({
   inputDeviceId, setInputDeviceId,
   outputDeviceId, setOutputDeviceId,
   saveRecordings, setSaveRecordings,
-  silenceGate, setSilenceGate,
+  silenceGate, setSilenceGate, trimSilence, setTrimSilence,
   inputDevices, outputDevices,
   s, theme
 }: {
@@ -2022,6 +2027,8 @@ function AudioTab({
   setSaveRecordings: (v: boolean) => void
   silenceGate: boolean
   setSilenceGate: (v: boolean) => void
+  trimSilence: boolean
+  setTrimSilence: (v: boolean) => void
   inputDevices: MediaDeviceOption[]
   outputDevices: MediaDeviceOption[]
   s: ReturnType<typeof makeStyles>
@@ -2077,6 +2084,13 @@ function AudioTab({
           description="Saves cost and avoids made-up text on silent audio"
           checked={silenceGate}
           onChange={setSilenceGate}
+          theme={theme}
+        />
+        <ToggleRow
+          label="Trim long silence at start/end before sending"
+          description="Sends a shorter 16 kHz WAV when 1 s or more of silence is cut. The saved recording stays untouched"
+          checked={trimSilence}
+          onChange={setTrimSilence}
           theme={theme}
         />
         {recordingCount !== null && recordingCount > 0 && (

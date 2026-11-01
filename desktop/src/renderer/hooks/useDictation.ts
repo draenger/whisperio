@@ -1,5 +1,6 @@
 import { useRef, useCallback, useState } from 'react'
 import { analyzeSpeech, mixToMono } from '../audio/silenceGate'
+import { trimToWav } from '../audio/silenceTrim'
 
 /** Decode a recording and report whether it contains speech. Fails OPEN:
  * any decode problem returns true so the audio is sent as before. */
@@ -19,6 +20,26 @@ async function recordingHasSpeech(buffer: ArrayBuffer): Promise<boolean> {
   } catch (err) {
     console.warn('[Whisperio] Silence gate decode failed, sending anyway:', err)
     return true
+  }
+}
+
+/** Decode a recording and, if >= 1 s of leading/trailing silence can be cut,
+ * return the trimmed audio as 16 kHz mono WAV. Returns null when nothing is
+ * worth trimming. Fails OPEN: any error returns null so the original is sent. */
+async function trimmedWavOrNull(buffer: ArrayBuffer): Promise<ArrayBuffer | null> {
+  try {
+    const ctx = new AudioContext({ sampleRate: 16000 })
+    try {
+      const decoded = await ctx.decodeAudioData(buffer.slice(0))
+      const channels: Float32Array[] = []
+      for (let c = 0; c < decoded.numberOfChannels; c++) channels.push(decoded.getChannelData(c))
+      return trimToWav(mixToMono(channels), decoded.sampleRate)
+    } finally {
+      ctx.close().catch(() => {})
+    }
+  } catch (err) {
+    console.warn('[Whisperio] Silence trim failed, sending original:', err)
+    return null
   }
 }
 
@@ -286,6 +307,16 @@ export function useDictation(): UseDictationReturn {
           console.log(`[Whisperio] Converted to wav: ${sendBuffer.byteLength} bytes`)
         } catch (convErr) {
           console.error('[Whisperio] webm→wav conversion failed, sending webm:', convErr)
+        }
+      }
+      // Optional trim of long leading/trailing silence (opt-in). Only replaces the
+      // upload; the recording saved above stays the untrimmed original.
+      if (settings.trimSilence === true) {
+        const trimmed = await trimmedWavOrNull(arrayBuffer)
+        if (trimmed) {
+          console.log(`[Whisperio] Silence trimmed: ${arrayBuffer.byteLength} -> ${trimmed.byteLength} bytes (wav)`)
+          sendBuffer = trimmed
+          sendFilename = 'audio.wav'
         }
       }
       const text = await window.api.dictation.transcribe(sendBuffer, sendFilename)

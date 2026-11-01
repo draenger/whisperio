@@ -29,19 +29,9 @@ function toDbfs(rms: number): number {
   return rms > 0 ? 20 * Math.log10(rms) : -Infinity
 }
 
-export function analyzeSpeech(
-  samples: Float32Array,
-  sampleRate: number,
-  opts: SilenceGateOptions = {}
-): SpeechAnalysis {
-  const o = { ...DEFAULTS, ...opts }
-  const none: SpeechAnalysis = { hasSpeech: false, peakDbfs: -Infinity, voicedMs: 0 }
-  if (!samples || samples.length === 0 || !(sampleRate > 0)) return none
-
-  const frameLen = Math.max(1, Math.round((sampleRate * o.frameMs) / 1000))
+/** Per-frame RMS in dBFS (trailing partial frame ignored). Shared with silenceTrim. */
+export function frameEnergiesDbfs(samples: Float32Array, frameLen: number): number[] {
   const frameCount = Math.floor(samples.length / frameLen)
-  if (frameCount === 0) return none
-
   const energies: number[] = []
   for (let f = 0; f < frameCount; f++) {
     let sum = 0
@@ -53,6 +43,21 @@ export function analyzeSpeech(
     }
     energies.push(toDbfs(Math.sqrt(sum / frameLen)))
   }
+  return energies
+}
+
+export function analyzeSpeech(
+  samples: Float32Array,
+  sampleRate: number,
+  opts: SilenceGateOptions = {}
+): SpeechAnalysis {
+  const o = { ...DEFAULTS, ...opts }
+  const none: SpeechAnalysis = { hasSpeech: false, peakDbfs: -Infinity, voicedMs: 0 }
+  if (!samples || samples.length === 0 || !(sampleRate > 0)) return none
+
+  const frameLen = Math.max(1, Math.round((sampleRate * o.frameMs) / 1000))
+  const energies = frameEnergiesDbfs(samples, frameLen)
+  if (energies.length === 0) return none
 
   // Absolute threshold only: a relative noise-floor requirement would reject
   // real speech over steady background noise and clips with no silence.

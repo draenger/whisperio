@@ -151,6 +151,7 @@ export interface AppSettings {
   saveRecordings: boolean
   /** Skip uploading recordings that contain no speech (RMS energy gate). */
   silenceGate: boolean
+  trimSilence: boolean
   outputRecordingHotkey: string
   fallbackEnabled: boolean
   // GitHub secret-store selection (NON-SECRET metadata only). The access token
@@ -308,6 +309,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   outputDeviceId: '',
   saveRecordings: true,
   silenceGate: true,
+  trimSilence: false,
   outputRecordingHotkey: '',
   fallbackEnabled: false,
   githubUser: '',
