@@ -51,6 +51,33 @@ apps) and **Output recording** (records system audio instead of the mic, e.g. me
 6. Overlay windows are created per display and tracked as displays come and go
    (`desktop/src/main/dictation/overlayWindow.ts:192`).
 
+## Command-line control (Stream Deck / scripts)
+
+A running Whisperio can be driven from the command line:
+
+| Flag | Effect |
+|------|--------|
+| `--toggle` | Same as the dictation hotkey (start, or stop and transcribe) |
+| `--send` | Same as the Dictate & Send hotkey (toggle, then Enter after paste) |
+| `--start` | Start recording only if idle |
+| `--stop` | Stop and transcribe only if recording (also ends command-mode capture) |
+| `--cancel` | Cancel the current session, if any |
+
+The second process hands its argv to the running instance
+(`app.on('second-instance')`, `desktop/src/main/cliControl.ts`) and exits; the settings
+window is not shown when a flag is present. A launch without a flag still opens settings.
+
+Cold start: if Whisperio is NOT running, launching it with a flag starts the app normally and
+the command is ignored (logged) - it never begins recording on launch.
+
+- Stream Deck: action "System: Open" -> `"C:\Users\<you>\AppData\Local\Programs\Whisperio\Whisperio.exe" --toggle`
+  (use your real install path; one button per flag).
+- macOS: call the binary directly so argv reaches the running instance:
+  `/Applications/Whisperio.app/Contents/MacOS/Whisperio --toggle`.
+  `open -a Whisperio --args --toggle` is not reliable for an already-running app (LaunchServices
+  just activates it and does not spawn a second process with your args).
+- Not yet verified on a real machine.
+
 ## Entry points (file:line)
 
 - `desktop/src/main/dictation/index.ts:7` — `initDictation()` (called from
