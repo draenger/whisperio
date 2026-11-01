@@ -7,7 +7,13 @@ vi.mock('../src/main/settingsManager', () => ({
     settings.customVocabulary?.trim() || ''
 }))
 
+vi.mock('../src/main/usageTracker', () => ({
+  recordSTT: vi.fn(),
+  estimateAudioSeconds: () => 1
+}))
+
 const mockNotifyInfo = vi.fn()
+const mockToast = vi.fn()
 vi.mock('../src/main/errorHandler', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../src/main/errorHandler')>()
   return {
@@ -58,7 +64,10 @@ vi.mock('electron', () => ({
     request: (...args: unknown[]) => mockNetRequest(...args)
   },
   Notification: class MockNotification {
-    static isSupported = () => false
+    static isSupported = () => true
+    constructor(opts: { title: string; body: string }) {
+      mockToast(opts)
+    }
     show = vi.fn()
   },
   BrowserWindow: {
@@ -145,6 +154,9 @@ describe('fallback auto-retry', () => {
     await expect(transcribeAudio(Buffer.from('audio'), 'test.webm')).rejects.toThrow(
       'OpenAI API error 500'
     )
+    // Whole chain failed: exactly one summarizing toast
+    expect(mockToast).toHaveBeenCalledTimes(1)
+    expect(mockToast.mock.calls[0][0].body).toMatch(/2 providers failed/)
   })
 
   it('does not try fallback when primary succeeds', async () => {
@@ -163,10 +175,11 @@ describe('fallback auto-retry', () => {
     const result = await transcribeAudio(Buffer.from('audio'), 'test.webm')
     expect(result).toBe('primary result')
     expect(mockNetRequest).toHaveBeenCalledTimes(1)
+    expect(mockToast).not.toHaveBeenCalled()
     expect(mockNotifyInfo).not.toHaveBeenCalled()
   })
 
-  it('sends notification when falling back', async () => {
+  it('does not toast per-hop failures when falling back', async () => {
     mockLoadSettings.mockReturnValue({
       sttProvider: 'openai',
       openaiApiKey: 'sk-test',
@@ -182,6 +195,7 @@ describe('fallback auto-retry', () => {
 
     await transcribeAudio(Buffer.from('audio'), 'test.webm')
 
+    expect(mockToast).not.toHaveBeenCalled()
     expect(mockNotifyInfo).not.toHaveBeenCalled()
   })
 
@@ -201,6 +215,7 @@ describe('fallback auto-retry', () => {
 
     const result = await transcribeAudio(Buffer.from('audio'), 'test.webm')
     expect(result).toBe('openai fallback')
+    expect(mockToast).not.toHaveBeenCalled()
     expect(mockNotifyInfo).not.toHaveBeenCalled()
   })
 })

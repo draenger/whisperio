@@ -5,7 +5,7 @@ import { AppSettings, getActiveVocabulary, type ProviderId, type CleanupMode } f
 // the encrypted key store (secure/keyStore.ts), key store taking precedence
 // when OS secure storage is available. See secure/keyAccessor.ts.
 import { getEffectiveSettings } from './secure/keyAccessor'
-import { handleTranscriptionError, deferTranscriptionErrors } from './errorHandler'
+import { handleTranscriptionError, collectTranscriptionErrors } from './errorHandler'
 import { guardRedirects, GUARDED_REDIRECT } from './llm/redirectGuard'
 import { OpenAICompatibleProvider, AnthropicProvider, ReplicateProvider, selectProvider, isLocalHost, type LLMProvider } from './llm/provider'
 import { cleanupTranscription, cleanupTranscriptionDetailed, formatTranscription, rewriteSelection, type CleanupResult } from './postprocess'
@@ -501,18 +501,14 @@ export async function transcribeAudio(
     configuredChain.push(chain[0])
   }
 
-  let firstError: Error | null = null
-  let text: string | null = null
-  const failures: string[] = []
-
-  // Per-hop failures are recorded, not toasted: only a fully failed chain
-  // notifies (one summary). See errorHandler.deferTranscriptionErrors.
-  const batch = deferTranscriptionErrors()
-  try {
+  // Per-hop failures are recorded in a PER-CALL collector, not toasted: only a
+  // fully failed chain notifies (one summary). See errorHandler.collectTranscriptionErrors.
+  const text = await collectTranscriptionErrors(async (collector) => {
+    let firstError: Error | null = null
     for (let i = 0; i < configuredChain.length; i++) {
       const provider = configuredChain[i]
       try {
-        text = await transcribeWithProvider(settings, provider, audioBuffer, filename)
+        const result = await transcribeWithProvider(settings, provider, audioBuffer, filename)
         // PACZKA METERING (v1.6): report usage after every successful STT call,
         // including local/self-hosted (isLocal forces cost to 0 there, but the
         // request/audio-seconds counters still stay complete). recordSTT()
@@ -523,23 +519,23 @@ export async function transcribeAudio(
           audioSeconds: estimateAudioSeconds(audioBuffer, filename),
           isLocal: provider === 'selfhosted'
         })
-        break
+        if (i > 0 && firstError) {
+          // Not a toast, but a broken primary must not be completely silent.
+          console.warn(
+            `[Whisperio] ${PROVIDER_LABELS[configuredChain[0]]} failed (${firstError.message}); ${PROVIDER_LABELS[provider]} succeeded.`
+          )
+        }
+        return result
       } catch (err) {
-        const e = err instanceof Error ? err : new Error(String(err))
-        if (!firstError) firstError = e
-        failures.push(`${PROVIDER_LABELS[provider]}: ${e.message}`)
+        if (!firstError) firstError = err instanceof Error ? err : new Error(String(err))
       }
     }
-  } catch (err) {
-    batch.discard()
-    throw err
-  }
-
-  if (text === null) {
-    batch.flush(failures.length > 1 ? `All providers failed. ${failures.join(' | ')}` : undefined)
-    throw firstError || new Error('No providers configured. Open Settings to set up a provider.')
-  }
-  batch.discard()
+    const finalError = firstError || new Error('No providers configured. Open Settings to set up a provider.')
+    // Notifies from the collected failures, or from finalError if the failing
+    // path never went through handleTranscriptionError.
+    collector.flush(finalError)
+    throw finalError
+  })
 
   // Cleanup runs AFTER the STT chain and is fail-soft: a cleanup problem must
   // never discard a good transcript or re-bill the next STT provider.

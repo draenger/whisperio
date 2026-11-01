@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from 'node:async_hooks'
 import { Notification, BrowserWindow } from 'electron'
 
 export type ErrorCategory =
@@ -79,31 +80,37 @@ export function parseApiError(error: Error): { statusCode: number | null, respon
   return { statusCode: null, responseBody: message }
 }
 
-// Deferred-notification mode: while a provider chain runs, per-hop errors are
-// recorded (recent-errors list) but their toast/renderer broadcast is held back.
-// The chain owner then flush()es one summary if everything failed, or discard()s.
-let pendingErrors: WhisperioError[] | null = null
+// Per-call error collection. While a provider chain runs inside
+// collectTranscriptionErrors(), per-hop errors are recorded (recent-errors
+// list) but their toast/renderer broadcast is held back. The AsyncLocalStorage
+// scope is per call, so a concurrent reprocess + live dictation never see each
+// other's errors. The chain owner flush()es ONE summary if everything failed.
+const errorScope = new AsyncLocalStorage<WhisperioError[]>()
 
-export function deferTranscriptionErrors(): { flush: (summary?: string) => void; discard: () => void } {
-  const mine: WhisperioError[] = []
-  pendingErrors = mine
-  const end = (): void => {
-    if (pendingErrors === mine) pendingErrors = null
-  }
-  return {
-    flush: (summary?: string) => {
-      end()
-      const last = mine[mine.length - 1]
-      if (!last) return
-      const message = summary ?? last.message
-      notifyError('Transcription Error', message)
-      emitErrorToRenderer({ ...last, message })
-    },
-    discard: end
-  }
+export interface ErrorCollector {
+  /** Chain failed: notify once from the collected failures (or `finalError` if none were collected). */
+  flush: (finalError?: Error) => void
 }
 
-export function handleTranscriptionError(error: Error, provider: string): void {
+export function collectTranscriptionErrors<T>(fn: (collector: ErrorCollector) => Promise<T>): Promise<T> {
+  const errors: WhisperioError[] = []
+  return errorScope.run(errors, () =>
+    fn({
+      flush: (finalError?: Error) => {
+        let primary = errors[0]
+        if (!primary && finalError) primary = buildTranscriptionError(finalError, 'unknown')
+        if (!primary) return
+        // Primary failure's friendly message ("Invalid API key. Check your settings."), plus a count.
+        const message =
+          errors.length > 1 ? `${primary.message} (${errors.length} providers failed)` : primary.message
+        notifyError('Transcription Error', message)
+        emitErrorToRenderer({ ...primary, message })
+      }
+    })
+  )
+}
+
+function buildTranscriptionError(error: Error, provider: string): WhisperioError {
   const { statusCode, responseBody } = parseApiError(error)
 
   let category: ErrorCategory
@@ -128,25 +135,28 @@ export function handleTranscriptionError(error: Error, provider: string): void {
     category = categorizeError(statusCode, responseBody)
   }
 
-  const userMessage = getErrorMessage(category, error.message)
-
-  const whisperioError: WhisperioError = {
+  return {
     category,
-    message: userMessage,
+    message: getErrorMessage(category, error.message),
     provider,
     timestamp: Date.now(),
     rawError: error.message
   }
+}
+
+export function handleTranscriptionError(error: Error, provider: string): void {
+  const whisperioError = buildTranscriptionError(error, provider)
 
   addRecentError(whisperioError)
-  if (pendingErrors) {
-    pendingErrors.push(whisperioError)
+  const scope = errorScope.getStore()
+  if (scope) {
+    scope.push(whisperioError)
   } else {
-    notifyError('Transcription Error', userMessage)
+    notifyError('Transcription Error', whisperioError.message)
     emitErrorToRenderer(whisperioError)
   }
 
-  console.error(`[Whisperio] ${provider} error [${category}]: ${error.message}`)
+  console.error(`[Whisperio] ${provider} error [${whisperioError.category}]: ${error.message}`)
 }
 
 // COMMAND mode (v1.7 — dictation/hotkeyManager.ts's 'command' DictationState):

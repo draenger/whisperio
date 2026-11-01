@@ -9,6 +9,11 @@ vi.mock('../src/main/settingsManager', () => ({
   getActiveVocabulary: () => ''
 }))
 
+vi.mock('../src/main/usageTracker', () => ({
+  recordSTT: vi.fn(),
+  estimateAudioSeconds: () => 1
+}))
+
 const { mockNotifyError, mockCleanup, mockSelect } = vi.hoisted(() => ({
   mockNotifyError: vi.fn(),
   mockCleanup: vi.fn(),
@@ -175,7 +180,28 @@ describe('error notifications', () => {
 
     await expect(transcribeAudio(Buffer.from('a'), 't.webm')).rejects.toThrow()
     expect(mockNotifyError).toHaveBeenCalledTimes(1)
-    expect(String(mockNotifyError.mock.calls[0][1])).toMatch(/OpenAI/)
+    expect(mockNotifyError.mock.calls[0][0]).toBe('Transcription Error')
+    expect(String(mockNotifyError.mock.calls[0][1])).toMatch(/2 providers failed/)
+  })
+
+  it('notifies once from the final error when the failure bypasses handleTranscriptionError', async () => {
+    mockLoadSettings.mockReturnValue({ providerChain: ['openai'], transcriptionPrompt: '', customVocabulary: '' })
+    // No key configured: openai throws a "No OpenAI API key configured" error
+    await expect(transcribeAudio(Buffer.from('a'), 't.webm')).rejects.toThrow()
+    expect(mockNotifyError).toHaveBeenCalledTimes(1)
+    expect(String(mockNotifyError.mock.calls[0][1])).toMatch(/Invalid API key|Settings/i)
+  })
+
+  it('concurrent chains do not mix errors', async () => {
+    mockLoadSettings.mockReturnValue({ ...baseSettings, cleanupAuto: false })
+    mockNetRequest.mockImplementation(() => createMockNetRequest(500, '{}'))
+    const results = await Promise.allSettled([
+      transcribeAudio(Buffer.from('a'), 'a.webm'),
+      transcribeAudio(Buffer.from('b'), 'b.webm')
+    ])
+    expect(results.every((r) => r.status === 'rejected')).toBe(true)
+    expect(mockNotifyError).toHaveBeenCalledTimes(2)
+    for (const c of mockNotifyError.mock.calls) expect(String(c[1])).toMatch(/\(2 providers failed\)/)
   })
 
   it('self-hosted failure is labelled self-hosted, not OpenAI', async () => {
