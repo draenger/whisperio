@@ -43,6 +43,7 @@ class SettingsRepository(
         val perAppLanguage = booleanPreferencesKey("per_app_language")
         val encryptHistory = booleanPreferencesKey("encrypt_history")
         val encryptCardHandled = booleanPreferencesKey("encrypt_card_handled")
+        val needsCompaction = booleanPreferencesKey("needs_compaction")
         val customCategories = stringPreferencesKey("custom_categories") // JSON list, CONTRACT-1.2 F3
         fun baseUrl(id: ProviderId) = stringPreferencesKey("base_url_${id.wire}")
     }
@@ -156,6 +157,11 @@ class SettingsRepository(
 
     /** Set when the user answers the one-time card on Home (either button). */
     suspend fun setEncryptCardHandled(v: Boolean) = store.edit { it[K.encryptCardHandled] = v }
+
+    /** True while the history database still needs a WAL checkpoint + VACUUM (an earlier one failed or was cut short). */
+    suspend fun needsCompaction(): Boolean = store.data.first()[K.needsCompaction] ?: false
+
+    suspend fun setNeedsCompaction(v: Boolean) = store.edit { it[K.needsCompaction] = v }
 
     /** Part of "Erase all data": resets every setting to its default. */
     suspend fun clear() {

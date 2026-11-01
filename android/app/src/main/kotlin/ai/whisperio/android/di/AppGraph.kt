@@ -7,12 +7,14 @@ import ai.whisperio.android.dictation.SetupStatus
 import ai.whisperio.android.dictation.computeSetupStatus
 import ai.whisperio.android.history.AppDatabase
 import ai.whisperio.android.history.AudioMigration
+import ai.whisperio.android.history.DbCompactor
 import ai.whisperio.android.history.EncryptingHistoryStore
 import ai.whisperio.android.ui.settings.EncryptSwitch
 import ai.whisperio.android.history.HistoryStore
 import ai.whisperio.android.history.MIGRATION_1_2
 import ai.whisperio.android.history.MigrationReport
 import ai.whisperio.android.history.RoomHistoryStore
+import ai.whisperio.android.history.SecureDeleteCallback
 import ai.whisperio.android.security.AndroidKeystoreCipher
 import ai.whisperio.android.security.AudioCipher
 import ai.whisperio.android.security.DataCipher
@@ -76,6 +78,8 @@ class AppGraph private constructor(private val appOrNull: Application?, private 
         val shareDir: File? = null,
         /** Null = plain history store (tests that do not exercise encryption). */
         val dataCipher: DataCipher? = null,
+        /** Null = a real [DbCompactor] on [database]; tests pass a fake to observe or fail the VACUUM. */
+        val compactor: DbCompactor? = null,
     )
 
     internal constructor(overrides: Overrides) : this(null, overrides)
@@ -108,9 +112,20 @@ class AppGraph private constructor(private val appOrNull: Application?, private 
         }.join()
     }
 
-    private val database: AppDatabase by lazy {
-        o?.database ?: Room.databaseBuilder(app, AppDatabase::class.java, "whisperio.db").addMigrations(MIGRATION_1_2).build()
+    private val database: AppDatabase by lazy { o?.database ?: builtDatabase }
+
+    /** Applies `secure_delete` to every connection Room opens; follows the "Encrypt history" setting. */
+    private val secureDeleteOnOpen = SecureDeleteCallback()
+
+    private val builtDatabase: AppDatabase by lazy {
+        Room.databaseBuilder(app, AppDatabase::class.java, "whisperio.db")
+            .addMigrations(MIGRATION_1_2)
+            .addCallback(secureDeleteOnOpen)
+            .build()
     }
+
+    /** WAL checkpoint + VACUUM + secure_delete for the history database (#21 follow-up). */
+    private val compactor: DbCompactor by lazy { o?.compactor ?: DbCompactor(database, secureDeleteOnOpen) }
     /** History DEK wrapped by its own Keystore key (opt-in encryption). Null only in a test graph without one. */
     private val dataCipher: DataCipher? by lazy {
         if (o != null) {
@@ -193,7 +208,15 @@ class AppGraph private constructor(private val appOrNull: Application?, private 
                 val store = encryptingHistory ?: return@withLock
                 if (enabled && !dataKeyUsable()) return@withLock
                 settings.setEncryptHistory(enabled)
-                result = EncryptHistoryResult.Done(migrateAudio(enabled, store.migrate(enabled)))
+                val report = migrateAudio(enabled, store.migrate(enabled))
+                // Old plaintext survives in the WAL and in freed pages: scrub it, but never fail the switch over it.
+                if (enabled) {
+                    applySecureDelete(true)
+                    compactDatabase()
+                } else {
+                    applySecureDelete(false)
+                }
+                result = EncryptHistoryResult.Done(report)
             }
         }.join()
         return result
@@ -207,6 +230,32 @@ class AppGraph private constructor(private val appOrNull: Application?, private 
 
     /** Held for the whole of [setEncryptHistory] and [runMaintenance]: no migration or sweep overlaps another. */
     private val maintenanceLock = Mutex()
+
+    /** Best effort, so a migration is still reported as done when it fails. */
+    private suspend fun applySecureDelete(on: Boolean) {
+        try {
+            compactor.setSecureDelete(on)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            // Not applied now; the open-callback and the next maintenance pass try again.
+        }
+    }
+
+    /**
+     * Checkpoint + VACUUM. The "needs compaction" flag is raised first and only cleared after a success, so a failure
+     * or a process death mid-way is retried by [runMaintenance]. Caller holds [maintenanceLock]. Never throws.
+     */
+    private suspend fun compactDatabase() {
+        try {
+            settings.setNeedsCompaction(true)
+            if (compactor.compact()) settings.setNeedsCompaction(false)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            // The flag may or may not be saved; either way the migration itself already succeeded.
+        }
+    }
 
     private suspend fun dataKeyUsable(): Boolean {
         val c = dataCipher ?: return false
@@ -232,8 +281,14 @@ class AppGraph private constructor(private val appOrNull: Application?, private 
                 // (no-op when every row is already in place). Last, so a slow pass never delays the sweeps above.
                 encryptingHistory?.let { store ->
                     val on = settings.current().encryptHistory
-                    if (!on || dataKeyUsable()) migrateAudio(on, store.migrate(on))
+                    if (!on || dataKeyUsable()) {
+                        val report = migrateAudio(on, store.migrate(on))
+                        // Rows sealed just now left plaintext behind in the file.
+                        if (on && report.converted > 0) settings.setNeedsCompaction(true)
+                    }
                 }
+                applySecureDelete(settings.current().encryptHistory)
+                if (settings.needsCompaction()) compactDatabase()
             }
         }
     }
