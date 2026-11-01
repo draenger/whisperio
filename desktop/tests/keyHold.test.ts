@@ -130,3 +130,149 @@ describe('backend loading is cached', () => {
     warn.mockRestore()
   })
 })
+
+describe('keyHold gap coverage', () => {
+  beforeEach(() => {
+    _resetKeyHoldWarnings()
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+    vi.restoreAllMocks()
+  })
+
+  it('parseAccelerator: non-string, whitespace, trailing plus, duplicate modifiers, case', () => {
+    expect(parseAccelerator(undefined as unknown as string)).toBeNull()
+    expect(parseAccelerator('   ')).toBeNull()
+    expect(parseAccelerator('Ctrl+Shift+')).toBeNull() // modifier-only after trimming empties
+    expect(parseAccelerator('Ctrl+Control+Alt+x')).toEqual({ modifiers: ['ctrl', 'alt'], key: 'X' })
+    expect(parseAccelerator(' ctrl + shift + esc ')).toEqual({ modifiers: ['ctrl', 'shift'], key: 'ESCAPE' })
+    expect(parseAccelerator('Super+Return')).toEqual({ modifiers: ['meta'], key: 'ENTER' })
+    expect(parseAccelerator('Option+Left')).toEqual({ modifiers: ['alt'], key: 'LEFT' })
+    expect(parseAccelerator('F5')).toEqual({ modifiers: [], key: 'F5' })
+  })
+
+  it('winVirtualKey: numpad, F-range bounds, named, punctuation, lowercase rejected', () => {
+    expect(winVirtualKey('NUM0')).toBe(0x60)
+    expect(winVirtualKey('NUM9')).toBe(0x69)
+    expect(winVirtualKey('NUMADD')).toBe(0x6b)
+    expect(winVirtualKey('F0')).toBeNull()
+    expect(winVirtualKey('F12')).toBe(0x7b)
+    expect(winVirtualKey('PAGEDOWN')).toBe(0x22)
+    expect(winVirtualKey('LEFT')).toBe(0x25)
+    expect(winVirtualKey('+')).toBe(0xbb)
+    expect(winVirtualKey("'")).toBe(0xde)
+    expect(winVirtualKey('a')).toBeNull()
+    expect(winVirtualKey('')).toBeNull()
+  })
+
+  it('macKeyCode: spot-check letters, digits, punctuation, arrows and high F keys', () => {
+    expect(macKeyCode('Z')).toBe(6)
+    expect(macKeyCode('0')).toBe(29)
+    expect(macKeyCode('5')).toBe(23)
+    expect(macKeyCode('+')).toBe(24)
+    expect(macKeyCode('UP')).toBe(126)
+    expect(macKeyCode('F20')).toBe(90)
+    expect(macKeyCode('F24')).toBeNull()
+  })
+
+  it('cancel after the release already fired is harmless, and onRelease stays at one call', () => {
+    vi.useFakeTimers()
+    const onRelease = vi.fn()
+    const cancel = watchKeyRelease('A', onRelease, { isKeyDown: () => false })!
+    vi.advanceTimersByTime(100)
+    expect(onRelease).toHaveBeenCalledTimes(1)
+    expect(() => cancel()).not.toThrow()
+    vi.advanceTimersByTime(60_000)
+    expect(onRelease).toHaveBeenCalledTimes(1)
+  })
+
+  it('cancel clears the max-duration timer too (no late fire)', () => {
+    vi.useFakeTimers()
+    const onRelease = vi.fn()
+    const cancel = watchKeyRelease('A', onRelease, { isKeyDown: () => true, maxDurationMs: 1000 })!
+    cancel()
+    vi.advanceTimersByTime(5000)
+    expect(onRelease).not.toHaveBeenCalled()
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it('honours a custom pollMs and does not poll faster than it', () => {
+    vi.useFakeTimers()
+    const isKeyDown = vi.fn(() => true)
+    const cancel = watchKeyRelease('A', vi.fn(), { isKeyDown, pollMs: 100 })!
+    vi.advanceTimersByTime(99)
+    expect(isKeyDown).toHaveBeenCalledTimes(0)
+    vi.advanceTimersByTime(1)
+    expect(isKeyDown).toHaveBeenCalledTimes(1)
+    vi.advanceTimersByTime(300)
+    expect(isKeyDown).toHaveBeenCalledTimes(4)
+    cancel()
+  })
+
+  it('uses the default 10 minute cap when maxDurationMs is not given', () => {
+    vi.useFakeTimers()
+    const onRelease = vi.fn()
+    watchKeyRelease('A', onRelease, { isKeyDown: () => true })
+    vi.advanceTimersByTime(10 * 60 * 1000 - 1)
+    expect(onRelease).not.toHaveBeenCalled()
+    vi.advanceTimersByTime(1)
+    expect(onRelease).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not fire again via the max timer after a normal release', () => {
+    vi.useFakeTimers()
+    let down = true
+    const onRelease = vi.fn()
+    watchKeyRelease('A', onRelease, { isKeyDown: () => down, maxDurationMs: 1000 })
+    down = false
+    vi.advanceTimersByTime(30)
+    vi.advanceTimersByTime(5000)
+    expect(onRelease).toHaveBeenCalledTimes(1)
+  })
+
+  it('unparseable accelerator warns once with the offending text', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    expect(watchKeyRelease('A+B', vi.fn())).toBeNull()
+    expect(watchKeyRelease('A+B', vi.fn())).toBeNull()
+    expect(warn).toHaveBeenCalledTimes(1)
+    expect(String(warn.mock.calls[0][0])).toContain('A+B')
+  })
+
+  it('unsupported key on a supported platform warns once and names the key', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    expect(createKeyStateReader('NOPE', 'win32')).toBeNull()
+    expect(createKeyStateReader('NOPE', 'win32')).toBeNull()
+    expect(warn).toHaveBeenCalledTimes(1)
+    expect(String(warn.mock.calls[0][0])).toContain('NOPE')
+  })
+
+  it('unsupported platform: reader is null and warning names the platform', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    expect(createKeyStateReader('A', 'linux')).toBeNull()
+    expect(String(warn.mock.calls[0][0])).toContain('linux')
+  })
+
+  it.skipIf(process.platform === 'darwin')('darwin backend load failure off-macOS returns null, warns once, and is cached', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    expect(createKeyStateReader('A', 'darwin')).toBeNull()
+    expect(createKeyStateReader('B', 'darwin')).toBeNull()
+    expect(warn).toHaveBeenCalledTimes(1)
+    expect(String(warn.mock.calls[0][0])).toContain('failed to load')
+  })
+
+  it.skipIf(process.platform !== 'win32')('win32 real backend: an unpressed key (F24) reads as up and triggers release', () => {
+    const reader = createKeyStateReader('F24', 'win32')
+    // koffi may be unavailable in some environments; then the contract is null
+    if (reader) {
+      expect(reader()).toBe(false)
+      const cb = vi.fn()
+      vi.useFakeTimers()
+      const cancel = watchKeyRelease('Ctrl+F24', cb, { platform: 'win32', pollMs: 10 })!
+      vi.advanceTimersByTime(20)
+      expect(cb).toHaveBeenCalledTimes(1)
+      cancel()
+    } else {
+      expect(reader).toBeNull()
+    }
+  })
+})
