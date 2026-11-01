@@ -2088,7 +2088,7 @@ function AudioTab({
         />
         <ToggleRow
           label="Trim long silence at start/end before sending"
-          description="Sends a shorter 16 kHz WAV when 1 s or more of silence is cut. The saved recording stays untouched"
+          description="When 1 s or more of silence is cut, sends the shorter audio as 16 kHz WAV (billed by duration, so cheaper and faster to transcribe; the upload itself can be larger). The saved recording stays untouched"
           checked={trimSilence}
           onChange={setTrimSilence}
           theme={theme}
