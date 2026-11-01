@@ -2,6 +2,7 @@ import { app, net } from 'electron'
 import { existsSync, mkdirSync, unlinkSync, createWriteStream } from 'fs'
 import { join, resolve, sep, basename } from 'path'
 import { execFile, type ChildProcess } from 'child_process'
+import { createConnection } from 'net'
 
 const WHISPER_CPP_RELEASE = 'v1.8.4'
 const WHISPER_BIN_URL = `https://github.com/ggml-org/whisper.cpp/releases/download/${WHISPER_CPP_RELEASE}/whisper-bin-x64.zip`
@@ -341,7 +342,8 @@ export async function startServer(modelFilename: string): Promise<void> {
   }
 }
 
-const ENSURE_TIMEOUT_MS = 60_000
+// Must stay well below the hotkeyManager 60 s safety timer.
+export const ENSURE_TIMEOUT_MS = 20_000
 let ensurePromise: Promise<void> | null = null
 
 function isManagedUrl(baseUrl: string): boolean {
@@ -366,6 +368,17 @@ function withTimeout<T>(p: Promise<T>, ms: number, msg: string): Promise<T> {
   })
 }
 
+/** True when something already accepts TCP connections on the server port. */
+function portAnswers(): Promise<boolean> {
+  return new Promise((res) => {
+    const sock = createConnection({ host: '127.0.0.1', port: SERVER_PORT })
+    const done = (v: boolean): void => { sock.destroy(); res(v) }
+    sock.setTimeout(500, () => done(false))
+    sock.once('connect', () => done(true))
+    sock.once('error', () => done(false))
+  })
+}
+
 async function waitUntilRunning(): Promise<void> {
   while (serverStatus === 'starting') {
     await new Promise((r) => setTimeout(r, 100))
@@ -387,7 +400,11 @@ export function ensureLocalServer(modelFilename: string): Promise<void> {
   if (ensurePromise) return ensurePromise
   const run = (async (): Promise<void> => {
     if (serverStatus === 'starting') await waitUntilRunning()
-    else await startServer(modelFilename)
+    else if (await portAnswers()) {
+      // Someone else (e.g. the user's own whisper-server) already serves the
+      // port: use it, don't spawn a second one that cannot bind.
+      return
+    } else await startServer(modelFilename)
     markServerUsed()
   })()
   const guarded = withTimeout(run, ENSURE_TIMEOUT_MS, 'Timed out starting the local whisper server.')

@@ -25,6 +25,17 @@ vi.mock('fs', async (orig) => {
   }
 })
 
+const mockPortAnswers = { value: false }
+vi.mock('net', () => ({
+  createConnection: () => {
+    const s = new EventEmitter() as EventEmitter & { setTimeout: () => void; destroy: () => void }
+    s.setTimeout = (): void => {}
+    s.destroy = (): void => {}
+    queueMicrotask(() => s.emit(mockPortAnswers.value ? 'connect' : 'error', new Error('ECONNREFUSED')))
+    return s
+  }
+}))
+
 const mockExecFile = vi.fn()
 vi.mock('child_process', () => ({ execFile: (...a: unknown[]) => mockExecFile(...a) }))
 
@@ -60,6 +71,7 @@ describe('localServer on-demand restart', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     procs.length = 0
+    mockPortAnswers.value = false
     mockExistsSync.mockReturnValue(true)
     Object.defineProperty(process, 'platform', { value: 'win32', configurable: true })
     wireSpawn()
@@ -93,6 +105,32 @@ describe('localServer on-demand restart', () => {
     ])
     expect(mockExecFile).toHaveBeenCalledTimes(1)
     expect(mod.getServerStatus().status).toBe('running')
+  })
+
+  it('does not spawn when something already serves the port', async () => {
+    const mod = await fresh()
+    mockPortAnswers.value = true
+    await mod.ensureManagedServerForUrl('http://127.0.0.1:8178', 'ggml-base')
+    expect(mockExecFile).not.toHaveBeenCalled()
+  })
+
+  it('uses a start/readiness timeout below the 60 s hotkey safety timer', async () => {
+    const mod = await fresh()
+    expect(mod.ENSURE_TIMEOUT_MS).toBeLessThanOrEqual(20_000)
+    vi.useFakeTimers()
+    // spawn that never prints the ready line
+    mockExecFile.mockImplementation(() => {
+      const p = new EventEmitter() as FakeProc
+      p.stdout = new EventEmitter()
+      p.stderr = new EventEmitter()
+      p.killed = false
+      p.kill = vi.fn(() => true)
+      return p
+    })
+    const pr = mod.ensureLocalServer('ggml-base.bin')
+    const assertion = expect(pr).rejects.toThrow(/Timed out/)
+    await vi.advanceTimersByTimeAsync(21_000)
+    await assertion
   })
 
   it('does not touch manual (non-managed) servers', async () => {

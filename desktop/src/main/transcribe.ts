@@ -591,12 +591,13 @@ async function transcribeWithProvider(
     const sttApiKey = settings.sttApiKey?.trim() || ''
     // The managed local server is stopped after idle (and not started at app
     // launch): (re)start it on demand so this request does not hit a refused
-    // connection. No-op for manually configured servers.
+    // connection. Best-effort: a failed ensure must not block the request (the
+    // user's own server may be up); if the request fails the chain falls
+    // through as usual.
     try {
       await ensureManagedServerForUrl(baseUrl, model)
     } catch (err) {
-      handleTranscriptionError(err instanceof Error ? err : new Error(String(err)), 'selfhosted')
-      throw err
+      if (isDev()) console.warn('[Whisperio] Could not ensure local whisper server:', err)
     }
     return whisperTranscribe(sttApiKey, audioBuffer, filename, prompt, endpoint, model, true, lang)
   }
