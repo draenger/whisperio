@@ -241,15 +241,6 @@ export function useDictation(): UseDictationReturn {
       // 'Save recordings to disk' setting; transcription still happens either way.
       const settings = await window.api.settings.load()
 
-      // Silence gate: don't upload recordings with no speech (saves cost and
-      // avoids hallucinated text). Default on; fails open on decode errors.
-      if (settings.silenceGate !== false && !(await recordingHasSpeech(arrayBuffer))) {
-        console.warn('[Whisperio] Recording is silent — skipping transcription')
-        setLastWordCount(null)
-        await window.api.dictation.sendResult('', sessionId, 'silent')
-        return
-      }
-
       if (settings.saveRecordings) {
         try {
           const savedRecording = await window.api.recordings.save(
@@ -261,6 +252,25 @@ export function useDictation(): UseDictationReturn {
         } catch (saveErr) {
           console.error('[Whisperio] Failed to save recording:', saveErr)
         }
+      }
+
+      // Silence gate runs AFTER the save above so a misjudged clip is never lost;
+      // it only skips the upload/transcription. Default on; fails open on decode errors.
+      if (settings.silenceGate !== false && !(await recordingHasSpeech(arrayBuffer))) {
+        console.warn('[Whisperio] Recording is silent — skipping transcription')
+        setLastWordCount(null)
+        if (savedRecordingId) {
+          try {
+            await window.api.recordings.update(savedRecordingId, {
+              status: 'completed' as const,
+              transcription: ''
+            })
+          } catch (updateErr) {
+            console.error('[Whisperio] Failed to update recording:', updateErr)
+          }
+        }
+        await window.api.dictation.sendResult('', sessionId, 'silent')
+        return
       }
 
       // Convert webm to wav for selfhosted whisper.cpp (doesn't support webm)

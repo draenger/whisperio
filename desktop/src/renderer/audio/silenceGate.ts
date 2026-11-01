@@ -19,13 +19,11 @@ export interface SilenceGateOptions {
   frameMs?: number
   /** Absolute voiced threshold in dBFS (default -45). */
   thresholdDbfs?: number
-  /** A frame must also be >= noiseFloor + this many dB (default 10). */
-  noiseMarginDb?: number
   /** Minimum voiced duration to count as speech (default 200 ms). */
   minVoicedMs?: number
 }
 
-const DEFAULTS = { frameMs: 25, thresholdDbfs: -45, noiseMarginDb: 10, minVoicedMs: 200 }
+const DEFAULTS = { frameMs: 25, thresholdDbfs: -45, minVoicedMs: 200 }
 
 function toDbfs(rms: number): number {
   return rms > 0 ? 20 * Math.log10(rms) : -Infinity
@@ -56,12 +54,9 @@ export function analyzeSpeech(
     energies.push(toDbfs(Math.sqrt(sum / frameLen)))
   }
 
-  const sorted = [...energies].sort((a, b) => a - b)
-  const noiseFloor = sorted[Math.floor((sorted.length - 1) * 0.1)]
-  const gate = Math.max(
-    o.thresholdDbfs,
-    Number.isFinite(noiseFloor) ? noiseFloor + o.noiseMarginDb : -Infinity
-  )
+  // Absolute threshold only: a relative noise-floor requirement would reject
+  // real speech over steady background noise and clips with no silence.
+  const gate = o.thresholdDbfs
 
   let voiced = 0
   let peak = -Infinity

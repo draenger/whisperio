@@ -65,9 +65,17 @@ describe('analyzeSpeech', () => {
     expect(r.hasSpeech).toBe(true)
   })
 
-  it('adaptive floor rejects steady noise that is above the absolute threshold', () => {
-    const r = analyzeSpeech(noise(2000, -35), SR)
-    expect(r.hasSpeech).toBe(false)
+  it('finds speech over a constant -35 dBFS noise floor', () => {
+    const bg = noise(2000, -35)
+    const speech = tone(500, -20)
+    for (let i = 0; i < speech.length; i++) bg[8000 + i] += speech[i]
+    expect(analyzeSpeech(bg, SR).hasSpeech).toBe(true)
+  })
+
+  it('accepts a clip that is 100% speech with no leading/trailing silence', () => {
+    const r = analyzeSpeech(tone(1000, -20), SR)
+    expect(r.hasSpeech).toBe(true)
+    expect(r.voicedMs).toBeGreaterThanOrEqual(950)
   })
 
   it('handles empty, too-short and invalid input', () => {
