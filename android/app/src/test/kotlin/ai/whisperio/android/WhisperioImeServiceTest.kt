@@ -9,7 +9,7 @@ import ai.whisperio.android.history.RecordingSource
 import ai.whisperio.android.ime.FieldKey
 import ai.whisperio.android.ime.InputSession
 import ai.whisperio.android.ime.InputSessionCounter
-import ai.whisperio.android.ime.stopKeyboardRecordingIfNeeded
+import ai.whisperio.android.ime.endKeyboardRecordingIfNeeded
 import ai.whisperio.android.ime.commitKeyboardResult
 import ai.whisperio.android.ime.keyboardStartOptions
 import ai.whisperio.android.ime.shouldStopKeyboardRecording
@@ -104,12 +104,23 @@ class WhisperioImeServiceTest {
 
     @Test fun finishInputViewCallsStopAndTranscribeNotCancel() {
         var stops = 0
+        var cancels = 0
         val rec = DictationState.Recording(0f, 0, false, RecordingSource.KEYBOARD)
-        stopKeyboardRecordingIfNeeded(rec) { stops++ }
+        endKeyboardRecordingIfNeeded(rec, true, { stops++ }, { cancels++ })
         assertEquals(1, stops)
-        stopKeyboardRecordingIfNeeded(rec.copy(source = RecordingSource.APP)) { stops++ }
-        stopKeyboardRecordingIfNeeded(DictationState.Idle) { stops++ }
+        endKeyboardRecordingIfNeeded(rec.copy(source = RecordingSource.APP), true, { stops++ }, { cancels++ })
+        endKeyboardRecordingIfNeeded(DictationState.Idle, true, { stops++ }, { cancels++ })
         assertEquals(1, stops)
+        assertEquals(0, cancels)
+    }
+
+    @Test fun incognitoSessionIsCancelledNotTranscribed() {
+        var stops = 0
+        var cancels = 0
+        val rec = DictationState.Recording(0f, 0, false, RecordingSource.KEYBOARD)
+        endKeyboardRecordingIfNeeded(rec, false, { stops++ }, { cancels++ })
+        assertEquals(0, stops)
+        assertEquals(1, cancels)
     }
 
     @Test fun destroyDecisionStopsOnlyKeyboardRecording() = runTest {
@@ -117,11 +128,26 @@ class WhisperioImeServiceTest {
         c.start(StartOptions(RecordingSource.TILE))
         runCurrent()
         assertTrue(c.state.value is DictationState.Recording)
-        stopKeyboardRecordingIfNeeded(c) // what onDestroy runs: a tile recording must survive the IME dying
+        endKeyboardRecordingIfNeeded(c) // what onDestroy runs: a tile recording must survive the IME dying
         advanceTimeBy(1_000); runCurrent()
         assertTrue(c.state.value is DictationState.Recording)
         c.cancel()
         runCurrent()
+    }
+
+    @Test fun finishInputViewCancelsIncognitoRealRecording() = runTest {
+        val recorder = FakeRecorder()
+        val history = FakeHistory()
+        val c = controller(recorder, history)
+        c.start(keyboardStartOptions(false, android.view.inputmethod.EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING, session(1))!!)
+        runCurrent()
+        assertTrue(c.state.value is DictationState.Recording)
+        assertFalse(c.activePersists())
+        endKeyboardRecordingIfNeeded(c)
+        runCurrent()
+        assertEquals(DictationState.Idle, c.state.value)
+        assertTrue(recorder.released > 0)
+        assertTrue(history.rows.value.isEmpty())
     }
 
     @Test fun finishInputViewKeepsAndTranscribesRealRecording() = runTest {
@@ -132,12 +158,10 @@ class WhisperioImeServiceTest {
         runCurrent()
         assertTrue(c.state.value is DictationState.Recording)
         // the exact helper onFinishInputView and onDestroy both call
-        stopKeyboardRecordingIfNeeded(c)
+        endKeyboardRecordingIfNeeded(c)
         advanceTimeBy(1_000); runCurrent()
         assertTrue(c.state.value !is DictationState.Recording)
-        assertTrue(c.state.value != DictationState.Idle || history.rows.value.isNotEmpty())
-        assertTrue(recorder.released > 0)
-        assertTrue(history.rows.value.isNotEmpty()) // not discarded
+        assertTrue(history.rows.value.isNotEmpty()) // kept, not discarded
     }
 
     @Test fun commitsWhenSameSessionTextFieldAndViewShown() {

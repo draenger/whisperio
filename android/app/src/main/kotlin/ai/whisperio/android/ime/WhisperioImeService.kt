@@ -192,13 +192,14 @@ class WhisperioImeService : InputMethodService(), LifecycleOwner, ViewModelStore
 
     override fun onFinishInputView(finishingInput: Boolean) {
         super.onFinishInputView(finishingInput)
-        // Focus lost / IME hidden / screen off while recording: stop and transcribe (keep the audio), no background recording.
-        stopKeyboardRecordingIfNeeded(graph.dictation)
+        // Focus lost / IME hidden / screen off while recording: stop and transcribe (keep the audio) when the session saves to
+        // history; incognito sessions (no history) are discarded without upload. No background recording.
+        endKeyboardRecordingIfNeeded(graph.dictation)
         lifecycleRegistry.currentState = Lifecycle.State.STARTED
     }
 
     override fun onDestroy() {
-        stopKeyboardRecordingIfNeeded(graph.dictation)
+        endKeyboardRecordingIfNeeded(graph.dictation)
         lifecycleRegistry.currentState = Lifecycle.State.DESTROYED
         store.clear()
         super.onDestroy()
@@ -335,10 +336,13 @@ internal fun shouldStopKeyboardRecording(s: DictationState): Boolean =
     s is DictationState.Recording && s.source == RecordingSource.KEYBOARD
 
 /** The decision shared by onFinishInputView and onDestroy: stop (and transcribe) only a keyboard-owned recording. */
-internal fun stopKeyboardRecordingIfNeeded(c: DictationController) = stopKeyboardRecordingIfNeeded(c.state.value, c::stopAndTranscribe)
+internal fun endKeyboardRecordingIfNeeded(c: DictationController) =
+    endKeyboardRecordingIfNeeded(c.state.value, c.activePersists(), c::stopAndTranscribe, c::cancel)
 
-internal fun stopKeyboardRecordingIfNeeded(state: DictationState, stop: () -> Unit) {
-    if (shouldStopKeyboardRecording(state)) stop()
+/** Saves-to-history session: stop + transcribe. Incognito session (no history): cancel, nothing is uploaded or kept. */
+internal fun endKeyboardRecordingIfNeeded(state: DictationState, persists: Boolean, stop: () -> Unit, cancel: () -> Unit): Unit {
+    if (!shouldStopKeyboardRecording(state)) return
+    if (persists) stop() else cancel()
 }
 
 /**

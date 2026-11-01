@@ -3,7 +3,9 @@ package ai.whisperio.android
 import ai.whisperio.android.dictation.DictationError
 import ai.whisperio.android.dictation.DictationState
 import ai.whisperio.android.history.RecordingSource
+import ai.whisperio.android.ui.common.acquireKeepScreenOn
 import ai.whisperio.android.ui.common.applyKeepScreenOn
+import ai.whisperio.android.ui.common.releaseKeepScreenOn
 import ai.whisperio.android.ui.common.needsScreenOn
 import android.view.View
 import androidx.test.core.app.ApplicationProvider
@@ -29,6 +31,16 @@ class KeepScreenOnTest {
         applyKeepScreenOn(view, needsScreenOn(DictationState.Recording(0f, 0, false, RecordingSource.APP)))
         assertTrue(view.keepScreenOn)
         applyKeepScreenOn(view, needsScreenOn(DictationState.Idle))
+        assertFalse(view.keepScreenOn)
+    }
+
+    @Test fun twoOwnersDoNotClearEachOther() {
+        val view = View(ApplicationProvider.getApplicationContext<android.app.Application>())
+        acquireKeepScreenOn(view)
+        acquireKeepScreenOn(view)
+        releaseKeepScreenOn(view)
+        assertTrue(view.keepScreenOn)
+        releaseKeepScreenOn(view)
         assertFalse(view.keepScreenOn)
     }
 }
