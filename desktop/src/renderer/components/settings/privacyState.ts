@@ -194,7 +194,7 @@ export function eraseConfirmText(encrypted: boolean): { title: string; body: str
 
 export const RESET_CONFIRM = {
   title: 'Reset history?',
-  body: 'The encryption key is missing, so the encrypted history can never be opened. It is destroyed (the key file, all recordings and the history index, including index.json.corrupt-* backups are deleted) and Whisperio starts with an empty history and encryption off. This cannot be undone.',
+  body: 'The encryption key file is missing, so the encrypted history cannot be opened on this device (unless you restore data-vault.key from a backup first). It is destroyed (the key file, all recordings and the history index, including index.json.corrupt-* backups are deleted) and Whisperio starts with an empty history and encryption off. This cannot be undone.',
   confirmLabel: 'Reset history'
 }
 

@@ -1,5 +1,5 @@
 import { app, safeStorage } from 'electron'
-import { readFileSync, writeFileSync, existsSync, renameSync, unlinkSync } from 'fs'
+import { readFileSync, writeFileSync, existsSync, renameSync, unlinkSync, statSync } from 'fs'
 import { join } from 'path'
 import { unlinkWithRetry } from './audioVault'
 import { generateDataKey, DATA_KEY_BYTES } from './secretCrypto'
@@ -121,10 +121,18 @@ export function getDataKeyForDecrypt(): Buffer | null {
 
 /** True when the wrapped key file is present (it may still fail to unwrap, e.g. a locked keychain). */
 export function dataKeyFileExists(): boolean {
+  // statSync, not existsSync: existsSync returns false on ANY stat error (EPERM/EACCES), which would
+  // misreport a present-but-unreadable key as missing (= "unrecoverable" -> reset allowed). Only
+  // ENOENT means absent; every other error counts as present (fail-safe toward "transient").
+  return !isAbsent(keyPath())
+}
+
+function isAbsent(path: string): boolean {
   try {
-    return existsSync(keyPath())
-  } catch {
+    statSync(path)
     return false
+  } catch (err) {
+    return (err as NodeJS.ErrnoException | null)?.code === 'ENOENT'
   }
 }
 
@@ -141,8 +149,8 @@ export function shredDataKey(): boolean {
   cachedKey = null
   try {
     const path = keyPath()
-    if (existsSync(path)) unlinkWithRetry(path)
-    return !existsSync(path)
+    if (!isAbsent(path)) unlinkWithRetry(path)
+    return isAbsent(path)
   } catch {
     return false
   }
