@@ -1,6 +1,6 @@
 import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { join } from 'path'
-import { mkdirSync, rmSync, existsSync, readFileSync, unlinkSync, writeFileSync, readdirSync } from 'fs'
+import { mkdirSync, rmSync, existsSync, readFileSync, unlinkSync, writeFileSync, readdirSync, renameSync, copyFileSync } from 'fs'
 import { tmpdir } from 'os'
 
 const testDir = join(tmpdir(), `whisperio-test-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`)
@@ -21,7 +21,10 @@ vi.mock('fs', async (importOriginal) => {
   const actual = await importOriginal<typeof import('fs')>()
   return {
     ...actual,
-    unlinkSync: vi.fn(actual.unlinkSync)
+    unlinkSync: vi.fn(actual.unlinkSync),
+    readFileSync: vi.fn(actual.readFileSync),
+    renameSync: vi.fn(actual.renameSync),
+    copyFileSync: vi.fn(actual.copyFileSync)
   }
 })
 
@@ -37,6 +40,7 @@ import {
   getRecordingAudio,
   loadIndex,
   saveIndex,
+  IndexUnavailableError,
   setMaxDiskBytes,
   getMaxDiskBytes
 } from '../src/main/recordingStore'
@@ -468,6 +472,79 @@ describe('recordingStore', () => {
     it('creates no backup when the index is missing', () => {
       expect(loadIndex()).toEqual({ recordings: [] })
       expect(backups()).toHaveLength(0)
+    })
+
+    const ebusy = (): never => {
+      const e = new Error('EBUSY: resource busy or locked') as NodeJS.ErrnoException
+      e.code = 'EBUSY'
+      throw e
+    }
+    const restoreFs = async (): Promise<void> => {
+      const actual = await vi.importActual<typeof import('fs')>('fs')
+      vi.mocked(readFileSync).mockImplementation(actual.readFileSync as never)
+      vi.mocked(renameSync).mockImplementation(actual.renameSync as never)
+      vi.mocked(copyFileSync).mockImplementation(actual.copyFileSync as never)
+    }
+
+    it('persistent read lock (EBUSY) throws, never quarantines, and a save cannot overwrite the index', async () => {
+      const good = JSON.stringify({ recordings: [{ id: 'rec-1', filename: 'a.webm' }] })
+      writeFileSync(indexFile(), good, 'utf-8')
+      const actual = await vi.importActual<typeof import('fs')>('fs')
+      vi.mocked(readFileSync).mockImplementation(((path: string, ...rest: unknown[]) => {
+        if (String(path).endsWith('index.json')) ebusy()
+        return (actual.readFileSync as (...a: unknown[]) => unknown)(path, ...rest)
+      }) as never)
+      try {
+        expect(() => loadIndex()).toThrow(IndexUnavailableError)
+        await expect(saveRecording(Buffer.from('x'), { duration: 1, provider: 'openai' })).rejects.toThrow(
+          IndexUnavailableError
+        )
+      } finally {
+        await restoreFs()
+      }
+      expect(backups()).toHaveLength(0)
+      expect(readFileSync(indexFile(), 'utf-8')).toBe(good)
+    })
+
+    it('a transient read lock is retried and succeeds', () => {
+      const idx = { recordings: [{ id: 'rec-1' }] }
+      writeFileSync(indexFile(), JSON.stringify(idx), 'utf-8')
+      vi.mocked(readFileSync).mockImplementationOnce((() => ebusy()) as never)
+      expect(loadIndex()).toEqual(idx)
+      expect(backups()).toHaveLength(0)
+    })
+
+    it('corrupt index that can be neither renamed nor copied: throws and a save does not overwrite it', async () => {
+      const original = '{broken'
+      writeFileSync(indexFile(), original, 'utf-8')
+      vi.mocked(renameSync).mockImplementation((() => ebusy()) as never)
+      vi.mocked(copyFileSync).mockImplementation((() => ebusy()) as never)
+      try {
+        expect(() => loadIndex()).toThrow(IndexUnavailableError)
+        await expect(saveRecording(Buffer.from('x'), { duration: 1, provider: 'openai' })).rejects.toThrow()
+      } finally {
+        await restoreFs()
+      }
+      expect(readFileSync(indexFile(), 'utf-8')).toBe(original)
+      expect(backups()).toHaveLength(0)
+    })
+
+    it('copy-only backup (rename locked) is made once, not on every read', async () => {
+      writeFileSync(indexFile(), '{broken', 'utf-8')
+      const actual = await vi.importActual<typeof import('fs')>('fs')
+      vi.mocked(renameSync).mockImplementation(((from: string, to: string) => {
+        if (String(from).endsWith('index.json')) ebusy()
+        return actual.renameSync(from, to)
+      }) as never)
+      try {
+        expect(loadIndex()).toEqual({ recordings: [] })
+        expect(loadIndex()).toEqual({ recordings: [] })
+        expect(getRecordings()).toEqual([])
+      } finally {
+        await restoreFs()
+      }
+      expect(backups()).toHaveLength(1)
+      expect(readFileSync(join(getRecordingsDir(), backups()[0]), 'utf-8')).toBe('{broken')
     })
   })
 })

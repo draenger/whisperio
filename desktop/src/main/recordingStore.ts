@@ -1,6 +1,6 @@
 import { app } from 'electron'
-import { existsSync, mkdirSync, writeFileSync, readFileSync, unlinkSync, renameSync, copyFileSync } from 'fs'
-import { join } from 'path'
+import { existsSync, mkdirSync, writeFileSync, readFileSync, unlinkSync, renameSync, copyFileSync, statSync } from 'fs'
+import { join, dirname } from 'path'
 import type { SpeakerSegment } from './dictation/conversation'
 
 export interface RecordingEntry {
@@ -120,20 +120,78 @@ function getIndexPath(): string {
   return join(getRecordingsDir(), 'index.json')
 }
 
+/**
+ * Thrown when index.json exists but can't be used safely right now (persistent
+ * read error such as an AV/backup lock, or a corrupt file we could not back up).
+ * Callers must NOT treat this as "empty history": a following saveIndex() would
+ * overwrite the only copy. IPC handlers surface it as a rejected call.
+ */
+export class IndexUnavailableError extends Error {
+  readonly code = 'INDEX_UNAVAILABLE'
+  constructor(message: string) {
+    super(message)
+    this.name = 'IndexUnavailableError'
+  }
+}
+
+const READ_RETRIES = 5
+
+// Signature (mtime+size) of a corrupt index we already COPIED aside (rename
+// failed), so repeated reads don't pile up identical backups.
+let copiedCorruptSignature: string | null = null
+
+function fileSignature(path: string): string | null {
+  try {
+    const st = statSync(path)
+    return `${st.mtimeMs}:${st.size}`
+  } catch {
+    return null
+  }
+}
+
 // Move an unreadable index aside so the next saveIndex() cannot overwrite the
-// only copy of the user's history metadata. Never deletes anything.
-function quarantineCorruptIndex(indexPath: string): void {
-  const backup = indexPath.replace(/index\.json$/, `index.corrupt-${Date.now()}.json`)
+// only copy of the user's history metadata. Never deletes anything. Returns
+// false when no backup could be made (caller must then refuse, not go empty).
+function quarantineCorruptIndex(indexPath: string): boolean {
+  const name = `index.corrupt-${Date.now()}.json`
+  const backup = join(dirname(indexPath), name)
   try {
     renameSync(indexPath, backup)
+    copiedCorruptSignature = null
+    console.warn(`[recordingStore] recordings index unreadable; moved aside to ${name}`)
+    return true
   } catch {
+    /* fall through to copy */
+  }
+  const sig = fileSignature(indexPath)
+  if (sig !== null && sig === copiedCorruptSignature) return true // already backed up
+  try {
+    copyFileSync(indexPath, backup)
+    copiedCorruptSignature = sig
+    console.warn(`[recordingStore] recordings index unreadable; copied aside to ${name}`)
+    return true
+  } catch {
+    return false
+  }
+}
+
+function readIndexText(indexPath: string): string {
+  for (let attempt = 0; ; attempt++) {
     try {
-      copyFileSync(indexPath, backup)
-    } catch {
-      /* best-effort; nothing more we can do */
+      return readFileSync(indexPath, 'utf-8')
+    } catch (err) {
+      // A transient lock (Defender, an indexer, OneDrive) must never be
+      // mistaken for corruption: retry, then refuse rather than go empty.
+      if (attempt < READ_RETRIES - 1 && isTransientRenameError(err)) continue
+      const code = (err as NodeJS.ErrnoException | null)?.code ?? 'unknown'
+      throw new IndexUnavailableError(`Recordings index could not be read (${code}); history left untouched.`)
     }
   }
-  console.warn('[recordingStore] recordings index unreadable; moved aside to', backup)
+}
+
+function quarantineOrThrow(indexPath: string): RecordingIndex {
+  if (quarantineCorruptIndex(indexPath)) return { recordings: [] }
+  throw new IndexUnavailableError('Recordings index is unreadable and could not be backed up; history left untouched.')
 }
 
 export function loadIndex(): RecordingIndex {
@@ -141,12 +199,12 @@ export function loadIndex(): RecordingIndex {
   if (!existsSync(indexPath)) {
     return { recordings: [] }
   }
+  const raw = readIndexText(indexPath)
   let parsed: unknown
   try {
-    parsed = JSON.parse(readFileSync(indexPath, 'utf-8'))
+    parsed = JSON.parse(raw)
   } catch {
-    quarantineCorruptIndex(indexPath)
-    return { recordings: [] }
+    return quarantineOrThrow(indexPath)
   }
   if (
     parsed === null ||
@@ -154,8 +212,7 @@ export function loadIndex(): RecordingIndex {
     Array.isArray(parsed) ||
     !Array.isArray((parsed as { recordings?: unknown }).recordings)
   ) {
-    quarantineCorruptIndex(indexPath)
-    return { recordings: [] }
+    return quarantineOrThrow(indexPath)
   }
   const obj = parsed as RecordingIndex
   const valid = obj.recordings.filter(
