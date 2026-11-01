@@ -8,6 +8,7 @@ import {
   type ClipboardLike,
   type PasteHandle
 } from './clipboardRestore'
+import { markClipboardTransient, writeTransientText } from './clipboardFormats'
 
 // True only in unpackaged (development) builds; gates logging of dictated
 // content so user speech never reaches production stdout. Guarded so it
@@ -102,10 +103,29 @@ function readRestoreSetting(): boolean {
   }
 }
 
-const coordinator = new ClipboardRestoreCoordinator(clipboard as unknown as ClipboardLike, {
-  set: (fn, ms) => setTimeout(fn, ms),
-  clear: (h) => clearTimeout(h as ReturnType<typeof setTimeout>)
-})
+function readRestoreDelay(): number {
+  try {
+    return clampRestoreDelay(loadSettings().clipboardRestoreDelayMs)
+  } catch {
+    return DEFAULT_RESTORE_DELAY_MS
+  }
+}
+
+const coordinator = new ClipboardRestoreCoordinator(
+  clipboard as unknown as ClipboardLike,
+  {
+    set: (fn, ms) => setTimeout(fn, ms),
+    clear: (h) => clearTimeout(h as ReturnType<typeof setTimeout>)
+  },
+  // Restored content may be a secret: keep it out of history managers too.
+  // Skipped for text-less snapshots (clobbering could not be detected).
+  (snapshot) => {
+    if (snapshot.text === undefined) return
+    markClipboardTransient(clipboard, process.platform, snapshot.text, () =>
+      (clipboard as unknown as ClipboardLike).write(snapshot)
+    )
+  }
+)
 setSharedCoordinator(coordinator)
 
 export async function autoPaste(
@@ -122,7 +142,7 @@ export async function autoPaste(
   // Snapshot BEFORE overwriting the clipboard (reuses the original snapshot
   // if a previous paste's restore is still pending).
   const handle: PasteHandle | null = restore ? coordinator.begin(text) : null
-  clipboard.writeText(text)
+  writeTransientText(clipboard, text, process.platform)
 
   // macOS: without Accessibility permission the ⌘V keystroke silently no-ops.
   // Leave the text on the clipboard and tell the user how to enable auto-paste.
@@ -146,7 +166,7 @@ export async function autoPaste(
     // The target app reads the clipboard asynchronously after the keystroke;
     // restoring too early would make it paste the OLD content. Restore later,
     // only if the clipboard still holds exactly what we pasted.
-    coordinator.schedule(handle, opts.restoreDelayMs ?? DEFAULT_RESTORE_DELAY_MS, (status) =>
+    coordinator.schedule(handle, clampRestoreDelay(opts.restoreDelayMs ?? readRestoreDelay()), (status) =>
       console.log(`[Whisperio] clipboard restore: ${status}`)
     )
   }

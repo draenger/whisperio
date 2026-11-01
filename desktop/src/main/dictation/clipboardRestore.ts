@@ -37,9 +37,20 @@ export interface ClipboardSnapshot {
   image?: ClipboardImageLike
 }
 
-export type RestoreStatus = 'restored' | 'skipped-changed' | 'skipped-empty-snapshot'
+export type RestoreStatus = 'restored' | 'skipped-changed' | 'skipped-empty-snapshot' | 'skipped-timeout'
 
-export const DEFAULT_RESTORE_DELAY_MS = 400
+export const DEFAULT_RESTORE_DELAY_MS = 700
+export const MIN_RESTORE_DELAY_MS = 300
+export const MAX_RESTORE_DELAY_MS = 3000
+/** Extra time (after the minimum delay) we keep polling for `canRestore`. */
+export const RESTORE_POLL_WINDOW_MS = 1500
+export const RESTORE_POLL_INTERVAL_MS = 100
+
+/** Clamp the `clipboardRestoreDelayMs` setting to 300..3000 (default 700). */
+export function clampRestoreDelay(v: unknown): number {
+  if (typeof v !== 'number' || !Number.isFinite(v)) return DEFAULT_RESTORE_DELAY_MS
+  return Math.min(MAX_RESTORE_DELAY_MS, Math.max(MIN_RESTORE_DELAY_MS, Math.round(v)))
+}
 
 function safe<T>(fn: () => T): T | undefined {
   try {
@@ -74,12 +85,16 @@ export function snapshotClipboard(cb: ClipboardLike): ClipboardSnapshot {
 export function restoreClipboardIfUnchanged(
   cb: ClipboardLike,
   snapshot: ClipboardSnapshot,
-  pastedText: string
+  pastedText: string,
+  onRestored?: (snapshot: ClipboardSnapshot) => void
 ): RestoreStatus {
   if (isSnapshotEmpty(snapshot)) return 'skipped-empty-snapshot'
   try {
     if (cb.readText() !== pastedText) return 'skipped-changed'
     cb.write(snapshot)
+    // Best effort: keep the restored (possibly secret) content out of
+    // clipboard history / cloud sync.
+    onRestored?.(snapshot)
     return 'restored'
   } catch (err) {
     console.warn('[Whisperio] clipboard restore failed:', (err as Error)?.message)
@@ -121,7 +136,9 @@ export class ClipboardRestoreCoordinator {
 
   constructor(
     private readonly cb: ClipboardLike,
-    private readonly timers: RestoreTimers
+    private readonly timers: RestoreTimers,
+    /** Called right after a successful restore write (mark it transient). */
+    private readonly afterRestore?: (snapshot: ClipboardSnapshot) => void
   ) {}
 
   /** Call BEFORE writing `text` to the clipboard. */
@@ -142,16 +159,40 @@ export class ClipboardRestoreCoordinator {
   }
 
   /** Arm the delayed restore after the paste keystroke was sent. */
-  schedule(handle: PasteHandle, delayMs: number, onDone?: (status: RestoreStatus) => void): void {
+  /**
+   * There is no OS "paste happened" event, so this is a heuristic: restore no
+   * earlier than `delayMs` after the paste keystroke, and only if the clipboard
+   * still holds our text. If `canRestore` is given, keep polling (every 100 ms,
+   * up to 1.5 s past the delay) until it returns true; on timeout the dictated
+   * text is left on the clipboard (the safe failure) instead of restoring.
+   */
+  schedule(
+    handle: PasteHandle,
+    delayMs: number,
+    onDone?: (status: RestoreStatus) => void,
+    canRestore?: () => boolean
+  ): void {
     const p = this.pending
     if (!p || p.id !== handle.id) return // superseded by a newer paste
     p.armed = true
-    p.timer = this.timers.set(() => {
-      if (this.pending !== p) return
+    const deadline = delayMs + RESTORE_POLL_WINDOW_MS
+    let elapsed = delayMs
+    const finish = (status: RestoreStatus): void => {
       this.pending = null
-      const status = restoreClipboardIfUnchanged(this.cb, p.snapshot, p.pastedText)
       onDone?.(status)
-    }, delayMs)
+    }
+    const tick = (): void => {
+      if (this.pending !== p) return
+      if (safe(() => this.cb.readText()) !== p.pastedText) return finish('skipped-changed')
+      if (canRestore && !safe(canRestore)) {
+        if (elapsed >= deadline) return finish('skipped-timeout')
+        elapsed += RESTORE_POLL_INTERVAL_MS
+        p.timer = this.timers.set(tick, RESTORE_POLL_INTERVAL_MS)
+        return
+      }
+      finish(restoreClipboardIfUnchanged(this.cb, p.snapshot, p.pastedText, this.afterRestore))
+    }
+    p.timer = this.timers.set(tick, delayMs)
   }
 
   /** Paste aborted (text intentionally left on the clipboard): forget it. */
@@ -166,7 +207,7 @@ export class ClipboardRestoreCoordinator {
     this.pending = null
     if (p.timer !== null) this.timers.clear(p.timer)
     if (!p.armed) return null
-    return restoreClipboardIfUnchanged(this.cb, p.snapshot, p.pastedText)
+    return restoreClipboardIfUnchanged(this.cb, p.snapshot, p.pastedText, this.afterRestore)
   }
 }
 
