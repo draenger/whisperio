@@ -1,6 +1,8 @@
 export interface OverlayInfo {
   sourceName: string
   stopHotkey: string
+  /** true when the dictate hotkey runs hold-to-talk (release ends recording) */
+  hold?: boolean
   recordingType: 'input' | 'output'
 }
 
@@ -12,7 +14,7 @@ export interface DictationAPI {
   onStateChanged: (callback: (state: string) => void) => () => void
   onOverlayInfo: (callback: (info: OverlayInfo) => void) => () => void
   sendResult: (text: string, sessionId?: number) => Promise<void>
-  transcribe: (audioData: ArrayBuffer, filename: string) => Promise<string>
+  transcribe: (audioData: ArrayBuffer, filename: string, wavData?: ArrayBuffer | null) => Promise<string>
 }
 
 export interface ModelInfo {
@@ -100,6 +102,7 @@ export interface AppSettings {
   dictationHotkey: string
   dictateAndSendHotkey: string
   commandHotkey: string
+  hotkeyMode: 'toggle' | 'hold'
   theme: 'dark' | 'light'
   accentColor: 'graphite' | 'blue' | 'teal' | 'emerald' | 'amber'
   inputDeviceId: string
