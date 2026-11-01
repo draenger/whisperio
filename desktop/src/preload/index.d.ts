@@ -98,6 +98,7 @@ export interface AppSettings {
   dictationHotkey: string
   dictateAndSendHotkey: string
   commandHotkey: string
+  hotkeyMode: 'toggle' | 'hold'
   theme: 'dark' | 'light'
   accentColor: 'graphite' | 'blue' | 'teal' | 'emerald' | 'amber'
   inputDeviceId: string

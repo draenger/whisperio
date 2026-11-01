@@ -8,6 +8,7 @@ import {
 } from './overlayWindow'
 import { autoPaste, captureTargetWindow, restoreTargetWindow, sendEnter } from './autoPaste'
 import { loadSettings } from '../settingsManager'
+import { watchKeyRelease } from './keyHold'
 // COMMAND mode (v1.7): rewrite the clipboard per a spoken instruction instead
 // of inserting the spoken words — reuses the same LLM candidate chain as
 // transcript cleanup (buildCleanupCandidates/selectProvider), it just runs a
@@ -48,12 +49,34 @@ let currentSessionId = 0
 
 /** Start a fresh session and return its id. */
 function startSession(): number {
+  cancelHoldWatch()
   return ++currentSessionId
 }
 
 /** Invalidate any in-flight session so a late result is dropped. */
 function invalidateSession(): void {
+  cancelHoldWatch()
   currentSessionId++
+}
+
+/**
+ * Hold-to-talk (settings.hotkeyMode === 'hold'): cancel fn of the active
+ * key-release watcher, or null when not holding (toggle mode, or hold detection
+ * unavailable on this platform -> plain toggle fallback).
+ */
+let holdCancel: (() => void) | null = null
+/** A hold shorter than this is treated as an accidental tap and cancelled. */
+const MIN_HOLD_MS = 250
+/** After a hold release, ignore presses this long: a queued auto-repeat press
+ * must not be read as a tap that force-resets the transcription just started. */
+const POST_RELEASE_IGNORE_MS = 300
+let holdReleasedAt = 0
+
+function cancelHoldWatch(): void {
+  if (holdCancel) {
+    holdCancel()
+    holdCancel = null
+  }
 }
 
 /** When true, press Enter after pasting the result */
@@ -98,8 +121,37 @@ function setState(newState: DictationState): void {
 }
 
 async function activate(): Promise<void> {
+  await activateWith(activeHotkey)
+}
+
+/** Start the release watcher for hold mode; falls back to toggle if unavailable. */
+function startHoldWatch(accel: string | null, pressedAt: number): void {
+  if (!accel || loadSettings().hotkeyMode !== 'hold') return
+  const sessionId = currentSessionId
+  const cancelFn = watchKeyRelease(accel, () => {
+    holdCancel = null
+    if (state !== 'recording' || sessionId !== currentSessionId) return
+    if (Date.now() - pressedAt < MIN_HOLD_MS) {
+      console.log('[Whisperio] Hold shorter than minimum — treating as accidental tap, cancelling')
+      cancel()
+      return
+    }
+    unregisterEscape()
+    holdReleasedAt = Date.now()
+    setState('transcribing')
+    sendToPrimaryOverlay('dictation:deactivate', currentSessionId)
+  })
+  holdCancel = cancelFn
+}
+
+async function activateWith(accel: string | null): Promise<void> {
   try {
+    const pressedAt = Date.now()
     console.log(`[Whisperio] Hotkey pressed — current state: ${state}`)
+    // Hold mode: auto-repeated press callbacks while the key is held must not
+    // act as a second tap — the release watcher ends the recording.
+    if (holdCancel && state === 'recording') return
+    if (state === 'transcribing' && holdReleasedAt && pressedAt - holdReleasedAt < POST_RELEASE_IGNORE_MS) return
     if (state === 'idle') {
       // First tap — capture target window, ensure overlay, start recording
       captureTargetWindow()
@@ -123,6 +175,7 @@ async function activate(): Promise<void> {
       if (!globalShortcut.isRegistered('Escape')) {
         globalShortcut.register('Escape', cancel)
       }
+      startHoldWatch(accel, pressedAt)
     } else if (state === 'recording') {
       // Second tap — stop recording, transcribe
       unregisterEscape()
@@ -152,7 +205,7 @@ async function activate(): Promise<void> {
 
 async function activateAndSend(): Promise<void> {
   sendEnterOnResult = true
-  await activate()
+  await activateWith(activeSendHotkey)
 }
 
 async function activateOutput(): Promise<void> {
@@ -260,6 +313,7 @@ async function activateCommand(): Promise<void> {
 }
 
 function cancel(): void {
+  cancelHoldWatch()
   // Invalidate so any in-flight transcription's result is dropped rather than
   // pasted after the user cancelled.
   invalidateSession()
@@ -492,6 +546,7 @@ function registerFromCandidates(): void {
 }
 
 export function unregisterHotkey(): void {
+  cancelHoldWatch()
   if (activeHotkey) {
     globalShortcut.unregister(activeHotkey)
     activeHotkey = null

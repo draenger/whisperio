@@ -104,6 +104,7 @@ export interface AppSettings {
   // COMMAND mode (v1.7) — see settingsManager.ts's AppSettings for the full
   // doc comment. Empty string = disabled.
   commandHotkey: string
+  hotkeyMode: 'toggle' | 'hold'
   theme: 'dark' | 'light'
   accentColor: 'graphite' | 'blue' | 'teal' | 'emerald' | 'amber'
   inputDeviceId: string
