@@ -3,18 +3,21 @@ import { contextBridge, ipcRenderer } from 'electron'
 export interface OverlayInfo {
   sourceName: string
   stopHotkey: string
+  /** true when the dictate hotkey runs hold-to-talk (release ends recording) */
+  hold?: boolean
   recordingType: 'input' | 'output'
 }
 
 export interface DictationAPI {
-  onActivate: (callback: () => void) => () => void
-  onActivateOutput: (callback: () => void) => () => void
+  onActivate: (callback: (sessionId?: number) => void) => () => void
+  onActivateOutput: (callback: (sessionId?: number) => void) => () => void
   onDeactivate: (callback: (sessionId: number) => void) => () => void
   onCancel: (callback: () => void) => () => void
   onStateChanged: (callback: (state: string) => void) => () => void
   onOverlayInfo: (callback: (info: OverlayInfo) => void) => () => void
-  sendResult: (text: string, sessionId?: number) => Promise<void>
-  transcribe: (audioData: ArrayBuffer, filename: string) => Promise<string>
+  sendResult: (text: string, sessionId?: number, reason?: 'silent') => Promise<void>
+  reportError?: (title: string, body: string) => Promise<void>
+  transcribe: (audioData: ArrayBuffer, filename: string, wavData?: ArrayBuffer | null) => Promise<string>
 }
 
 export interface ModelInfo {
@@ -98,17 +101,23 @@ export interface AppSettings {
   aiModel: string
   anthropicApiKey: string
   launchAtStartup: boolean
+  allowUrlControl: boolean
+  allowUrlStart: boolean
   checkForUpdates: boolean
   dictationHotkey: string
   dictateAndSendHotkey: string
   // COMMAND mode (v1.7) — see settingsManager.ts's AppSettings for the full
   // doc comment. Empty string = disabled.
   commandHotkey: string
+  hotkeyMode: 'toggle' | 'hold'
   theme: 'dark' | 'light'
   accentColor: 'graphite' | 'blue' | 'teal' | 'emerald' | 'amber'
   inputDeviceId: string
   outputDeviceId: string
   saveRecordings: boolean
+  silenceGate: boolean
+  silenceGateThresholdDbfs: number
+  trimSilence: boolean
   outputRecordingHotkey: string
   fallbackEnabled: boolean
   experimentalParakeet: boolean
@@ -427,16 +436,22 @@ export interface WhisperioAPI {
 }
 
 const dictationApi: DictationAPI = {
-  onActivate: (callback: () => void) => {
-    ipcRenderer.on('dictation:activate', callback)
+  onActivate: (callback: (sessionId?: number) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, sessionId?: number): void => {
+      callback(sessionId)
+    }
+    ipcRenderer.on('dictation:activate', handler)
     return () => {
-      ipcRenderer.removeListener('dictation:activate', callback)
+      ipcRenderer.removeListener('dictation:activate', handler)
     }
   },
-  onActivateOutput: (callback: () => void) => {
-    ipcRenderer.on('dictation:activate-output', callback)
+  onActivateOutput: (callback: (sessionId?: number) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, sessionId?: number): void => {
+      callback(sessionId)
+    }
+    ipcRenderer.on('dictation:activate-output', handler)
     return () => {
-      ipcRenderer.removeListener('dictation:activate-output', callback)
+      ipcRenderer.removeListener('dictation:activate-output', handler)
     }
   },
   onDeactivate: (callback: (sessionId: number) => void) => {
@@ -472,10 +487,14 @@ const dictationApi: DictationAPI = {
       ipcRenderer.removeListener('dictation:overlay-info', handler)
     }
   },
-  sendResult: (text: string, sessionId?: number) =>
-    ipcRenderer.invoke('dictation:result', text, sessionId),
-  transcribe: (audioData: ArrayBuffer, filename: string) =>
-    ipcRenderer.invoke('dictation:transcribe', Buffer.from(audioData), filename)
+  sendResult: (text: string, sessionId?: number, reason?: 'silent') =>
+    reason
+      ? ipcRenderer.invoke('dictation:result', text, sessionId, reason)
+      : ipcRenderer.invoke('dictation:result', text, sessionId),
+  reportError: (title: string, body: string) =>
+    ipcRenderer.invoke('dictation:error', title, body),
+  transcribe: (audioData: ArrayBuffer, filename: string, wavData?: ArrayBuffer | null) =>
+    ipcRenderer.invoke('dictation:transcribe', Buffer.from(audioData), filename, wavData ? Buffer.from(wavData) : null)
 }
 
 const settingsApi: SettingsAPI = {

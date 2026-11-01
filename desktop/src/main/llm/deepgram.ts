@@ -7,7 +7,7 @@
 // mobile/WhisperioApp/Sources/WhisperioApp/Engine/DeepgramProvider.swift.
 import { net, app } from 'electron'
 import { guardRedirects, GUARDED_REDIRECT } from './redirectGuard'
-import { handleTranscriptionError } from '../errorHandler'
+import { recordTranscriptionError } from '../errorHandler'
 import { deepgramSegments, type SpeakerSegment, type DeepgramUtterance } from '../dictation/conversation'
 
 const DEEPGRAM_LISTEN_URL = 'https://api.deepgram.com/v1/listen'
@@ -43,7 +43,7 @@ function deepgramRequest(url: string, apiKey: string, audioBuffer: Buffer): Prom
         settled = true
         request.abort()
         const err = new Error('Deepgram transcription request timed out after 45s')
-        handleTranscriptionError(err, 'deepgram')
+        recordTranscriptionError(err, 'deepgram')
         reject(err)
       }
     }, 45_000)
@@ -71,7 +71,7 @@ function deepgramRequest(url: string, apiKey: string, audioBuffer: Buffer): Prom
         if (response.statusCode !== 200) {
           if (isDev()) console.error(`[Whisperio] Deepgram API error body: ${responseBody}`)
           const err = new Error(`Deepgram API error ${response.statusCode}`)
-          handleTranscriptionError(err, 'deepgram')
+          recordTranscriptionError(err, 'deepgram')
           settle(reject)(err)
           return
         }
@@ -80,22 +80,22 @@ function deepgramRequest(url: string, apiKey: string, audioBuffer: Buffer): Prom
           settle(resolve)(data)
         } catch {
           const err = new Error(`Failed to parse Deepgram response (HTTP ${response.statusCode})`)
-          handleTranscriptionError(err, 'deepgram')
+          recordTranscriptionError(err, 'deepgram')
           settle(reject)(err)
         }
       })
       response.on('error', (err: Error) => {
-        handleTranscriptionError(err, 'deepgram')
+        recordTranscriptionError(err, 'deepgram')
         settle(reject)(err)
       })
     })
 
     guardRedirects(request, url, (err) => {
-      handleTranscriptionError(err, 'deepgram')
+      recordTranscriptionError(err, 'deepgram')
       settle(reject)(err)
     })
     request.on('error', (err: Error) => {
-      handleTranscriptionError(err, 'deepgram')
+      recordTranscriptionError(err, 'deepgram')
       settle(reject)(err)
     })
     request.write(audioBuffer)
@@ -118,7 +118,7 @@ export async function deepgramTranscribe(
   const text = data.results?.channels?.[0]?.alternatives?.[0]?.transcript
   if (typeof text !== 'string') {
     const err = new Error('Deepgram returned no transcript')
-    handleTranscriptionError(err, 'deepgram')
+    recordTranscriptionError(err, 'deepgram')
     throw err
   }
   return text

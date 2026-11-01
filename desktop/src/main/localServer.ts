@@ -1,11 +1,58 @@
 import { app, net } from 'electron'
 import { existsSync, mkdirSync, unlinkSync, createWriteStream } from 'fs'
-import { join } from 'path'
+import { join, resolve, sep, basename } from 'path'
 import { execFile, type ChildProcess } from 'child_process'
+import { createConnection } from 'net'
+import { newHasher, checkDigest, hashFile, getStoredHash, storeHash, forgetHash, IntegrityError } from './downloadIntegrity'
 
 const WHISPER_CPP_RELEASE = 'v1.8.4'
 const WHISPER_BIN_URL = `https://github.com/ggml-org/whisper.cpp/releases/download/${WHISPER_CPP_RELEASE}/whisper-bin-x64.zip`
 const SERVER_PORT = 8178
+
+// SHA-256 of whisper-bin-x64.zip for WHISPER_CPP_RELEASE. NOT pinned yet: the
+// hash is not known in-repo and may not be fetched from here.
+// TODO: pin from the v1.8.4 release (`sha256sum whisper-bin-x64.zip`) and fill this in.
+// While null we use TOFU: the zip hash and the hash of every extracted file are
+// persisted on first install; a later download must match, and every launch
+// re-hashes the installed binary against the record. HONEST LIMIT: the record is
+// in userData, so this only catches accidental/partial corruption and post-install
+// swaps by something that cannot also rewrite the record; defeating a real attacker
+// needs the pin above.
+const WHISPER_BIN_SHA256: string | null = null
+const ZIP_INTEGRITY_KEY = `whisper-bin-x64.zip@${WHISPER_CPP_RELEASE}`
+const INSTALLED_FILES = ['whisper-server.exe', 'whisper.dll', 'ggml.dll', 'ggml-base.dll', 'ggml-cpu.dll']
+const SERVER_HINT = 'Reinstall the local server from Settings.'
+
+/** Forget the server's TOFU records (zip + installed files); done on every (re)install. */
+export function resetServerIntegrity(): void {
+  forgetHash(ZIP_INTEGRITY_KEY)
+  for (const n of INSTALLED_FILES) forgetHash(installedKey(n))
+}
+const installedKey = (name: string): string => `whisper-server-installed:${WHISPER_CPP_RELEASE}:${name}`
+
+/**
+ * Refuse to execute a whisper-server whose files no longer match the hashes
+ * recorded at install. A legacy install with no record is recorded now (TOFU).
+ */
+export function verifyInstalledServer(): void {
+  const dir = getServerDir()
+  for (const name of INSTALLED_FILES) {
+    const p = join(dir, name)
+    if (!existsSync(p)) continue
+    const actual = hashFile(p)
+    const recorded = getStoredHash(installedKey(name))
+    if (!recorded) {
+      console.warn(`[integrity] No recorded SHA-256 for installed ${name}; recording now (TOFU): ${actual}`)
+      storeHash(installedKey(name), actual)
+    } else if (recorded !== actual) {
+      throw new IntegrityError(
+        `whisper-server integrity check failed: ${name} was modified after install ` +
+          `(recorded ${recorded}, found ${actual}). Refusing to start. ` +
+          `${SERVER_HINT} (Or delete the whisper-server folder in the app data directory.)`
+      )
+    }
+  }
+}
 
 // Idle reclaim: the whisper-server holds its loaded model resident in RAM/VRAM
 // for the whole app lifetime. Without an idle sweep a user who transcribes once
@@ -150,7 +197,14 @@ export async function downloadServerBinary(): Promise<string> {
   const zipPath = join(serverDir, 'whisper-bin-x64.zip')
 
   // Download zip
-  await downloadFile(WHISPER_BIN_URL, zipPath)
+  const zipDigest = await downloadFile(WHISPER_BIN_URL, zipPath)
+  let commitZip: () => void
+  try {
+    commitZip = checkDigest(ZIP_INTEGRITY_KEY, `whisper-bin-x64.zip ${WHISPER_CPP_RELEASE}`, zipDigest, WHISPER_BIN_SHA256, SERVER_HINT).commit
+  } catch (err) {
+    try { unlinkSync(zipPath) } catch { /* ignore */ }
+    throw err
+  }
 
   // Extract all files from Release/ folder (server + required DLLs)
   const exePath = getServerExePath()
@@ -191,7 +245,39 @@ export async function downloadServerBinary(): Promise<string> {
     )
   }
 
+  commitZip()
+  for (const name of INSTALLED_FILES) {
+    const p = join(serverDir, name)
+    if (existsSync(p)) storeHash(installedKey(name), hashFile(p))
+  }
+
   return exePath
+}
+
+/**
+ * Resolve a model filename to a path confined to the models dir. Rejects
+ * anything that is not a bare `*.bin` filename (path separators, `..`,
+ * absolute paths, drive prefixes) so a compromised renderer cannot make the
+ * server load an arbitrary file.
+ */
+export function resolveModelPath(modelFilename: unknown): string {
+  if (
+    typeof modelFilename !== 'string' ||
+    !modelFilename.toLowerCase().endsWith('.bin') ||
+    modelFilename.includes(String.fromCharCode(0)) ||
+    basename(modelFilename) !== modelFilename ||
+    modelFilename.includes('/') ||
+    modelFilename.includes(String.fromCharCode(92)) ||
+    modelFilename.includes('..')
+  ) {
+    throw new Error('Invalid model filename.')
+  }
+  const modelsDir = resolve(getModelsDir())
+  const full = resolve(modelsDir, modelFilename)
+  if (!full.startsWith(modelsDir + sep)) {
+    throw new Error('Invalid model filename.')
+  }
+  return full
 }
 
 export async function startServer(modelFilename: string): Promise<void> {
@@ -211,10 +297,12 @@ export async function startServer(modelFilename: string): Promise<void> {
     if (!existsSync(exePath)) {
       serverStatus = 'starting'
       emitStatus()
+      resetServerIntegrity()
       await downloadServerBinary()
     }
+    verifyInstalledServer()
 
-    const modelPath = join(getModelsDir(), modelFilename)
+    const modelPath = resolveModelPath(modelFilename)
     if (!existsSync(modelPath)) {
       throw new Error(`Model not found: ${modelFilename}`)
     }
@@ -315,6 +403,95 @@ export async function startServer(modelFilename: string): Promise<void> {
   }
 }
 
+// Must stay well below the hotkeyManager 60 s safety timer.
+export const ENSURE_TIMEOUT_MS = 20_000
+let ensurePromise: Promise<void> | null = null
+
+function isManagedUrl(baseUrl: string): boolean {
+  try {
+    const u = new URL(baseUrl)
+    return (
+      (u.hostname === '127.0.0.1' || u.hostname === 'localhost') &&
+      u.port === String(SERVER_PORT)
+    )
+  } catch {
+    return false
+  }
+}
+
+function withTimeout<T>(p: Promise<T>, ms: number, msg: string): Promise<T> {
+  return new Promise<T>((res, rej) => {
+    const t = setTimeout(() => rej(new Error(msg)), ms)
+    p.then(
+      (v) => { clearTimeout(t); res(v) },
+      (e) => { clearTimeout(t); rej(e) }
+    )
+  })
+}
+
+/** True when something already accepts TCP connections on the server port. */
+function portAnswers(): Promise<boolean> {
+  return new Promise((res) => {
+    const sock = createConnection({ host: '127.0.0.1', port: SERVER_PORT })
+    const done = (v: boolean): void => { sock.destroy(); res(v) }
+    sock.setTimeout(500, () => done(false))
+    sock.once('connect', () => done(true))
+    sock.once('error', () => done(false))
+  })
+}
+
+async function waitUntilRunning(): Promise<void> {
+  while (serverStatus === 'starting') {
+    await new Promise((r) => setTimeout(r, 100))
+  }
+  if (serverStatus !== 'running') throw new Error('Local whisper server failed to start.')
+}
+
+/**
+ * Make sure the managed local whisper-server is up, (re)starting it on demand
+ * (e.g. after the idle sweep stopped it). Concurrent callers share one start.
+ * Resolves once the server is ready; rejects on failure or after a bounded
+ * timeout. Stamps the idle clock.
+ */
+export function ensureLocalServer(modelFilename: string): Promise<void> {
+  if (serverStatus === 'running') {
+    markServerUsed()
+    return Promise.resolve()
+  }
+  if (ensurePromise) return ensurePromise
+  const run = (async (): Promise<void> => {
+    if (serverStatus === 'starting') await waitUntilRunning()
+    else if (await portAnswers()) {
+      // Someone else (e.g. the user's own whisper-server) already serves the
+      // port: use it, don't spawn a second one that cannot bind.
+      return
+    } else await startServer(modelFilename)
+    markServerUsed()
+  })()
+  const guarded = withTimeout(run, ENSURE_TIMEOUT_MS, 'Timed out starting the local whisper server.')
+  ensurePromise = guarded
+  const clear = (): void => { if (ensurePromise === guarded) ensurePromise = null }
+  guarded.then(clear, clear)
+  return guarded
+}
+
+/**
+ * Called right before a selfhosted transcription. If the configured base URL
+ * points at the managed server (127.0.0.1:8178), the platform/binary/model are
+ * available, make sure it is running. No-op otherwise (manual servers).
+ */
+export async function ensureManagedServerForUrl(baseUrl: string, whisperModel: string): Promise<void> {
+  if (!isManagedUrl(baseUrl)) return
+  if (!isServerBinaryAvailable()) return
+  const name = (whisperModel || '').trim()
+  if (!name) return
+  const filename = name.toLowerCase().endsWith('.bin') ? name : `${name}.bin`
+  let modelPath: string
+  try { modelPath = resolveModelPath(filename) } catch { return }
+  if (serverStatus !== 'running' && !existsSync(modelPath)) return
+  await ensureLocalServer(filename)
+}
+
 export function stopServer(): void {
   clearIdleSweep()
   if (serverProcess && !serverProcess.killed) {
@@ -326,8 +503,9 @@ export function stopServer(): void {
   emitStatus()
 }
 
-function downloadFile(url: string, destPath: string): Promise<void> {
+function downloadFile(url: string, destPath: string): Promise<string> {
   return new Promise((resolve, reject) => {
+    const hasher = newHasher()
     // redirect: 'follow' — the GitHub release URL always redirects to a CDN
     // host, and Electron's net stack chases those internally. The 'response'
     // event therefore only ever fires for the final hop, so a 3xx here is a
@@ -358,6 +536,7 @@ function downloadFile(url: string, destPath: string): Promise<void> {
       writeStream.on('error', fail)
       response.on('data', (chunk: Buffer) => {
         if (failed) return
+        hasher.update(chunk)
         if (!writeStream.write(chunk)) {
           readable.pause()
           writeStream.once('drain', () => { if (!failed) readable.resume() })
@@ -367,7 +546,7 @@ function downloadFile(url: string, destPath: string): Promise<void> {
       // isn't reported as a successful download.
       response.on('end', () => {
         if (failed) return
-        writeStream.end(() => { if (!failed) resolve() })
+        writeStream.end(() => { if (!failed) resolve(hasher.digest('hex')) })
       })
       response.on('error', fail)
     })

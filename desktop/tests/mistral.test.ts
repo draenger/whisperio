@@ -74,6 +74,18 @@ describe('mistralTranscribe', () => {
     })
   })
 
+  it('sends a WAV buffer as audio/wav', async () => {
+    const WAV = Buffer.concat([Buffer.from('RIFF'), Buffer.from([0, 0, 0, 0]), Buffer.from('WAVEfmt ')])
+    const mockReq = createMockNetRequest(200, JSON.stringify({ text: 'hello' }))
+    mockNetRequest.mockReturnValue(mockReq)
+
+    await mistralTranscribe('mk-test', WAV, 'recording.wav', '', 'voxtral-mini-latest', 'en')
+
+    const bodyStr = (mockReq.write.mock.calls[0][0] as Buffer).toString('latin1')
+    expect(bodyStr).toContain('Content-Type: audio/wav')
+    expect(bodyStr).not.toContain('Content-Type: audio/webm')
+  })
+
   it('builds multipart body with file, model, prompt, and language', async () => {
     const mockReq = createMockNetRequest(200, JSON.stringify({ text: 'hello' }))
     mockNetRequest.mockReturnValue(mockReq)

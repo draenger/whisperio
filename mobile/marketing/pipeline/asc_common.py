@@ -36,8 +36,36 @@ def token():
     return (signing + b"." + b64(r.to_bytes(32, "big") + s.to_bytes(32, "big"))).decode()
 
 
+# STANDING RULE (Daniel, 2026-11-01): only Daniel sends an app to App Review.
+# Tooling may build/upload and edit metadata, but must NEVER create or change a
+# review submission. Any write to these resources is refused before a token is
+# minted or a request is made.
+FORBIDDEN_WRITE_RESOURCES = (
+    "reviewSubmissions",
+    "reviewSubmissionItems",
+    "appStoreVersionSubmissions",
+    "betaAppReviewSubmissions",
+)
+
+
+class ReviewSubmissionForbidden(RuntimeError):
+    pass
+
+
+def assert_not_review_submission(method, url):
+    """Raise if (method, url) would create/modify/cancel an App Review submission."""
+    if method.upper() == "GET":
+        return
+    path = url.split("?", 1)[0].lower()
+    for res in FORBIDDEN_WRITE_RESOURCES:
+        if f"/{res.lower()}" in path:
+            raise ReviewSubmissionForbidden(
+                f"refused {method} {res}: sending to App Review is Daniel's manual step (never automated)")
+
+
 def call(method, url, body=None, raw_headers=None, data=None):
     """JSON request against ASC (or a raw upload when raw_headers/data are given)."""
+    assert_not_review_submission(method, url)
     global _TOKEN
     if _TOKEN is None:
         _TOKEN = token()

@@ -84,6 +84,9 @@ beforeEach(() => {
   runtimeInstalled = true
 })
 
+// Parakeet is WAV-only (providerNeedsWav): fixtures need a real RIFF/WAVE header.
+const WAV = Buffer.concat([Buffer.from('RIFF'), Buffer.alloc(4), Buffer.from('WAVE')])
+
 describe('parakeet provider (experimental)', () => {
   it('flag off: a stale parakeet-only chain is ignored and never runs', async () => {
     mockLoadSettings.mockReturnValue({ ...base, experimentalParakeet: false })
@@ -119,14 +122,14 @@ describe('parakeet provider (experimental)', () => {
   it('flag on + model ready: transcribes and meters as local', async () => {
     mockLoadSettings.mockReturnValue({ ...base, experimentalParakeet: true })
     mockParakeet.mockResolvedValue('witaj swiecie')
-    await expect(transcribeAudio(Buffer.from('a'), 'a.wav')).resolves.toBe('witaj swiecie')
+    await expect(transcribeAudio(WAV, 'a.wav')).resolves.toBe('witaj swiecie')
     expect(mockRecordSTT).toHaveBeenCalledWith(expect.objectContaining({ provider: 'parakeet', isLocal: true }))
   })
 
   it('flag on + runtime missing: clear error when it is the only provider', async () => {
     mockLoadSettings.mockReturnValue({ ...base, experimentalParakeet: true })
     mockParakeet.mockRejectedValue(new Error('Experimental Parakeet runtime is not installed'))
-    await expect(transcribeAudio(Buffer.from('a'), 'a.wav')).rejects.toThrow(/runtime is not installed/)
+    await expect(transcribeAudio(WAV, 'a.wav')).rejects.toThrow(/runtime is not installed/)
     expect(mockRecordSTT).not.toHaveBeenCalled()
   })
 

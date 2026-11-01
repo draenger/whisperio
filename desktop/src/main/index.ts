@@ -1,7 +1,11 @@
-import { app, BrowserWindow, desktopCapturer, ipcMain, session, shell } from 'electron'
-import { initDictation, cleanupDictation, reRegisterHotkeys, pauseHotkeys, resumeHotkeys } from './dictation'
+import { app, BrowserWindow, desktopCapturer, dialog, ipcMain, powerMonitor, session, shell, type IpcMainInvokeEvent, type IpcMainEvent } from 'electron'
+import path from 'path'
+import { assertTrustedSender, isTrustedAppUrl, sanitizeRecordingUpdate } from './ipcValidation'
+import { initDictation, cleanupDictation, reRegisterHotkeys, pauseHotkeys, resumeHotkeys, cliToggle, cliSend, cliStart, cliStop, cliCancel } from './dictation'
+import { parseControlArgv, hasUrlArg, createOpenUrlHandler, createUrlDispatcher, dispatchCliCommand, shouldRegisterProtocol } from './cliControl'
 import { createTray, destroyTray } from './tray'
 import { loadSettings, saveSettings } from './settingsManager'
+import { applyLaunchAtStartup, handleStartupFailure } from './startupSettings'
 import {
   getEffectiveSettings,
   saveSettingsWithKeys,
@@ -16,12 +20,12 @@ import {
   handleRecordingsCleanup,
   type OnDemandCleanupRequest
 } from './transcribe'
+import { coerceWavArg } from './audioFormat'
 import { transcriptText } from './dictation/conversation'
 import { openSettingsWindow } from './settingsWindow'
-import { getRecentErrors } from './errorHandler'
+import { getRecentErrors, notifyError } from './errorHandler'
 import { openRecordingsWindow } from './recordingsWindow'
 import {
-  type RecordingEntry,
   getRecordings,
   getRecording,
   saveRecording,
@@ -99,13 +103,73 @@ if (process.platform === 'linux') {
   app.commandLine.appendSwitch('ozone-platform', 'x11')
 }
 
+// whisperio:// URL control state. Default OFF (fail closed): only `=== true` enables.
+let urlSettings = { allow: false, start: false }
+let screenLocked = false
+function refreshUrlSettings(): void {
+  const st = loadSettings()
+  urlSettings = { allow: st.allowUrlControl === true, start: st.allowUrlStart === true }
+}
+// Registered only when URL control is on and (packaged or WHISPERIO_DEV_PROTOCOL=1), so a dev
+// run never takes over HKCU\Software\Classes\whisperio; removed again when turned off.
+function syncProtocolRegistration(): void {
+  try {
+    if (shouldRegisterProtocol({ isPackaged: app.isPackaged, devEnv: process.env.WHISPERIO_DEV_PROTOCOL, allowUrlControl: urlSettings.allow })) {
+      if (process.defaultApp && process.argv[1]) {
+        app.setAsDefaultProtocolClient('whisperio', process.execPath, [path.resolve(process.argv[1])])
+      } else {
+        app.setAsDefaultProtocolClient('whisperio')
+      }
+    } else if (app.isPackaged || process.env.WHISPERIO_DEV_PROTOCOL === '1') {
+      app.removeAsDefaultProtocolClient('whisperio')
+    }
+  } catch (err) {
+    console.warn('[Whisperio] could not sync whisperio:// protocol:', err instanceof Error ? err.message : err)
+  }
+}
+
 // Prevent multiple instances — if another instance is already running, focus it
 const gotSingleInstanceLock = app.requestSingleInstanceLock()
 if (!gotSingleInstanceLock) {
   app.quit()
 } else {
-  app.on('second-instance', () => {
-    // User tried to launch a second instance — show settings window
+  // Cold start with a control flag: the app starts normally and the command is
+  // deliberately ignored (never auto-record on launch).
+  const cliApi = { toggle: cliToggle, start: cliStart, stop: cliStop, cancel: cliCancel, send: cliSend }
+  // Cached URL-control settings (fail closed); refreshed on settings save.
+  refreshUrlSettings()
+  const dispatchUrl = createUrlDispatcher({
+    isAllowed: () => urlSettings.allow === true,
+    isStartAllowed: () => urlSettings.start === true,
+    isLocked: () => screenLocked,
+    api: cliApi,
+    log: (m) => console.log(`[Whisperio] ${m}`)
+  })
+  const coldStart = parseControlArgv(process.argv)
+  if (coldStart) {
+    console.log(`[Whisperio] control command "${coldStart.cmd}" ignored on cold start (app was not running)`)
+  }
+  // whisperio:// links (registered only when allowed and packaged, see syncProtocolRegistration).
+  // Windows/Linux deliver them in argv (above / second-instance);
+  // macOS fires open-url, which must be registered before 'ready'. An open-url
+  // before ready is a cold start and is ignored, same rule as the CLI flags.
+  syncProtocolRegistration()
+  app.on('open-url', createOpenUrlHandler({
+    isReady: () => app.isReady(),
+    dispatch: dispatchUrl,
+    log: (m) => console.log(`[Whisperio] ${m}`)
+  }))
+  app.on('second-instance', (_event, argv) => {
+    const ctl = parseControlArgv(argv)
+    if (ctl) {
+      // CLI/URL control (Stream Deck / scripts): act, do not steal focus.
+      if (ctl.viaUrl) dispatchUrl(ctl.cmd)
+      else dispatchCliCommand(ctl.cmd, cliApi)
+      return
+    }
+    // A rejected/malformed whisperio: link must not pop the settings window either.
+    if (hasUrlArg(argv)) return
+    // User tried to launch a second instance - show settings window
     openSettingsWindow()
   })
 }
@@ -125,6 +189,8 @@ async function reprocessRecording(id: string) {
     const context: DictationContext | null = entry.recordedProcessName
       ? { processName: entry.recordedProcessName, windowTitle: entry.recordedWindowTitle ?? '' }
       : null
+    // Only the stored WebM is available here: selfhosted (whisper.cpp) is
+    // skipped with a clear error, cloud providers proceed (audioFormat.ts).
     const text = await transcribeAudio(audioBuffer, entry.filename, context)
     return updateRecording(id, { status: 'completed', transcription: text, error: undefined })
   } catch (err) {
@@ -167,14 +233,40 @@ async function saveConversationRecording(audioBuffer: Buffer, filename: string, 
 // Anything else (remote http(s), an injected iframe, an OAuth redirect) is
 // untrusted and must NOT silently receive microphone/device permissions.
 function isInternalUrl(url: string | undefined | null): boolean {
-  if (!url) return false
-  if (url.startsWith('file://')) return true
-  const devUrl = process.env['ELECTRON_RENDERER_URL']
-  if (devUrl && url.startsWith(devUrl)) return true
-  return false
+  return isTrustedAppUrl(url, process.env['ELECTRON_RENDERER_URL'])
+}
+
+// Wrap an ipcMain.handle callback so it only runs for calls from our own frames
+// (rejects with 'untrusted sender' otherwise). Generic in the argument tuple so
+// handler parameter types are preserved.
+function guard<A extends unknown[], R>(
+  fn: (event: IpcMainInvokeEvent, ...args: A) => R
+): (event: IpcMainInvokeEvent, ...args: A) => R {
+  return (event, ...args) => {
+    assertTrustedSender(event)
+    return fn(event, ...args)
+  }
+}
+
+// Same for fire-and-forget ipcMain.on listeners: untrusted senders are dropped.
+function guardOn<A extends unknown[]>(
+  fn: (event: IpcMainEvent, ...args: A) => void
+): (event: IpcMainEvent, ...args: A) => void {
+  return (event, ...args) => {
+    try {
+      assertTrustedSender(event)
+    } catch (err) {
+      console.warn(`[Whisperio] ${(err as Error).message}`)
+      return
+    }
+    fn(event, ...args)
+  }
 }
 
 app.whenReady().then(() => {
+  // Screen-lock state for URL gating (start-class URL commands are ignored while locked).
+  powerMonitor.on('lock-screen', () => { screenLocked = true })
+  powerMonitor.on('unlock-screen', () => { screenLocked = false })
   // Grant media (microphone) permission ONLY to our own renderer windows.
   // Fail closed for any other origin so a future remote/iframe navigation can't
   // silently obtain mic access.
@@ -241,19 +333,18 @@ app.whenReady().then(() => {
   // (see secure/keyAccessor.ts). Must run before anything below reads
   // settings, and before the settings:load/settings:save IPC handlers are
   // registered, so the renderer never observes the pre-migration state.
-  migrateProviderKeysToKeyStore()
+  try {
+    migrateProviderKeysToKeyStore()
+  } catch (err) {
+    console.error('[Whisperio] provider-key migration failed (' + ((err as NodeJS.ErrnoException | null)?.code ?? 'unknown') + '); continuing startup.')
+  }
 
   // Apply auto-launch setting (uses Windows Registry HKCU\...\Run)
   // Skip in dev mode — process.execPath points to bare electron.exe which
   // creates a bogus "Electron" autostart entry instead of "Whisperio".
-  const settings = loadSettings()
+  // Skipped while settings.json is locked/unreadable (defaults must not re-enable autostart).
   const isPackaged = app.isPackaged
-  if (isPackaged) {
-    app.setLoginItemSettings({
-      openAtLogin: settings.launchAtStartup,
-      path: process.execPath,
-    })
-  }
+  applyLaunchAtStartup(app, isPackaged, process.execPath)
 
   // Register settings IPC handlers. load/save go through the key-accessor
   // (secure/keyAccessor.ts) rather than settingsManager directly, so
@@ -266,10 +357,14 @@ app.whenReady().then(() => {
       if (!w.isDestroyed()) w.webContents.send('settings:secure-storage-warning', message)
     }
   })
-  ipcMain.handle('settings:load', () => getEffectiveSettings())
-  ipcMain.handle('settings:save', (_event, newSettings) => {
+  ipcMain.handle('settings:load', guard(() => getEffectiveSettings()))
+  ipcMain.handle('settings:save', guard((_event, newSettings: Parameters<typeof saveSettingsWithKeys>[0]) => {
     const prevChecks = loadSettings().checkForUpdates !== false
     const saved = saveSettingsWithKeys(newSettings)
+    if ('allowUrlControl' in newSettings || 'allowUrlStart' in newSettings) {
+      refreshUrlSettings()
+      syncProtocolRegistration()
+    }
     // Only touch the update schedule when the flag actually changed (a settings save for any
     // other reason that merely carries the field must not restart the timers).
     if ('checkForUpdates' in newSettings && (saved.checkForUpdates !== false) !== prevChecks) {
@@ -290,17 +385,17 @@ app.whenReady().then(() => {
       reRegisterHotkeys()
     }
     return saved
-  })
+  }))
   // Tells the renderer whether OS secure storage is usable, so it can show
   // an honest hint next to API key fields ("keys are encrypted..." vs.
   // "...unavailable, new keys are kept for this session only"). Never gates
   // any functionality — keys entered while storage is unavailable still work
   // for the session, they are just not persisted (fail closed).
-  ipcMain.handle('settings:keyStorageAvailable', () => isKeyStoreAvailable())
+  ipcMain.handle('settings:keyStorageAvailable', guard(() => isKeyStoreAvailable()))
 
   // Pause/resume hotkeys during shortcut recording in settings
-  ipcMain.on('hotkeys:pause', () => pauseHotkeys())
-  ipcMain.on('hotkeys:resume', () => resumeHotkeys())
+  ipcMain.on('hotkeys:pause', guardOn(() => pauseHotkeys()))
+  ipcMain.on('hotkeys:resume', guardOn(() => resumeHotkeys()))
 
   // Context-aware tone (v1.5 Work Item B): explicit opt-in for window-title
   // matching. Only ever invoked by the "Enable window-title matching" button
@@ -310,32 +405,32 @@ app.whenReady().then(() => {
   // Fail-soft: even if the OS denies/can't show the prompt, the setting still
   // flips on — future getActiveContext() calls just keep getting title: ''
   // (see context.ts), never worse than the processName-only default.
-  ipcMain.handle('context:enableWindowTitleMatching', async () => {
+  ipcMain.handle('context:enableWindowTitleMatching', guard(async () => {
     await getActiveContext({ includeWindowTitle: true }).catch(() => null)
     return saveSettings({ windowTitlePermissionEnabled: true })
-  })
+  }))
 
   // GitHub secret-store IPC handlers. All GitHub network I/O + the token + the
   // encryption key stay in the main process; the renderer only ever sees status,
   // the device user-code, repo names, and success/failure — never the token or
   // any plaintext secret in transit to the repo.
-  ipcMain.handle('github:status', () => githubGetStatus())
-  ipcMain.handle('github:connect', () => githubBeginConnect())
-  ipcMain.handle('github:poll', () => githubPollConnect())
-  ipcMain.handle('github:listRepos', () => githubListRepositories())
-  ipcMain.handle('github:selectRepo', (_e, fullName: string, branch: string) =>
+  ipcMain.handle('github:status', guard(() => githubGetStatus()))
+  ipcMain.handle('github:connect', guard(() => githubBeginConnect()))
+  ipcMain.handle('github:poll', guard(() => githubPollConnect()))
+  ipcMain.handle('github:listRepos', guard(() => githubListRepositories()))
+  ipcMain.handle('github:selectRepo', guard((_e, fullName: string, branch: string) =>
     githubSelectRepo(fullName, branch)
-  )
-  ipcMain.handle('github:disconnect', () => githubDisconnect())
-  ipcMain.handle('github:push', () => githubPushSecrets())
-  ipcMain.handle('github:pull', () => githubPullSecrets())
+  ))
+  ipcMain.handle('github:disconnect', guard(() => githubDisconnect()))
+  ipcMain.handle('github:push', guard(() => githubPushSecrets()))
+  ipcMain.handle('github:pull', guard(() => githubPullSecrets()))
 
   // Usage/cost metering IPC handlers (PACZKA METERING v1.6)
-  ipcMain.handle('usage:get', () => getUsage())
-  ipcMain.handle('usage:reset', () => resetUsage())
+  ipcMain.handle('usage:get', guard(() => getUsage()))
+  ipcMain.handle('usage:reset', guard(() => resetUsage()))
 
   // Register transcription IPC handler
-  ipcMain.handle('dictation:transcribe', async (_event, audioBuffer: Buffer, filename: string) => {
+  ipcMain.handle('dictation:transcribe', guard(async (_event, audioBuffer: Buffer, filename: string, wavArg?: unknown) => {
     // Reset the local whisper-server idle clock so an actively-used server is
     // not reclaimed by the idle sweep mid-session (no-op when it's not running).
     markServerUsed()
@@ -348,17 +443,25 @@ app.whenReady().then(() => {
     const context = settings.contextAwareTone
       ? await getActiveContext({ includeWindowTitle: settings.windowTitlePermissionEnabled })
       : null
-    return transcribeAudio(audioBuffer, filename, context)
-  })
+    // Additive: optional WAV rendition for whisper.cpp only (see audioFormat.ts).
+    const wavBuffer = coerceWavArg(wavArg)
+    const wav = wavBuffer ? { buffer: wavBuffer, filename: 'audio.wav' } : null
+    return transcribeAudio(audioBuffer, filename, context, wav, { fromDictation: true })
+  }))
+
+  // Renderer-reported capture failures (e.g. no usable microphone) -> toast
+  ipcMain.handle('dictation:error', guard((_event, title: string, body: string) => {
+    notifyError(String(title).slice(0, 100), String(body).slice(0, 300))
+  }))
 
   // Register error IPC handler
-  ipcMain.handle('errors:getRecent', () => getRecentErrors())
+  ipcMain.handle('errors:getRecent', guard(() => getRecentErrors()))
 
   // Recording store IPC handlers
-  ipcMain.on('recordings:openWindow', () => openRecordingsWindow())
-  ipcMain.handle('recordings:list', () => getRecordings())
-  ipcMain.handle('recordings:get', (_e, id: string) => getRecording(id))
-  ipcMain.handle('recordings:save', async (_e, audioBuffer: Buffer, metadata: { duration: number; provider: string }) => {
+  ipcMain.on('recordings:openWindow', guardOn(() => openRecordingsWindow()))
+  ipcMain.handle('recordings:list', guard(() => getRecordings()))
+  ipcMain.handle('recordings:get', guard((_e, id: string) => getRecording(id)))
+  ipcMain.handle('recordings:save', guard(async (_e, audioBuffer: Buffer, metadata: { duration: number; provider: string }) => {
     // Context-aware tone (v1.5 Work Item B): captured HERE, at recording
     // time, and persisted onto the entry (recordingStore.ts's
     // RecordingEntry.recordedProcessName/recordedWindowTitle) — so a later
@@ -375,18 +478,20 @@ app.whenReady().then(() => {
       recordedProcessName: context?.processName,
       recordedWindowTitle: context?.windowTitle
     })
-  })
-  ipcMain.handle('recordings:update', (_e, id: string, updates: Partial<RecordingEntry>) =>
-    updateRecording(id, updates)
-  )
-  ipcMain.handle('recordings:delete', (_e, id: string) => deleteRecording(id))
-  ipcMain.handle('recordings:deleteAll', () => deleteAllRecordings())
-  ipcMain.handle('recordings:deleteByDate', (_e, date: string) => deleteRecordingsByDate(date))
-  ipcMain.handle('recordings:getAudio', (_e, id: string) => getRecordingAudio(id))
-  ipcMain.handle('recordings:reprocess', (_e, id: string) => reprocessRecording(id))
-  ipcMain.handle('recordings:cleanup', (_e, id: string, options: OnDemandCleanupRequest) =>
+  }))
+  ipcMain.handle('recordings:update', guard((_e, id: string, updates: unknown) =>
+    // Allowlist: only status/transcription/error are renderer-editable. filepath,
+    // filename, id, size, timestamps, segments etc. are dropped (finding #10).
+    updateRecording(String(id), sanitizeRecordingUpdate(updates))
+  ))
+  ipcMain.handle('recordings:delete', guard((_e, id: string) => deleteRecording(id)))
+  ipcMain.handle('recordings:deleteAll', guard(() => deleteAllRecordings()))
+  ipcMain.handle('recordings:deleteByDate', guard((_e, date: string) => deleteRecordingsByDate(date)))
+  ipcMain.handle('recordings:getAudio', guard((_e, id: string) => getRecordingAudio(id)))
+  ipcMain.handle('recordings:reprocess', guard((_e, id: string) => reprocessRecording(id)))
+  ipcMain.handle('recordings:cleanup', guard((_e, id: string, options: OnDemandCleanupRequest) =>
     handleRecordingsCleanup(id, options)
-  )
+  ))
 
   // Full-text search across every saved transcript (searchService.ts). The
   // payload is a QUERY STRING and nothing else — no path, no id, no record
@@ -394,22 +499,22 @@ app.whenReady().then(() => {
   // resolves to [] rather than throwing: this channel is invoked from a
   // debounced input, so a transport-level rejection mid-typing would surface
   // as a spurious error state, and "no query" genuinely means "no results".
-  ipcMain.handle('recordings:search', (_e, query: unknown) =>
+  ipcMain.handle('recordings:search', guard((_e, query: unknown) =>
     typeof query === 'string' ? searchTranscripts(query) : []
-  )
+  ))
 
   // Group-conversation mode (multi-speaker recording) IPC. `available`
   // mirrors the mobile app's Conversation record button guard — the button
   // is disabled with a hint when no diarizing provider (ElevenLabs/
   // Deepgram/AssemblyAI) is configured, checked BEFORE the renderer even
   // starts capturing audio.
-  ipcMain.handle('conversation:available', () => getConfiguredDiarizingProvider(getEffectiveSettings()) !== null)
+  ipcMain.handle('conversation:available', guard(() => getConfiguredDiarizingProvider(getEffectiveSettings()) !== null))
   ipcMain.handle(
     'conversation:save',
-    async (_e, audioBuffer: Buffer, metadata: { duration: number; filename?: string }) =>
+    guard(async (_e, audioBuffer: Buffer, metadata: { duration: number; filename?: string }) =>
       saveConversationRecording(audioBuffer, metadata.filename || 'conversation.webm', metadata.duration)
-  )
-  ipcMain.handle('recordings:renameSpeaker', async (_e, id: string, speakerId: string, name: string) => {
+  ))
+  ipcMain.handle('recordings:renameSpeaker', guard(async (_e, id: string, speakerId: string, name: string) => {
     const entry = getRecording(id)
     if (!entry) return null
     const speakerNames = { ...(entry.speakerNames || {}), [speakerId]: name }
@@ -421,12 +526,12 @@ app.whenReady().then(() => {
       await updateRecording(id, { transcription: transcriptText(updated.segments, speakerNames) })
     }
     return getRecording(id)
-  })
+  }))
 
   // Model manager IPC handlers
-  ipcMain.handle('models:available', () => getAvailableModels())
-  ipcMain.handle('models:local', () => [...getLocalModels(), ...getCustomModels()])
-  ipcMain.handle('models:download', async (_e, modelId: string) => {
+  ipcMain.handle('models:available', guard(() => getAvailableModels()))
+  ipcMain.handle('models:local', guard(() => [...getLocalModels(), ...getCustomModels()]))
+  ipcMain.handle('models:download', guard(async (_e, modelId: string) => {
     setDownloadProgressCallback((progress) => {
       BrowserWindow.getAllWindows().forEach((win) => {
         if (!win.isDestroyed()) {
@@ -435,8 +540,8 @@ app.whenReady().then(() => {
       })
     })
     return downloadModel(modelId)
-  })
-  ipcMain.handle('models:downloadCustom', async (_e, url: string, filename: string) => {
+  }))
+  ipcMain.handle('models:downloadCustom', guard(async (_e, url: string, filename: string) => {
     setDownloadProgressCallback((progress) => {
       BrowserWindow.getAllWindows().forEach((win) => {
         if (!win.isDestroyed()) {
@@ -445,18 +550,18 @@ app.whenReady().then(() => {
       })
     })
     return downloadCustomModel(url, filename)
-  })
-  ipcMain.handle('models:cancelDownload', (_e, modelId: string) => cancelDownload(modelId))
-  ipcMain.handle('models:delete', (_e, modelId: string) => deleteModel(modelId))
+  }))
+  ipcMain.handle('models:cancelDownload', guard((_e, modelId: string) => cancelDownload(modelId)))
+  ipcMain.handle('models:delete', guard((_e, modelId: string) => deleteModel(modelId)))
 
   // Local server IPC handlers
   // EXPERIMENTAL Parakeet (flag: experimentalParakeet)
   const parakeetEnabled = (): boolean => loadSettings().experimentalParakeet === true
-  ipcMain.handle('parakeet:status', () => ({
+  ipcMain.handle('parakeet:status', guard(() => ({
     ...getParakeetModelStatus(),
     runtimeInstalled: isParakeetRuntimeInstalled()
-  }))
-  ipcMain.handle('parakeet:download', async () => {
+  })))
+  ipcMain.handle('parakeet:download', guard(async () => {
     if (!parakeetEnabled()) throw new Error('Parakeet is experimental and disabled.')
     setDownloadProgressCallback((progress) => {
       BrowserWindow.getAllWindows().forEach((win) => {
@@ -465,19 +570,19 @@ app.whenReady().then(() => {
     })
     await downloadParakeetModel()
     return { ...getParakeetModelStatus(), runtimeInstalled: isParakeetRuntimeInstalled() }
-  })
-  ipcMain.handle('parakeet:cancel', () => {
+  }))
+  ipcMain.handle('parakeet:cancel', guard(() => {
     cancelParakeetDownload(cancelDownload)
     return true
-  })
-  ipcMain.handle('parakeet:delete', async () => {
+  }))
+  ipcMain.handle('parakeet:delete', guard(async () => {
     await shutdownParakeet()
     deleteParakeetModel()
     return { ...getParakeetModelStatus(), runtimeInstalled: isParakeetRuntimeInstalled() }
-  })
+  }))
 
-  ipcMain.handle('server:status', () => getServerStatus())
-  ipcMain.handle('server:start', async (_e, modelFilename: string) => {
+  ipcMain.handle('server:status', guard(() => getServerStatus()))
+  ipcMain.handle('server:start', guard(async (_e, modelFilename: string) => {
     setServerStatusCallback((status) => {
       BrowserWindow.getAllWindows().forEach((win) => {
         if (!win.isDestroyed()) {
@@ -487,37 +592,37 @@ app.whenReady().then(() => {
     })
     await startServer(modelFilename)
     return getServerStatus()
-  })
-  ipcMain.handle('server:stop', () => {
+  }))
+  ipcMain.handle('server:stop', guard(() => {
     stopServer()
     return getServerStatus()
-  })
+  }))
 
   // Auto-update IPC handlers
-  ipcMain.handle('updater:getStatus', () => getUpdateState())
-  ipcMain.handle('updater:check', () => {
+  ipcMain.handle('updater:getStatus', guard(() => getUpdateState()))
+  ipcMain.handle('updater:check', guard(() => {
     checkForUpdatesManual()
     return getUpdateState()
-  })
-  ipcMain.handle('updater:install', () => installUpdate())
+  }))
+  ipcMain.handle('updater:install', guard(() => installUpdate()))
   // Fixed URL, never renderer-supplied: opens the GitHub Releases page in the default browser.
-  ipcMain.handle('updater:openReleases', () => shell.openExternal(RELEASES_URL))
+  ipcMain.handle('updater:openReleases', guard(() => shell.openExternal(RELEASES_URL)))
 
   // Window control IPC handlers (for custom title bar)
-  ipcMain.on('window:minimize', (event) => {
+  ipcMain.on('window:minimize', guardOn((event) => {
     BrowserWindow.fromWebContents(event.sender)?.minimize()
-  })
-  ipcMain.on('window:maximize', (event) => {
+  }))
+  ipcMain.on('window:maximize', guardOn((event) => {
     const win = BrowserWindow.fromWebContents(event.sender)
     if (win?.isMaximized()) win.unmaximize()
     else win?.maximize()
-  })
-  ipcMain.on('window:close', (event) => {
+  }))
+  ipcMain.on('window:close', guardOn((event) => {
     BrowserWindow.fromWebContents(event.sender)?.close()
-  })
+  }))
 
   // Expose the real app version to the renderer (settings badge)
-  ipcMain.handle('app:getVersion', () => app.getVersion())
+  ipcMain.handle('app:getVersion', guard(() => app.getVersion()))
 
   // Initialize Whisperio dictation (overlay + hotkey)
   initDictation()
@@ -529,6 +634,8 @@ app.whenReady().then(() => {
   initAutoUpdater(loadSettings().checkForUpdates !== false)
 
   console.log('[Whisperio] Ready — press hotkey to dictate')
+}).catch((err) => {
+  handleStartupFailure(err, dialog, app)
 })
 
 // macOS: the app runs as a menubar/tray app with no persistent main window.
@@ -545,6 +652,8 @@ app.on('window-all-closed', () => {
 
 app.on('before-quit', () => {
   void shutdownParakeet()
+  // Don't leave the managed whisper-server holding RAM and port 8178.
+  stopServer()
   cleanupDictation()
   destroyTray()
 })

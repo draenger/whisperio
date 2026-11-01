@@ -7,7 +7,7 @@
 // rationale as transcribe.ts's replicateTranscribe(). Mirrors
 // mobile/WhisperioApp/Sources/WhisperioApp/Engine/AssemblyAIProvider.swift.
 import { app } from 'electron'
-import { handleTranscriptionError } from '../errorHandler'
+import { recordTranscriptionError } from '../errorHandler'
 import { assemblyAISegments, type SpeakerSegment, type AssemblyAIUtterance } from '../dictation/conversation'
 
 export interface DiarizedResult {
@@ -53,7 +53,7 @@ async function assemblyRequest(url: string, init: RequestInit, step: string): Pr
     response = await fetch(url, { ...init, signal: controller.signal, redirect: 'error' })
   } catch (err) {
     const error = err instanceof Error ? err : new Error(String(err))
-    handleTranscriptionError(error, 'assemblyai')
+    recordTranscriptionError(error, 'assemblyai')
     throw error
   } finally {
     clearTimeout(timeout)
@@ -63,14 +63,14 @@ async function assemblyRequest(url: string, init: RequestInit, step: string): Pr
   if (!response.ok) {
     if (isDev()) console.error(`[Whisperio] AssemblyAI ${step} error body: ${rawText}`)
     const err = new Error(`AssemblyAI ${step} error ${response.status}`)
-    handleTranscriptionError(err, 'assemblyai')
+    recordTranscriptionError(err, 'assemblyai')
     throw err
   }
   try {
     return JSON.parse(rawText) as Record<string, unknown>
   } catch {
     const err = new Error(`Failed to parse AssemblyAI ${step} response (HTTP ${response.status})`)
-    handleTranscriptionError(err, 'assemblyai')
+    recordTranscriptionError(err, 'assemblyai')
     throw err
   }
 }
@@ -80,7 +80,8 @@ async function assemblyAIRun(
   audioBuffer: Buffer,
   model: string,
   language: string,
-  speakerLabels: boolean
+  speakerLabels: boolean,
+  onActivity?: () => void
 ): Promise<JobResponse> {
   const apiModel = model?.trim() || DEFAULT_ASSEMBLYAI_MODEL
 
@@ -97,7 +98,7 @@ async function assemblyAIRun(
   const audioUrl = uploaded.upload_url
   if (!audioUrl) {
     const err = new Error('AssemblyAI upload did not return an upload_url.')
-    handleTranscriptionError(err, 'assemblyai')
+    recordTranscriptionError(err, 'assemblyai')
     throw err
   }
 
@@ -121,7 +122,7 @@ async function assemblyAIRun(
   )) as JobResponse
   if (!job.id) {
     const err = new Error('AssemblyAI did not return a transcript job id.')
-    handleTranscriptionError(err, 'assemblyai')
+    recordTranscriptionError(err, 'assemblyai')
     throw err
   }
 
@@ -133,24 +134,25 @@ async function assemblyAIRun(
       { method: 'GET', headers: { authorization: apiKey } },
       'status'
     )) as JobResponse
+    onActivity?.() // poll answered: job is genuinely in progress
     if (state.status === 'completed') {
       if (typeof state.text !== 'string') {
         const err = new Error('AssemblyAI returned no transcript.')
-        handleTranscriptionError(err, 'assemblyai')
+        recordTranscriptionError(err, 'assemblyai')
         throw err
       }
       return state
     }
     if (state.status === 'error') {
       const err = new Error(`AssemblyAI failed: ${state.error ?? 'unknown error'}`)
-      handleTranscriptionError(err, 'assemblyai')
+      recordTranscriptionError(err, 'assemblyai')
       throw err
     }
     // queued / processing — keep polling
   }
 
   const timeoutErr = new Error('AssemblyAI timed out waiting for the transcript.')
-  handleTranscriptionError(timeoutErr, 'assemblyai')
+  recordTranscriptionError(timeoutErr, 'assemblyai')
   throw timeoutErr
 }
 
@@ -158,9 +160,10 @@ export async function assemblyAITranscribe(
   apiKey: string,
   audioBuffer: Buffer,
   model: string,
-  language = 'auto'
+  language = 'auto',
+  onActivity?: () => void
 ): Promise<string> {
-  const state = await assemblyAIRun(apiKey, audioBuffer, model, language, false)
+  const state = await assemblyAIRun(apiKey, audioBuffer, model, language, false, onActivity)
   return state.text as string
 }
 

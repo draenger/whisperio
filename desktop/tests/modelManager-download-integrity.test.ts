@@ -178,7 +178,7 @@ describe('modelManager — download artifact integrity', () => {
     expect(tempArtifacts()).toEqual([])
   })
 
-  it('accepts a download when the server sends no content-length', async () => {
+  it('rejects a tiny download when the server sends no content-length (min plausible size)', async () => {
     const req = makeFakeRequest()
     netRequest.mockReturnValue(req)
 
@@ -190,8 +190,8 @@ describe('modelManager — download artifact integrity', () => {
     await tick()
     res.emit('end')
 
-    await expect(promise).resolves.toBe(TINY_BIN)
-    expect(readFileSync(TINY_BIN).length).toBe(64)
+    await expect(promise).rejects.toThrow(/no Content-Length/i)
+    expect(existsSync(TINY_BIN)).toBe(false)
   })
 })
 
