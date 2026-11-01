@@ -1,6 +1,6 @@
 import { app, net } from 'electron'
 import { existsSync, mkdirSync, unlinkSync, createWriteStream } from 'fs'
-import { join } from 'path'
+import { join, resolve, sep, basename } from 'path'
 import { execFile, type ChildProcess } from 'child_process'
 
 const WHISPER_CPP_RELEASE = 'v1.8.4'
@@ -194,6 +194,32 @@ export async function downloadServerBinary(): Promise<string> {
   return exePath
 }
 
+/**
+ * Resolve a model filename to a path confined to the models dir. Rejects
+ * anything that is not a bare `*.bin` filename (path separators, `..`,
+ * absolute paths, drive prefixes) so a compromised renderer cannot make the
+ * server load an arbitrary file.
+ */
+export function resolveModelPath(modelFilename: unknown): string {
+  if (
+    typeof modelFilename !== 'string' ||
+    !modelFilename.toLowerCase().endsWith('.bin') ||
+    modelFilename.includes(String.fromCharCode(0)) ||
+    basename(modelFilename) !== modelFilename ||
+    modelFilename.includes('/') ||
+    modelFilename.includes(String.fromCharCode(92)) ||
+    modelFilename.includes('..')
+  ) {
+    throw new Error('Invalid model filename.')
+  }
+  const modelsDir = resolve(getModelsDir())
+  const full = resolve(modelsDir, modelFilename)
+  if (!full.startsWith(modelsDir + sep)) {
+    throw new Error('Invalid model filename.')
+  }
+  return full
+}
+
 export async function startServer(modelFilename: string): Promise<void> {
   if (process.platform !== 'win32') {
     throw new Error('Auto-start is only available on Windows.')
@@ -214,7 +240,7 @@ export async function startServer(modelFilename: string): Promise<void> {
       await downloadServerBinary()
     }
 
-    const modelPath = join(getModelsDir(), modelFilename)
+    const modelPath = resolveModelPath(modelFilename)
     if (!existsSync(modelPath)) {
       throw new Error(`Model not found: ${modelFilename}`)
     }
@@ -313,6 +339,79 @@ export async function startServer(modelFilename: string): Promise<void> {
     failStart(err)
     throw err
   }
+}
+
+const ENSURE_TIMEOUT_MS = 60_000
+let ensurePromise: Promise<void> | null = null
+
+function isManagedUrl(baseUrl: string): boolean {
+  try {
+    const u = new URL(baseUrl)
+    return (
+      (u.hostname === '127.0.0.1' || u.hostname === 'localhost') &&
+      u.port === String(SERVER_PORT)
+    )
+  } catch {
+    return false
+  }
+}
+
+function withTimeout<T>(p: Promise<T>, ms: number, msg: string): Promise<T> {
+  return new Promise<T>((res, rej) => {
+    const t = setTimeout(() => rej(new Error(msg)), ms)
+    p.then(
+      (v) => { clearTimeout(t); res(v) },
+      (e) => { clearTimeout(t); rej(e) }
+    )
+  })
+}
+
+async function waitUntilRunning(): Promise<void> {
+  while (serverStatus === 'starting') {
+    await new Promise((r) => setTimeout(r, 100))
+  }
+  if (serverStatus !== 'running') throw new Error('Local whisper server failed to start.')
+}
+
+/**
+ * Make sure the managed local whisper-server is up, (re)starting it on demand
+ * (e.g. after the idle sweep stopped it). Concurrent callers share one start.
+ * Resolves once the server is ready; rejects on failure or after a bounded
+ * timeout. Stamps the idle clock.
+ */
+export function ensureLocalServer(modelFilename: string): Promise<void> {
+  if (serverStatus === 'running') {
+    markServerUsed()
+    return Promise.resolve()
+  }
+  if (ensurePromise) return ensurePromise
+  const run = (async (): Promise<void> => {
+    if (serverStatus === 'starting') await waitUntilRunning()
+    else await startServer(modelFilename)
+    markServerUsed()
+  })()
+  const guarded = withTimeout(run, ENSURE_TIMEOUT_MS, 'Timed out starting the local whisper server.')
+  ensurePromise = guarded
+  const clear = (): void => { if (ensurePromise === guarded) ensurePromise = null }
+  guarded.then(clear, clear)
+  return guarded
+}
+
+/**
+ * Called right before a selfhosted transcription. If the configured base URL
+ * points at the managed server (127.0.0.1:8178), the platform/binary/model are
+ * available, make sure it is running. No-op otherwise (manual servers).
+ */
+export async function ensureManagedServerForUrl(baseUrl: string, whisperModel: string): Promise<void> {
+  if (!isManagedUrl(baseUrl)) return
+  if (!isServerBinaryAvailable()) return
+  const name = (whisperModel || '').trim()
+  if (!name) return
+  const filename = name.toLowerCase().endsWith('.bin') ? name : `${name}.bin`
+  let modelPath: string
+  try { modelPath = resolveModelPath(filename) } catch { return }
+  if (serverStatus !== 'running' && !existsSync(modelPath)) return
+  await ensureLocalServer(filename)
 }
 
 export function stopServer(): void {

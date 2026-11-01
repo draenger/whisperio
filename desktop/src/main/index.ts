@@ -511,6 +511,8 @@ app.on('window-all-closed', () => {
 })
 
 app.on('before-quit', () => {
+  // Don't leave the managed whisper-server holding RAM and port 8178.
+  stopServer()
   cleanupDictation()
   destroyTray()
 })
