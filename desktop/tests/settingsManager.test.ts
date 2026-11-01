@@ -76,6 +76,7 @@ const DEFAULT_SETTINGS = {
   inputDeviceId: '',
   outputDeviceId: '',
   saveRecordings: true,
+  restoreClipboard: false,
   outputRecordingHotkey: '',
   fallbackEnabled: false,
   githubUser: '',
