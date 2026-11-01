@@ -2,6 +2,8 @@ import { Tray, Menu, nativeImage, app } from 'electron'
 import { join } from 'path'
 import { is } from '@electron-toolkit/utils'
 import { openSettingsWindow } from './settingsWindow'
+import { loadSettings, saveSettings } from './settingsManager'
+import { buildTrayMenuTemplate } from './trayMenu'
 import { getActiveHotkey, getActiveSendHotkey } from './dictation/hotkeyManager'
 
 let tray: Tray | null = null
@@ -71,19 +73,20 @@ export function createTray(): Tray {
 
 function rebuildMenu(): void {
   if (!tray || tray.isDestroyed()) return
-  const items: Electron.MenuItemConstructorOptions[] = []
-  if (updateReadyVersion) {
-    items.push(
-      { label: `Restart to update (v${updateReadyVersion})`, click: () => onInstallUpdate?.() },
-      { type: 'separator' }
-    )
-  }
-  items.push(
-    { label: 'Settings', click: () => openSettingsWindow() },
-    { label: 'Recordings', click: () => openSettingsWindow('recordings') },
-    { type: 'separator' },
-    { label: 'Quit', click: () => app.quit() }
-  )
+  const items = buildTrayMenuTemplate({
+    platform: process.platform,
+    hotkeyMode: loadSettings().hotkeyMode,
+    updateReadyVersion,
+    onInstallUpdate: () => onInstallUpdate?.(),
+    onOpenSettings: () => openSettingsWindow(),
+    onOpenRecordings: () => openSettingsWindow('recordings'),
+    onSetHotkeyMode: (mode) => {
+      // hotkeyManager reads hotkeyMode live on each press, so no re-register is needed.
+      saveSettings({ hotkeyMode: mode })
+      rebuildMenu()
+    },
+    onQuit: () => app.quit()
+  })
   tray.setContextMenu(Menu.buildFromTemplate(items))
 }
 

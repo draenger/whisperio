@@ -2,9 +2,11 @@ import { vi, describe, it, expect, beforeEach } from 'vitest'
 
 const mockLoadSettings = vi.fn()
 const mockSaveSettings = vi.fn()
+const mockAreUnavailable = vi.fn(() => false)
 vi.mock('../src/main/settingsManager', () => ({
   loadSettings: (...args: unknown[]) => mockLoadSettings(...args),
-  saveSettings: (...args: unknown[]) => mockSaveSettings(...args)
+  saveSettings: (...args: unknown[]) => mockSaveSettings(...args),
+  areSettingsUnavailable: () => mockAreUnavailable()
 }))
 
 const mockGetKey = vi.fn()
@@ -43,6 +45,7 @@ const BASE_SETTINGS = {
 describe('keyAccessor', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mockAreUnavailable.mockReturnValue(false)
     _resetSessionKeysForTests()
     setSecureStorageWarningListener(null)
     mockSaveSettings.mockImplementation((patch: Record<string, unknown>) => ({ ...BASE_SETTINGS, ...patch }))
@@ -378,6 +381,31 @@ describe('keyAccessor', () => {
 
       expect(mockSetKey).toHaveBeenCalledTimes(1)
       expect(mockSetKey).toHaveBeenCalledWith('openaiApiKey', 'sk-only-this-one')
+    })
+  })
+  describe('locked settings file (areSettingsUnavailable)', () => {
+    it('migration: a throwing saveSettings is caught, key stays in the store, no throw', () => {
+      mockIsEncryptionAvailable.mockReturnValue(true)
+      mockLoadSettings.mockReturnValue({ ...BASE_SETTINGS, openaiApiKey: 'sk-plaintext' })
+      mockSetKey.mockReturnValue(undefined)
+      mockGetKey.mockReturnValue('sk-plaintext')
+      mockSaveSettings.mockImplementation(() => { throw Object.assign(new Error('busy sk-plaintext'), { code: 'EBUSY' }) })
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+      expect(() => migrateProviderKeysToKeyStore()).not.toThrow()
+      const logged = warn.mock.calls.flat().join(' ')
+      expect(logged).toContain('EBUSY')
+      expect(logged).not.toContain('sk-plaintext')
+      warn.mockRestore()
+    })
+
+    it('saveSettingsWithKeys refuses before touching the key store', () => {
+      mockIsEncryptionAvailable.mockReturnValue(true)
+      mockLoadSettings.mockReturnValue({ ...BASE_SETTINGS })
+      mockAreUnavailable.mockReturnValue(true)
+      expect(() => saveSettingsWithKeys({ openaiApiKey: 'sk-new' })).toThrow(/refusing to overwrite/)
+      expect(mockSetKey).not.toHaveBeenCalled()
+      expect(mockDeleteKey).not.toHaveBeenCalled()
+      expect(mockSaveSettings).not.toHaveBeenCalled()
     })
   })
 })
