@@ -6,6 +6,11 @@ import { join } from 'path'
 /**
  * SHA-256 integrity for downloaded artifacts (whisper-server binary, models).
  *
+ * SECURITY NOTE: TOFU only detects accidental or partial corruption and a
+ * changed download after the first one. The hash store lives in userData, so
+ * an attacker who can write there can rewrite the record along with the
+ * binary. Real protection against tampering needs PINNED hashes in code.
+ *
  * Policy per artifact:
  *  - PINNED: a known SHA-256 ships in the code; the download must match it.
  *  - TOFU (trust on first use): no pin is known. The computed hash is persisted
@@ -75,12 +80,13 @@ export function checkDigest(
   key: string,
   label: string,
   digest: string,
-  pinned: string | null | undefined
+  pinned: string | null | undefined,
+  hint = 'The file differs from the one downloaded before. If the model was updated upstream, delete it in Settings and download again.'
 ): { mode: IntegrityMode; commit: () => void } {
   if (pinned) {
     if (digest.toLowerCase() !== pinned.toLowerCase()) {
       throw new IntegrityError(
-        `SHA-256 mismatch for ${label}: expected ${pinned}, got ${digest}. The download was discarded.`
+        `SHA-256 mismatch for ${label}: expected ${pinned}, got ${digest}. The download was discarded. ${hint}`
       )
     }
     return { mode: 'pinned', commit: () => storeHash(key, digest) }
@@ -90,7 +96,7 @@ export function checkDigest(
     if (stored.toLowerCase() !== digest.toLowerCase()) {
       throw new IntegrityError(
         `SHA-256 for ${label} differs from the checksum recorded on first download ` +
-          `(recorded ${stored}, got ${digest}). The download was discarded.`
+          `(recorded ${stored}, got ${digest}). The download was discarded. ${hint}`
       )
     }
     return { mode: 'tofu-verified', commit: () => {} }

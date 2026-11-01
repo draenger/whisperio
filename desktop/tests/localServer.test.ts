@@ -44,7 +44,7 @@ vi.mock('../src/main/downloadIntegrity', async () => {
     hashFile: () => 'h',
     getStoredHash: () => 'h',
     storeHash: () => {},
-    forgetHash: () => {}
+    forgetHash: () => {}, resetServerIntegrity: () => {}
   }
 })
 

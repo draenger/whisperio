@@ -2,7 +2,7 @@ import { app, net } from 'electron'
 import { existsSync, mkdirSync, unlinkSync, createWriteStream } from 'fs'
 import { join } from 'path'
 import { execFile, type ChildProcess } from 'child_process'
-import { newHasher, checkDigest, hashFile, getStoredHash, storeHash, IntegrityError } from './downloadIntegrity'
+import { newHasher, checkDigest, hashFile, getStoredHash, storeHash, forgetHash, IntegrityError } from './downloadIntegrity'
 
 const WHISPER_CPP_RELEASE = 'v1.8.4'
 const WHISPER_BIN_URL = `https://github.com/ggml-org/whisper.cpp/releases/download/${WHISPER_CPP_RELEASE}/whisper-bin-x64.zip`
@@ -13,10 +13,20 @@ const SERVER_PORT = 8178
 // TODO: pin from the v1.8.4 release (`sha256sum whisper-bin-x64.zip`) and fill this in.
 // While null we use TOFU: the zip hash and the hash of every extracted file are
 // persisted on first install; a later download must match, and every launch
-// re-hashes the installed binary against the record (tamper detection).
+// re-hashes the installed binary against the record. HONEST LIMIT: the record is
+// in userData, so this only catches accidental/partial corruption and post-install
+// swaps by something that cannot also rewrite the record; defeating a real attacker
+// needs the pin above.
 const WHISPER_BIN_SHA256: string | null = null
 const ZIP_INTEGRITY_KEY = `whisper-bin-x64.zip@${WHISPER_CPP_RELEASE}`
 const INSTALLED_FILES = ['whisper-server.exe', 'whisper.dll', 'ggml.dll', 'ggml-base.dll', 'ggml-cpu.dll']
+const SERVER_HINT = 'Reinstall the local server from Settings.'
+
+/** Forget the server's TOFU records (zip + installed files); done on every (re)install. */
+export function resetServerIntegrity(): void {
+  forgetHash(ZIP_INTEGRITY_KEY)
+  for (const n of INSTALLED_FILES) forgetHash(installedKey(n))
+}
 const installedKey = (name: string): string => `whisper-server-installed:${WHISPER_CPP_RELEASE}:${name}`
 
 /**
@@ -37,7 +47,7 @@ export function verifyInstalledServer(): void {
       throw new IntegrityError(
         `whisper-server integrity check failed: ${name} was modified after install ` +
           `(recorded ${recorded}, found ${actual}). Refusing to start. ` +
-          'Delete the whisper-server folder in the app data directory to reinstall.'
+          `${SERVER_HINT} (Or delete the whisper-server folder in the app data directory.)`
       )
     }
   }
@@ -189,7 +199,7 @@ export async function downloadServerBinary(): Promise<string> {
   const zipDigest = await downloadFile(WHISPER_BIN_URL, zipPath)
   let commitZip: () => void
   try {
-    commitZip = checkDigest(ZIP_INTEGRITY_KEY, `whisper-bin-x64.zip ${WHISPER_CPP_RELEASE}`, zipDigest, WHISPER_BIN_SHA256).commit
+    commitZip = checkDigest(ZIP_INTEGRITY_KEY, `whisper-bin-x64.zip ${WHISPER_CPP_RELEASE}`, zipDigest, WHISPER_BIN_SHA256, SERVER_HINT).commit
   } catch (err) {
     try { unlinkSync(zipPath) } catch { /* ignore */ }
     throw err
@@ -260,6 +270,7 @@ export async function startServer(modelFilename: string): Promise<void> {
     if (!existsSync(exePath)) {
       serverStatus = 'starting'
       emitStatus()
+      resetServerIntegrity()
       await downloadServerBinary()
     }
     verifyInstalledServer()

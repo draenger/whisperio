@@ -457,20 +457,22 @@ export function deleteModel(modelId: string): boolean {
     } catch {
       return false
     }
+    // Clear the TOFU record unconditionally (even if the file is already gone)
+    // so a stale record can never block a legitimate re-download.
+    forgetHash(`model:custom:${modelId.startsWith('custom:') ? modelId.slice(7) : modelId}`)
     try {
       if (existsSync(filepath)) {
         unlinkSync(filepath)
-        forgetHash(`model:custom:${modelId.startsWith('custom:') ? modelId.slice(7) : modelId}`)
         return true
       }
     } catch { /* ignore */ }
     return false
   }
   const filepath = join(getModelsDir(), model.filename)
+  forgetHash(`model:${model.filename}`)
   try {
     if (existsSync(filepath)) {
       unlinkSync(filepath)
-      forgetHash(`model:${model.filename}`)
       return true
     }
   } catch { /* ignore */ }

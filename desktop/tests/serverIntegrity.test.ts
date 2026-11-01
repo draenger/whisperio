@@ -13,7 +13,7 @@ vi.mock('electron', () => ({
 
 import { downloadModel, downloadCustomModel, deleteModel, getAvailableModels } from '../src/main/modelManager'
 import { checkDigest, getStoredHash, storeHash, hashFile, IntegrityError } from '../src/main/downloadIntegrity'
-import { verifyInstalledServer } from '../src/main/localServer'
+import { verifyInstalledServer, resetServerIntegrity } from '../src/main/localServer'
 
 const MODELS_DIR = join(testDir, 'models')
 type Handler = (...args: any[]) => void
@@ -127,6 +127,32 @@ describe('download integrity (pin / TOFU)', () => {
     expect(existsSync(join(MODELS_DIR, 'm.bin'))).toBe(false)
   })
 
+  it('deleteModel clears the stored hash even when the file is already gone', () => {
+    storeHash('model:ggml-tiny.bin', 'a'.repeat(64))
+    storeHash('model:custom:x.bin', 'b'.repeat(64))
+    expect(existsSync(join(MODELS_DIR, 'ggml-tiny.bin'))).toBe(false)
+    expect(deleteModel('tiny')).toBe(false)
+    expect(getStoredHash('model:ggml-tiny.bin')).toBeNull()
+    expect(deleteModel('custom:x.bin')).toBe(false)
+    expect(getStoredHash('model:custom:x.bin')).toBeNull()
+  })
+
+  it('mismatch errors tell the user what to do next', () => {
+    expect(() => checkDigest('k', 'm', 'a'.repeat(64), 'b'.repeat(64))).toThrow(/delete it in Settings and download again/)
+    storeHash('k2', 'a'.repeat(64))
+    expect(() => checkDigest('k2', 'm', 'c'.repeat(64), null)).toThrow(/updated upstream, delete it in Settings and download again/)
+    storeHash('k3', 'a'.repeat(64))
+    expect(() => checkDigest('k3', 'srv', 'c'.repeat(64), null, 'Reinstall the local server from Settings.')).toThrow(/Reinstall the local server from Settings/)
+  })
+
+  it('resetServerIntegrity forgets zip and installed records', () => {
+    storeHash('whisper-bin-x64.zip@v1.8.4', 'a'.repeat(64))
+    storeHash('whisper-server-installed:v1.8.4:whisper-server.exe', 'a'.repeat(64))
+    resetServerIntegrity()
+    expect(getStoredHash('whisper-bin-x64.zip@v1.8.4')).toBeNull()
+    expect(getStoredHash('whisper-server-installed:v1.8.4:whisper-server.exe')).toBeNull()
+  })
+
   describe('whisper-server installed binary', () => {
     const dir = (): string => join(testDir, 'whisper-server')
     beforeEach(() => mkdirSync(dir(), { recursive: true }))
@@ -143,7 +169,7 @@ describe('download integrity (pin / TOFU)', () => {
       writeFileSync(join(dir(), 'whisper-server.exe'), 'MZ-original')
       storeHash('whisper-server-installed:v1.8.4:whisper-server.exe', hashFile(join(dir(), 'whisper-server.exe')))
       writeFileSync(join(dir(), 'whisper-server.exe'), 'MZ-evil')
-      expect(() => verifyInstalledServer()).toThrow(/integrity check failed.*whisper-server\.exe.*Refusing to start/s)
+      expect(() => verifyInstalledServer()).toThrow(/integrity check failed.*whisper-server\.exe.*Refusing to start.*Reinstall the local server from Settings/s)
       expect(() => verifyInstalledServer()).toThrow(IntegrityError)
     })
   })
