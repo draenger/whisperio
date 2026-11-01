@@ -8,7 +8,7 @@ import {
   renameSync,
   readdirSync
 } from 'fs'
-import { join } from 'path'
+import { join, basename, isAbsolute } from 'path'
 import type { SpeakerSegment } from './dictation/conversation'
 import { loadSettings, saveSettings } from './settingsManager'
 import {
@@ -308,6 +308,7 @@ function writeIndexFile(index: RecordingIndex, seal: boolean): void {
     try { unlinkSync(tmpPath) } catch { /* best-effort cleanup */ }
     throw err
   }
+  forgetOrphan('index.json') // a freshly written index is live data, not an orphan
 }
 
 // Serialize every read-modify-write so overlapping IPC mutations (e.g. an
@@ -368,6 +369,7 @@ export function saveRecording(
     } else {
       writeFileSync(filepath, audioBuffer)
     }
+    forgetOrphan(filename) // the name is live again: the startup sweep must never delete it
     const entry: RecordingEntry = {
       id,
       filename,
@@ -457,13 +459,34 @@ function orphansPath(): string {
   return join(getRecordingsDir(), ORPHANS_FILE)
 }
 
+/**
+ * Orphan entries are untrusted (the file lives in userData): accept only plain basenames that are
+ * ours to delete - `*.webm`, `*.tmp` or exactly `index.json`. Anything with a separator, `..` or an
+ * absolute path is dropped on read.
+ */
+export function isValidOrphanName(f: unknown): f is string {
+  if (typeof f !== 'string' || f.length === 0) return false
+  if (f.includes('/') || f.includes('\\') || f.includes('\0') || f.includes('..')) return false
+  if (isAbsolute(f) || basename(f) !== f) return false
+  return f === 'index.json' || f.endsWith('.webm') || f.endsWith('.tmp')
+}
+
+/** Drop a name from the orphan list (a new file legitimately reuses it). Never throws. */
+function forgetOrphan(name: string): void {
+  try {
+    if (!existsSync(orphansPath())) return
+    const names = readOrphans()
+    if (names.includes(name)) writeOrphans(names.filter((n) => n !== name))
+  } catch { /* best-effort */ }
+}
+
 /** Names (not paths) of sealed files whose key was destroyed but which could not be deleted yet. */
 function readOrphans(): string[] {
   try {
     const p = orphansPath()
     if (!existsSync(p)) return []
     const parsed = JSON.parse(readFileSync(p, 'utf-8')) as { files?: unknown }
-    return Array.isArray(parsed.files) ? parsed.files.filter((f): f is string => typeof f === 'string') : []
+    return Array.isArray(parsed.files) ? parsed.files.filter(isValidOrphanName) : []
   } catch {
     return []
   }
@@ -523,11 +546,22 @@ export function sweepShreddedOrphans(): ShredReport {
   if (names.length === 0) return { undeleted: 0 }
   const dir = getRecordingsDir()
   const left: string[] = []
+  // Files the current, readable index references are live data (a reused name after a clock
+  // rollback, a new recording): never delete them, just forget the stale orphan entry.
+  const st = readIndexState()
+  const live = new Set<string>()
+  if (!st.locked) {
+    for (const r of st.index.recordings) {
+      if (r.filename) live.add(r.filename)
+      if (r.filepath) live.add(basename(r.filepath))
+    }
+  }
   for (const f of names) {
     const p = join(dir, f)
     try {
       if (!existsSync(p)) continue
-      if (f === 'index.json' && !readIndexState().locked) continue
+      if (f === 'index.json' && !st.locked) continue
+      if (live.has(f)) continue
       unlinkWithRetry(p)
     } catch {
       left.push(f)

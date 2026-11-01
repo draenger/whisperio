@@ -60,6 +60,7 @@ import {
   setEncryptHistoryReader,
   resetLockedHistory,
   sweepShreddedOrphans,
+  isValidOrphanName,
   KeyShredError,
   getEncryptionProgress,
   migrateAudio
@@ -271,10 +272,68 @@ describe('recordingStore - erase = crypto-shred, locked reset, progress (D3)', (
     expect(rep).toEqual({ ok: true, undeleted: 1 })
     expect(loadSettings().encryptHistory).toBe(false)
     expect(await setHistoryEncryption(true)).toEqual({ ok: true })
+    await new Promise((r) => setTimeout(r, 1100)) // distinct second: no name reuse
     await seed()
     expect(getRecordings()).toHaveLength(1)
     h.stuck = null
     expect(sweepShreddedOrphans()).toEqual({ undeleted: 0 })
     expect(existsSync(join(RECORDINGS_DIR, files[1]))).toBe(false)
+  })
+
+  it('isValidOrphanName accepts only plain .webm/.tmp/index.json basenames', () => {
+    for (const ok of ['recording-1.webm', 'recording-1.webm.tmp', 'x.tmp', 'index.json']) {
+      expect(isValidOrphanName(ok)).toBe(true)
+    }
+    const bad = ['../x.webm', '..\\x.webm', 'a/b.webm', 'a\\b.webm', '/etc/passwd.webm', 'C:\\x.webm', '..', '', 'notes.txt', 'index.json.corrupt-1', 'data-vault.key', 42, null]
+    for (const b of bad) expect(isValidOrphanName(b)).toBe(false)
+  })
+
+  it('sweep ignores traversal / absolute / nested entries and deletes nothing outside the folder', async () => {
+    await seed()
+    const outside = join(testDir, 'victim.webm')
+    writeFileSync(outside, 'keep')
+    writeFileSync(
+      ORPHANS,
+      JSON.stringify({ files: ['../victim.webm', outside, 'a/b.webm', '..\\victim.webm', 'victim.webm'] })
+    )
+    expect(sweepShreddedOrphans()).toEqual({ undeleted: 0 })
+    expect(existsSync(outside)).toBe(true)
+    expect(getRecordings()).toHaveLength(1)
+  })
+
+  it('sweep never deletes a file the current index references', async () => {
+    await seed()
+    const live = readdirSync(RECORDINGS_DIR).find((f) => f.endsWith('.webm'))!
+    writeFileSync(ORPHANS, JSON.stringify({ files: [live, 'recording-gone.webm'] }))
+    expect(sweepShreddedOrphans()).toEqual({ undeleted: 0 })
+    expect(existsSync(join(RECORDINGS_DIR, live))).toBe(true)
+    expect(getRecordings()).toHaveLength(1)
+    expect(existsSync(ORPHANS)).toBe(false)
+  })
+
+  it('saveRecording forgets an orphan entry for the name it writes (clock rolled back)', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    try {
+      vi.setSystemTime(new Date(2026, 0, 2, 3, 4, 5))
+      await seed()
+      const written = readdirSync(RECORDINGS_DIR).find((f) => f.endsWith('.webm'))!
+      writeFileSync(ORPHANS, JSON.stringify({ files: [written, 'other.webm'] }))
+      vi.setSystemTime(new Date(2026, 0, 2, 3, 4, 5)) // same second again
+      await seed()
+    } finally {
+      vi.useRealTimers()
+    }
+    expect(JSON.parse(readFileSync(ORPHANS, 'utf-8')).files).toEqual(['other.webm'])
+  })
+
+  it('writing index.json removes it from the orphan list; sweep keeps a healthy index', async () => {
+    await seed()
+    writeFileSync(ORPHANS, JSON.stringify({ files: ['index.json', 'z.webm'] }))
+    await seed() // writes index.json via writeIndexFile
+    expect(JSON.parse(readFileSync(ORPHANS, 'utf-8')).files).toEqual(['z.webm'])
+    writeFileSync(ORPHANS, JSON.stringify({ files: ['index.json'] }))
+    expect(sweepShreddedOrphans()).toEqual({ undeleted: 0 })
+    expect(existsSync(INDEX)).toBe(true)
+    expect(getRecordings().length).toBeGreaterThan(0)
   })
 })
