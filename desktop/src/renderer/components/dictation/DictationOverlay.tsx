@@ -20,6 +20,8 @@ type Phase = 'armed' | 'recording' | 'command' | 'transcribing' | 'pasting' | 'd
 interface OverlayInfo {
   sourceName: string
   stopHotkey: string
+  /** true when the dictate hotkey runs hold-to-talk (release ends recording) */
+  hold?: boolean
   recordingType: 'input' | 'output'
 }
 
@@ -167,13 +169,13 @@ export function DictationOverlay(): JSX.Element {
       }
     }
 
-    const unsubActivate = window.api.dictation.onActivate(() => {
+    const unsubActivate = window.api.dictation.onActivate((sessionId) => {
       resolveLocalProvider()
-      startRecording()
+      startRecording(sessionId)
     })
-    const unsubActivateOutput = window.api.dictation.onActivateOutput(() => {
+    const unsubActivateOutput = window.api.dictation.onActivateOutput((sessionId) => {
       resolveLocalProvider()
-      startOutputRecording()
+      startOutputRecording(sessionId)
     })
     const unsubDeactivate = window.api.dictation.onDeactivate((sessionId) => {
       stopAndTranscribe(sessionId).catch((err) => {
@@ -245,6 +247,8 @@ export function DictationOverlay(): JSX.Element {
   const showHint = phase === 'recording' || phase === 'command'
   const hintText = isCommand ? (
     <>Speak a transform — it rewrites, doesn&rsquo;t insert &middot; Esc to cancel</>
+  ) : overlayInfo?.hold ? (
+    <>Release {stopHotkey} to transcribe &middot; Escape to cancel</>
   ) : (
     <>Press {stopHotkey} to stop &middot; Escape to cancel</>
   )

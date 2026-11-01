@@ -526,6 +526,7 @@ export function SettingsForm(): ReactElement {
   // it lived inside the .then()). See the retry screen below the loading guard.
   const [loadError, setLoadError] = useState(false)
   const [saved, setSaved] = useState(false)
+  const [saveError, setSaveError] = useState(false)
   const [appVersion, setAppVersion] = useState('')
   const updater = useUpdater()
 
@@ -546,6 +547,8 @@ export function SettingsForm(): ReactElement {
   // General
   const [launchAtStartup, setLaunchAtStartup] = useState(true)
   const [checkForUpdates, setCheckForUpdates] = useState(true)
+  const [allowUrlControl, setAllowUrlControl] = useState(false)
+  const [allowUrlStart, setAllowUrlStart] = useState(false)
 
   // Providers
   const [sttProvider, setSttProvider] = useState('openai')
@@ -597,7 +600,8 @@ export function SettingsForm(): ReactElement {
   const [inputDeviceId, setInputDeviceId] = useState('')
   const [outputDeviceId, setOutputDeviceId] = useState('')
   const [saveRecordings, setSaveRecordings] = useState(true)
-  const [silenceGate, setSilenceGate] = useState(true)
+  const [silenceGate, setSilenceGate] = useState(false)
+  const [silenceGateThresholdDbfs, setSilenceGateThresholdDbfs] = useState(-50)
   const [inputDevices, setInputDevices] = useState<MediaDeviceOption[]>([])
   const [outputDevices, setOutputDevices] = useState<MediaDeviceOption[]>([])
 
@@ -605,6 +609,7 @@ export function SettingsForm(): ReactElement {
   const [dictationHotkey, setDictationHotkey] = useState('')
   const [dictateAndSendHotkey, setDictateAndSendHotkey] = useState('')
   const [commandHotkey, setCommandHotkey] = useState('')
+  const [hotkeyMode, setHotkeyMode] = useState<'toggle' | 'hold'>('toggle')
   const [outputRecordingHotkey, setOutputRecordingHotkey] = useState('')
 
   // --- Load settings ---
@@ -633,14 +638,18 @@ export function SettingsForm(): ReactElement {
       setRemovedDefaultVocabulary(settings.removedDefaultVocabulary ?? [])
       setAiPostProcessing(settings.aiPostProcessing ?? false)
       setLaunchAtStartup(settings.launchAtStartup ?? true)
+      setAllowUrlControl(settings.allowUrlControl === true)
+      setAllowUrlStart(settings.allowUrlStart === true)
       setCheckForUpdates(settings.checkForUpdates ?? true)
       setDictationHotkey(settings.dictationHotkey ?? '')
       setDictateAndSendHotkey(settings.dictateAndSendHotkey ?? '')
       setCommandHotkey(settings.commandHotkey ?? '')
+      setHotkeyMode(settings.hotkeyMode === 'hold' ? 'hold' : 'toggle')
       setInputDeviceId(settings.inputDeviceId ?? '')
       setOutputDeviceId(settings.outputDeviceId ?? '')
       setSaveRecordings(settings.saveRecordings ?? true)
-      setSilenceGate(settings.silenceGate ?? true)
+      setSilenceGate(settings.silenceGate ?? false)
+      setSilenceGateThresholdDbfs(settings.silenceGateThresholdDbfs ?? -50)
       setOutputRecordingHotkey(settings.outputRecordingHotkey ?? '')
       setCleanupEnabled(settings.cleanupEnabled ?? false)
       setCleanupMode(settings.cleanupMode ?? 'light')
@@ -722,14 +731,18 @@ export function SettingsForm(): ReactElement {
       removedDefaultVocabulary,
       aiPostProcessing,
       launchAtStartup,
+      allowUrlControl,
+      allowUrlStart,
       checkForUpdates,
       dictationHotkey,
       dictateAndSendHotkey,
       commandHotkey,
+      hotkeyMode,
       inputDeviceId,
       outputDeviceId,
       saveRecordings,
       silenceGate,
+      silenceGateThresholdDbfs,
       outputRecordingHotkey,
       fallbackEnabled: providerChain.length > 1,
       cleanupEnabled,
@@ -744,7 +757,9 @@ export function SettingsForm(): ReactElement {
       toneMap,
       windowTitlePermissionEnabled
     }
-    await window.api.settings.save(
+    // Main refuses to write while settings.json is locked/unreadable: surface it
+    // (inline footer error) instead of an unhandled rejection + false "Saved".
+    const ok = await window.api.settings.save(
       // `aiProvider` widens ahead of preload's AppSettings type: preload's
       // `aiProvider` is still 'openai'|'anthropic'|'local' while both
       // settingsManager.ts's AiProvider and CleanupPanel's UI-facing
@@ -754,7 +769,9 @@ export function SettingsForm(): ReactElement {
       // be dropped once preload's AppSettings.aiProvider catches up (out of
       // scope for this package: preload/index.d.ts isn't in its file list).
       payload as unknown as Parameters<Window['api']['settings']['save']>[0]
-    )
+    ).then(() => true, () => false)
+    setSaveError(!ok)
+    if (!ok) return
     setSaved(true)
     // Saved pulse duration per docs/design/wz-shell-excerpts.jsx's auto-save
     // affordance contract (1400ms) — the footer flips back to the resting
@@ -764,8 +781,8 @@ export function SettingsForm(): ReactElement {
     providerChain, apiKey, openaiBaseUrl, whisperModel, elevenlabsApiKey, replicateApiKey, sttReplicateModel,
     groqApiKey, deepgramApiKey, assemblyaiApiKey, mistralApiKey,
     sttApiKey, transcriptionLanguage, prompt,
-    vocabulary, removedDefaultVocabulary, aiPostProcessing, launchAtStartup, checkForUpdates, dictationHotkey,
-    dictateAndSendHotkey, commandHotkey, inputDeviceId, outputDeviceId, saveRecordings, silenceGate,
+    vocabulary, removedDefaultVocabulary, aiPostProcessing, launchAtStartup, allowUrlControl, allowUrlStart, checkForUpdates, dictationHotkey,
+    dictateAndSendHotkey, commandHotkey, hotkeyMode, inputDeviceId, outputDeviceId, saveRecordings, silenceGate, silenceGateThresholdDbfs,
     outputRecordingHotkey, cleanupEnabled, cleanupMode, cleanupAuto, cleanupTemplates,
     aiProvider, aiBaseUrl, aiModel, anthropicApiKey,
     contextAwareTone, toneMap, windowTitlePermissionEnabled
@@ -922,6 +939,10 @@ export function SettingsForm(): ReactElement {
                       setLaunchAtStartup={setLaunchAtStartup}
                       checkForUpdates={checkForUpdates}
                       setCheckForUpdates={setCheckForUpdates}
+                      allowUrlControl={allowUrlControl}
+                      setAllowUrlControl={setAllowUrlControl}
+                      allowUrlStart={allowUrlStart}
+                      setAllowUrlStart={setAllowUrlStart}
                       s={s}
                       theme={theme}
                     />
@@ -997,6 +1018,8 @@ export function SettingsForm(): ReactElement {
                       saveRecordings={saveRecordings}
                       silenceGate={silenceGate}
                       setSilenceGate={setSilenceGate}
+                      silenceGateThresholdDbfs={silenceGateThresholdDbfs}
+                      setSilenceGateThresholdDbfs={setSilenceGateThresholdDbfs}
                       setSaveRecordings={setSaveRecordings}
                       inputDevices={inputDevices}
                       outputDevices={outputDevices}
@@ -1013,6 +1036,8 @@ export function SettingsForm(): ReactElement {
                       setDictateAndSendHotkey={setDictateAndSendHotkey}
                       commandHotkey={commandHotkey}
                       setCommandHotkey={setCommandHotkey}
+                      hotkeyMode={hotkeyMode}
+                      setHotkeyMode={setHotkeyMode}
                       outputRecordingHotkey={outputRecordingHotkey}
                       setOutputRecordingHotkey={setOutputRecordingHotkey}
                       s={s}
@@ -1043,14 +1068,14 @@ export function SettingsForm(): ReactElement {
                   display: 'flex',
                   alignItems: 'center',
                   gap: '8px',
-                  color: saved ? theme.success : theme.accent,
+                  color: saveError ? theme.danger : saved ? theme.success : theme.accent,
                   transition: 'color 0.2s'
                 }}>
                   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M20 6L9 17l-5-5" />
                   </svg>
                   <span style={{ fontSize: '12.5px', fontWeight: 600 }}>
-                    {saved ? 'Saved' : 'Changes save automatically'}
+                    {saveError ? 'Settings file is locked — changes not saved, try again' : saved ? 'Saved' : 'Changes save automatically'}
                   </span>
                 </div>
               </div>
@@ -1131,6 +1156,10 @@ function GeneralTab({
   setLaunchAtStartup,
   checkForUpdates,
   setCheckForUpdates,
+  allowUrlControl,
+  setAllowUrlControl,
+  allowUrlStart,
+  setAllowUrlStart,
   s,
   theme
 }: {
@@ -1138,6 +1167,10 @@ function GeneralTab({
   setLaunchAtStartup: (v: boolean) => void
   checkForUpdates: boolean
   setCheckForUpdates: (v: boolean) => void
+  allowUrlControl: boolean
+  setAllowUrlControl: (v: boolean) => void
+  allowUrlStart: boolean
+  setAllowUrlStart: (v: boolean) => void
   s: ReturnType<typeof makeStyles>
   theme: Theme
 }): ReactElement {
@@ -1163,6 +1196,22 @@ function GeneralTab({
           onChange={setCheckForUpdates}
           theme={theme}
         />
+        <ToggleRow
+          label="Allow control via whisperio:// links"
+          description="Warning: any website or app can open these links. When on, whisperio://stop and whisperio://cancel work from Raycast, Alfred, Shortcuts or Stream Deck. Off by default."
+          checked={allowUrlControl}
+          onChange={setAllowUrlControl}
+          theme={theme}
+        />
+        {allowUrlControl && (
+          <ToggleRow
+            label="Also allow links to start recording"
+            description="Lets whisperio://start and whisperio://toggle begin recording (microphone) without you touching the app. Ignored while the screen is locked. whisperio://send is never allowed."
+            checked={allowUrlStart}
+            onChange={setAllowUrlStart}
+            theme={theme}
+          />
+        )}
       </div>
 
       <div style={s.card}>
@@ -2011,6 +2060,7 @@ function AudioTab({
   outputDeviceId, setOutputDeviceId,
   saveRecordings, setSaveRecordings,
   silenceGate, setSilenceGate,
+  silenceGateThresholdDbfs, setSilenceGateThresholdDbfs,
   inputDevices, outputDevices,
   s, theme
 }: {
@@ -2022,6 +2072,8 @@ function AudioTab({
   setSaveRecordings: (v: boolean) => void
   silenceGate: boolean
   setSilenceGate: (v: boolean) => void
+  silenceGateThresholdDbfs: number
+  setSilenceGateThresholdDbfs: (v: number) => void
   inputDevices: MediaDeviceOption[]
   outputDevices: MediaDeviceOption[]
   s: ReturnType<typeof makeStyles>
@@ -2074,11 +2126,33 @@ function AudioTab({
         />
         <ToggleRow
           label="Skip silent recordings (don't send audio with no speech)"
-          description="Saves cost and avoids made-up text on silent audio"
+          description="Saves cost and avoids made-up text on silent audio. Acts only when 'Save recordings to disk' is on, so a skipped clip is never lost."
           checked={silenceGate}
           onChange={setSilenceGate}
           theme={theme}
         />
+        {silenceGate && (
+          <div style={{ padding: '4px 0 8px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <input
+                type="range"
+                min={-70}
+                max={-30}
+                step={1}
+                value={silenceGateThresholdDbfs}
+                onChange={(e) => setSilenceGateThresholdDbfs(Math.min(-30, Math.max(-70, Number(e.target.value))))}
+                aria-label="Silence gate threshold (dBFS)"
+                style={{ flex: 1 }}
+              />
+              <span style={{ fontSize: '12px', color: theme.textMuted, minWidth: '64px', textAlign: 'right' }}>
+                {silenceGateThresholdDbfs} dBFS
+              </span>
+            </div>
+            <div style={{ fontSize: '12px', color: theme.textMuted, marginTop: '2px' }}>
+              Lower = more sensitive to quiet speech
+            </div>
+          </div>
+        )}
         {recordingCount !== null && recordingCount > 0 && (
           <button
             onClick={() => window.api.recordings.openWindow()}
@@ -2249,6 +2323,7 @@ function HotkeysTab({
   dictationHotkey, setDictationHotkey,
   dictateAndSendHotkey, setDictateAndSendHotkey,
   commandHotkey, setCommandHotkey,
+  hotkeyMode, setHotkeyMode,
   outputRecordingHotkey, setOutputRecordingHotkey,
   s, theme
 }: {
@@ -2258,6 +2333,8 @@ function HotkeysTab({
   setDictateAndSendHotkey: (v: string) => void
   commandHotkey: string
   setCommandHotkey: (v: string) => void
+  hotkeyMode: 'toggle' | 'hold'
+  setHotkeyMode: (v: 'toggle' | 'hold') => void
   outputRecordingHotkey: string
   setOutputRecordingHotkey: (v: string) => void
   s: ReturnType<typeof makeStyles>
@@ -2382,6 +2459,19 @@ function HotkeysTab({
           theme={theme}
           first
         />
+
+        <div style={{ marginTop: '10px', marginBottom: '6px' }}>
+          <label style={s.label}>Dictation Hotkey Mode</label>
+          <select
+            value={hotkeyMode}
+            onChange={(e) => setHotkeyMode(e.target.value === 'hold' ? 'hold' : 'toggle')}
+            style={s.select}
+          >
+            <option value="toggle">Toggle (press to start, press again to stop)</option>
+            <option value="hold">Hold to talk</option>
+          </select>
+          <span style={s.hint}>Hold the hotkey while speaking, release to transcribe</span>
+        </div>
 
         <HotkeyInput
           label="Dictate & Send Hotkey"

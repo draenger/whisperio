@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest'
-import { analyzeSpeech, mixToMono } from '../src/renderer/audio/silenceGate'
+import {
+  analyzeSpeech, mixToMono, clampThresholdDbfs, shouldApplySilenceGate,
+  DEFAULT_THRESHOLD_DBFS
+} from '../src/renderer/audio/silenceGate'
 
 const SR = 16000
 const amp = (dbfs: number): number => Math.pow(10, dbfs / 20)
@@ -136,8 +139,8 @@ describe('analyzeSpeech edge cases', () => {
   })
 
   it('the threshold boundary separates just-above from just-below frames', () => {
-    const above = new Float32Array(SR).fill(amp(-44.9))
-    const below = new Float32Array(SR).fill(amp(-45.1))
+    const above = new Float32Array(SR).fill(amp(-49.9))
+    const below = new Float32Array(SR).fill(amp(-50.1))
     expect(analyzeSpeech(above, SR).hasSpeech).toBe(true)
     expect(analyzeSpeech(below, SR).hasSpeech).toBe(false)
   })
@@ -159,5 +162,33 @@ describe('mixToMono', () => {
     const m = mixToMono([new Float32Array([1, 0]), new Float32Array([0, 1])])
     expect(Array.from(m)).toEqual([0.5, 0.5])
     expect(mixToMono([]).length).toBe(0)
+  })
+})
+
+describe('configurable threshold', () => {
+  it('defaults to -50 dBFS so quiet speech at -48 is kept', () => {
+    expect(DEFAULT_THRESHOLD_DBFS).toBe(-50)
+    expect(analyzeSpeech(tone(500, -48), SR).hasSpeech).toBe(true)
+  })
+  it('passes thresholdDbfs through: same clip gated at -40, kept at -60', () => {
+    const quiet = tone(500, -48)
+    expect(analyzeSpeech(quiet, SR, { thresholdDbfs: -40 }).hasSpeech).toBe(false)
+    expect(analyzeSpeech(quiet, SR, { thresholdDbfs: -60 }).hasSpeech).toBe(true)
+  })
+  it('clampThresholdDbfs bounds to -70..-30, junk -> default', () => {
+    expect(clampThresholdDbfs(-100)).toBe(-70)
+    expect(clampThresholdDbfs(-5)).toBe(-30)
+    expect(clampThresholdDbfs(-55)).toBe(-55)
+    expect(clampThresholdDbfs(undefined)).toBe(-50)
+    expect(clampThresholdDbfs(NaN)).toBe(-50)
+  })
+})
+
+describe('shouldApplySilenceGate (acts only when the recording is saved)', () => {
+  it('acts only when enabled AND saved', () => {
+    expect(shouldApplySilenceGate(true, true)).toBe(true)
+    expect(shouldApplySilenceGate(true, false)).toBe(false)
+    expect(shouldApplySilenceGate(false, true)).toBe(false)
+    expect(shouldApplySilenceGate(undefined, true)).toBe(false)
   })
 })
