@@ -111,6 +111,7 @@ export interface AppSettings {
   saveRecordings: boolean
   outputRecordingHotkey: string
   fallbackEnabled: boolean
+  experimentalParakeet: boolean
   githubUser: string
   githubRepo: string
   githubBranch: string
@@ -281,6 +282,21 @@ export interface ServerStatus {
   platform: string
 }
 
+export interface ParakeetStatus {
+  ready: boolean
+  verified: boolean
+  dir: string
+  missing: string[]
+  runtimeInstalled: boolean
+}
+
+export interface ParakeetAPI {
+  status: () => Promise<ParakeetStatus>
+  download: () => Promise<ParakeetStatus>
+  cancel: () => Promise<boolean>
+  delete: () => Promise<ParakeetStatus>
+}
+
 export interface ServerAPI {
   status: () => Promise<ServerStatus>
   start: (modelFilename: string) => Promise<ServerStatus>
@@ -400,6 +416,7 @@ export interface WhisperioAPI {
   recordings: RecordingsAPI
   models: ModelsAPI
   server: ServerAPI
+  parakeet: ParakeetAPI
   errors: ErrorAPI
   window: WindowAPI
   updater: UpdaterAPI
@@ -529,6 +546,13 @@ const modelsApi: ModelsAPI = {
   }
 }
 
+const parakeetApi: ParakeetAPI = {
+  status: () => ipcRenderer.invoke('parakeet:status'),
+  download: () => ipcRenderer.invoke('parakeet:download'),
+  cancel: () => ipcRenderer.invoke('parakeet:cancel'),
+  delete: () => ipcRenderer.invoke('parakeet:delete')
+}
+
 const serverApi: ServerAPI = {
   status: () => ipcRenderer.invoke('server:status'),
   start: (modelFilename) => ipcRenderer.invoke('server:start', modelFilename),
@@ -599,6 +623,7 @@ contextBridge.exposeInMainWorld('api', {
   recordings: recordingsApi,
   models: modelsApi,
   server: serverApi,
+  parakeet: parakeetApi,
   errors: errorsApi,
   window: windowApi,
   updater: updaterApi,

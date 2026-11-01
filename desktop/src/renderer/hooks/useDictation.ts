@@ -234,7 +234,7 @@ export function useDictation(): UseDictationReturn {
       // Convert webm to wav for selfhosted whisper.cpp (doesn't support webm)
       const settings2 = await window.api.settings.load()
       const chain = settings2.providerChain || []
-      const needsWav = chain.includes('selfhosted')
+      const needsWav = chain.includes('selfhosted') || chain.includes('parakeet')
       let sendBuffer = arrayBuffer
       let sendFilename = 'audio.webm'
       if (needsWav) {

@@ -105,6 +105,7 @@ export interface AppSettings {
   saveRecordings: boolean
   outputRecordingHotkey: string
   fallbackEnabled: boolean
+  experimentalParakeet: boolean
   githubUser: string
   githubRepo: string
   githubBranch: string
@@ -262,6 +263,21 @@ export interface ServerStatus {
   platform: string
 }
 
+export interface ParakeetStatus {
+  ready: boolean
+  verified: boolean
+  dir: string
+  missing: string[]
+  runtimeInstalled: boolean
+}
+
+export interface ParakeetAPI {
+  status: () => Promise<ParakeetStatus>
+  download: () => Promise<ParakeetStatus>
+  cancel: () => Promise<boolean>
+  delete: () => Promise<ParakeetStatus>
+}
+
 export interface ServerAPI {
   status: () => Promise<ServerStatus>
   start: (modelFilename: string) => Promise<ServerStatus>
@@ -387,6 +403,7 @@ export interface WhisperioAPI {
   recordings: RecordingsAPI
   models: ModelsAPI
   server: ServerAPI
+  parakeet: ParakeetAPI
   errors: ErrorAPI
   window: WindowAPI
   updater: UpdaterAPI

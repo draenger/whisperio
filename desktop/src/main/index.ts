@@ -43,6 +43,13 @@ import {
   setDownloadProgressCallback
 } from './modelManager'
 import {
+  getParakeetModelStatus,
+  downloadParakeetModel,
+  cancelParakeetDownload,
+  deleteParakeetModel
+} from './stt/parakeetModel'
+import { isParakeetRuntimeInstalled, shutdownParakeet } from './stt/parakeet'
+import {
   getServerStatus,
   startServer,
   stopServer,
@@ -443,6 +450,30 @@ app.whenReady().then(() => {
   ipcMain.handle('models:delete', (_e, modelId: string) => deleteModel(modelId))
 
   // Local server IPC handlers
+  // EXPERIMENTAL Parakeet (flag: experimentalParakeet)
+  ipcMain.handle('parakeet:status', () => ({
+    ...getParakeetModelStatus(),
+    runtimeInstalled: isParakeetRuntimeInstalled()
+  }))
+  ipcMain.handle('parakeet:download', async () => {
+    setDownloadProgressCallback((progress) => {
+      BrowserWindow.getAllWindows().forEach((win) => {
+        if (!win.isDestroyed()) win.webContents.send('models:download-progress', progress)
+      })
+    })
+    await downloadParakeetModel()
+    return { ...getParakeetModelStatus(), runtimeInstalled: isParakeetRuntimeInstalled() }
+  })
+  ipcMain.handle('parakeet:cancel', () => {
+    cancelParakeetDownload(cancelDownload)
+    return true
+  })
+  ipcMain.handle('parakeet:delete', () => {
+    shutdownParakeet()
+    deleteParakeetModel()
+    return { ...getParakeetModelStatus(), runtimeInstalled: isParakeetRuntimeInstalled() }
+  })
+
   ipcMain.handle('server:status', () => getServerStatus())
   ipcMain.handle('server:start', async (_e, modelFilename: string) => {
     setServerStatusCallback((status) => {

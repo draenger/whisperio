@@ -538,3 +538,65 @@ export function getCustomModels(): LocalModel[] {
       })
   } catch { return [] }
 }
+
+/**
+ * Generic single-file secure download used by multi-file model sets (the
+ * experimental Parakeet ONNX bundle). Reuses assertSecureModelUrl on every hop
+ * and handleDownloadResponse (progress, cancel, size verification, temp file +
+ * atomic rename). `downloadId` is the activeDownloads/progress key; `destPath`
+ * must already be confined by the caller's resolver.
+ */
+export function downloadFileSecure(downloadId: string, url: string, destPath: string): Promise<string> {
+  try {
+    assertSecureModelUrl(url)
+  } catch (err) {
+    return Promise.reject(err instanceof Error ? err : new Error(String(err)))
+  }
+  if (activeDownloads.has(downloadId)) {
+    return Promise.reject(new Error(`Already downloading: ${downloadId}`))
+  }
+  const tempPath = destPath + '.downloading'
+  return new Promise<string>((resolvePath, reject) => {
+    let aborted = false
+    const request = net.request({ url, redirect: 'manual' })
+
+    request.on('redirect', (_status, _method, newUrl) => {
+      try {
+        assertSecureModelUrl(newUrl)
+      } catch (err) {
+        aborted = true
+        request.abort()
+        activeDownloads.delete(downloadId)
+        try { unlinkSync(tempPath) } catch { /* ignore */ }
+        reject(err instanceof Error ? err : new Error(String(err)))
+        return
+      }
+      request.followRedirect()
+    })
+
+    activeDownloads.set(downloadId, {
+      abort: () => {
+        aborted = true
+        request.abort()
+        try { unlinkSync(tempPath) } catch { /* ignore */ }
+        reject(new DownloadCancelledError(downloadId))
+      }
+    })
+
+    request.on('response', (response) => {
+      if (response.statusCode !== 200) {
+        activeDownloads.delete(downloadId)
+        reject(new Error(`Download failed: HTTP ${response.statusCode}`))
+        return
+      }
+      handleDownloadResponse(downloadId, response, destPath, tempPath, resolvePath, reject, () => { aborted = true; request.abort() })
+    })
+
+    request.on('error', (err) => {
+      activeDownloads.delete(downloadId)
+      if (!aborted) reject(err)
+    })
+
+    request.end()
+  })
+}

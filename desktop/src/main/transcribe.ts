@@ -28,6 +28,8 @@ import { TONE_PROFILE_DESCRIPTIONS } from './llm/prompts'
 // following the same shape as whisperTranscribe/elevenLabsTranscribe/
 // replicateTranscribe below, not the llm/provider.ts LLMProvider interface
 // (that abstraction is for text completion, not speech-to-text).
+import { parakeetTranscribe } from './stt/parakeet'
+import { isParakeetModelReady } from './stt/parakeetModel'
 import { groqTranscribe } from './llm/groq'
 import { deepgramTranscribe, deepgramTranscribeDiarized } from './llm/deepgram'
 import { assemblyAITranscribe, assemblyAITranscribeDiarized } from './llm/assembly'
@@ -89,7 +91,8 @@ const PROVIDER_LABELS: Record<ProviderId, string> = {
   groq: 'Groq',
   deepgram: 'Deepgram',
   assemblyai: 'AssemblyAI',
-  mistral: 'Mistral'
+  mistral: 'Mistral',
+  parakeet: 'On-device (Parakeet)'
 }
 
 interface TranscribeResult {
@@ -486,7 +489,7 @@ export async function transcribeAudio(
       recordSTT({
         provider,
         audioSeconds: estimateAudioSeconds(audioBuffer, filename),
-        isLocal: provider === 'selfhosted'
+        isLocal: provider === 'selfhosted' || provider === 'parakeet'
       })
       return await applyCleanup(settings, text, context)
     } catch (err) {
@@ -518,6 +521,8 @@ function isProviderConfigured(settings: AppSettings, provider: ProviderId): bool
   if (provider === 'deepgram') return !!settings.deepgramApiKey
   if (provider === 'assemblyai') return !!settings.assemblyaiApiKey
   if (provider === 'mistral') return !!settings.mistralApiKey
+  // EXPERIMENTAL: hidden/unconfigured unless the flag is on AND the model files exist.
+  if (provider === 'parakeet') return settings.experimentalParakeet === true && isParakeetModelReady()
   return false
 }
 
@@ -553,6 +558,14 @@ async function transcribeWithProvider(
     const vocab = getActiveVocabulary(settings)
     const lang = settings.transcriptionLanguage?.trim() || 'auto'
     return elevenLabsTranscribe(apiKey, audioBuffer, filename, vocab, lang)
+  }
+
+  if (provider === 'parakeet') {
+    if (settings.experimentalParakeet !== true) {
+      throw new Error('On-device Parakeet is experimental and disabled. Enable it in Settings > Experimental.')
+    }
+    // Any runtime/model error propagates as a provider error so the chain falls through.
+    return parakeetTranscribe(audioBuffer)
   }
 
   if (provider === 'selfhosted') {
