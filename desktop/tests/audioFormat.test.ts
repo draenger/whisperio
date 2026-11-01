@@ -47,8 +47,14 @@ vi.mock('electron', () => ({
   BrowserWindow: { getAllWindows: () => [] }
 }))
 
+const mockRecordSTT = vi.fn()
+vi.mock('../src/main/usageTracker', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../src/main/usageTracker')>()
+  return { ...actual, recordSTT: (...a: unknown[]) => mockRecordSTT(...a) }
+})
+
 import { transcribeAudio } from '../src/main/transcribe'
-import { isWav, resolveProviderAudio } from '../src/main/audioFormat'
+import { isWav, resolveProviderAudio, coerceWavArg, providerNeedsWav } from '../src/main/audioFormat'
 
 const WEBM = Buffer.from('WEBM-ORIGINAL-AUDIO')
 const WAV = Buffer.concat([Buffer.from('RIFF'), Buffer.alloc(4), Buffer.from('WAVE'), Buffer.from('WAV-PCM')])
@@ -126,5 +132,41 @@ describe('transcribeAudio per-provider format', () => {
     })
     await expect(transcribeAudio(WEBM, 'rec.webm')).rejects.toThrow(/needs WAV/)
     expect(requests.length).toBe(0)
+  })
+})
+
+describe('coerceWavArg / isWav / providerNeedsWav', () => {
+  it('accepts Uint8Array views honouring byteOffset/byteLength', () => {
+    const pool = new Uint8Array(64)
+    pool.set(WAV, 10)
+    const view = new Uint8Array(pool.buffer, 10, WAV.length)
+    const out = coerceWavArg(view)!
+    expect(out.length).toBe(WAV.length)
+    expect(out.equals(WAV)).toBe(true)
+    expect(isWav(view)).toBe(true)
+  })
+  it('null/undefined/empty -> null; other types rejected', () => {
+    expect(coerceWavArg(null)).toBeNull()
+    expect(coerceWavArg(undefined)).toBeNull()
+    expect(coerceWavArg(new Uint8Array(0))).toBeNull()
+    expect(() => coerceWavArg('RIFF')).toThrow(TypeError)
+    expect(() => coerceWavArg({ length: 5 })).toThrow(TypeError)
+    expect(() => coerceWavArg(new ArrayBuffer(8))).toThrow(TypeError)
+  })
+  it('providerNeedsWav', () => {
+    expect(providerNeedsWav('selfhosted')).toBe(true)
+    expect(providerNeedsWav('openai')).toBe(false)
+  })
+})
+
+describe('usage metering duration', () => {
+  beforeEach(() => { vi.clearAllMocks(); requests.length = 0 })
+  it('uses the WAV for estimation when present, else the webm', async () => {
+    mockLoadSettings.mockReturnValue({ providerChain: ['openai'], openaiApiKey: 'sk-test' })
+    const big = Buffer.concat([WAV, Buffer.alloc(32000 * 10)]) // ~10 s of 16k mono PCM
+    await transcribeAudio(WEBM, 'audio.webm', null, { buffer: big, filename: 'audio.wav' })
+    expect(mockRecordSTT.mock.calls[0][0].audioSeconds).toBeCloseTo((big.length - 44) / 32000, 3)
+    await transcribeAudio(WEBM, 'audio.webm')
+    expect(mockRecordSTT.mock.calls[1][0].audioSeconds).toBeCloseTo(WEBM.length / 3000, 6)
   })
 })

@@ -496,7 +496,11 @@ export async function transcribeAudio(
       // transcription.
       recordSTT({
         provider,
-        audioSeconds: estimateAudioSeconds(audio.buffer, audio.filename),
+        // Exact duration from the WAV when we have one (as before this
+        // change), else the WebM byte-rate estimate.
+        audioSeconds: wavAudio
+          ? estimateAudioSeconds(wavAudio.buffer, wavAudio.filename)
+          : estimateAudioSeconds(audio.buffer, audio.filename),
         isLocal: provider === 'selfhosted'
       })
       return await applyCleanup(settings, text, context)

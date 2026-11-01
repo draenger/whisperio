@@ -16,6 +16,7 @@ import {
   handleRecordingsCleanup,
   type OnDemandCleanupRequest
 } from './transcribe'
+import { coerceWavArg } from './audioFormat'
 import { transcriptText } from './dictation/conversation'
 import { openSettingsWindow } from './settingsWindow'
 import { getRecentErrors } from './errorHandler'
@@ -330,7 +331,7 @@ app.whenReady().then(() => {
   ipcMain.handle('usage:reset', () => resetUsage())
 
   // Register transcription IPC handler
-  ipcMain.handle('dictation:transcribe', async (_event, audioBuffer: Buffer, filename: string, wavBuffer?: Buffer | null) => {
+  ipcMain.handle('dictation:transcribe', async (_event, audioBuffer: Buffer, filename: string, wavArg?: unknown) => {
     // Reset the local whisper-server idle clock so an actively-used server is
     // not reclaimed by the idle sweep mid-session (no-op when it's not running).
     markServerUsed()
@@ -344,7 +345,8 @@ app.whenReady().then(() => {
       ? await getActiveContext({ includeWindowTitle: settings.windowTitlePermissionEnabled })
       : null
     // Additive: optional WAV rendition for whisper.cpp only (see audioFormat.ts).
-    const wav = wavBuffer && wavBuffer.length > 0 ? { buffer: wavBuffer, filename: 'audio.wav' } : null
+    const wavBuffer = coerceWavArg(wavArg)
+    const wav = wavBuffer ? { buffer: wavBuffer, filename: 'audio.wav' } : null
     return transcribeAudio(audioBuffer, filename, context, wav)
   })
 
