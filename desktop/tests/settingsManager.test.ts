@@ -81,6 +81,7 @@ const DEFAULT_SETTINGS = {
   dictationHotkey: '',
   dictateAndSendHotkey: '',
   commandHotkey: 'Ctrl+Shift+C',
+  hotkeyMode: 'toggle',
   theme: 'dark',
   accentColor: 'blue',
   inputDeviceId: '',
