@@ -897,6 +897,78 @@ describe('hotkeyManager', () => {
       expect(mockWatchKeyRelease).not.toHaveBeenCalled()
     })
 
+    it('a second release callback after the first (state no longer recording) is a no-op', async () => {
+      const activate = await setup()
+      await activate()
+      vi.advanceTimersByTime(600)
+      release()
+      expect(mod.getState()).toBe('transcribing')
+      const deactivateCalls = (): number =>
+        mockSendToPrimaryOverlay.mock.calls.filter((c) => c[0] === 'dictation:deactivate').length
+      expect(deactivateCalls()).toBe(1)
+      release() // stray late callback
+      expect(deactivateCalls()).toBe(1)
+      expect(mod.getState()).toBe('transcribing')
+    })
+
+    it('a release belonging to an invalidated session does not stop the new recording', async () => {
+      const activate = await setup()
+      await activate()
+      const staleRelease = release
+      vi.advanceTimersByTime(600)
+      const cancelFn = (mockIpcOn.mock.calls.find((c) => c[0] === 'dictation:cancel') as unknown[])[1] as () => void
+      cancelFn()
+      expect(mod.getState()).toBe('idle')
+      await activate()
+      expect(mod.getState()).toBe('recording')
+      vi.advanceTimersByTime(600)
+      staleRelease() // old watcher firing late
+      expect(mod.getState()).toBe('recording')
+    })
+
+    it('release stops listening for Escape (unregisters the temporary cancel shortcut)', async () => {
+      const activate = await setup()
+      await activate()
+      vi.advanceTimersByTime(600)
+      mockUnregister.mockClear()
+      mockIsRegistered.mockReturnValue(true) // Escape is registered while recording
+      release()
+      expect(mockUnregister).toHaveBeenCalledWith('Escape')
+    })
+
+    it('a cancelled short hold does not set the post-release ignore window', async () => {
+      const activate = await setup()
+      await activate()
+      vi.advanceTimersByTime(50)
+      release()
+      expect(mod.getState()).toBe('idle')
+      await activate() // immediate new press must start a fresh recording
+      expect(mod.getState()).toBe('recording')
+    })
+
+    it('a press long after a hold release force-resets and does not restart the watcher', async () => {
+      const activate = await setup()
+      await activate()
+      vi.advanceTimersByTime(600)
+      release()
+      vi.advanceTimersByTime(5000)
+      mockWatchKeyRelease.mockClear()
+      await activate()
+      expect(mod.getState()).toBe('idle')
+      expect(mockWatchKeyRelease).not.toHaveBeenCalled()
+    })
+
+    it('the output-recording hotkey stays toggle-only in hold mode (no watcher)', async () => {
+      mockSettings.outputRecordingHotkey = 'Ctrl+Alt+O'
+      mod.registerHotkey()
+      const out = mockRegister.mock.calls.find((c) => c[0] === 'Ctrl+Alt+O')![1] as () => Promise<void>
+      await out()
+      expect(mod.getState()).toBe('recording')
+      expect(mockWatchKeyRelease).not.toHaveBeenCalled()
+      await out()
+      expect(mod.getState()).toBe('transcribing')
+    })
+
     it('applies hold to the dictate-and-send hotkey', async () => {
       mockSettings.dictateAndSendHotkey = 'Ctrl+Alt+S'
       mod.registerHotkey()
