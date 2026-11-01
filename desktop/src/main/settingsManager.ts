@@ -1,4 +1,5 @@
 import { app } from 'electron'
+import { clampRestoreDelay } from './dictation/clipboardRestore'
 import { readFileSync, writeFileSync, existsSync, renameSync, openSync, fsyncSync, closeSync, unlinkSync } from 'fs'
 import { join } from 'path'
 // Type-only — no runtime dependency on the LLM prompt-building module (same
@@ -157,6 +158,13 @@ export interface AppSettings {
   inputDeviceId: string
   outputDeviceId: string
   saveRecordings: boolean
+  // Opt-in: after auto-paste, put the user's previous clipboard back (only if
+  // the clipboard still holds the dictated text). See dictation/clipboardRestore.ts.
+  restoreClipboard: boolean
+  // Minimum wait (ms, clamped 300..3000) after the paste keystroke before the
+  // previous clipboard is restored. Restore is a heuristic: there is no OS
+  // "paste happened" event. Ignored while restoreClipboard is off (default).
+  clipboardRestoreDelayMs: number
   outputRecordingHotkey: string
   fallbackEnabled: boolean
   // GitHub secret-store selection (NON-SECRET metadata only). The access token
@@ -316,6 +324,8 @@ const DEFAULT_SETTINGS: AppSettings = {
   inputDeviceId: '',
   outputDeviceId: '',
   saveRecordings: true,
+  restoreClipboard: false,
+  clipboardRestoreDelayMs: 700,
   outputRecordingHotkey: '',
   fallbackEnabled: false,
   githubUser: '',
@@ -521,6 +531,7 @@ export function loadSettings(): AppSettings {
   settingsUnavailable = false
   const migrated = migrateToneMap(migrateLegacyTheme(migrateCleanupSettings(migrateVocabulary(parsed as Partial<AppSettings>))))
   const merged = { ...DEFAULT_SETTINGS, ...migrated }
+  merged.clipboardRestoreDelayMs = clampRestoreDelay(merged.clipboardRestoreDelayMs)
   if (merged.hotkeyMode !== 'toggle' && merged.hotkeyMode !== 'hold') merged.hotkeyMode = 'toggle'
   return merged
 }

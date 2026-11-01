@@ -600,6 +600,7 @@ export function SettingsForm(): ReactElement {
   const [inputDeviceId, setInputDeviceId] = useState('')
   const [outputDeviceId, setOutputDeviceId] = useState('')
   const [saveRecordings, setSaveRecordings] = useState(true)
+  const [restoreClipboard, setRestoreClipboard] = useState(false)
   const [inputDevices, setInputDevices] = useState<MediaDeviceOption[]>([])
   const [outputDevices, setOutputDevices] = useState<MediaDeviceOption[]>([])
 
@@ -646,6 +647,7 @@ export function SettingsForm(): ReactElement {
       setInputDeviceId(settings.inputDeviceId ?? '')
       setOutputDeviceId(settings.outputDeviceId ?? '')
       setSaveRecordings(settings.saveRecordings ?? true)
+      setRestoreClipboard(settings.restoreClipboard ?? false)
       setOutputRecordingHotkey(settings.outputRecordingHotkey ?? '')
       setCleanupEnabled(settings.cleanupEnabled ?? false)
       setCleanupMode(settings.cleanupMode ?? 'light')
@@ -737,6 +739,7 @@ export function SettingsForm(): ReactElement {
       inputDeviceId,
       outputDeviceId,
       saveRecordings,
+      restoreClipboard,
       outputRecordingHotkey,
       fallbackEnabled: providerChain.length > 1,
       cleanupEnabled,
@@ -776,7 +779,7 @@ export function SettingsForm(): ReactElement {
     groqApiKey, deepgramApiKey, assemblyaiApiKey, mistralApiKey,
     sttApiKey, transcriptionLanguage, prompt,
     vocabulary, removedDefaultVocabulary, aiPostProcessing, launchAtStartup, allowUrlControl, allowUrlStart, checkForUpdates, dictationHotkey,
-    dictateAndSendHotkey, commandHotkey, hotkeyMode, inputDeviceId, outputDeviceId, saveRecordings,
+    dictateAndSendHotkey, commandHotkey, hotkeyMode, inputDeviceId, outputDeviceId, saveRecordings, restoreClipboard,
     outputRecordingHotkey, cleanupEnabled, cleanupMode, cleanupAuto, cleanupTemplates,
     aiProvider, aiBaseUrl, aiModel, anthropicApiKey,
     contextAwareTone, toneMap, windowTitlePermissionEnabled
@@ -933,6 +936,8 @@ export function SettingsForm(): ReactElement {
                       setLaunchAtStartup={setLaunchAtStartup}
                       checkForUpdates={checkForUpdates}
                       setCheckForUpdates={setCheckForUpdates}
+                      restoreClipboard={restoreClipboard}
+                      setRestoreClipboard={setRestoreClipboard}
                       allowUrlControl={allowUrlControl}
                       setAllowUrlControl={setAllowUrlControl}
                       allowUrlStart={allowUrlStart}
@@ -1146,6 +1151,8 @@ function GeneralTab({
   setLaunchAtStartup,
   checkForUpdates,
   setCheckForUpdates,
+  restoreClipboard,
+  setRestoreClipboard,
   allowUrlControl,
   setAllowUrlControl,
   allowUrlStart,
@@ -1157,6 +1164,8 @@ function GeneralTab({
   setLaunchAtStartup: (v: boolean) => void
   checkForUpdates: boolean
   setCheckForUpdates: (v: boolean) => void
+  restoreClipboard: boolean
+  setRestoreClipboard: (v: boolean) => void
   allowUrlControl: boolean
   setAllowUrlControl: (v: boolean) => void
   allowUrlStart: boolean
@@ -1202,6 +1211,17 @@ function GeneralTab({
             theme={theme}
           />
         )}
+      </div>
+
+      <div style={s.card}>
+        <SectionHeader title="Pasting" s={s} theme={theme} />
+        <ToggleRow
+          label="Restore my previous clipboard after pasting"
+          description="Put back the text, image, HTML or RTF you had copied before dictating, if nothing new was copied in the meantime. Files and app-specific formats are not restored. Best-effort timing; off by default."
+          checked={restoreClipboard}
+          onChange={setRestoreClipboard}
+          theme={theme}
+        />
       </div>
 
       <div style={s.card}>

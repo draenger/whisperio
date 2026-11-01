@@ -108,6 +108,8 @@ export interface AppSettings {
   inputDeviceId: string
   outputDeviceId: string
   saveRecordings: boolean
+  restoreClipboard: boolean
+  clipboardRestoreDelayMs: number
   outputRecordingHotkey: string
   fallbackEnabled: boolean
   githubUser: string
