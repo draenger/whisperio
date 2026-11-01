@@ -125,8 +125,38 @@ const WIN_NAMED: Record<string, number> = {
   NUMDIV: 0x6f
 }
 
-/** Windows virtual-key code for a normalised main key, or null if unknown. */
-export function winVirtualKey(key: string): number | null {
+/**
+ * Resolves a single character to a virtual-key code under the CURRENT keyboard
+ * layout (VkKeyScanExW), or null when the layout has no key for it.
+ */
+export type WinCharScanner = (ch: string) => number | null
+
+/**
+ * Windows virtual-key code for a normalised main key, or null if unknown.
+ *
+ * VK_A..VK_Z (0x41..0x5A) and VK_0..VK_9 (0x30..0x39) are defined by Windows as
+ * the ASCII codes of the character, so the static value is already
+ * layout-independent for letters/digits on Latin layouts. OEM punctuation VKs
+ * (VK_OEM_1..8) are NOT: ';' is VK_OEM_1 on US but VK_OEM_COMMA (+Shift) on
+ * QWERTZ. Electron resolves accelerator characters through the current layout,
+ * so when a `scan` function is given we resolve the same way (VkKeyScanExW) and
+ * fall back to the static table only for letters/digits or when no scanner
+ * exists. For punctuation a scanner that finds no key yields null (toggle mode)
+ * rather than polling a wrong key.
+ */
+export function winVirtualKey(key: string, scan?: WinCharScanner | null): number | null {
+  const isLetterOrDigit = /^[A-Z0-9]$/.test(key)
+  const isPunct = key in WIN_PUNCT
+  if (scan && (isLetterOrDigit || isPunct)) {
+    let vk: number | null = null
+    try {
+      vk = scan(key.toLowerCase())
+    } catch {
+      vk = null
+    }
+    if (vk !== null) return vk
+    if (isPunct) return null
+  }
   if (/^[A-Z]$/.test(key)) return key.charCodeAt(0) // 0x41..0x5A
   if (/^[0-9]$/.test(key)) return key.charCodeAt(0) // 0x30..0x39
   const f = /^F(\d{1,2})$/.exec(key)
@@ -170,9 +200,110 @@ function warnOnce(msg: string): void {
 export function _resetKeyHoldWarnings(): void {
   warned = new Set<string>()
   backendCache.clear()
+  deps = { ...defaultDeps }
+  winScannerCache = null
+  inputMonCache = null
+  firstPollUpStreak = 0
+  macDegraded = false
+  notified = false
 }
 
 type RawKeyState = (code: number) => boolean
+
+/** IOHIDAccessType: 0 granted, 1 denied, 2 unknown (not yet asked). */
+export type InputMonitoringAccess = 0 | 1 | 2
+
+const MSG_INPUT_MONITORING =
+  "Hold-to-talk can't read the keyboard. Grant Input Monitoring to Whisperio in System Settings → Privacy & Security, or switch to toggle mode."
+
+// Overridable seams (tests inject fakes; production resolves natives lazily).
+interface Deps {
+  loadWinScanner: () => WinCharScanner | null
+  checkInputMonitoring: () => InputMonitoringAccess | null
+  notify: (title: string, body: string) => void
+}
+const defaultDeps: Deps = {
+  loadWinScanner: () => loadWinScannerNative(),
+  checkInputMonitoring: () => checkInputMonitoringNative(),
+  notify: () => {}
+}
+let deps: Deps = { ...defaultDeps }
+
+/** Wire the one-time user notification (hotkeyManager passes errorHandler.notifyInfo). */
+export function setKeyHoldNotifier(fn: (title: string, body: string) => void): void {
+  deps.notify = fn
+}
+/** Test helper: override native seams. Reset with _resetKeyHoldWarnings(). */
+export function _setKeyHoldDeps(over: Partial<Deps>): void {
+  deps = { ...deps, ...over }
+}
+
+let winScannerCache: { value: WinCharScanner | null } | null = null
+function loadWinScannerNative(): WinCharScanner | null {
+  if (winScannerCache) return winScannerCache.value
+  let value: WinCharScanner | null = null
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const koffi = require('koffi')
+    const user32 = koffi.load('user32.dll')
+    const VkKeyScanExW = user32.func('int16 __stdcall VkKeyScanExW(uint16 ch, void *dwhkl)')
+    const GetKeyboardLayout = user32.func('void * __stdcall GetKeyboardLayout(uint32 idThread)')
+    value = (ch) => {
+      // Layout is re-read per resolution so a layout switch between sessions is honoured.
+      const r = VkKeyScanExW(ch.charCodeAt(0), GetKeyboardLayout(0)) as number
+      if (r === -1) return null // no key produces this char in the layout
+      const vk = r & 0xff
+      return vk === 0xff ? null : vk
+    }
+  } catch (err) {
+    warnOnce(`VkKeyScanExW unavailable (${err instanceof Error ? err.message : String(err)}) — using static key table`)
+    value = null
+  }
+  winScannerCache = { value }
+  return value
+}
+
+let inputMonCache: { value: (() => InputMonitoringAccess) | null } | null = null
+function checkInputMonitoringNative(): InputMonitoringAccess | null {
+  if (!inputMonCache) {
+    let fn: (() => InputMonitoringAccess) | null = null
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const koffi = require('koffi')
+      const iokit = koffi.load('/System/Library/Frameworks/IOKit.framework/IOKit')
+      const IOHIDCheckAccess = iokit.func('uint32_t IOHIDCheckAccess(uint32_t requestType)')
+      const kIOHIDRequestTypeListenEvent = 1
+      fn = () => {
+        const r = IOHIDCheckAccess(kIOHIDRequestTypeListenEvent)
+        return (r === 0 || r === 1 ? r : 2) as InputMonitoringAccess
+      }
+    } catch {
+      fn = null // API unavailable (old macOS / load failure): rely on the first-poll heuristic
+    }
+    inputMonCache = { value: fn }
+  }
+  try {
+    return inputMonCache.value ? inputMonCache.value() : null
+  } catch {
+    return null
+  }
+}
+
+// macOS: CGEventSourceKeyState reads "up" for everything without Input
+// Monitoring, which would look like an instant release -> silent cancel.
+const FIRST_POLL_UP_LIMIT = 2
+let firstPollUpStreak = 0
+let macDegraded = false
+let notified = false
+function notifyInputMonitoringOnce(): void {
+  if (notified) return
+  notified = true
+  try {
+    deps.notify('Whisperio', MSG_INPUT_MONITORING)
+  } catch {
+    /* notification is best-effort */
+  }
+}
 
 // Native backend per platform, loaded once lazily. A failed load is cached as
 // null so we neither retry koffi.load on every hotkey press nor re-warn.
@@ -218,7 +349,15 @@ export function createKeyStateReader(
     loadBackend(platform)
     return null
   }
-  const code = platform === 'win32' ? winVirtualKey(key) : macKeyCode(key)
+  if (platform === 'darwin') {
+    if (macDegraded) return null
+    // 0 granted / 1 denied / 2 unknown / null no API. Only a definite "denied" short-circuits.
+    if (deps.checkInputMonitoring() === 1) {
+      notifyInputMonitoringOnce()
+      return null
+    }
+  }
+  const code = platform === 'win32' ? winVirtualKey(key, deps.loadWinScanner()) : macKeyCode(key)
   if (code === null) {
     warnOnce(`Hold-to-talk: unsupported key "${key}" — using toggle mode`)
     return null
@@ -261,6 +400,8 @@ export function watchKeyRelease(
   if (!isDown) return null
 
   let done = false
+  let firstPoll = true
+  const trackFirstPoll = (opts.platform ?? process.platform) === 'darwin'
   let poll: ReturnType<typeof setInterval> | null = null
   let max: ReturnType<typeof setTimeout> | null = null
 
@@ -284,6 +425,20 @@ export function watchKeyRelease(
     } catch (err) {
       console.warn('[Whisperio] Hold-to-talk key-state read failed — releasing:', err)
       down = false
+    }
+    const wasFirst = firstPoll
+    firstPoll = false
+    if (trackFirstPoll && wasFirst) {
+      if (down) {
+        firstPollUpStreak = 0
+      } else if (++firstPollUpStreak >= FIRST_POLL_UP_LIMIT) {
+        // Key read as up immediately in consecutive sessions: permission or layout
+        // problem. Stay in toggle mode (do NOT release/cancel) and tell the user once.
+        macDegraded = true
+        stop()
+        notifyInputMonitoringOnce()
+        return
+      }
     }
     if (!down) fire()
   }, opts.pollMs ?? DEFAULT_POLL_MS)

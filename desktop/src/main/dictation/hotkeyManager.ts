@@ -9,7 +9,7 @@ import {
 } from './overlayWindow'
 import { autoPaste, captureTargetWindow, restoreTargetWindow, sendEnter } from './autoPaste'
 import { loadSettings } from '../settingsManager'
-import { watchKeyRelease } from './keyHold'
+import { watchKeyRelease, setKeyHoldNotifier } from './keyHold'
 // COMMAND mode (v1.7): rewrite the clipboard per a spoken instruction instead
 // of inserting the spoken words — reuses the same LLM candidate chain as
 // transcript cleanup (buildCleanupCandidates/selectProvider), it just runs a
@@ -21,6 +21,8 @@ import { watchKeyRelease } from './keyHold'
 import { rewriteClipboardForCommand } from '../transcribe'
 import { handleCommandError, notifyInfo } from '../errorHandler'
 import { createWatchdog, onTranscriptionActivity } from './watchdog'
+
+setKeyHoldNotifier((title, body) => notifyInfo(title, body))
 
 export type DictationState = 'idle' | 'recording' | 'transcribing' | 'pasting' | 'command'
 

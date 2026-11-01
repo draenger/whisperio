@@ -111,7 +111,8 @@ vi.mock('../src/main/errorHandler', () => ({
 const mockWatchKeyRelease = vi.fn()
 
 vi.mock('../src/main/dictation/keyHold', () => ({
-  watchKeyRelease: (...args: unknown[]) => mockWatchKeyRelease(...args)
+  watchKeyRelease: (...args: unknown[]) => mockWatchKeyRelease(...args),
+  setKeyHoldNotifier: vi.fn()
 }))
 
 // --- Fresh module per test (resets module-level state) ---
