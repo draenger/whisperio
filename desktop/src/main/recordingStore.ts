@@ -352,7 +352,7 @@ export function saveRecording(
 ): Promise<RecordingEntry> {
   const id = generateId()
   const timestamp = Date.now()
-  const filename = `recording-${formatTimestamp(timestamp)}.webm`
+  const base = `recording-${formatTimestamp(timestamp)}`
 
   // The seal decision AND the file write happen inside the mutation queue, i.e. serialized with
   // setHistoryEncryption and every migration slot: a save overlapping an ON toggle can never write
@@ -362,6 +362,13 @@ export function saveRecording(
   return enqueue(() => {
     const st = readIndexState()
     if (st.locked) throw new HistoryLockedError()
+    // One-second name resolution: a same-second save (or a stepped-back clock) must not reuse an
+    // existing file — tmp+rename would silently overwrite the other recording's audio. Safe check:
+    // every audio write runs inside this queue. Same fix as main #43 (exclusive create there).
+    let filename = `${base}.webm`
+    for (let n = 2; existsSync(join(getRecordingsDir(), filename)) || existsSync(join(getRecordingsDir(), `${filename}.tmp`)); n++) {
+      filename = `${base}-${n}.webm`
+    }
     const filepath = join(getRecordingsDir(), filename)
     if (st.sealedOnDisk || encryptHistoryReader()) {
       const sealed = encryptAudio(getDataKeyForEncrypt(), audioBuffer, id)
