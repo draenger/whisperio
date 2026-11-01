@@ -370,7 +370,7 @@ describe('selfhosted (directUrl) provider', () => {
     mockNetRequest.mockReturnValue(mockReq)
 
     await expect(transcribeAudio(Buffer.from('audio'), 'rec.webm', null, LIVE_WAV)).rejects.toThrow(
-      'OpenAI API error 500'
+      'Self-hosted API error 500'
     )
   })
 
