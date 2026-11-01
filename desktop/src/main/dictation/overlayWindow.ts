@@ -106,7 +106,11 @@ function createOverlayForDisplay(display: Electron.Display): BrowserWindow {
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true,
-      sandbox: false
+      // Same preload as the settings/recordings windows, which already run
+      // sandboxed (Electron default). It only uses contextBridge/ipcRenderer and
+      // the sandbox-polyfilled Buffer, so the overlay needs no Node access.
+      sandbox: true,
+      nodeIntegration: false
     }
   })
 
