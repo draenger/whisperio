@@ -30,13 +30,27 @@ function storePath(): string {
   return join(app.getPath('userData'), STORE_FILE)
 }
 
+/**
+ * On Linux without a keyring Electron falls back to a hard-coded password
+ * (`basic_text`, or `unknown` before a backend was picked): that is obfuscation,
+ * not encryption, so it must count as unavailable.
+ */
+function isWeakLinuxBackend(): boolean {
+  if (process.platform !== 'linux') return false
+  const getBackend = (safeStorage as { getSelectedStorageBackend?: () => string }).getSelectedStorageBackend
+  if (typeof getBackend !== 'function') return false
+  const backend = getBackend.call(safeStorage)
+  return backend === 'basic_text' || backend === 'unknown'
+}
+
 /** True when OS-backed encryption is usable on this machine right now (e.g.
  * false on a Linux box with no keyring daemon running). Every read/write
  * below re-checks this rather than caching it, since it can in principle
  * change across the app's lifetime (keyring service starting/stopping). */
 export function isEncryptionAvailable(): boolean {
   try {
-    return safeStorage.isEncryptionAvailable()
+    if (!safeStorage.isEncryptionAvailable()) return false
+    return !isWeakLinuxBackend()
   } catch {
     return false
   }
