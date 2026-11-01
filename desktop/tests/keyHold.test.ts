@@ -114,3 +114,19 @@ describe('watchKeyRelease', () => {
     expect(createKeyStateReader('NOPE', 'darwin')).toBeNull()
   })
 })
+
+describe('backend loading is cached', () => {
+  beforeEach(() => _resetKeyHoldWarnings())
+
+  it('failed load is attempted and warned once', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    // koffi.load of a Windows dll fails off-Windows / or koffi missing: either way null
+    const first = createKeyStateReader('A', 'darwin')
+    const second = createKeyStateReader('B', 'darwin')
+    if (first === null) {
+      expect(second).toBeNull()
+      expect(warn).toHaveBeenCalledTimes(1)
+    }
+    warn.mockRestore()
+  })
+})

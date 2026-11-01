@@ -851,6 +851,20 @@ describe('hotkeyManager', () => {
       expect(mockSendToPrimaryOverlay).toHaveBeenCalledWith('dictation:cancel')
     })
 
+    it('ignores a queued press right after release, but not a later one', async () => {
+      const activate = await setup()
+      await activate()
+      vi.advanceTimersByTime(600)
+      release()
+      expect(mod.getState()).toBe('transcribing')
+      vi.advanceTimersByTime(100)
+      await activate() // queued auto-repeat: must not force-reset
+      expect(mod.getState()).toBe('transcribing')
+      vi.advanceTimersByTime(400)
+      await activate() // deliberate later press: force-reset as before
+      expect(mod.getState()).toBe('idle')
+    })
+
     it('cancels the watcher on cancel()', async () => {
       const activate = await setup()
       await activate()

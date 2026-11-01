@@ -67,6 +67,10 @@ function invalidateSession(): void {
 let holdCancel: (() => void) | null = null
 /** A hold shorter than this is treated as an accidental tap and cancelled. */
 const MIN_HOLD_MS = 250
+/** After a hold release, ignore presses this long: a queued auto-repeat press
+ * must not be read as a tap that force-resets the transcription just started. */
+const POST_RELEASE_IGNORE_MS = 300
+let holdReleasedAt = 0
 
 function cancelHoldWatch(): void {
   if (holdCancel) {
@@ -133,6 +137,7 @@ function startHoldWatch(accel: string | null, pressedAt: number): void {
       return
     }
     unregisterEscape()
+    holdReleasedAt = Date.now()
     setState('transcribing')
     sendToPrimaryOverlay('dictation:deactivate', currentSessionId)
   })
@@ -146,6 +151,7 @@ async function activateWith(accel: string | null): Promise<void> {
     // Hold mode: auto-repeated press callbacks while the key is held must not
     // act as a second tap — the release watcher ends the recording.
     if (holdCancel && state === 'recording') return
+    if (state === 'transcribing' && holdReleasedAt && pressedAt - holdReleasedAt < POST_RELEASE_IGNORE_MS) return
     if (state === 'idle') {
       // First tap — capture target window, ensure overlay, start recording
       captureTargetWindow()

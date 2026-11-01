@@ -169,6 +169,44 @@ function warnOnce(msg: string): void {
 /** Test helper: forget which warnings were already logged. */
 export function _resetKeyHoldWarnings(): void {
   warned = new Set<string>()
+  backendCache.clear()
+}
+
+type RawKeyState = (code: number) => boolean
+
+// Native backend per platform, loaded once lazily. A failed load is cached as
+// null so we neither retry koffi.load on every hotkey press nor re-warn.
+const backendCache = new Map<string, RawKeyState | null>()
+
+function loadBackend(platform: NodeJS.Platform): RawKeyState | null {
+  if (backendCache.has(platform)) return backendCache.get(platform) ?? null
+  let backend: RawKeyState | null = null
+  try {
+    if (platform === 'win32') {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const koffi = require('koffi')
+      const user32 = koffi.load('user32.dll')
+      const GetAsyncKeyState = user32.func('int16 __stdcall GetAsyncKeyState(int vKey)')
+      // High bit set = currently down (the int16 is negative then).
+      backend = (vk) => (GetAsyncKeyState(vk) & 0x8000) !== 0
+    } else if (platform === 'darwin') {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const koffi = require('koffi')
+      const cg = koffi.load('/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics')
+      const CGEventSourceKeyState = cg.func('bool CGEventSourceKeyState(int32_t stateID, uint16_t key)')
+      const kCGEventSourceStateCombinedSessionState = 0
+      backend = (code) => Boolean(CGEventSourceKeyState(kCGEventSourceStateCombinedSessionState, code))
+    } else {
+      warnOnce(`Hold-to-talk is not supported on ${platform} — using toggle mode`)
+    }
+  } catch (err) {
+    warnOnce(
+      `Hold-to-talk key-state backend failed to load (${err instanceof Error ? err.message : String(err)}) — using toggle mode`
+    )
+    backend = null
+  }
+  backendCache.set(platform, backend)
+  return backend
 }
 
 /** Returns a "is this key currently down?" function for the platform, or null. */
@@ -176,41 +214,18 @@ export function createKeyStateReader(
   key: string,
   platform: NodeJS.Platform = process.platform
 ): (() => boolean) | null {
-  try {
-    if (platform === 'win32') {
-      const vk = winVirtualKey(key)
-      if (vk === null) {
-        warnOnce(`Hold-to-talk: unsupported key "${key}" — using toggle mode`)
-        return null
-      }
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const koffi = require('koffi')
-      const user32 = koffi.load('user32.dll')
-      const GetAsyncKeyState = user32.func('int16 __stdcall GetAsyncKeyState(int vKey)')
-      // High bit set = currently down (the int16 is negative then).
-      return () => (GetAsyncKeyState(vk) & 0x8000) !== 0
-    }
-    if (platform === 'darwin') {
-      const code = macKeyCode(key)
-      if (code === null) {
-        warnOnce(`Hold-to-talk: unsupported key "${key}" — using toggle mode`)
-        return null
-      }
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const koffi = require('koffi')
-      const cg = koffi.load('/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics')
-      const CGEventSourceKeyState = cg.func('bool CGEventSourceKeyState(int32_t stateID, uint16_t key)')
-      const kCGEventSourceStateCombinedSessionState = 0
-      return () => Boolean(CGEventSourceKeyState(kCGEventSourceStateCombinedSessionState, code))
-    }
-    warnOnce(`Hold-to-talk is not supported on ${platform} — using toggle mode`)
-    return null
-  } catch (err) {
-    warnOnce(
-      `Hold-to-talk key-state backend failed to load (${err instanceof Error ? err.message : String(err)}) — using toggle mode`
-    )
+  if (platform !== 'win32' && platform !== 'darwin') {
+    loadBackend(platform)
     return null
   }
+  const code = platform === 'win32' ? winVirtualKey(key) : macKeyCode(key)
+  if (code === null) {
+    warnOnce(`Hold-to-talk: unsupported key "${key}" — using toggle mode`)
+    return null
+  }
+  const backend = loadBackend(platform)
+  if (!backend) return null
+  return () => backend(code)
 }
 
 export interface WatchOptions {
