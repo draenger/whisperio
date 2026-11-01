@@ -28,7 +28,7 @@ import { TONE_PROFILE_DESCRIPTIONS } from './llm/prompts'
 // following the same shape as whisperTranscribe/elevenLabsTranscribe/
 // replicateTranscribe below, not the llm/provider.ts LLMProvider interface
 // (that abstraction is for text completion, not speech-to-text).
-import { parakeetTranscribe } from './stt/parakeet'
+import { parakeetTranscribe, isParakeetRuntimeInstalled } from './stt/parakeet'
 import { isParakeetModelReady } from './stt/parakeetModel'
 import { groqTranscribe } from './llm/groq'
 import { deepgramTranscribe, deepgramTranscribeDiarized } from './llm/deepgram'
@@ -467,6 +467,12 @@ export async function transcribeAudio(
       chain.push(fallback)
     }
   }
+  // EXPERIMENTAL: with the flag off 'parakeet' is ignored entirely (a stale
+  // chain entry must never run, nor become the only provider).
+  if (settings.experimentalParakeet !== true) {
+    chain = chain.filter((p) => p !== 'parakeet')
+    if (chain.length === 0) chain = ['openai']
+  }
 
   // Filter to only configured providers, but keep at least the first one to get a proper error
   const configuredChain = chain.filter((p) => isProviderConfigured(settings, p))
@@ -522,7 +528,7 @@ function isProviderConfigured(settings: AppSettings, provider: ProviderId): bool
   if (provider === 'assemblyai') return !!settings.assemblyaiApiKey
   if (provider === 'mistral') return !!settings.mistralApiKey
   // EXPERIMENTAL: hidden/unconfigured unless the flag is on AND the model files exist.
-  if (provider === 'parakeet') return settings.experimentalParakeet === true && isParakeetModelReady()
+  if (provider === 'parakeet') return settings.experimentalParakeet === true && isParakeetModelReady() && isParakeetRuntimeInstalled()
   return false
 }
 

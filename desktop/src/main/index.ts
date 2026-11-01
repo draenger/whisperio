@@ -451,11 +451,13 @@ app.whenReady().then(() => {
 
   // Local server IPC handlers
   // EXPERIMENTAL Parakeet (flag: experimentalParakeet)
+  const parakeetEnabled = (): boolean => loadSettings().experimentalParakeet === true
   ipcMain.handle('parakeet:status', () => ({
     ...getParakeetModelStatus(),
     runtimeInstalled: isParakeetRuntimeInstalled()
   }))
   ipcMain.handle('parakeet:download', async () => {
+    if (!parakeetEnabled()) throw new Error('Parakeet is experimental and disabled.')
     setDownloadProgressCallback((progress) => {
       BrowserWindow.getAllWindows().forEach((win) => {
         if (!win.isDestroyed()) win.webContents.send('models:download-progress', progress)
@@ -468,8 +470,8 @@ app.whenReady().then(() => {
     cancelParakeetDownload(cancelDownload)
     return true
   })
-  ipcMain.handle('parakeet:delete', () => {
-    shutdownParakeet()
+  ipcMain.handle('parakeet:delete', async () => {
+    await shutdownParakeet()
     deleteParakeetModel()
     return { ...getParakeetModelStatus(), runtimeInstalled: isParakeetRuntimeInstalled() }
   })
@@ -542,6 +544,7 @@ app.on('window-all-closed', () => {
 })
 
 app.on('before-quit', () => {
+  void shutdownParakeet()
   cleanupDictation()
   destroyTray()
 })

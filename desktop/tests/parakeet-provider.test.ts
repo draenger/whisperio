@@ -28,8 +28,10 @@ vi.mock('electron', () => ({
 }))
 
 const mockParakeet = vi.fn()
+let runtimeInstalled = true
 vi.mock('../src/main/stt/parakeet', () => ({
-  parakeetTranscribe: (...a: unknown[]) => mockParakeet(...a)
+  parakeetTranscribe: (...a: unknown[]) => mockParakeet(...a),
+  isParakeetRuntimeInstalled: () => runtimeInstalled
 }))
 let modelReady = true
 vi.mock('../src/main/stt/parakeetModel', () => ({
@@ -79,12 +81,38 @@ function okNet(text: string) {
 beforeEach(() => {
   vi.clearAllMocks()
   modelReady = true
+  runtimeInstalled = true
 })
 
 describe('parakeet provider (experimental)', () => {
-  it('is unusable when the flag is off, even with the model present', async () => {
+  it('flag off: a stale parakeet-only chain is ignored and never runs', async () => {
     mockLoadSettings.mockReturnValue({ ...base, experimentalParakeet: false })
-    await expect(transcribeAudio(Buffer.from('a'), 'a.wav')).rejects.toThrow(/experimental and disabled/)
+    await expect(transcribeAudio(Buffer.from('a'), 'a.wav')).rejects.toThrow(/OpenAI API key/)
+    expect(mockParakeet).not.toHaveBeenCalled()
+  })
+
+  it('flag off: stale parakeet in a longer chain falls through to the next provider', async () => {
+    mockLoadSettings.mockReturnValue({
+      ...base,
+      experimentalParakeet: false,
+      providerChain: ['parakeet', 'openai'],
+      openaiApiKey: 'sk-test'
+    })
+    mockNet.mockReturnValueOnce(okNet('cloud'))
+    await expect(transcribeAudio(Buffer.from('a'), 'a.wav')).resolves.toBe('cloud')
+    expect(mockParakeet).not.toHaveBeenCalled()
+  })
+
+  it('runtime not loadable: parakeet is unconfigured and skipped without a failure hop', async () => {
+    runtimeInstalled = false
+    mockLoadSettings.mockReturnValue({
+      ...base,
+      experimentalParakeet: true,
+      providerChain: ['parakeet', 'openai'],
+      openaiApiKey: 'sk-test'
+    })
+    mockNet.mockReturnValueOnce(okNet('cloud'))
+    await expect(transcribeAudio(Buffer.from('a'), 'a.wav')).resolves.toBe('cloud')
     expect(mockParakeet).not.toHaveBeenCalled()
   })
 

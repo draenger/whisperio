@@ -1537,7 +1537,15 @@ function ExperimentalParakeetCard({
 
   const toggle = async (v: boolean): Promise<void> => {
     onEnabledChange(v)
-    await window.api.settings.save({ experimentalParakeet: v })
+    if (v) {
+      await window.api.settings.save({ experimentalParakeet: true })
+      return
+    }
+    // Turning the flag off fully undoes it: drop 'parakeet' from the saved chain too.
+    const cur = await window.api.settings.load()
+    let chain = (cur.providerChain || []).filter((p) => p !== 'parakeet')
+    if (chain.length === 0) chain = ['openai']
+    await window.api.settings.save({ experimentalParakeet: false, providerChain: chain, sttProvider: chain[0] as 'openai' })
   }
 
   const download = async (): Promise<void> => {
@@ -1724,7 +1732,7 @@ function ProvidersTab({
 
   return (
     <>
-      <ExperimentalParakeetCard enabled={parakeetOn} onEnabledChange={setParakeetOn} s={s} theme={theme} />
+      <ExperimentalParakeetCard enabled={parakeetOn} onEnabledChange={(v) => { setParakeetOn(v); if (!v) { const c = providerChain.filter((p) => p !== 'parakeet'); setProviderChain(c.length ? c : ['openai']) } }} s={s} theme={theme} />
       <div style={s.card}>
         <SectionHeader title="Provider Chain" s={s} theme={theme} />
         <span style={s.hint}>First = primary. If it fails, the next one kicks in. Drag order with arrows.</span>

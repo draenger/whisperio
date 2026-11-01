@@ -177,65 +177,140 @@ parentPort.on('message', (m) => {
 })
 `
 
-let worker: Worker | null = null
+
+export const READY_TIMEOUT_MS = 120_000
+export const MIN_REQUEST_TIMEOUT_MS = 30_000
+
+type Pending = {
+  resolve: (t: string) => void
+  reject: (e: Error) => void
+  timer: ReturnType<typeof setTimeout> | null
+}
+
+interface Host {
+  worker: Worker
+  ready: Promise<void>
+}
+
+// Seams so the lifecycle can be unit-tested without the native addon.
+export const deps = {
+  loadSherpa: (): { path: string } => loadSherpa(),
+  getModelPaths: getParakeetModelPaths,
+  createWorker: (source: string, workerData: unknown): Worker =>
+    new Worker(source, { eval: true, workerData }),
+  readyTimeoutMs: READY_TIMEOUT_MS,
+  minRequestTimeoutMs: MIN_REQUEST_TIMEOUT_MS
+}
+
+let host: Host | null = null
 let idleTimer: ReturnType<typeof setTimeout> | null = null
 let nextId = 1
-const pending = new Map<number, { resolve: (t: string) => void; reject: (e: Error) => void }>()
+const pending = new Map<number, Pending>()
 
-function stopWorker(): void {
-  if (idleTimer) clearTimeout(idleTimer)
-  idleTimer = null
-  const w = worker
-  worker = null
-  if (w) void w.terminate()
-  for (const p of pending.values()) p.reject(new Error('Parakeet worker stopped.'))
+function rejectAll(err: Error): void {
+  for (const p of pending.values()) {
+    if (p.timer) clearTimeout(p.timer)
+    p.reject(err)
+  }
   pending.clear()
 }
 
-function ensureWorker(): Worker {
-  if (worker) return worker
-  const { path } = loadSherpa()
-  const config = buildRecognizerConfig(getParakeetModelPaths())
-  const w = new Worker(WORKER_SOURCE, { eval: true, workerData: { sherpaPath: path, config } })
+/** Terminate the worker, reject every in-flight request, resolve once it is gone. */
+export async function stopWorker(reason = 'Parakeet worker stopped.'): Promise<void> {
+  if (idleTimer) clearTimeout(idleTimer)
+  idleTimer = null
+  const h = host
+  host = null
+  rejectAll(new Error(reason))
+  if (h) {
+    try {
+      await h.worker.terminate()
+    } catch {
+      /* already gone */
+    }
+  }
+}
+
+function ensureHost(): Host {
+  if (host) return host
+  const { path } = deps.loadSherpa()
+  const config = buildRecognizerConfig(deps.getModelPaths())
+  const w = deps.createWorker(WORKER_SOURCE, { sherpaPath: path, config })
+  let readyTimer: ReturnType<typeof setTimeout> | null = null
+  let settled = false
+  let resolveReady!: () => void
+  let rejectReady!: (e: Error) => void
+  const ready = new Promise<void>((res, rej) => {
+    resolveReady = res
+    rejectReady = rej
+  })
+  ready.catch(() => {}) // avoid unhandled rejection when nobody awaits
+  const h: Host = { worker: w, ready }
+  const failAll = (err: Error): void => {
+    if (!settled) {
+      settled = true
+      if (readyTimer) clearTimeout(readyTimer)
+      rejectReady(err)
+    }
+    rejectAll(err)
+    if (host === h) {
+      host = null
+      void Promise.resolve(w.terminate()).catch(() => {})
+    }
+  }
+  readyTimer = setTimeout(
+    () => failAll(new Error('Parakeet worker did not become ready in time.')),
+    deps.readyTimeoutMs
+  )
+  readyTimer.unref?.()
   w.on('message', (m: { type: string; id?: number; text?: string; error?: string }) => {
-    if (m.type === 'fatal') {
-      const err = new Error(`Parakeet failed to start: ${m.error}`)
-      for (const p of pending.values()) p.reject(err)
-      pending.clear()
-      stopWorker()
+    if (m.type === 'ready') {
+      if (!settled) {
+        settled = true
+        if (readyTimer) clearTimeout(readyTimer)
+        resolveReady()
+      }
+    } else if (m.type === 'fatal') {
+      failAll(new Error(`Parakeet failed to start: ${m.error}`))
     } else if (m.type === 'result' && m.id !== undefined) {
       const p = pending.get(m.id)
       pending.delete(m.id)
-      if (p) (m.error ? p.reject(new Error(m.error)) : p.resolve(m.text ?? ''))
+      if (p) {
+        if (p.timer) clearTimeout(p.timer)
+        if (m.error) p.reject(new Error(m.error))
+        else p.resolve(m.text ?? '')
+      }
     }
   })
-  w.on('error', (err) => {
-    for (const p of pending.values()) p.reject(err)
-    pending.clear()
-    stopWorker()
-  })
-  w.on('exit', () => {
-    if (worker === w) worker = null
-  })
-  worker = w
-  return w
+  w.on('error', (err: Error) => failAll(err))
+  w.on('exit', (code: number) => failAll(new Error(`Parakeet worker exited unexpectedly (code ${code}).`)))
+  host = h
+  return h
 }
 
 /** Transcribe a WAV clip on-device. Rejects (never hangs) on any runtime/model error. */
 export async function parakeetTranscribe(audio: Buffer): Promise<string> {
   const samples = wavToPcm16k(audio)
   if (samples.length === 0) return ''
-  const w = ensureWorker()
+  const h = ensureHost()
+  await h.ready
+  if (host !== h) throw new Error('Parakeet worker stopped.')
   if (idleTimer) clearTimeout(idleTimer)
-  idleTimer = setTimeout(stopWorker, IDLE_TTL_MS)
+  idleTimer = setTimeout(() => void stopWorker('Parakeet worker idle.'), IDLE_TTL_MS)
   idleTimer.unref?.()
   const id = nextId++
+  const durationMs = (samples.length / TARGET_SAMPLE_RATE) * 1000
+  const timeoutMs = Math.max(deps.minRequestTimeoutMs, 3 * durationMs)
   return new Promise<string>((resolve, reject) => {
-    pending.set(id, { resolve, reject })
-    w.postMessage({ id, samples, sampleRate: TARGET_SAMPLE_RATE })
+    const timer = setTimeout(() => {
+      void stopWorker(`Parakeet transcription timed out after ${Math.round(timeoutMs / 1000)}s.`)
+    }, timeoutMs)
+    timer.unref?.()
+    pending.set(id, { resolve, reject, timer })
+    h.worker.postMessage({ id, samples, sampleRate: TARGET_SAMPLE_RATE })
   })
 }
 
-export function shutdownParakeet(): void {
-  stopWorker()
+export function shutdownParakeet(): Promise<void> {
+  return stopWorker()
 }
