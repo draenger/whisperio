@@ -846,6 +846,80 @@ describe('hotkeyManager', () => {
       expect(mockSendToPrimaryOverlay).not.toHaveBeenCalled()
     })
 
+    it('cliStart is a no-op while transcribing (does not force-reset)', async () => {
+      await mod.cliStart()
+      await mod.cliStop()
+      expect(mod.getState()).toBe('transcribing')
+      mockEnsureOverlayReady.mockClear()
+      await mod.cliStart()
+      expect(mod.getState()).toBe('transcribing')
+      expect(mockEnsureOverlayReady).not.toHaveBeenCalled()
+    })
+
+    it('cliStop is a no-op in pasting state', async () => {
+      await mod.cliStart()
+      await mod.cliStop()
+      mod.registerHotkey()
+      const h = (mockIpcHandle.mock.calls.find((c) => c[0] === 'dictation:result') as unknown[])[1] as (
+        event: unknown,
+        text: string
+      ) => Promise<void>
+      let finishPaste: () => void = () => {}
+      mockAutoPaste.mockImplementation(() => new Promise<void>((r) => { finishPaste = r }))
+      const p = h({}, 'hello')
+      await Promise.resolve()
+      expect(mod.getState()).toBe('pasting')
+      await mod.cliStop()
+      expect(mod.getState()).toBe('pasting')
+      finishPaste()
+      await p
+      expect(mod.getState()).toBe('idle')
+    })
+
+    it('cliToggle force-resets a stuck transcribing state like the hotkey does', async () => {
+      await mod.cliToggle()
+      await mod.cliToggle()
+      expect(mod.getState()).toBe('transcribing')
+      await mod.cliToggle()
+      expect(mod.getState()).toBe('idle')
+      expect(mockRestoreTargetWindow).toHaveBeenCalled()
+    })
+
+    it('cliSend while idle starts a session whose result presses Enter, but plain toggle afterwards does not', async () => {
+      mod.registerHotkey()
+      const h = (mockIpcHandle.mock.calls.find((c) => c[0] === 'dictation:result') as unknown[])[1] as (
+        event: unknown,
+        text: string
+      ) => Promise<void>
+      await mod.cliSend()
+      await mod.cliToggle()
+      await h({}, 'one')
+      expect(mockSendEnter).toHaveBeenCalledTimes(1)
+      mockSendEnter.mockClear()
+      await mod.cliToggle()
+      await mod.cliToggle()
+      await h({}, 'two')
+      expect(mockSendEnter).not.toHaveBeenCalled()
+    })
+
+    it('cliCancel cancels a transcribing session', async () => {
+      await mod.cliStart()
+      await mod.cliStop()
+      expect(mod.getState()).toBe('transcribing')
+      mod.cliCancel()
+      expect(mod.getState()).toBe('idle')
+    })
+
+    it('cliCancel cancels a command-mode session', async () => {
+      mockSettings.commandHotkey = 'Ctrl+Shift+C'
+      mod.registerHotkey()
+      const fn = mockRegister.mock.calls.find((c) => c[0] === 'Ctrl+Shift+C')![1] as () => Promise<void>
+      await fn()
+      expect(mod.getState()).toBe('command')
+      mod.cliCancel()
+      expect(mod.getState()).toBe('idle')
+    })
+
     it('cliCancel cancels an active recording', async () => {
       await mod.cliStart()
       mod.cliCancel()

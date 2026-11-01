@@ -20,8 +20,9 @@ const FLAGS: Record<string, CliCommand> = {
 export function parseCliCommand(argv: readonly string[]): CliCommand | null {
   for (const arg of argv) {
     if (typeof arg !== 'string') continue
-    const cmd = FLAGS[arg.trim().toLowerCase()]
-    if (cmd) return cmd
+    const key = arg.trim().toLowerCase()
+    // hasOwn: a bare word like "constructor" must not resolve to an inherited member.
+    if (Object.prototype.hasOwnProperty.call(FLAGS, key)) return FLAGS[key]
   }
   return null
 }
