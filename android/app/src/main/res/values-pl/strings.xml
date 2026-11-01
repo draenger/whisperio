@@ -201,8 +201,8 @@
     <string name="settings_encrypt_off_title">Wyłączyć szyfrowanie?</string>
     <string name="settings_encrypt_off_body">Historia i nagrania zostaną odszyfrowane i znów będą przechowywane bez szyfrowania w prywatnym katalogu aplikacji.</string>
     <string name="settings_encrypt_off_confirm">Wyłącz</string>
-    <string name="settings_encrypt_busy_on">Szyfrowanie historii…</string>
-    <string name="settings_encrypt_busy_off">Odszyfrowywanie historii…</string>
+    <string name="settings_encrypt_busy_on">Szyfrowanie historii...</string>
+    <string name="settings_encrypt_busy_off">Odszyfrowywanie historii...</string>
     <string name="settings_encrypt_unavailable_title">Szyfrowanie niedostępne</string>
     <string name="settings_encrypt_unavailable_body">Magazyn kluczy tego urządzenia nie mógł utworzyć ani użyć klucza szyfrowania, więc szyfrowanie nie zostało włączone. Nic nie zostało zmienione.</string>
     <plurals name="settings_encrypt_unreadable">
