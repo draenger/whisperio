@@ -105,6 +105,8 @@ export interface AppSettings {
   // doc comment. Empty string = disabled.
   commandHotkey: string
   theme: 'dark' | 'light'
+  /** Internal: last Linux keyring backend the basic_text warning was shown for (no UI control). */
+  linuxKeyringWarningShownFor: string
   accentColor: 'graphite' | 'blue' | 'teal' | 'emerald' | 'amber'
   inputDeviceId: string
   outputDeviceId: string
