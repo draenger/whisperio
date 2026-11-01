@@ -2,6 +2,7 @@ import { app, net } from 'electron'
 import { existsSync, mkdirSync, unlinkSync, readdirSync, statSync, createWriteStream, renameSync } from 'fs'
 import { join, basename, resolve, sep } from 'path'
 import { isLocalHost } from './llm/provider'
+import { newHasher, checkDigest, forgetHash } from './downloadIntegrity'
 
 export interface ModelInfo {
   id: string
@@ -11,6 +12,12 @@ export interface ModelInfo {
   description: string
   filename: string
   url: string
+  /**
+   * Pinned SHA-256 (hex) of the model file, or null if not known in-repo.
+   * TODO: fill from the huggingface LFS pointer ("oid sha256") of each file.
+   * While null, the first download is trusted (TOFU) and later downloads must match it.
+   */
+  sha256: string | null
 }
 
 export interface LocalModel {
@@ -37,7 +44,8 @@ const MODELS: ModelInfo[] = [
     sizeBytes: 75_000_000,
     description: 'Fastest, lowest quality. Good for testing.',
     filename: 'ggml-tiny.bin',
-    url: 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.bin'
+    url: 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.bin',
+    sha256: null
   },
   {
     id: 'base',
@@ -46,7 +54,8 @@ const MODELS: ModelInfo[] = [
     sizeBytes: 142_000_000,
     description: 'Fast with decent quality.',
     filename: 'ggml-base.bin',
-    url: 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.bin'
+    url: 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.bin',
+    sha256: null
   },
   {
     id: 'small',
@@ -55,7 +64,8 @@ const MODELS: ModelInfo[] = [
     sizeBytes: 466_000_000,
     description: 'Good balance of speed and quality.',
     filename: 'ggml-small.bin',
-    url: 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.bin'
+    url: 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.bin',
+    sha256: null
   },
   {
     id: 'medium',
@@ -64,7 +74,8 @@ const MODELS: ModelInfo[] = [
     sizeBytes: 1_500_000_000,
     description: 'High quality, needs more RAM.',
     filename: 'ggml-medium.bin',
-    url: 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-medium.bin'
+    url: 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-medium.bin',
+    sha256: null
   },
   {
     id: 'large-v3-turbo',
@@ -73,7 +84,8 @@ const MODELS: ModelInfo[] = [
     sizeBytes: 1_600_000_000,
     description: 'Best speed/quality ratio. Recommended.',
     filename: 'ggml-large-v3-turbo.bin',
-    url: 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo.bin'
+    url: 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo.bin',
+    sha256: null
   },
   {
     id: 'large-v3',
@@ -82,7 +94,8 @@ const MODELS: ModelInfo[] = [
     sizeBytes: 3_100_000_000,
     description: 'Best quality. Needs 6+ GB RAM.',
     filename: 'ggml-large-v3.bin',
-    url: 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3.bin'
+    url: 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3.bin',
+    sha256: null
   }
 ]
 
@@ -217,7 +230,7 @@ export function downloadModel(modelId: string): Promise<string> {
         return
       }
 
-      handleDownloadResponse(modelId, response, filepath, tempPath, resolve, reject, () => { aborted = true; request.abort() })
+      handleDownloadResponse(modelId, response, filepath, tempPath, resolve, reject, () => { aborted = true; request.abort() }, integrityFor(modelId))
     })
 
     request.on('error', (err) => {
@@ -253,7 +266,7 @@ function downloadFromUrl(modelId: string, url: string, filepath: string, tempPat
         reject(new Error(`Download failed: HTTP ${response.statusCode}`))
         return
       }
-      handleDownloadResponse(modelId, response, filepath, tempPath, resolve, reject, () => { aborted = true; request.abort() })
+      handleDownloadResponse(modelId, response, filepath, tempPath, resolve, reject, () => { aborted = true; request.abort() }, integrityFor(modelId))
     })
 
     request.on('error', (err) => {
@@ -265,6 +278,19 @@ function downloadFromUrl(modelId: string, url: string, filepath: string, tempPat
   })
 }
 
+interface IntegrityOpts {
+  key: string
+  sha256: string | null
+  /** Minimum plausible size when Content-Length is missing; null = Content-Length required. */
+  minBytes: number | null
+}
+
+function integrityFor(id: string): IntegrityOpts {
+  const model = MODELS.find((m) => m.id === id)
+  if (!model) return { key: `model:${id}`, sha256: null, minBytes: null }
+  return { key: `model:${model.filename}`, sha256: model.sha256, minBytes: Math.floor(model.sizeBytes * 0.5) }
+}
+
 function handleDownloadResponse(
   modelId: string,
   response: Electron.IncomingMessage,
@@ -274,8 +300,10 @@ function handleDownloadResponse(
   reject: (err: Error) => void,
   // Aborts the underlying net.request. Supplied so the cancel path registered
   // below can stop the socket AND tear down the write stream in one step.
-  abortRequest: () => void = () => {}
+  abortRequest: () => void = () => {},
+  integrity: IntegrityOpts = { key: modelId, sha256: null, minBytes: null }
 ): void {
+  const hasher = newHasher()
   const contentLength = response.headers['content-length']
   const totalBytes = contentLength
     ? parseInt(Array.isArray(contentLength) ? contentLength[0] : contentLength, 10)
@@ -320,6 +348,7 @@ function handleDownloadResponse(
     if (failed) return
     // Honor backpressure: if the OS write buffer is full, pause the network
     // stream until it drains so multi-GB models don't balloon RSS / OOM.
+    hasher.update(chunk)
     const ok = writeStream.write(chunk)
     if (!ok) {
       readable.pause()
@@ -357,6 +386,30 @@ function handleDownloadResponse(
       fail(new Error(`Download produced an empty file for ${modelId}.`))
       return
     }
+    // Without Content-Length truncation is undetectable by length, so demand a
+    // plausible minimum size (custom models: refuse outright).
+    if (totalBytes <= 0) {
+      if (integrity.minBytes === null) {
+        fail(new Error(`Server sent no Content-Length for ${modelId}; cannot verify the download. Refusing.`))
+        return
+      }
+      if (downloadedBytes < integrity.minBytes) {
+        fail(
+          new Error(
+            `Download for ${modelId} has no Content-Length and only ${downloadedBytes} bytes ` +
+              `(expected at least ${integrity.minBytes}). Discarded.`
+          )
+        )
+        return
+      }
+    }
+    let integrityCommit: () => void
+    try {
+      integrityCommit = checkDigest(integrity.key, modelId, hasher.digest('hex'), integrity.sha256).commit
+    } catch (err) {
+      fail(err)
+      return
+    }
     // Resolve only after the bytes are actually flushed to disk (finish).
     writeStream.end(() => {
       if (failed) return
@@ -371,6 +424,7 @@ function handleDownloadResponse(
         }
         if (existsSync(filepath)) unlinkSync(filepath)
         renameSync(tempPath, filepath)
+        integrityCommit()
         progressCallback?.({ modelId, percent: 100, downloadedBytes, totalBytes })
         resolve(filepath)
       } catch (err) {
@@ -406,6 +460,7 @@ export function deleteModel(modelId: string): boolean {
     try {
       if (existsSync(filepath)) {
         unlinkSync(filepath)
+        forgetHash(`model:custom:${modelId.startsWith('custom:') ? modelId.slice(7) : modelId}`)
         return true
       }
     } catch { /* ignore */ }
@@ -415,6 +470,7 @@ export function deleteModel(modelId: string): boolean {
   try {
     if (existsSync(filepath)) {
       unlinkSync(filepath)
+      forgetHash(`model:${model.filename}`)
       return true
     }
   } catch { /* ignore */ }
@@ -506,7 +562,7 @@ export function downloadCustomModel(url: string, filename: string): Promise<stri
         return
       }
 
-      handleDownloadResponse(customId, response, filepath, tempPath, resolve, reject, () => { aborted = true; request.abort() })
+      handleDownloadResponse(customId, response, filepath, tempPath, resolve, reject, () => { aborted = true; request.abort() }, integrityFor(customId))
     })
 
     request.on('error', (err) => {
