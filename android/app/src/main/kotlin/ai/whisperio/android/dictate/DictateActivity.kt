@@ -7,7 +7,9 @@ import ai.whisperio.android.dictation.DictationState
 import ai.whisperio.android.dictation.StartOptions
 import ai.whisperio.android.graph
 import ai.whisperio.android.history.RecordingSource
+import ai.whisperio.android.ui.common.KeepScreenOn
 import ai.whisperio.android.ui.common.confirmHaptic
+import ai.whisperio.android.ui.common.needsScreenOn
 import ai.whisperio.android.ui.common.copyPlainText
 import ai.whisperio.android.ui.theme.WhisperioTheme
 import android.Manifest
@@ -48,6 +50,7 @@ class DictateActivity : ComponentActivity() {
         setContent {
             WhisperioTheme {
                 val state by controller.state.collectAsState()
+                KeepScreenOn(needsScreenOn(state))
                 DictateScreen(
                     state = state,
                     onStop = controller::stopAndTranscribe,
@@ -88,9 +91,10 @@ class DictateActivity : ComponentActivity() {
 
     override fun onStop() {
         super.onStop()
-        // Leaving the screen ends the recording (no foreground service, CONTRACT 6); a rotation does not.
+        // Leaving the screen (or the screen turning off) stops the recording and transcribes it; the audio is never discarded
+        // (no foreground service, CONTRACT 6). Only the explicit Cancel button discards. A rotation does neither.
         val s = graph.dictation.state.value
-        if (!isChangingConfigurations && s is DictationState.Recording && s.source == source) graph.dictation.cancel()
+        if (!isChangingConfigurations && s is DictationState.Recording && s.source == source) graph.dictation.stopAndTranscribe()
     }
 
     private fun begin() {

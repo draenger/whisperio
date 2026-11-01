@@ -33,8 +33,11 @@ interface HistoryStore {
      */
     suspend fun sweepOrphanAudio(exclude: File?): Int
 
-    /** Deletes every audio file but keeps the transcripts. */
-    suspend fun deleteAllAudio()
+    /**
+     * Deletes every audio file but keeps the transcripts. The row [keepId] and its file (the recording in progress) are left
+     * untouched; [keepFile] is the no-history active file, which has no row.
+     */
+    suspend fun deleteAllAudio(keepId: String? = null, keepFile: File? = null)
 
     /** Deletes every row and every audio file. */
     suspend fun clear()
@@ -84,10 +87,12 @@ class RoomHistoryStore(
         return n
     }
 
-    override suspend fun deleteAllAudio() {
-        dao.withAudio().forEach { File(it.audioPath!!).delete() }
-        dao.clearAudioPaths()
-        recordingsDir.listFiles()?.forEach { it.delete() }
+    override suspend fun deleteAllAudio(keepId: String?, keepFile: File?) {
+        val keep = keepFile?.absoluteFile
+        dao.withAudio().filter { it.id != keepId }.forEach { File(it.audioPath!!).delete() }
+        if (keepId == null) dao.clearAudioPaths() else dao.clearAudioPathsExcept(keepId)
+        val keepRow = keepId?.let { dao.get(it)?.audioPath }?.let { File(it).absoluteFile }
+        recordingsDir.listFiles()?.forEach { if (it.absoluteFile != keep && it.absoluteFile != keepRow) it.delete() }
     }
 
     override suspend fun clear() {
