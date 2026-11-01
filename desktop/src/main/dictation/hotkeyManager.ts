@@ -333,6 +333,31 @@ function cancel(): void {
   restoreTargetWindow()
 }
 
+// --- CLI control entry points (Whisperio --toggle/--start/--stop/--cancel/--send) ---
+// Thin wrappers over the same handlers the hotkeys use; no logic duplicated.
+// A null accelerator means the hold-to-talk release watcher is never started.
+export async function cliToggle(): Promise<void> {
+  await activateWith(null)
+}
+
+export async function cliSend(): Promise<void> {
+  sendEnterOnResult = true
+  await activateWith(null)
+}
+
+export async function cliStart(): Promise<void> {
+  if (state === 'idle') await activateWith(null)
+}
+
+export async function cliStop(): Promise<void> {
+  if (state === 'recording') await activateWith(null)
+  else if (state === 'command') await activateCommand()
+}
+
+export function cliCancel(): void {
+  if (state !== 'idle') cancel()
+}
+
 function unregisterEscape(): void {
   if (globalShortcut.isRegistered('Escape')) {
     globalShortcut.unregister('Escape')
