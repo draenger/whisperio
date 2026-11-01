@@ -87,7 +87,7 @@ describe('transcribeAudio watchdog activity', () => {
   it('notes activity for live dictation', async () => {
     const spy = vi.fn()
     const off = onTranscriptionActivity(spy)
-    await transcribeAudio(Buffer.from('a'), 't.webm', null, { fromDictation: true })
+    await transcribeAudio(Buffer.from('a'), 't.webm', null, null, { fromDictation: true })
     off()
     expect(spy).toHaveBeenCalled()
   })
