@@ -1,5 +1,5 @@
 import { app } from 'electron'
-import { readFileSync, writeFileSync, existsSync, renameSync } from 'fs'
+import { readFileSync, writeFileSync, existsSync, renameSync, openSync, fsyncSync, closeSync, unlinkSync } from 'fs'
 import { join } from 'path'
 // Type-only — no runtime dependency on the LLM prompt-building module (same
 // pattern postprocess.ts already uses for CleanupMode). prompts.ts owns
@@ -141,6 +141,10 @@ export interface AppSettings {
   // dictationHotkey ever falls back to HOTKEY_CANDIDATES); defaulted non-empty
   // in DEFAULT_SETTINGS below so the feature is on out of the box.
   commandHotkey: string
+  // Main dictation (+ dictate-and-send) hotkey behaviour: 'toggle' = press to
+  // start, press again to stop; 'hold' = record while held, release to
+  // transcribe (dictation/keyHold.ts; falls back to toggle where unsupported).
+  hotkeyMode: 'toggle' | 'hold'
   // 'violet-legacy' (added in STEP0 theming wiring) was removed from the
   // product in VIOLET-OUT — see migrateLegacyTheme() below, which maps any
   // saved 'violet-legacy' value back to 'dark' on load.
@@ -300,6 +304,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   dictationHotkey: '',
   dictateAndSendHotkey: '',
   commandHotkey: 'Ctrl+Shift+C',
+  hotkeyMode: 'toggle',
   theme: 'dark',
   accentColor: 'blue',
   inputDeviceId: '',
@@ -403,46 +408,149 @@ function migrateToneMap(parsed: Partial<AppSettings>): Partial<AppSettings> {
   return { ...parsed, toneMap: { ...DEFAULT_TONE_MAP } }
 }
 
+// A transient lock (antivirus, backup agent, indexer) on settings.json must
+// never be mistaken for corruption: retry, then fall back to in-memory
+// defaults WITHOUT ever overwriting the file.
+const TRANSIENT_CODES = new Set(['EPERM', 'EBUSY', 'EACCES'])
+const READ_RETRIES = 5
+const READ_BACKOFF_MS = [25, 50, 100, 200]
+const RENAME_RETRIES = 5
+
+let sleepImpl: (ms: number) => void = (ms) => {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms)
+}
+
+/** Test hook: replace the blocking sleep; call with no arg to restore. */
+export function setSleepSyncForTests(fn?: (ms: number) => void): void {
+  sleepImpl = fn ?? ((ms) => { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms) })
+}
+
+function errCode(err: unknown): string {
+  const code = (err as NodeJS.ErrnoException | null)?.code
+  return typeof code === 'string' ? code : 'unknown'
+}
+
+function isTransient(err: unknown): boolean {
+  return TRANSIENT_CODES.has(errCode(err))
+}
+
+// True while the on-disk settings could not be read (transient lock that
+// outlasted the retries, or a corrupt file that could not be moved aside).
+// Defaults are served from memory and saveSettings refuses to write, so the
+// user's real file is never clobbered. Re-evaluated on every loadSettings().
+let settingsUnavailable = false
+
+/** True when the last load could not read settings.json (saves are refused). */
+export function areSettingsUnavailable(): boolean {
+  return settingsUnavailable
+}
+
+class SettingsUnavailableError extends Error {
+  constructor() {
+    super('Settings file could not be read; refusing to overwrite it. Try again shortly.')
+    this.name = 'SettingsUnavailableError'
+  }
+}
+
+function readSettingsText(filePath: string): string {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return readFileSync(filePath, 'utf-8')
+    } catch (err) {
+      if (attempt < READ_RETRIES - 1 && isTransient(err)) {
+        sleepImpl(READ_BACKOFF_MS[Math.min(attempt, READ_BACKOFF_MS.length - 1)])
+        continue
+      }
+      throw err
+    }
+  }
+}
+
+/** Move a corrupt settings file aside to a fresh timestamped name. Never overwrites a backup. */
+function quarantineCorrupt(filePath: string): boolean {
+  const base = filePath.replace(/\.json$/i, '')
+  const stamp = Date.now()
+  for (let n = 0; n < 100; n++) {
+    const candidate = `${base}.corrupt-${stamp}${n === 0 ? '' : `-${n}`}.json`
+    if (existsSync(candidate)) continue
+    try {
+      renameSync(filePath, candidate)
+      console.error(`[Whisperio] settings.json was corrupt; moved aside to ${candidate} and reset to defaults.`)
+      return true
+    } catch (err) {
+      console.error(`[Whisperio] Failed to move corrupt settings.json aside (${errCode(err)}).`)
+      return false
+    }
+  }
+  return false
+}
+
 export function loadSettings(): AppSettings {
   const filePath = getSettingsPath()
   if (!existsSync(filePath)) {
+    settingsUnavailable = false
     return { ...DEFAULT_SETTINGS }
   }
+  let raw: string
   try {
-    const raw = readFileSync(filePath, 'utf-8')
-    const parsed = JSON.parse(raw) as Partial<AppSettings>
-    const migrated = migrateToneMap(migrateLegacyTheme(migrateCleanupSettings(migrateVocabulary(parsed))))
-    return { ...DEFAULT_SETTINGS, ...migrated }
+    raw = readSettingsText(filePath)
   } catch (err) {
-    // A corrupt settings.json (e.g. truncated by a crash/power-loss mid-write)
-    // must not silently wipe the user's API keys + config. Preserve the bad
-    // file as `.corrupt` so the loss is visible and recoverable, then fall back
-    // to defaults.
-    try {
-      const backupPath = `${filePath}.corrupt`
-      renameSync(filePath, backupPath)
-      console.error(
-        `[Whisperio] settings.json was unreadable (${err instanceof Error ? err.message : String(err)}); ` +
-        `backed up to ${backupPath} and reset to defaults.`
-      )
-    } catch (backupErr) {
-      console.error('[Whisperio] Failed to back up corrupt settings.json:', backupErr)
-    }
+    // Not corruption: leave the file alone, serve defaults, refuse saves.
+    settingsUnavailable = true
+    console.error(`[Whisperio] settings.json could not be read (${errCode(err)}); using defaults in memory, saves disabled until it is readable.`)
     return { ...DEFAULT_SETTINGS }
   }
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(raw)
+  } catch {
+    parsed = undefined
+  }
+  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    // Syntax error or wrong shape: genuinely corrupt (e.g. truncated by a
+    // crash). Preserve it so the loss is recoverable, then use defaults.
+    settingsUnavailable = !quarantineCorrupt(filePath)
+    return { ...DEFAULT_SETTINGS }
+  }
+  settingsUnavailable = false
+  const migrated = migrateToneMap(migrateLegacyTheme(migrateCleanupSettings(migrateVocabulary(parsed as Partial<AppSettings>))))
+  const merged = { ...DEFAULT_SETTINGS, ...migrated }
+  if (merged.hotkeyMode !== 'toggle' && merged.hotkeyMode !== 'hold') merged.hotkeyMode = 'toggle'
+  return merged
 }
 
 export function saveSettings(settings: Partial<AppSettings>): AppSettings {
   const current = loadSettings()
+  if (settingsUnavailable) throw new SettingsUnavailableError()
   const merged = { ...current, ...settings }
   const filePath = getSettingsPath()
-  // Atomic write: serialize to a temp file then rename over settings.json
-  // (atomic on the same volume). A crash mid-write leaves the previous, valid
-  // settings.json intact instead of a truncated/corrupt file. Mirrors
-  // recordingStore.saveIndex.
+  // Durable atomic write: temp file -> fsync -> rename over settings.json.
+  // A crash/power loss leaves the previous, valid file or the complete new one.
   const tmpPath = `${filePath}.${process.pid}.${Date.now()}.tmp`
-  writeFileSync(tmpPath, JSON.stringify(merged, null, 2), 'utf-8')
-  renameSync(tmpPath, filePath)
+  try {
+    writeFileSync(tmpPath, JSON.stringify(merged, null, 2), 'utf-8')
+    const fd = openSync(tmpPath, 'r+')
+    try {
+      fsyncSync(fd)
+    } finally {
+      closeSync(fd)
+    }
+    for (let attempt = 0; ; attempt++) {
+      try {
+        renameSync(tmpPath, filePath)
+        break
+      } catch (err) {
+        if (attempt < RENAME_RETRIES - 1 && isTransient(err)) {
+          sleepImpl(READ_BACKOFF_MS[Math.min(attempt, READ_BACKOFF_MS.length - 1)])
+          continue
+        }
+        throw err
+      }
+    }
+  } catch (err) {
+    try { unlinkSync(tmpPath) } catch { /* best-effort cleanup */ }
+    throw err
+  }
   return merged
 }
 

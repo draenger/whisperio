@@ -1,4 +1,4 @@
-import { vi, describe, it, expect, beforeEach } from 'vitest'
+import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest'
 
 // --- Electron mocks ---
 const mockRegister = vi.fn()
@@ -83,6 +83,7 @@ interface MockSettings {
   dictateAndSendHotkey: string
   outputRecordingHotkey: string
   commandHotkey: string
+  hotkeyMode?: 'toggle' | 'hold'
 }
 let mockSettings: MockSettings
 const mockLoadSettings = vi.fn(() => mockSettings)
@@ -102,6 +103,13 @@ const mockHandleCommandError = vi.fn()
 
 vi.mock('../src/main/errorHandler', () => ({
   handleCommandError: (...args: unknown[]) => mockHandleCommandError(...args)
+}))
+
+// --- keyHold mock (hold-to-talk release watcher) ---
+const mockWatchKeyRelease = vi.fn()
+
+vi.mock('../src/main/dictation/keyHold', () => ({
+  watchKeyRelease: (...args: unknown[]) => mockWatchKeyRelease(...args)
 }))
 
 // --- Fresh module per test (resets module-level state) ---
@@ -501,7 +509,7 @@ describe('hotkeyManager', () => {
 
     await activateOutput() // -> recording
     expect(mod.getState()).toBe('recording')
-    expect(mockSendToPrimaryOverlay).toHaveBeenCalledWith('dictation:activate-output')
+    expect(mockSendToPrimaryOverlay).toHaveBeenCalledWith('dictation:activate-output', expect.any(Number))
 
     await activateOutput() // -> transcribing
     expect(mod.getState()).toBe('transcribing')
@@ -653,7 +661,7 @@ describe('hotkeyManager', () => {
     expect(mod.getState()).toBe('command')
     // Reuses the SAME recording-start event as normal dictation — no
     // renderer changes needed to capture the spoken instruction.
-    expect(mockSendToPrimaryOverlay).toHaveBeenCalledWith('dictation:activate')
+    expect(mockSendToPrimaryOverlay).toHaveBeenCalledWith('dictation:activate', expect.any(Number))
 
     await activateCommand() // -> transcribing
     expect(mod.getState()).toBe('transcribing')
@@ -791,5 +799,191 @@ describe('hotkeyManager', () => {
     mockRegister.mockClear()
     mod.resumeHotkeys()
     expect(mockRegister).toHaveBeenCalledWith('Ctrl+Shift+C', expect.any(Function))
+  })
+
+  describe('hold-to-talk mode', () => {
+    let release: () => void
+    const cancelWatch = vi.fn()
+
+    beforeEach(() => {
+      vi.useFakeTimers()
+      release = () => {}
+      cancelWatch.mockReset()
+      mockWatchKeyRelease.mockReset()
+      mockWatchKeyRelease.mockImplementation((_accel: string, cb: () => void) => {
+        release = cb
+        return cancelWatch
+      })
+      mockSettings.hotkeyMode = 'hold'
+    })
+    afterEach(() => vi.useRealTimers())
+
+    async function setup(): Promise<() => Promise<void>> {
+      mod.registerHotkey()
+      return mockRegister.mock.calls[0][1] as () => Promise<void>
+    }
+
+    it('press starts recording and watches for release; release stops', async () => {
+      const activate = await setup()
+      await activate()
+      expect(mod.getState()).toBe('recording')
+      expect(mockWatchKeyRelease).toHaveBeenCalledWith('Ctrl+Shift+Space', expect.any(Function))
+      vi.advanceTimersByTime(600)
+      release()
+      expect(mod.getState()).toBe('transcribing')
+      expect(mockSendToPrimaryOverlay).toHaveBeenCalledWith('dictation:deactivate', expect.any(Number))
+    })
+
+    it('broadcasts hold flag in overlay-info (true only where hold is supported)', async () => {
+      const activate = await setup()
+      await activate()
+      expect(mockBroadcastToOverlays).toHaveBeenCalledWith(
+        'dictation:overlay-info',
+        expect.objectContaining({ hold: process.platform === 'win32' || process.platform === 'darwin' })
+      )
+    })
+
+    it('ignores auto-repeat presses while held', async () => {
+      const activate = await setup()
+      await activate()
+      await activate()
+      await activate()
+      expect(mod.getState()).toBe('recording')
+    })
+
+    it('treats a very short hold as a cancel', async () => {
+      const activate = await setup()
+      await activate()
+      vi.advanceTimersByTime(50)
+      release()
+      expect(mod.getState()).toBe('idle')
+      expect(mockSendToPrimaryOverlay).toHaveBeenCalledWith('dictation:cancel')
+    })
+
+    it('ignores a queued press right after release, but not a later one', async () => {
+      const activate = await setup()
+      await activate()
+      vi.advanceTimersByTime(600)
+      release()
+      expect(mod.getState()).toBe('transcribing')
+      vi.advanceTimersByTime(100)
+      await activate() // queued auto-repeat: must not force-reset
+      expect(mod.getState()).toBe('transcribing')
+      vi.advanceTimersByTime(400)
+      await activate() // deliberate later press: force-reset as before
+      expect(mod.getState()).toBe('idle')
+    })
+
+    it('cancels the watcher on cancel()', async () => {
+      const activate = await setup()
+      await activate()
+      const cancelFn = (mockIpcOn.mock.calls.find((c) => c[0] === 'dictation:cancel') as unknown[])[1] as () => void
+      cancelFn()
+      expect(cancelWatch).toHaveBeenCalled()
+      expect(mod.getState()).toBe('idle')
+    })
+
+    it('cancels the watcher on unregisterHotkey', async () => {
+      const activate = await setup()
+      await activate()
+      mod.unregisterHotkey()
+      expect(cancelWatch).toHaveBeenCalled()
+    })
+
+    it('falls back to toggle when hold detection is unavailable', async () => {
+      mockWatchKeyRelease.mockReturnValue(null)
+      const activate = await setup()
+      await activate()
+      expect(mod.getState()).toBe('recording')
+      await activate()
+      expect(mod.getState()).toBe('transcribing')
+    })
+
+    it('toggle mode never starts a watcher', async () => {
+      mockSettings.hotkeyMode = 'toggle'
+      const activate = await setup()
+      await activate()
+      expect(mockWatchKeyRelease).not.toHaveBeenCalled()
+    })
+
+    it('a second release callback after the first (state no longer recording) is a no-op', async () => {
+      const activate = await setup()
+      await activate()
+      vi.advanceTimersByTime(600)
+      release()
+      expect(mod.getState()).toBe('transcribing')
+      const deactivateCalls = (): number =>
+        mockSendToPrimaryOverlay.mock.calls.filter((c) => c[0] === 'dictation:deactivate').length
+      expect(deactivateCalls()).toBe(1)
+      release() // stray late callback
+      expect(deactivateCalls()).toBe(1)
+      expect(mod.getState()).toBe('transcribing')
+    })
+
+    it('a release belonging to an invalidated session does not stop the new recording', async () => {
+      const activate = await setup()
+      await activate()
+      const staleRelease = release
+      vi.advanceTimersByTime(600)
+      const cancelFn = (mockIpcOn.mock.calls.find((c) => c[0] === 'dictation:cancel') as unknown[])[1] as () => void
+      cancelFn()
+      expect(mod.getState()).toBe('idle')
+      await activate()
+      expect(mod.getState()).toBe('recording')
+      vi.advanceTimersByTime(600)
+      staleRelease() // old watcher firing late
+      expect(mod.getState()).toBe('recording')
+    })
+
+    it('release stops listening for Escape (unregisters the temporary cancel shortcut)', async () => {
+      const activate = await setup()
+      await activate()
+      vi.advanceTimersByTime(600)
+      mockUnregister.mockClear()
+      mockIsRegistered.mockReturnValue(true) // Escape is registered while recording
+      release()
+      expect(mockUnregister).toHaveBeenCalledWith('Escape')
+    })
+
+    it('a cancelled short hold does not set the post-release ignore window', async () => {
+      const activate = await setup()
+      await activate()
+      vi.advanceTimersByTime(50)
+      release()
+      expect(mod.getState()).toBe('idle')
+      await activate() // immediate new press must start a fresh recording
+      expect(mod.getState()).toBe('recording')
+    })
+
+    it('a press long after a hold release force-resets and does not restart the watcher', async () => {
+      const activate = await setup()
+      await activate()
+      vi.advanceTimersByTime(600)
+      release()
+      vi.advanceTimersByTime(5000)
+      mockWatchKeyRelease.mockClear()
+      await activate()
+      expect(mod.getState()).toBe('idle')
+      expect(mockWatchKeyRelease).not.toHaveBeenCalled()
+    })
+
+    it('the output-recording hotkey stays toggle-only in hold mode (no watcher)', async () => {
+      mockSettings.outputRecordingHotkey = 'Ctrl+Alt+O'
+      mod.registerHotkey()
+      const out = mockRegister.mock.calls.find((c) => c[0] === 'Ctrl+Alt+O')![1] as () => Promise<void>
+      await out()
+      expect(mod.getState()).toBe('recording')
+      expect(mockWatchKeyRelease).not.toHaveBeenCalled()
+      await out()
+      expect(mod.getState()).toBe('transcribing')
+    })
+
+    it('applies hold to the dictate-and-send hotkey', async () => {
+      mockSettings.dictateAndSendHotkey = 'Ctrl+Alt+S'
+      mod.registerHotkey()
+      const send = mockRegister.mock.calls.find((c) => c[0] === 'Ctrl+Alt+S')![1] as () => Promise<void>
+      await send()
+      expect(mockWatchKeyRelease).toHaveBeenCalledWith('Ctrl+Alt+S', expect.any(Function))
+    })
   })
 })
