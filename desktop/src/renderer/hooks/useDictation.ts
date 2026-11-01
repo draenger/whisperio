@@ -1,4 +1,26 @@
 import { useRef, useCallback, useState } from 'react'
+import { analyzeSpeech, mixToMono } from '../audio/silenceGate'
+
+/** Decode a recording and report whether it contains speech. Fails OPEN:
+ * any decode problem returns true so the audio is sent as before. */
+async function recordingHasSpeech(buffer: ArrayBuffer): Promise<boolean> {
+  try {
+    const ctx = new AudioContext({ sampleRate: 16000 })
+    try {
+      const decoded = await ctx.decodeAudioData(buffer.slice(0))
+      const channels: Float32Array[] = []
+      for (let c = 0; c < decoded.numberOfChannels; c++) channels.push(decoded.getChannelData(c))
+      const result = analyzeSpeech(mixToMono(channels), decoded.sampleRate)
+      console.log(`[Whisperio] Silence gate: peak ${result.peakDbfs.toFixed(1)} dBFS, voiced ${Math.round(result.voicedMs)} ms`)
+      return result.hasSpeech
+    } finally {
+      ctx.close().catch(() => {})
+    }
+  } catch (err) {
+    console.warn('[Whisperio] Silence gate decode failed, sending anyway:', err)
+    return true
+  }
+}
 
 async function webmToWav(webmBuffer: ArrayBuffer): Promise<ArrayBuffer> {
   const audioCtx = new AudioContext({ sampleRate: 16000 })
@@ -218,6 +240,16 @@ export function useDictation(): UseDictationReturn {
       // Save recording to disk before transcription — gated on the
       // 'Save recordings to disk' setting; transcription still happens either way.
       const settings = await window.api.settings.load()
+
+      // Silence gate: don't upload recordings with no speech (saves cost and
+      // avoids hallucinated text). Default on; fails open on decode errors.
+      if (settings.silenceGate !== false && !(await recordingHasSpeech(arrayBuffer))) {
+        console.warn('[Whisperio] Recording is silent — skipping transcription')
+        setLastWordCount(null)
+        await window.api.dictation.sendResult('', sessionId, 'silent')
+        return
+      }
+
       if (settings.saveRecordings) {
         try {
           const savedRecording = await window.api.recordings.save(

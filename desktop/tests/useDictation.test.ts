@@ -50,7 +50,7 @@ function fakeAudioStream(): MediaStream {
   } as unknown as MediaStream
 }
 
-function mockApi(overrides: { saveRecordings: boolean; inputDeviceId?: string }): {
+function mockApi(overrides: { saveRecordings: boolean; inputDeviceId?: string; silenceGate?: boolean }): {
   save: ReturnType<typeof vi.fn>
   update: ReturnType<typeof vi.fn>
   transcribe: ReturnType<typeof vi.fn>
@@ -69,6 +69,7 @@ function mockApi(overrides: { saveRecordings: boolean; inputDeviceId?: string })
     settings: {
       load: vi.fn().mockResolvedValue({
         saveRecordings: overrides.saveRecordings,
+        silenceGate: overrides.silenceGate,
         sttProvider: 'openai',
         providerChain: [],
         inputDeviceId: overrides.inputDeviceId ?? ''
@@ -169,5 +170,60 @@ describe('useDictation — inputDeviceId constraint', () => {
 
     const [{ audio }] = getUserMedia.mock.calls[0]
     expect(audio).not.toHaveProperty('deviceId')
+  })
+})
+
+/** Silence gate: silent recordings are not uploaded; decode failure fails open. */
+describe('useDictation — silenceGate', () => {
+  function fakeAudioContext(samples: Float32Array | Error): void {
+    class FakeCtx {
+      decodeAudioData(): Promise<unknown> {
+        if (samples instanceof Error) return Promise.reject(samples)
+        return Promise.resolve({
+          numberOfChannels: 1,
+          sampleRate: 16000,
+          getChannelData: () => samples
+        })
+      }
+      close(): Promise<void> {
+        return Promise.resolve()
+      }
+    }
+    // @ts-expect-error test double
+    global.AudioContext = FakeCtx
+  }
+
+  afterEach(() => {
+    // @ts-expect-error cleanup of test double
+    delete global.AudioContext
+  })
+
+  it('skips transcribe and sends an empty "silent" result for silent audio', async () => {
+    fakeAudioContext(new Float32Array(16000))
+    const { transcribe, sendResult } = mockApi({ saveRecordings: false, silenceGate: true })
+    const { result } = renderHook(() => useDictation())
+    await act(async () => { await result.current.startRecording() })
+    await act(async () => { await result.current.stopAndTranscribe(3) })
+    expect(transcribe).not.toHaveBeenCalled()
+    expect(sendResult).toHaveBeenCalledWith('', 3, 'silent')
+  })
+
+  it('fails open (still transcribes) when decoding throws', async () => {
+    fakeAudioContext(new Error('decode failed'))
+    const { transcribe, sendResult } = mockApi({ saveRecordings: false, silenceGate: true })
+    const { result } = renderHook(() => useDictation())
+    await act(async () => { await result.current.startRecording() })
+    await act(async () => { await result.current.stopAndTranscribe(4) })
+    expect(transcribe).toHaveBeenCalled()
+    expect(sendResult).toHaveBeenCalledWith('hello world', 4)
+  })
+
+  it('does not gate when silenceGate is off', async () => {
+    fakeAudioContext(new Float32Array(16000))
+    const { transcribe } = mockApi({ saveRecordings: false, silenceGate: false })
+    const { result } = renderHook(() => useDictation())
+    await act(async () => { await result.current.startRecording() })
+    await act(async () => { await result.current.stopAndTranscribe(5) })
+    expect(transcribe).toHaveBeenCalled()
   })
 })

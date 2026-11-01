@@ -13,7 +13,7 @@ export interface DictationAPI {
   onCancel: (callback: () => void) => () => void
   onStateChanged: (callback: (state: string) => void) => () => void
   onOverlayInfo: (callback: (info: OverlayInfo) => void) => () => void
-  sendResult: (text: string, sessionId?: number) => Promise<void>
+  sendResult: (text: string, sessionId?: number, reason?: 'silent') => Promise<void>
   transcribe: (audioData: ArrayBuffer, filename: string) => Promise<string>
 }
 
@@ -109,6 +109,7 @@ export interface AppSettings {
   inputDeviceId: string
   outputDeviceId: string
   saveRecordings: boolean
+  silenceGate: boolean
   outputRecordingHotkey: string
   fallbackEnabled: boolean
   githubUser: string
@@ -455,8 +456,10 @@ const dictationApi: DictationAPI = {
       ipcRenderer.removeListener('dictation:overlay-info', handler)
     }
   },
-  sendResult: (text: string, sessionId?: number) =>
-    ipcRenderer.invoke('dictation:result', text, sessionId),
+  sendResult: (text: string, sessionId?: number, reason?: 'silent') =>
+    reason
+      ? ipcRenderer.invoke('dictation:result', text, sessionId, reason)
+      : ipcRenderer.invoke('dictation:result', text, sessionId),
   transcribe: (audioData: ArrayBuffer, filename: string) =>
     ipcRenderer.invoke('dictation:transcribe', Buffer.from(audioData), filename)
 }

@@ -76,6 +76,7 @@ const DEFAULT_SETTINGS = {
   inputDeviceId: '',
   outputDeviceId: '',
   saveRecordings: true,
+  silenceGate: true,
   outputRecordingHotkey: '',
   fallbackEnabled: false,
   githubUser: '',
