@@ -1,4 +1,5 @@
-import { app, BrowserWindow, desktopCapturer, ipcMain, session, shell } from 'electron'
+import { app, BrowserWindow, desktopCapturer, ipcMain, session, shell, type IpcMainInvokeEvent } from 'electron'
+import { assertTrustedSender, sanitizeRecordingUpdate } from './ipcValidation'
 import { initDictation, cleanupDictation, reRegisterHotkeys, pauseHotkeys, resumeHotkeys } from './dictation'
 import { createTray, destroyTray } from './tray'
 import { loadSettings, saveSettings } from './settingsManager'
@@ -21,7 +22,6 @@ import { openSettingsWindow } from './settingsWindow'
 import { getRecentErrors } from './errorHandler'
 import { openRecordingsWindow } from './recordingsWindow'
 import {
-  type RecordingEntry,
   getRecordings,
   getRecording,
   saveRecording,
@@ -159,6 +159,15 @@ async function saveConversationRecording(audioBuffer: Buffer, filename: string, 
 // packaged build, or the Vite dev-server URL (ELECTRON_RENDERER_URL) in dev.
 // Anything else (remote http(s), an injected iframe, an OAuth redirect) is
 // untrusted and must NOT silently receive microphone/device permissions.
+// Wrap an ipcMain.handle callback so it only runs for calls from our own frames.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function guard<R>(fn: (event: IpcMainInvokeEvent, ...args: any[]) => R): (event: IpcMainInvokeEvent, ...args: any[]) => R {
+  return (event, ...args) => {
+    assertTrustedSender(event)
+    return fn(event, ...args)
+  }
+}
+
 function isInternalUrl(url: string | undefined | null): boolean {
   if (!url) return false
   if (url.startsWith('file://')) return true
@@ -259,8 +268,8 @@ app.whenReady().then(() => {
       if (!w.isDestroyed()) w.webContents.send('settings:secure-storage-warning', message)
     }
   })
-  ipcMain.handle('settings:load', () => getEffectiveSettings())
-  ipcMain.handle('settings:save', (_event, newSettings) => {
+  ipcMain.handle('settings:load', guard(() => getEffectiveSettings()))
+  ipcMain.handle('settings:save', guard((_event, newSettings) => {
     const prevChecks = loadSettings().checkForUpdates !== false
     const saved = saveSettingsWithKeys(newSettings)
     // Only touch the update schedule when the flag actually changed (a settings save for any
@@ -283,7 +292,7 @@ app.whenReady().then(() => {
       reRegisterHotkeys()
     }
     return saved
-  })
+  }))
   // Tells the renderer whether OS secure storage is usable, so it can show
   // an honest hint next to API key fields ("keys are encrypted..." vs.
   // "...unavailable, new keys are kept for this session only"). Never gates
@@ -313,15 +322,15 @@ app.whenReady().then(() => {
   // the device user-code, repo names, and success/failure — never the token or
   // any plaintext secret in transit to the repo.
   ipcMain.handle('github:status', () => githubGetStatus())
-  ipcMain.handle('github:connect', () => githubBeginConnect())
+  ipcMain.handle('github:connect', guard(() => githubBeginConnect()))
   ipcMain.handle('github:poll', () => githubPollConnect())
   ipcMain.handle('github:listRepos', () => githubListRepositories())
-  ipcMain.handle('github:selectRepo', (_e, fullName: string, branch: string) =>
+  ipcMain.handle('github:selectRepo', guard((_e, fullName: string, branch: string) =>
     githubSelectRepo(fullName, branch)
-  )
-  ipcMain.handle('github:disconnect', () => githubDisconnect())
-  ipcMain.handle('github:push', () => githubPushSecrets())
-  ipcMain.handle('github:pull', () => githubPullSecrets())
+  ))
+  ipcMain.handle('github:disconnect', guard(() => githubDisconnect()))
+  ipcMain.handle('github:push', guard(() => githubPushSecrets()))
+  ipcMain.handle('github:pull', guard(() => githubPullSecrets()))
 
   // Usage/cost metering IPC handlers (PACZKA METERING v1.6)
   ipcMain.handle('usage:get', () => getUsage())
@@ -349,9 +358,9 @@ app.whenReady().then(() => {
 
   // Recording store IPC handlers
   ipcMain.on('recordings:openWindow', () => openRecordingsWindow())
-  ipcMain.handle('recordings:list', () => getRecordings())
-  ipcMain.handle('recordings:get', (_e, id: string) => getRecording(id))
-  ipcMain.handle('recordings:save', async (_e, audioBuffer: Buffer, metadata: { duration: number; provider: string }) => {
+  ipcMain.handle('recordings:list', guard(() => getRecordings()))
+  ipcMain.handle('recordings:get', guard((_e, id: string) => getRecording(id)))
+  ipcMain.handle('recordings:save', guard(async (_e, audioBuffer: Buffer, metadata: { duration: number; provider: string }) => {
     // Context-aware tone (v1.5 Work Item B): captured HERE, at recording
     // time, and persisted onto the entry (recordingStore.ts's
     // RecordingEntry.recordedProcessName/recordedWindowTitle) — so a later
@@ -368,18 +377,20 @@ app.whenReady().then(() => {
       recordedProcessName: context?.processName,
       recordedWindowTitle: context?.windowTitle
     })
-  })
-  ipcMain.handle('recordings:update', (_e, id: string, updates: Partial<RecordingEntry>) =>
-    updateRecording(id, updates)
-  )
-  ipcMain.handle('recordings:delete', (_e, id: string) => deleteRecording(id))
-  ipcMain.handle('recordings:deleteAll', () => deleteAllRecordings())
-  ipcMain.handle('recordings:deleteByDate', (_e, date: string) => deleteRecordingsByDate(date))
-  ipcMain.handle('recordings:getAudio', (_e, id: string) => getRecordingAudio(id))
-  ipcMain.handle('recordings:reprocess', (_e, id: string) => reprocessRecording(id))
-  ipcMain.handle('recordings:cleanup', (_e, id: string, options: OnDemandCleanupRequest) =>
+  }))
+  ipcMain.handle('recordings:update', guard((_e, id: string, updates: unknown) =>
+    // Allowlist: only status/transcription/error are renderer-editable. filepath,
+    // filename, id, size, timestamps, segments etc. are dropped (finding #10).
+    updateRecording(String(id), sanitizeRecordingUpdate(updates))
+  ))
+  ipcMain.handle('recordings:delete', guard((_e, id: string) => deleteRecording(id)))
+  ipcMain.handle('recordings:deleteAll', guard(() => deleteAllRecordings()))
+  ipcMain.handle('recordings:deleteByDate', guard((_e, date: string) => deleteRecordingsByDate(date)))
+  ipcMain.handle('recordings:getAudio', guard((_e, id: string) => getRecordingAudio(id)))
+  ipcMain.handle('recordings:reprocess', guard((_e, id: string) => reprocessRecording(id)))
+  ipcMain.handle('recordings:cleanup', guard((_e, id: string, options: OnDemandCleanupRequest) =>
     handleRecordingsCleanup(id, options)
-  )
+  ))
 
   // Full-text search across every saved transcript (searchService.ts). The
   // payload is a QUERY STRING and nothing else — no path, no id, no record
@@ -387,9 +398,9 @@ app.whenReady().then(() => {
   // resolves to [] rather than throwing: this channel is invoked from a
   // debounced input, so a transport-level rejection mid-typing would surface
   // as a spurious error state, and "no query" genuinely means "no results".
-  ipcMain.handle('recordings:search', (_e, query: unknown) =>
+  ipcMain.handle('recordings:search', guard((_e, query: unknown) =>
     typeof query === 'string' ? searchTranscripts(query) : []
-  )
+  ))
 
   // Group-conversation mode (multi-speaker recording) IPC. `available`
   // mirrors the mobile app's Conversation record button guard — the button
@@ -399,10 +410,10 @@ app.whenReady().then(() => {
   ipcMain.handle('conversation:available', () => getConfiguredDiarizingProvider(getEffectiveSettings()) !== null)
   ipcMain.handle(
     'conversation:save',
-    async (_e, audioBuffer: Buffer, metadata: { duration: number; filename?: string }) =>
+    guard(async (_e, audioBuffer: Buffer, metadata: { duration: number; filename?: string }) =>
       saveConversationRecording(audioBuffer, metadata.filename || 'conversation.webm', metadata.duration)
-  )
-  ipcMain.handle('recordings:renameSpeaker', async (_e, id: string, speakerId: string, name: string) => {
+  ))
+  ipcMain.handle('recordings:renameSpeaker', guard(async (_e, id: string, speakerId: string, name: string) => {
     const entry = getRecording(id)
     if (!entry) return null
     const speakerNames = { ...(entry.speakerNames || {}), [speakerId]: name }
@@ -414,12 +425,12 @@ app.whenReady().then(() => {
       await updateRecording(id, { transcription: transcriptText(updated.segments, speakerNames) })
     }
     return getRecording(id)
-  })
+  }))
 
   // Model manager IPC handlers
   ipcMain.handle('models:available', () => getAvailableModels())
   ipcMain.handle('models:local', () => [...getLocalModels(), ...getCustomModels()])
-  ipcMain.handle('models:download', async (_e, modelId: string) => {
+  ipcMain.handle('models:download', guard(async (_e, modelId: string) => {
     setDownloadProgressCallback((progress) => {
       BrowserWindow.getAllWindows().forEach((win) => {
         if (!win.isDestroyed()) {
@@ -428,8 +439,8 @@ app.whenReady().then(() => {
       })
     })
     return downloadModel(modelId)
-  })
-  ipcMain.handle('models:downloadCustom', async (_e, url: string, filename: string) => {
+  }))
+  ipcMain.handle('models:downloadCustom', guard(async (_e, url: string, filename: string) => {
     setDownloadProgressCallback((progress) => {
       BrowserWindow.getAllWindows().forEach((win) => {
         if (!win.isDestroyed()) {
@@ -438,13 +449,13 @@ app.whenReady().then(() => {
       })
     })
     return downloadCustomModel(url, filename)
-  })
+  }))
   ipcMain.handle('models:cancelDownload', (_e, modelId: string) => cancelDownload(modelId))
-  ipcMain.handle('models:delete', (_e, modelId: string) => deleteModel(modelId))
+  ipcMain.handle('models:delete', guard((_e, modelId: string) => deleteModel(modelId)))
 
   // Local server IPC handlers
   ipcMain.handle('server:status', () => getServerStatus())
-  ipcMain.handle('server:start', async (_e, modelFilename: string) => {
+  ipcMain.handle('server:start', guard(async (_e, modelFilename: string) => {
     setServerStatusCallback((status) => {
       BrowserWindow.getAllWindows().forEach((win) => {
         if (!win.isDestroyed()) {
@@ -454,7 +465,7 @@ app.whenReady().then(() => {
     })
     await startServer(modelFilename)
     return getServerStatus()
-  })
+  }))
   ipcMain.handle('server:stop', () => {
     stopServer()
     return getServerStatus()
