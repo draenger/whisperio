@@ -55,9 +55,8 @@ import ai.whisperio.android.ui.settings.CategoriesScreen
 import ai.whisperio.android.ui.recap.RecapScreen
 import ai.whisperio.android.ui.recap.RecapShare
 import ai.whisperio.android.ui.recap.toRecapItems
-import ai.whisperio.android.ui.settings.EncryptNotice
 import ai.whisperio.android.ui.settings.KeyDialogState
-import ai.whisperio.android.ui.settings.encryptNoticeFor
+import ai.whisperio.android.ui.settings.shouldOfferEncryptCard
 import ai.whisperio.android.ui.settings.SettingsActions
 import ai.whisperio.android.ui.settings.SettingsScreen
 import ai.whisperio.android.ui.settings.SettingsUiState
@@ -386,6 +385,11 @@ private fun HomeRoute(g: AppGraph, nav: NavHostController) {
         val changing = (ctx as? Activity)?.isChangingConfigurations == true
         if (!changing && s is DictationState.Recording && s.source == RecordingSource.APP) g.dictation.cancel()
     }
+    val encryptBusy by g.encryptSwitch.busy.collectAsState()
+    val encryptNotice by g.encryptSwitch.notice.collectAsState()
+    // True only for a run started by the card's "Turn on": progress and the notice then show here, not for Settings runs.
+    var cardRun by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(encryptBusy) { if (encryptBusy == null && cardRun && encryptNotice == null) cardRun = false }
     val setup = computeSetupStatus(settings, keys, mic)
     val primary = settings.primaryProvider(keys)
     Box(Modifier.statusBarsPadding(), contentAlignment = Alignment.TopCenter) {
@@ -396,6 +400,9 @@ private fun HomeRoute(g: AppGraph, nav: NavHostController) {
                 setupNeeded = !setup.ready,
                 providerLabel = primary?.let { "${it.first.label(ctx)} - ${it.second}" }.orEmpty(),
                 customCategories = customCategories,
+                encryptCard = shouldOfferEncryptCard(settings),
+                encryptBusy = encryptBusy.takeIf { cardRun },
+                encryptNotice = encryptNotice.takeIf { cardRun },
             ),
             actions = object : HomeActions {
                 override fun onDictate() {
@@ -410,6 +417,17 @@ private fun HomeRoute(g: AppGraph, nav: NavHostController) {
                 override fun onDismissResult() = g.dictation.acknowledge()
                 override fun onOpen(id: String) = nav.navigate(Routes.detail(id))
                 override fun onSeeAll() = nav.navigate(Routes.HISTORY)
+                override fun onEncryptCardTurnOn() {
+                    // Same code path as the Settings switch (the card showed the confirmation); answered either way.
+                    g.appScope.launch { g.settings.setEncryptCardHandled(true) }
+                    cardRun = true
+                    g.encryptSwitch.request(true)
+                }
+                override fun onEncryptCardDismiss() { g.appScope.launch { g.settings.setEncryptCardHandled(true) } }
+                override fun onEncryptNoticeDismiss() {
+                    g.encryptSwitch.dismissNotice()
+                    cardRun = false
+                }
                 override fun onOpenSetup() {
                     if (!mic && setup.hasKey && setup.consent) {
                         micLauncher.launch(Manifest.permission.RECORD_AUDIO)
@@ -621,8 +639,8 @@ private fun SettingsRoute(g: AppGraph, nav: NavHostController) {
     val appLanguageCount by g.appLanguages.count.collectAsState(initial = 0)
     var dialog by remember { mutableStateOf<KeyDialogState?>(null) }
     var keyChecks by remember { mutableStateOf<Map<ProviderId, KeyUi>>(emptyMap()) }
-    var encryptBusy by remember { mutableStateOf<Boolean?>(null) }
-    var encryptNotice by remember { mutableStateOf<EncryptNotice?>(null) }
+    val encryptBusy by g.encryptSwitch.busy.collectAsState()
+    val encryptNotice by g.encryptSwitch.notice.collectAsState()
     val enrollment = remember { KeyEnrollment(g.keyChecker, g.secrets, g.settings) }
     val models = remember { ProviderId.entries.associateWith { g.catalog.models(it) } }
     val openAiUrl = settings.baseUrls[ProviderId.OPENAI]
@@ -674,20 +692,9 @@ private fun SettingsRoute(g: AppGraph, nav: NavHostController) {
         override fun onKeepAudio(value: Boolean) { scope.launch { g.settings.setKeepAudio(value) } }
         override fun onAutoDelete(days: Int?) { scope.launch { g.settings.setAutoDeleteDays(days) } }
         override fun onSensitive(value: Boolean) { scope.launch { g.settings.setSensitive(value) } }
-        override fun onEncryptHistory(value: Boolean) {
-            if (encryptBusy != null) return
-            encryptBusy = value
-            // The migration itself runs in appScope (never cancelled), so leaving the screen does not stop it.
-            scope.launch {
-                val result = try {
-                    g.setEncryptHistory(value)
-                } finally {
-                    encryptBusy = null
-                }
-                encryptNotice = encryptNoticeFor(result)
-            }
-        }
-        override fun onEncryptNoticeDismiss() { encryptNotice = null }
+        // The run and its busy/notice state live in the graph (appScope): they survive rotation and leaving the screen.
+        override fun onEncryptHistory(value: Boolean) = g.encryptSwitch.request(value)
+        override fun onEncryptNoticeDismiss() = g.encryptSwitch.dismissNotice()
         override fun onConsent(value: Boolean) { scope.launch { g.settings.setConsent(value) } }
         override fun onDeleteAllAudio() { scope.launch { g.history.deleteAllAudio() } }
         override fun onEraseAll() { scope.launch { g.eraseAllData() } }

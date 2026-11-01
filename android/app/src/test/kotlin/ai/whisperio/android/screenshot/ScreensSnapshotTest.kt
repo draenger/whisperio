@@ -23,6 +23,7 @@ import ai.whisperio.android.ui.home.HomeActions
 import ai.whisperio.android.ui.home.HomeScreen
 import ai.whisperio.android.ui.home.HomeState
 import ai.whisperio.android.ui.settings.KeyDialogState
+import ai.whisperio.android.ui.settings.PRIVACY_SECTION_TAG
 import ai.whisperio.android.ui.settings.SettingsActions
 import ai.whisperio.android.ui.settings.SettingsScreen
 import ai.whisperio.android.ui.settings.SettingsUiState
@@ -33,6 +34,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.performScrollTo
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -125,6 +128,21 @@ open class HomeSnapshotTest {
     @Test @Config(qualifiers = PHONE)
     fun done() = rule.snapshot("home_done") {
         HomeScreen(HomeState(DictationState.Done(Fx.done.transcript!!, "r1", RecordingSource.APP), Fx.all, providerLabel = "OpenAI - whisper-1"), noop)
+    }
+
+    @Test @Config(qualifiers = PHONE)
+    fun encryptCard() = rule.snapshot("home_encrypt_card") {
+        HomeScreen(HomeState(recent = Fx.all, providerLabel = "OpenAI - whisper-1", encryptCard = true), noop)
+    }
+
+    @Test @Config(qualifiers = PHONE)
+    fun encryptCardDark() = rule.snapshot("home_encrypt_card", dark = true) {
+        HomeScreen(HomeState(recent = Fx.all, providerLabel = "OpenAI - whisper-1", encryptCard = true), noop)
+    }
+
+    @Test @Config(qualifiers = PHONE)
+    fun encryptCardBusy() = rule.snapshot("home_encrypt_card_busy") {
+        HomeScreen(HomeState(recent = Fx.all, providerLabel = "OpenAI - whisper-1", encryptBusy = true), noop)
     }
 
     @Test @Config(qualifiers = PHONE)
@@ -330,6 +348,19 @@ open class SettingsSnapshotTest {
 
     @Test @Config(qualifiers = PHONE)
     fun encryptBusy() = rule.snapshot("settings_encrypt_busy") { SettingsScreen(state().copy(encryptBusy = true), noop) }
+
+    // The tests above capture the top of Settings; this one scrolls the Privacy section (with the encrypt switch) into view.
+    @Test @Config(qualifiers = PHONE)
+    fun privacySection() = rule.snapshot(
+        "settings_privacy",
+        beforeCapture = { onNodeWithTag(PRIVACY_SECTION_TAG).performScrollTo() },
+    ) { SettingsScreen(state(), noop) }
+
+    @Test @Config(qualifiers = PHONE)
+    fun privacySectionEncryptOn() = rule.snapshot(
+        "settings_privacy_encrypt_on",
+        beforeCapture = { onNodeWithTag(PRIVACY_SECTION_TAG).performScrollTo() },
+    ) { SettingsScreen(state().let { it.copy(settings = it.settings.copy(encryptHistory = true)) }, noop) }
 
     @Test @Config(qualifiers = ScreenshotConfig.TABLET)
     fun tablet() = rule.snapshot("settings_tablet") { SettingsScreen(state(), noop) }

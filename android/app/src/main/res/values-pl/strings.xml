@@ -61,6 +61,10 @@
     <string name="home_finish_setup">Dokończ konfigurację</string>
     <string name="home_recent">Ostatnie</string>
     <string name="home_see_all">Zobacz wszystkie</string>
+    <string name="encrypt_card_title">Szyfruj historię i nagrania</string>
+    <string name="encrypt_card_body">Transkrypcje i zachowane nagrania będą zaszyfrowane na tym urządzeniu kluczem przechowywanym w Android Keystore. Jeśli klucz zostanie utracony (np. po przywróceniu ustawień fabrycznych), zaszyfrowanej historii nie da się odzyskać. Możesz to zmienić w każdej chwili w Ustawieniach, w sekcji Prywatność i dane.</string>
+    <string name="encrypt_card_turn_on">Włącz</string>
+    <string name="encrypt_card_not_now">Nie teraz</string>
     <string name="history_empty">Na razie pusto. Twoje dyktowania pojawią się tutaj, tylko na tym urządzeniu.</string>
     <string name="history_detail">Dyktowanie</string>
     <string name="history_failed">Nie udało się</string>

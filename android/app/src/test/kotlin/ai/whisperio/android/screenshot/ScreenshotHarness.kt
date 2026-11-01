@@ -142,6 +142,8 @@ internal fun ComposeContentTestRule.snapshot(
     name: String,
     dark: Boolean = false,
     fontScale: Float = 1f,
+    /** Runs after the first idle and before the capture, e.g. to scroll a section into view. */
+    beforeCapture: ComposeContentTestRule.() -> Unit = {},
     content: @Composable () -> Unit,
 ) {
     val file = name + (if (dark) "_dark" else "") + (if (Loc.pl) "_pl" else "")
@@ -157,6 +159,8 @@ internal fun ComposeContentTestRule.snapshot(
             }
         }
     }
+    waitForIdle()
+    beforeCapture()
     waitForIdle()
     onRoot().captureRoboImage("$SNAPSHOT_DIR/$file.png")
 }
