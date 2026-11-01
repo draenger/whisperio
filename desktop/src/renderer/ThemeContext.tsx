@@ -44,6 +44,16 @@ const ThemeContext = createContext<ThemeContextValue>({
   setAccent: () => {}
 })
 
+// A refused save (settings file locked) must not crash or leave an unhandled rejection;
+// the in-memory choice still applies for this session.
+function persistQuietly(patch: Parameters<Window['api']['settings']['save']>[0]): void {
+  try {
+    void Promise.resolve(window.api.settings.save(patch)).catch(() => {})
+  } catch {
+    /* ignore */
+  }
+}
+
 export function ThemeProvider({ children }: { children: ReactNode }): ReactElement {
   const [mode, setModeState] = useState<ThemeMode>('dark')
   const [accent, setAccentState] = useState<AccentColor>(DEFAULT_ACCENT)
@@ -62,19 +72,19 @@ export function ThemeProvider({ children }: { children: ReactNode }): ReactEleme
   const toggleTheme = useCallback(() => {
     setModeState((prev) => {
       const next = prev === 'dark' ? 'light' : 'dark'
-      window.api.settings.save({ theme: next })
+      persistQuietly({ theme: next })
       return next
     })
   }, [])
 
   const setMode = useCallback((next: ThemeMode) => {
     setModeState(next)
-    window.api.settings.save({ theme: next })
+    persistQuietly({ theme: next })
   }, [])
 
   const setAccent = useCallback((next: AccentColor) => {
     setAccentState(next)
-    window.api.settings.save({ accentColor: next })
+    persistQuietly({ accentColor: next })
   }, [])
 
   const theme = buildTheme(mode, accent)

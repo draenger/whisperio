@@ -1,6 +1,6 @@
 import { app } from 'electron'
-import { existsSync, mkdirSync, writeFileSync, readFileSync, unlinkSync, renameSync } from 'fs'
-import { join } from 'path'
+import { existsSync, realpathSync, mkdirSync, writeFileSync, readFileSync, unlinkSync, renameSync } from 'fs'
+import { join, resolve, sep } from 'path'
 import type { SpeakerSegment } from './dictation/conversation'
 
 export interface RecordingEntry {
@@ -62,6 +62,30 @@ interface RecordingIndex {
   recordings: RecordingEntry[]
 }
 
+/**
+ * True only when `filepath` resolves to a location strictly inside the recordings
+ * directory. Guards every read/delete of an audio file against a tampered index
+ * entry (e.g. filepath set to '../x' or an absolute path outside the dir).
+ */
+export function isInsideRecordingsDir(filepath: unknown): boolean {
+  if (typeof filepath !== 'string' || !filepath) return false
+  // Follow symlinks for paths that exist, so a link inside the dir that points
+  // outside it is refused. Non-existent paths fall back to lexical resolution.
+  const real = (p: string): string => {
+    const r = resolve(p)
+    try {
+      return existsSync(r) ? realpathSync(r) : r
+    } catch {
+      return r
+    }
+  }
+  const dir = real(getRecordingsDir())
+  const target = real(filepath)
+  const prefix = dir.endsWith(sep) ? dir : dir + sep
+  const norm = (p: string): string => (process.platform === 'win32' ? p.toLowerCase() : p)
+  return norm(target).startsWith(norm(prefix))
+}
+
 // Bound the on-disk recordings cache. Without a cap the `.webm` files accumulate
 // forever, silently eating gigabytes of the user's disk on a long-lived install
 // (and eventually failing writes once the volume fills). When a new recording
@@ -95,7 +119,7 @@ function evictToQuota(index: RecordingIndex, protectId?: string): void {
     if (total <= target) break
     if (entry.id === protectId) continue
 
-    if (existsSync(entry.filepath)) {
+    if (isInsideRecordingsDir(entry.filepath) && existsSync(entry.filepath)) {
       try {
         unlinkSync(entry.filepath)
       } catch {
@@ -282,7 +306,7 @@ export function deleteRecording(id: string): Promise<boolean> {
     // tracked size so the freed bytes no longer count against the disk quota.
     // A hard `splice` here could never converge — a stale device would resurrect
     // the row on the next merge (PT-offline-first-lww-sync).
-    if (existsSync(entry.filepath)) {
+    if (isInsideRecordingsDir(entry.filepath) && existsSync(entry.filepath)) {
       try {
         unlinkSync(entry.filepath)
       } catch {
@@ -302,7 +326,7 @@ export function deleteAllRecordings(): Promise<void> {
     const index = loadIndex()
 
     for (const entry of index.recordings) {
-      if (existsSync(entry.filepath)) {
+      if (isInsideRecordingsDir(entry.filepath) && existsSync(entry.filepath)) {
         try {
           unlinkSync(entry.filepath)
         } catch {
@@ -333,7 +357,7 @@ export function deleteRecordingsByDate(dateStr: string): Promise<void> {
     }
 
     for (const entry of toDelete) {
-      if (existsSync(entry.filepath)) {
+      if (isInsideRecordingsDir(entry.filepath) && existsSync(entry.filepath)) {
         try {
           unlinkSync(entry.filepath)
         } catch {
@@ -349,6 +373,7 @@ export function deleteRecordingsByDate(dateStr: string): Promise<void> {
 export function getRecordingAudio(id: string): Buffer | null {
   const entry = getRecording(id)
   if (!entry) return null
+  if (!isInsideRecordingsDir(entry.filepath)) return null
   if (!existsSync(entry.filepath)) return null
   return readFileSync(entry.filepath)
 }

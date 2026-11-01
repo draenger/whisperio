@@ -36,6 +36,21 @@ vi.mock('fs', () => ({
   createWriteStream: (...args: unknown[]) => mockCreateWriteStream(...args)
 }))
 
+// Integrity (SHA-256 pin/TOFU) is covered by tests/serverIntegrity.test.ts; neutralised here
+// because this file mocks 'fs' wholesale.
+vi.mock('../src/main/downloadIntegrity', async () => {
+  const { createHash } = await import('crypto')
+  return {
+    IntegrityError: class IntegrityError extends Error {},
+    newHasher: () => createHash('sha256'),
+    checkDigest: () => ({ mode: 'pinned', commit: () => {} }),
+    hashFile: () => 'h',
+    getStoredHash: () => 'h',
+    storeHash: () => {},
+    forgetHash: () => {}
+  }
+})
+
 const mockExecFile = vi.fn()
 vi.mock('child_process', () => ({
   execFile: (...args: unknown[]) => mockExecFile(...args)
