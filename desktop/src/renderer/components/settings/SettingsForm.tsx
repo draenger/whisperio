@@ -546,6 +546,7 @@ export function SettingsForm(): ReactElement {
   // General
   const [launchAtStartup, setLaunchAtStartup] = useState(true)
   const [checkForUpdates, setCheckForUpdates] = useState(true)
+  const [allowUrlControl, setAllowUrlControl] = useState(true)
 
   // Providers
   const [sttProvider, setSttProvider] = useState('openai')
@@ -632,6 +633,7 @@ export function SettingsForm(): ReactElement {
       setRemovedDefaultVocabulary(settings.removedDefaultVocabulary ?? [])
       setAiPostProcessing(settings.aiPostProcessing ?? false)
       setLaunchAtStartup(settings.launchAtStartup ?? true)
+      setAllowUrlControl(settings.allowUrlControl ?? true)
       setCheckForUpdates(settings.checkForUpdates ?? true)
       setDictationHotkey(settings.dictationHotkey ?? '')
       setDictateAndSendHotkey(settings.dictateAndSendHotkey ?? '')
@@ -720,6 +722,7 @@ export function SettingsForm(): ReactElement {
       removedDefaultVocabulary,
       aiPostProcessing,
       launchAtStartup,
+      allowUrlControl,
       checkForUpdates,
       dictationHotkey,
       dictateAndSendHotkey,
@@ -761,7 +764,7 @@ export function SettingsForm(): ReactElement {
     providerChain, apiKey, openaiBaseUrl, whisperModel, elevenlabsApiKey, replicateApiKey, sttReplicateModel,
     groqApiKey, deepgramApiKey, assemblyaiApiKey, mistralApiKey,
     sttApiKey, transcriptionLanguage, prompt,
-    vocabulary, removedDefaultVocabulary, aiPostProcessing, launchAtStartup, checkForUpdates, dictationHotkey,
+    vocabulary, removedDefaultVocabulary, aiPostProcessing, launchAtStartup, allowUrlControl, checkForUpdates, dictationHotkey,
     dictateAndSendHotkey, commandHotkey, inputDeviceId, outputDeviceId, saveRecordings,
     outputRecordingHotkey, cleanupEnabled, cleanupMode, cleanupAuto, cleanupTemplates,
     aiProvider, aiBaseUrl, aiModel, anthropicApiKey,
@@ -919,6 +922,8 @@ export function SettingsForm(): ReactElement {
                       setLaunchAtStartup={setLaunchAtStartup}
                       checkForUpdates={checkForUpdates}
                       setCheckForUpdates={setCheckForUpdates}
+                      allowUrlControl={allowUrlControl}
+                      setAllowUrlControl={setAllowUrlControl}
                       s={s}
                       theme={theme}
                     />
@@ -1126,6 +1131,8 @@ function GeneralTab({
   setLaunchAtStartup,
   checkForUpdates,
   setCheckForUpdates,
+  allowUrlControl,
+  setAllowUrlControl,
   s,
   theme
 }: {
@@ -1133,6 +1140,8 @@ function GeneralTab({
   setLaunchAtStartup: (v: boolean) => void
   checkForUpdates: boolean
   setCheckForUpdates: (v: boolean) => void
+  allowUrlControl: boolean
+  setAllowUrlControl: (v: boolean) => void
   s: ReturnType<typeof makeStyles>
   theme: Theme
 }): ReactElement {
@@ -1156,6 +1165,13 @@ function GeneralTab({
           description="Periodically contact GitHub to look for new Whisperio releases"
           checked={checkForUpdates}
           onChange={setCheckForUpdates}
+          theme={theme}
+        />
+        <ToggleRow
+          label="Allow control via whisperio:// links"
+          description="Let Raycast, Alfred, Shortcuts or Stream Deck start/stop dictation by opening whisperio://toggle (also start, stop, cancel, send)"
+          checked={allowUrlControl}
+          onChange={setAllowUrlControl}
           theme={theme}
         />
       </div>

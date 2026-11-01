@@ -83,3 +83,72 @@ describe('dispatchCliCommand robustness', () => {
     expect(() => dispatchCliCommand('toggle', api)).toThrow('boom')
   })
 })
+
+import { parseUrlCommand, parseControlArgv, createOpenUrlHandler } from '../src/main/cliControl'
+
+describe('whisperio:// URL parsing', () => {
+  it.each([
+    ['whisperio://toggle', 'toggle'],
+    ['whisperio://toggle/', 'toggle'],
+    ['WHISPERIO://Toggle', 'toggle'],
+    ['whisperio://toggle?x=1', 'toggle'],
+    ['whisperio://send#frag', 'send'],
+    ['whisperio://stop/?a=b#c', 'stop'],
+    ['  whisperio://cancel  ', 'cancel'],
+    ['whisperio://start', 'start']
+  ])('accepts %s', (u, c) => {
+    expect(parseUrlCommand(u)).toBe(c)
+  })
+  it.each([
+    'whisperio://evil', 'whisperio://', 'whisperio:///toggle', 'http://toggle', 'javascript:toggle',
+    'whisperio://toggle/extra', 'whisperio://toggle:80', 'whisperio://user@toggle', 'whisperio://constructor',
+    'whisperio://toggle%20', 'whisperio:toggle', 'xwhisperio://toggle', 'whisperio://toggle\nx'
+  ])('rejects %s', (u) => {
+    expect(parseUrlCommand(u)).toBeNull()
+  })
+  it('rejects non-strings', () => {
+    expect(parseUrlCommand(undefined)).toBeNull()
+    expect(parseUrlCommand(42)).toBeNull()
+  })
+  it('parseCliCommand accepts a URL argv entry and flags still work', () => {
+    expect(parseCliCommand(['C:\W.exe', 'whisperio://toggle/'])).toBe('toggle')
+    expect(parseCliCommand(['x', 'whisperio://evil', '--stop'])).toBe('stop')
+    expect(parseCliCommand(['x', 'whisperio://evil'])).toBeNull()
+  })
+  it('parseControlArgv marks the source', () => {
+    expect(parseControlArgv(['x', 'whisperio://start'])).toEqual({ cmd: 'start', viaUrl: true })
+    expect(parseControlArgv(['x', '--start'])).toEqual({ cmd: 'start', viaUrl: false })
+  })
+})
+
+describe('createOpenUrlHandler (macOS open-url)', () => {
+  const mk = (ready: boolean, allowed: boolean) => {
+    const api = { toggle: vi.fn(), start: vi.fn(), stop: vi.fn(), cancel: vi.fn(), send: vi.fn() }
+    const log = vi.fn()
+    const h = createOpenUrlHandler({ isReady: () => ready, isAllowed: () => allowed, api, log })
+    const ev = { preventDefault: vi.fn() }
+    return { api, log, h, ev }
+  }
+  it('dispatches when ready and allowed', () => {
+    const { api, h, ev } = mk(true, true)
+    h(ev, 'whisperio://toggle?x=1')
+    expect(api.toggle).toHaveBeenCalledTimes(1)
+    expect(ev.preventDefault).toHaveBeenCalled()
+  })
+  it('ignores when the flag is off', () => {
+    const { api, h, ev, log } = mk(true, false)
+    h(ev, 'whisperio://toggle')
+    expect(Object.values(api).every((f) => f.mock.calls.length === 0)).toBe(true)
+    expect(log.mock.calls[0][0]).not.toContain('whisperio://')
+  })
+  it('ignores a cold-start URL (before ready)', () => {
+    const { api, h, ev } = mk(false, true)
+    h(ev, 'whisperio://start')
+    expect(api.start).not.toHaveBeenCalled()
+  })
+  it('ignores invalid URLs', () => {
+    const { api, h, ev } = mk(true, true)
+    h(ev, 'whisperio://evil'); h(ev, 'http://toggle')
+    expect(Object.values(api).every((f) => f.mock.calls.length === 0)).toBe(true)
+  })
+})

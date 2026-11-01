@@ -67,6 +67,7 @@ const DEFAULT_SETTINGS = {
   aiModel: '',
   anthropicApiKey: '',
   launchAtStartup: true,
+  allowUrlControl: true,
   checkForUpdates: true,
   dictationHotkey: '',
   dictateAndSendHotkey: '',
@@ -484,5 +485,18 @@ describe('settingsManager', () => {
 
       expect(seededTwice.toneMap).toEqual(seededOnce.toneMap)
     })
+  })
+})
+
+describe('allowUrlControl default', () => {
+  it('defaults to true when absent from the file', () => {
+    mockExistsSync.mockReturnValue(true)
+    mockReadFileSync.mockReturnValue(JSON.stringify({ openaiApiKey: 'sk-x' }))
+    expect(loadSettings().allowUrlControl).toBe(true)
+  })
+  it('keeps an explicit false', () => {
+    mockExistsSync.mockReturnValue(true)
+    mockReadFileSync.mockReturnValue(JSON.stringify({ allowUrlControl: false }))
+    expect(loadSettings().allowUrlControl).toBe(false)
   })
 })

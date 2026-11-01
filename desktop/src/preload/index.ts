@@ -98,6 +98,7 @@ export interface AppSettings {
   aiModel: string
   anthropicApiKey: string
   launchAtStartup: boolean
+  allowUrlControl: boolean
   checkForUpdates: boolean
   dictationHotkey: string
   dictateAndSendHotkey: string

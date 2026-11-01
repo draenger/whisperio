@@ -78,6 +78,26 @@ the command is ignored (logged) - it never begins recording on launch.
   just activates it and does not spawn a second process with your args).
 - Not yet verified on a real machine.
 
+### whisperio:// links
+
+The same five commands work as URLs, for tools with an "open URL" action:
+`whisperio://toggle`, `whisperio://start`, `whisperio://stop`, `whisperio://cancel`,
+`whisperio://send`.
+
+- Raycast / Alfred: "Open URL" -> `whisperio://toggle`. Shortcuts (macOS/iOS-less desktop):
+  "Open URLs" action with `whisperio://toggle`. Stream Deck: "Website" action (open in default app).
+- Windows/Linux: the link reaches the running instance through second-instance argv;
+  macOS: `app.on('open-url')`. Both go through the strict parser in `cliControl.ts`.
+- Strict parsing: scheme and command are case-insensitive, one trailing `/` and any
+  `?query` / `#fragment` are ignored (no parameters are read). Any other host, extra path,
+  or scheme is rejected silently. Only the command name is logged, never the URL.
+- Cold start: same rule as the CLI - a link that launches a not-running Whisperio just starts
+  the app and the command is ignored (never records on launch).
+- Opt out: Settings > General > "Allow control via whisperio:// links" (`allowUrlControl`,
+  default on). When off, links are ignored; CLI flags are unaffected.
+- The scheme is registered at startup (`setAsDefaultProtocolClient`) and by the installer
+  (`protocols` in `.devops/electron-builder.yml`). In dev the registration points at electron + the app path.
+
 ## Entry points (file:line)
 
 - `desktop/src/main/dictation/index.ts:7` — `initDictation()` (called from

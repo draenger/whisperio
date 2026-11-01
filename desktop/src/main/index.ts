@@ -1,6 +1,7 @@
 import { app, BrowserWindow, desktopCapturer, ipcMain, session, shell } from 'electron'
+import path from 'path'
 import { initDictation, cleanupDictation, reRegisterHotkeys, pauseHotkeys, resumeHotkeys, cliToggle, cliSend, cliStart, cliStop, cliCancel } from './dictation'
-import { parseCliCommand, dispatchCliCommand } from './cliControl'
+import { parseControlArgv, createOpenUrlHandler, dispatchCliCommand } from './cliControl'
 import { createTray, destroyTray } from './tray'
 import { loadSettings, saveSettings } from './settingsManager'
 import {
@@ -100,17 +101,39 @@ if (!gotSingleInstanceLock) {
 } else {
   // Cold start with a control flag: the app starts normally and the command is
   // deliberately ignored (never auto-record on launch).
-  const coldStartCmd = parseCliCommand(process.argv)
-  if (coldStartCmd) {
-    console.log(`[Whisperio] CLI command "--${coldStartCmd}" ignored on cold start (app was not running)`)
+  const cliApi = { toggle: cliToggle, start: cliStart, stop: cliStop, cancel: cliCancel, send: cliSend }
+  const urlControlAllowed = (): boolean => loadSettings().allowUrlControl !== false
+  const coldStart = parseControlArgv(process.argv)
+  if (coldStart) {
+    console.log(`[Whisperio] control command "${coldStart.cmd}" ignored on cold start (app was not running)`)
   }
+  // whisperio:// links. Windows/Linux deliver them in argv (above / second-instance);
+  // macOS fires open-url, which must be registered before 'ready'. An open-url
+  // before ready is a cold start and is ignored, same rule as the CLI flags.
+  try {
+    if (process.defaultApp && process.argv[1]) {
+      app.setAsDefaultProtocolClient('whisperio', process.execPath, [path.resolve(process.argv[1])])
+    } else {
+      app.setAsDefaultProtocolClient('whisperio')
+    }
+  } catch (err) {
+    console.warn('[Whisperio] could not register whisperio:// protocol:', err instanceof Error ? err.message : err)
+  }
+  app.on('open-url', createOpenUrlHandler({
+    isReady: () => app.isReady(),
+    isAllowed: urlControlAllowed,
+    api: cliApi,
+    log: (m) => console.log(`[Whisperio] ${m}`)
+  }))
   app.on('second-instance', (_event, argv) => {
-    const cmd = parseCliCommand(argv)
-    if (cmd) {
-      // CLI control (Stream Deck / scripts): act, do not steal focus.
-      dispatchCliCommand(cmd, {
-        toggle: cliToggle, start: cliStart, stop: cliStop, cancel: cliCancel, send: cliSend
-      })
+    const ctl = parseControlArgv(argv)
+    if (ctl) {
+      if (ctl.viaUrl && !urlControlAllowed()) {
+        console.log(`[Whisperio] URL command "${ctl.cmd}" ignored (URL control disabled)`)
+        return
+      }
+      // CLI/URL control (Stream Deck / scripts): act, do not steal focus.
+      dispatchCliCommand(ctl.cmd, cliApi)
       return
     }
     // User tried to launch a second instance — show settings window
