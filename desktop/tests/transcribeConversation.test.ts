@@ -105,6 +105,8 @@ describe('getConfiguredDiarizingProvider', () => {
   })
 })
 
+const WAV_BUF = Buffer.concat([Buffer.from('RIFF'), Buffer.from([0, 0, 0, 0]), Buffer.from('WAVEfmt ')])
+
 describe('transcribeConversation', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -150,6 +152,26 @@ describe('transcribeConversation', () => {
       { speaker: 'speaker_1', start: 0.4, end: 0.9, text: 'there' }
     ])
     expect(result.text).toBe('Hi there')
+  })
+
+  it('sends a WAV buffer as audio/wav (ElevenLabs diarized)', async () => {
+    mockLoadSettings.mockReturnValue({ elevenlabsApiKey: 'el-key', transcriptionLanguage: 'auto' })
+    const mockReq = createMockNetRequest(200, JSON.stringify({ text: 'x', words: [] }))
+    mockNetRequest.mockReturnValue(mockReq)
+    await transcribeConversation(WAV_BUF, 'clip.wav')
+    const bodyStr = (mockReq.write.mock.calls[0][0] as Buffer).toString('latin1')
+    expect(bodyStr).toContain('Content-Type: audio/wav')
+    expect(bodyStr).not.toContain('Content-Type: audio/webm')
+  })
+
+  it('sends a WAV buffer as audio/wav (OpenAI diarized)', async () => {
+    mockLoadSettings.mockReturnValue({ openaiApiKey: 'oa-key', transcriptionLanguage: 'auto' })
+    const mockReq = createMockNetRequest(200, JSON.stringify({ text: 'x', segments: [] }))
+    mockNetRequest.mockReturnValue(mockReq)
+    await transcribeConversation(WAV_BUF, 'clip.wav')
+    const bodyStr = (mockReq.write.mock.calls[0][0] as Buffer).toString('latin1')
+    expect(bodyStr).toContain('Content-Type: audio/wav')
+    expect(bodyStr).not.toContain('Content-Type: audio/webm')
   })
 
   it('falls back to the plain transcript when OpenAI returns no segments', async () => {
