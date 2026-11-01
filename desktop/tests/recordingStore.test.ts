@@ -1,6 +1,6 @@
 import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { join } from 'path'
-import { mkdirSync, rmSync, existsSync, readFileSync, unlinkSync } from 'fs'
+import { mkdirSync, rmSync, existsSync, readFileSync, unlinkSync, writeFileSync, readdirSync } from 'fs'
 import { tmpdir } from 'os'
 
 const testDir = join(tmpdir(), `whisperio-test-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`)
@@ -417,6 +417,57 @@ describe('recordingStore', () => {
       const entry1 = await saveRecording(Buffer.from('a'), { duration: 1, provider: 'openai' })
       const entry2 = await saveRecording(Buffer.from('b'), { duration: 1, provider: 'openai' })
       expect(entry1.id).not.toBe(entry2.id)
+    })
+  })
+
+  describe('corrupt index handling', () => {
+    const backups = () => readdirSync(getRecordingsDir()).filter((f) => f.startsWith('index.corrupt-'))
+    const indexFile = () => join(getRecordingsDir(), 'index.json')
+
+    it('moves a truncated index aside with original bytes and survives a later save', async () => {
+      const original = '{"recordings":[{"id":"rec-1","filename":"a.webm"'
+      writeFileSync(indexFile(), original, 'utf-8')
+      expect(loadIndex()).toEqual({ recordings: [] })
+      expect(backups()).toHaveLength(1)
+      expect(readFileSync(join(getRecordingsDir(), backups()[0]), 'utf-8')).toBe(original)
+
+      await saveRecording(Buffer.from('x'), { duration: 1, provider: 'openai' })
+      expect(backups()).toHaveLength(1)
+      expect(readFileSync(join(getRecordingsDir(), backups()[0]), 'utf-8')).toBe(original)
+      expect(getRecordings()).toHaveLength(1)
+    })
+
+    it.each(['{}', '{"recordings":5}', '[]', 'null'])('treats wrong shape %s as corrupt', (raw) => {
+      writeFileSync(indexFile(), raw, 'utf-8')
+      expect(loadIndex()).toEqual({ recordings: [] })
+      expect(backups()).toHaveLength(1)
+      expect(readFileSync(join(getRecordingsDir(), backups()[0]), 'utf-8')).toBe(raw)
+    })
+
+    it('does not create another backup on repeated loads', () => {
+      writeFileSync(indexFile(), '{oops', 'utf-8')
+      loadIndex()
+      loadIndex()
+      expect(backups()).toHaveLength(1)
+    })
+
+    it('filters entries without a string id but keeps valid ones, no backup', () => {
+      const good = { id: 'rec-1', filename: 'a.webm' }
+      writeFileSync(indexFile(), JSON.stringify({ recordings: [good, null, 3, {}, { id: 7 }] }), 'utf-8')
+      expect(loadIndex().recordings).toEqual([good])
+      expect(backups()).toHaveLength(0)
+    })
+
+    it('leaves a valid index unchanged', () => {
+      const idx = { recordings: [{ id: 'rec-1' }, { id: 'rec-2' }] }
+      writeFileSync(indexFile(), JSON.stringify(idx), 'utf-8')
+      expect(loadIndex()).toEqual(idx)
+      expect(backups()).toHaveLength(0)
+    })
+
+    it('creates no backup when the index is missing', () => {
+      expect(loadIndex()).toEqual({ recordings: [] })
+      expect(backups()).toHaveLength(0)
     })
   })
 })

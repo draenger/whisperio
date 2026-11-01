@@ -1,5 +1,5 @@
 import { app } from 'electron'
-import { existsSync, mkdirSync, writeFileSync, readFileSync, unlinkSync, renameSync } from 'fs'
+import { existsSync, mkdirSync, writeFileSync, readFileSync, unlinkSync, renameSync, copyFileSync } from 'fs'
 import { join } from 'path'
 import type { SpeakerSegment } from './dictation/conversation'
 
@@ -120,17 +120,48 @@ function getIndexPath(): string {
   return join(getRecordingsDir(), 'index.json')
 }
 
+// Move an unreadable index aside so the next saveIndex() cannot overwrite the
+// only copy of the user's history metadata. Never deletes anything.
+function quarantineCorruptIndex(indexPath: string): void {
+  const backup = indexPath.replace(/index\.json$/, `index.corrupt-${Date.now()}.json`)
+  try {
+    renameSync(indexPath, backup)
+  } catch {
+    try {
+      copyFileSync(indexPath, backup)
+    } catch {
+      /* best-effort; nothing more we can do */
+    }
+  }
+  console.warn('[recordingStore] recordings index unreadable; moved aside to', backup)
+}
+
 export function loadIndex(): RecordingIndex {
   const indexPath = getIndexPath()
   if (!existsSync(indexPath)) {
     return { recordings: [] }
   }
+  let parsed: unknown
   try {
-    const raw = readFileSync(indexPath, 'utf-8')
-    return JSON.parse(raw) as RecordingIndex
+    parsed = JSON.parse(readFileSync(indexPath, 'utf-8'))
   } catch {
+    quarantineCorruptIndex(indexPath)
     return { recordings: [] }
   }
+  if (
+    parsed === null ||
+    typeof parsed !== 'object' ||
+    Array.isArray(parsed) ||
+    !Array.isArray((parsed as { recordings?: unknown }).recordings)
+  ) {
+    quarantineCorruptIndex(indexPath)
+    return { recordings: [] }
+  }
+  const obj = parsed as RecordingIndex
+  const valid = obj.recordings.filter(
+    (r) => r !== null && typeof r === 'object' && typeof (r as { id?: unknown }).id === 'string'
+  )
+  return valid.length === obj.recordings.length ? obj : { ...obj, recordings: valid }
 }
 
 // Windows hands out a transient EPERM/EBUSY for a rename when another process
