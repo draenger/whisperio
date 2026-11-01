@@ -1,8 +1,8 @@
-import { app, BrowserWindow, desktopCapturer, ipcMain, session, shell } from 'electron'
+import { app, BrowserWindow, desktopCapturer, dialog, ipcMain, session, shell } from 'electron'
 import { initDictation, cleanupDictation, reRegisterHotkeys, pauseHotkeys, resumeHotkeys } from './dictation'
 import { createTray, destroyTray } from './tray'
 import { loadSettings, saveSettings } from './settingsManager'
-import { applyLaunchAtStartup } from './startupSettings'
+import { applyLaunchAtStartup, handleStartupFailure } from './startupSettings'
 import {
   getEffectiveSettings,
   saveSettingsWithKeys,
@@ -497,8 +497,7 @@ app.whenReady().then(() => {
 
   console.log('[Whisperio] Ready — press hotkey to dictate')
 }).catch((err) => {
-  // Never die silently if something in startup throws (e.g. a locked settings file).
-  console.error('[Whisperio] startup failed (' + ((err as NodeJS.ErrnoException | null)?.code ?? (err instanceof Error ? err.name : 'unknown')) + ')')
+  handleStartupFailure(err, dialog, app)
 })
 
 // macOS: the app runs as a menubar/tray app with no persistent main window.

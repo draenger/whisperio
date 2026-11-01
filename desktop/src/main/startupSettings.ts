@@ -20,3 +20,25 @@ export function applyLaunchAtStartup(app: LoginItemApp, isPackaged: boolean, exe
   app.setLoginItemSettings({ openAtLogin: settings.launchAtStartup, path: execPath })
   return true
 }
+
+interface FatalApp {
+  exit(code?: number): void
+}
+interface FatalDialog {
+  showErrorBox(title: string, content: string): void
+}
+
+/**
+ * A startup failure leaves the process holding the single-instance lock with
+ * no tray/hotkeys/window, so it must be fatal and visible: log the full error
+ * (startup errors are code errors, not settings values), show a dialog, exit 1.
+ */
+export function handleStartupFailure(err: unknown, dialog: FatalDialog, app: FatalApp): void {
+  console.error('[Whisperio] startup failed:', err instanceof Error ? (err.stack ?? err.message) : err)
+  const short = err instanceof Error ? err.message : String(err)
+  try {
+    dialog.showErrorBox('Whisperio failed to start', short.slice(0, 300))
+  } finally {
+    app.exit(1)
+  }
+}

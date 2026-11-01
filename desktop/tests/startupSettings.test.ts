@@ -34,3 +34,27 @@ describe('applyLaunchAtStartup', () => {
     expect(app.setLoginItemSettings).not.toHaveBeenCalled()
   })
 })
+
+import { handleStartupFailure } from '../src/main/startupSettings'
+
+describe('handleStartupFailure', () => {
+  it('logs the full error, shows the error box, then exits 1', () => {
+    const dialog = { showErrorBox: vi.fn() }
+    const app = { exit: vi.fn() }
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const err = new Error('boom')
+    handleStartupFailure(err, dialog, app)
+    expect(spy.mock.calls.flat()).toContain(err.stack)
+    expect(dialog.showErrorBox).toHaveBeenCalledWith('Whisperio failed to start', 'boom')
+    expect(app.exit).toHaveBeenCalledWith(1)
+    spy.mockRestore()
+  })
+
+  it('still exits when the dialog throws', () => {
+    const dialog = { showErrorBox: vi.fn(() => { throw new Error('no ui') }) }
+    const app = { exit: vi.fn() }
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    expect(() => handleStartupFailure('x', dialog, app)).toThrow()
+    expect(app.exit).toHaveBeenCalledWith(1)
+  })
+})
