@@ -16,6 +16,7 @@ import {
   getDataKeyForEncrypt,
   getDataKeyForDecrypt,
   shredDataKey,
+  dataKeyFileExists,
   registerSealedDataProbe
 } from './dataVault'
 import {
@@ -200,6 +201,16 @@ export interface HistoryEncryptionStatus {
   enabled: boolean
   sealedOnDisk: boolean
   locked: boolean
+  /**
+   * Only present when locked. 'unrecoverable': sealed data but the key file is MISSING.
+   * 'transient': key file present but could not be unwrapped (locked Keychain/keyring may be
+   * temporary): offer "Try again" before any destructive reset.
+   */
+  lockKind?: 'transient' | 'unrecoverable'
+}
+
+function lockKindNow(): 'transient' | 'unrecoverable' {
+  return dataKeyFileExists() ? 'transient' : 'unrecoverable'
 }
 
 // Reads the encryptHistory flag. Injectable so tests can drive it; defaults to the settings file.
@@ -291,7 +302,9 @@ export function getHistoryEncryptionStatus(): HistoryEncryptionStatus {
   } catch {
     enabled = false
   }
-  return { enabled, sealedOnDisk: st.sealedOnDisk, locked: st.locked }
+  return st.locked
+    ? { enabled, sealedOnDisk: st.sealedOnDisk, locked: true, lockKind: lockKindNow() }
+    : { enabled, sealedOnDisk: st.sealedOnDisk, locked: false }
 }
 
 function serializeIndex(index: RecordingIndex, seal: boolean): string {
@@ -547,7 +560,9 @@ function wipeAfterShred(): ShredReport {
   let names: string[] = []
   try { names = readdirSync(dir) } catch { /* nothing to wipe */ }
   for (const f of names) {
-    if (!(f.endsWith('.webm') || f.endsWith('.tmp'))) continue
+    // index.json.corrupt-* backups may hold plaintext history: erase/reset removes them too
+    // (every other path keeps them).
+    if (!(f.endsWith('.webm') || f.endsWith('.tmp') || f.startsWith('index.json.corrupt-'))) continue
     try { unlinkWithRetry(join(dir, f)) } catch { stuck.push(f) }
   }
   const indexPath = getIndexPath()
@@ -627,27 +642,41 @@ export function deleteAllRecordings(): Promise<ShredReport> {
         }
       }
     }
+    let undeleted = 0
+    try {
+      for (const f of readdirSync(getRecordingsDir())) {
+        if (!f.startsWith('index.json.corrupt-')) continue
+        try { unlinkWithRetry(join(getRecordingsDir(), f)) } catch { undeleted++ }
+      }
+    } catch { /* no recordings dir: nothing to remove */ }
     saveIndex({ recordings: [] })
-    return { undeleted: 0 }
+    return { undeleted }
   })
 }
 
 export interface ResetReport extends ShredReport {
   ok: boolean
+  /** True when refused because the key file exists (possibly transient lock): needs confirmDestroy. */
+  needsConfirmDestroy?: boolean
 }
 
 /**
  * Locked-history recovery: SEALED data exists on disk (sealed index or WHSPAUD audio) but cannot be
- * opened (key lost / keychain gone). (1) crypto-shred the key; if that fails, return ok:false and
- * delete nothing; (2) delete audio, leaked tmp files and index.json (NOT index.json.corrupt-*
- * backups), tolerating undeletable files like erase does; (3) encryption OFF so the next save
+ * opened (key lost / keychain gone). If the key file is MISSING the data is unrecoverable and reset is
+ * allowed. If the key file is PRESENT but could not be unwrapped (possibly a temporarily locked
+ * Keychain/keyring) reset is refused unless confirmDestroy === true (the UI offers "Try again" first).
+ * (1) remove the key file; if that fails, return ok:false and
+ * delete nothing; (2) delete audio, leaked tmp files and index.json and index.json.corrupt-* backups, tolerating undeletable files like erase does; (3) encryption OFF so the next save
  * starts a fresh history. Refuses (ok:false) for a merely unparsable or AV-locked PLAIN index: that
  * is not lost-key data and must not be destroyed.
  */
-export function resetLockedHistory(): Promise<ResetReport> {
+export function resetLockedHistory(confirmDestroy?: boolean): Promise<ResetReport> {
   return enqueue((): ResetReport => {
     if (!readIndexState().locked) return { ok: false, undeleted: 0 }
     if (!sealedDataExists()) return { ok: false, undeleted: 0 }
+    if (dataKeyFileExists() && confirmDestroy !== true) {
+      return { ok: false, undeleted: 0, needsConfirmDestroy: true }
+    }
     if (!shredDataKey()) return { ok: false, undeleted: 0 } // key first, abort before touching files
     const report = wipeAfterShred()
     saveSettings({ encryptHistory: false })
@@ -655,7 +684,7 @@ export function resetLockedHistory(): Promise<ResetReport> {
   })
 }
 
-export type EncryptionUiState = 'off' | 'on' | 'migrating' | 'locked'
+export type EncryptionUiState = 'off' | 'on' | 'migrating' | 'locked' | 'locked-transient'
 
 export interface EncryptionProgress {
   state: EncryptionUiState
@@ -673,7 +702,9 @@ export function getEncryptionProgress(): EncryptionProgress {
     return { state: 'migrating', done: migrationCounts.done, total: migrationCounts.total }
   }
   const st = readIndexState()
-  if (st.locked) return { state: 'locked', done: 0, total: 0 }
+  if (st.locked) {
+    return { state: lockKindNow() === 'transient' ? 'locked-transient' : 'locked', done: 0, total: 0 }
+  }
   let enabled = false
   try { enabled = encryptHistoryReader() } catch { enabled = false }
   let done = 0

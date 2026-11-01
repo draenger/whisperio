@@ -9,11 +9,13 @@ export interface EncryptionStatus {
   enabled: boolean
   sealedOnDisk: boolean
   locked: boolean
+  /** Present when locked: 'transient' = key file exists but could not be unwrapped (maybe temporary). */
+  lockKind?: 'transient' | 'unrecoverable'
   vault: VaultAvailability
 }
 
 export interface EncryptionProgress {
-  state: 'off' | 'on' | 'migrating' | 'locked'
+  state: 'off' | 'on' | 'migrating' | 'locked' | 'locked-transient'
   done: number
   total: number
 }
@@ -24,7 +26,10 @@ export type SetResult =
 
 export const LOCKED_MESSAGE = "History is encrypted and can't be unlocked on this device."
 
-export type PrivacyKind = 'off' | 'on' | 'migrating' | 'locked' | 'unavailable'
+export const LOCKED_TRANSIENT_MESSAGE =
+  "History is encrypted but the key couldn't be unlocked right now. Your operating system's secure storage (Keychain, keyring) may be locked or busy. Unlock it and try again before resetting."
+
+export type PrivacyKind = 'off' | 'on' | 'migrating' | 'locked' | 'locked-transient' | 'unavailable'
 
 export interface PrivacyView {
   kind: PrivacyKind
@@ -38,8 +43,27 @@ export interface PrivacyView {
   progressText: string | null
 }
 
+/** Key file present but not unwrappable: possibly transient, so "Try again" comes before reset. */
+export function isTransientLock(
+  status: { locked: boolean; lockKind?: string },
+  progress?: { state: string } | null
+): boolean {
+  if (progress?.state === 'locked-transient') return true
+  return status.locked === true && status.lockKind === 'transient'
+}
+
 /** Maps main-process status + progress to what the panel shows. Fail-closed: locked wins. */
 export function derivePrivacyView(status: EncryptionStatus, progress: EncryptionProgress | null): PrivacyView {
+  if (isTransientLock(status, progress)) {
+    return {
+      kind: 'locked-transient',
+      label: 'Locked (maybe temporary)',
+      detail: LOCKED_TRANSIENT_MESSAGE,
+      checked: true,
+      canToggle: false,
+      progressText: null
+    }
+  }
   if (status.locked || progress?.state === 'locked') {
     return {
       kind: 'locked',
@@ -147,27 +171,39 @@ export function planToggle(next: boolean, ctx: ToggleContext): ToggleDialog | nu
 }
 
 export const GITHUB_WARNING =
-  'GitHub sync is on. Synced data is not covered by this setting and stays readable on GitHub. You can turn sync off now.'
+  'GitHub sync is on. Sync only carries your API keys (never history or recordings), and it is not covered by this setting. You can turn sync off now if you prefer.'
 
 export type EraseStep = 'confirm' | 'shred-key' | 'delete-files'
 
 /** Documented order of an encrypted erase (design 4.3): key first, then files. */
 export const ERASE_ORDER: readonly EraseStep[] = ['confirm', 'shred-key', 'delete-files']
 
+/** Honest scope of the key removal (the wrapping key stays in the OS keychain). */
+export const KEY_REMOVAL_NOTE =
+  "This removes the key file only. On SSDs the old key may physically remain until overwritten, and the key that wraps it stays in your operating system's keychain. Encrypted data cannot be read by Whisperio without the key file."
+
 export function eraseConfirmText(encrypted: boolean): { title: string; body: string; confirmLabel: string } {
   return {
     title: 'Erase all history?',
     body: encrypted
-      ? 'This destroys the encryption key first, then deletes every recording and transcript. It cannot be undone.'
-      : 'This deletes every recording and transcript. It cannot be undone.',
+      ? 'This removes the encryption key file first, then deletes every recording and transcript, including index.json.corrupt-* backup copies of the history index. It cannot be undone. ' + KEY_REMOVAL_NOTE
+      : 'This deletes every recording and transcript, including index.json.corrupt-* backup copies of the history index. It cannot be undone.',
     confirmLabel: 'Erase all'
   }
 }
 
 export const RESET_CONFIRM = {
   title: 'Reset history?',
-  body: 'The encrypted history cannot be opened, so it is destroyed (the key and all files are deleted) and Whisperio starts with an empty history and encryption off. This cannot be undone.',
+  body: 'The encryption key is missing, so the encrypted history can never be opened. It is destroyed (the key file, all recordings and the history index, including index.json.corrupt-* backups are deleted) and Whisperio starts with an empty history and encryption off. This cannot be undone.',
   confirmLabel: 'Reset history'
+}
+
+/** Second, explicit confirmation when the key file still exists (the lock may be temporary). */
+export const RESET_TRANSIENT_CONFIRM = {
+  title: 'Destroy the encryption key?',
+  body: "The key file is still present; your secure storage may only be temporarily locked. Resetting now destroys the key and DELETES all encrypted history and recordings FOREVER, even if unlocking the keychain would have restored them. Try again first. " +
+    KEY_REMOVAL_NOTE,
+  confirmLabel: 'Destroy key and delete history'
 }
 
 /** The recordings window shows the locked notice only when status says locked (null = unknown, fail-soft). */
@@ -175,8 +211,10 @@ export function shouldShowLockedNotice(status: { locked: boolean } | null | unde
   return !!status && status.locked === true
 }
 
+export const TRY_AGAIN_STILL_LOCKED = 'Still locked. Unlock your keychain/keyring and try again, or reset (destroys history).'
+
 export const RESET_FAILED_MESSAGE =
-  'History was not reset: it is not locked encrypted history, or the encryption key could not be destroyed. Nothing was deleted.'
+  'History was not reset: it is not locked encrypted history, or the encryption key file could not be removed. Nothing was deleted.'
 
 /** Shown after erase/reset succeeded but some files could not be deleted yet. */
 export function undeletedMessage(n: number): string | null {

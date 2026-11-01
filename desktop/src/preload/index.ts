@@ -401,6 +401,7 @@ export interface HistoryEncryptionStatus {
   enabled: boolean
   sealedOnDisk: boolean
   locked: boolean
+  lockKind?: 'transient' | 'unrecoverable'
   vault: { ok: true } | { ok: false; reason: 'unavailable' | 'weak-backend' }
 }
 
@@ -416,11 +417,11 @@ export interface HistoryAPI {
   /** Coarse state plus audio conversion progress (done of total files) for the Privacy panel. */
   getEncryptionStatus: () => Promise<HistoryEncryptionProgress>
   /** Locked history only: crypto-shred, delete the history files, encryption OFF. false = refused. */
-  resetLocked: () => Promise<{ ok: boolean; undeleted: number }>
+  resetLocked: (opts?: { confirmDestroy?: boolean }) => Promise<{ ok: boolean; undeleted: number; needsConfirmDestroy?: boolean }>
 }
 
 export interface HistoryEncryptionProgress {
-  state: 'off' | 'on' | 'migrating' | 'locked'
+  state: 'off' | 'on' | 'migrating' | 'locked' | 'locked-transient'
   done: number
   total: number
 }
@@ -517,7 +518,7 @@ const historyApi: HistoryAPI = {
   getEncryption: () => ipcRenderer.invoke('history:encryption:get'),
   setEncryption: (enabled) => ipcRenderer.invoke('history:encryption:set', enabled),
   getEncryptionStatus: () => ipcRenderer.invoke('history:encryption:status'),
-  resetLocked: () => ipcRenderer.invoke('history:reset')
+  resetLocked: (opts) => ipcRenderer.invoke('history:reset', opts)
 }
 
 const recordingsApi: RecordingsAPI = {

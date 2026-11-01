@@ -182,7 +182,7 @@ describe('recordingStore - erase = crypto-shred, locked reset, progress (D3)', (
     writeFileSync(keyFile, 'garbage')
     h.failKeyDelete = true
     expect(getHistoryEncryptionStatus().locked).toBe(true)
-    expect((await resetLockedHistory()).ok).toBe(false)
+    expect((await resetLockedHistory(true)).ok).toBe(false)
     expect(audioCount()).toBe(1)
     expect(existsSync(INDEX)).toBe(true)
     expect(loadSettings().encryptHistory).toBe(true)
@@ -199,16 +199,84 @@ describe('recordingStore - erase = crypto-shred, locked reset, progress (D3)', (
     expect(h.calls).not.toContain('shred-key')
   })
 
-  it('reset keeps index.json.corrupt-* backups', async () => {
+  it('locked reset also deletes index.json.corrupt-* backups', async () => {
     await seed()
     await setHistoryEncryption(true)
     const backup = join(RECORDINGS_DIR, 'index.json.corrupt-123')
     writeFileSync(backup, 'old')
     shredDataKey()
     expect((await resetLockedHistory()).ok).toBe(true)
-    expect(existsSync(backup)).toBe(true)
+    expect(existsSync(backup)).toBe(false)
     expect(existsSync(INDEX)).toBe(false)
     expect(audioCount()).toBe(0)
+  })
+
+  it('transient unwrap failure (key file present) -> locked-transient, reset refused without confirmDestroy', async () => {
+    await seed()
+    await setHistoryEncryption(true)
+    const keyFile = join(testDir, 'data-vault.key')
+    const good = readFileSync(keyFile, 'utf-8')
+    shredDataKey() // drop cache + file
+    writeFileSync(keyFile, 'garbage') // keychain temporarily cannot unwrap
+    h.calls.length = 0
+    expect(getHistoryEncryptionStatus()).toMatchObject({ locked: true, lockKind: 'transient' })
+    expect(getEncryptionProgress().state).toBe('locked-transient')
+    const res = await resetLockedHistory()
+    expect(res).toMatchObject({ ok: false, needsConfirmDestroy: true })
+    expect((await resetLockedHistory(false)).ok).toBe(false)
+    expect(h.calls).not.toContain('shred-key')
+    expect(existsSync(keyFile)).toBe(true)
+    expect(audioCount()).toBe(1)
+    // keychain unlocks again: Try again works, nothing was lost
+    writeFileSync(keyFile, good)
+    expect(getHistoryEncryptionStatus().locked).toBe(false)
+    expect(getRecordings()).toHaveLength(1)
+  })
+
+  it('transient lock + confirmDestroy:true -> shreds and wipes', async () => {
+    await seed()
+    await setHistoryEncryption(true)
+    const keyFile = join(testDir, 'data-vault.key')
+    shredDataKey()
+    writeFileSync(keyFile, 'garbage')
+    h.calls.length = 0
+    expect((await resetLockedHistory(true)).ok).toBe(true)
+    expect(h.calls[0]).toBe('shred-key')
+    expect(existsSync(keyFile)).toBe(false)
+    expect(audioCount()).toBe(0)
+  })
+
+  it('missing key file + sealed data -> unrecoverable lock, reset allowed without confirmDestroy', async () => {
+    await seed()
+    await setHistoryEncryption(true)
+    shredDataKey()
+    expect(getHistoryEncryptionStatus()).toMatchObject({ locked: true, lockKind: 'unrecoverable' })
+    expect(getEncryptionProgress().state).toBe('locked')
+    expect((await resetLockedHistory()).ok).toBe(true)
+  })
+
+  it('erase deletes index.json.corrupt-* (encrypted and plain paths)', async () => {
+    await seed()
+    const b1 = join(RECORDINGS_DIR, 'index.json.corrupt-1')
+    writeFileSync(b1, 'plaintext history')
+    await deleteAllRecordings()
+    expect(existsSync(b1)).toBe(false)
+    await seed()
+    await setHistoryEncryption(true)
+    const b2 = join(RECORDINGS_DIR, 'index.json.corrupt-2')
+    writeFileSync(b2, 'plaintext history')
+    await deleteAllRecordings()
+    expect(existsSync(b2)).toBe(false)
+  })
+
+  it('non-erase paths keep index.json.corrupt-* (save, delete one, encryption toggle)', async () => {
+    await seed()
+    const b = join(RECORDINGS_DIR, 'index.json.corrupt-9')
+    writeFileSync(b, 'old')
+    await seed()
+    await setHistoryEncryption(true)
+    await setHistoryEncryption(false)
+    expect(existsSync(b)).toBe(true)
   })
 
   it('status while migrating answers from cached counters (no index read needed)', async () => {

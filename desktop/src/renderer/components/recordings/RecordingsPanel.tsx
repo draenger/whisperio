@@ -3,7 +3,7 @@ import { useTheme } from '../../ThemeContext'
 import { TitleBar } from '../common/TitleBar'
 import { TranscriptSearch } from './TranscriptSearch'
 import type { Theme } from '../../theme'
-import { LOCKED_MESSAGE, RESET_CONFIRM, RESET_FAILED_MESSAGE, shouldShowLockedNotice, undeletedMessage } from '../settings/privacyState'
+import { LOCKED_MESSAGE, LOCKED_TRANSIENT_MESSAGE, RESET_TRANSIENT_CONFIRM, TRY_AGAIN_STILL_LOCKED, isTransientLock, RESET_CONFIRM, RESET_FAILED_MESSAGE, shouldShowLockedNotice, undeletedMessage } from '../settings/privacyState'
 
 // Group-conversation mode (multi-speaker transcription) — mirrors
 // src/main/dictation/conversation.ts's SpeakerSegment exactly. See that
@@ -115,13 +115,19 @@ export function RecordingsView(): ReactElement {
   // Sealed history that cannot be opened (key/keychain gone): explicit state + Reset, never an
   // empty list that silently starts new history. Fail-soft if the bridge is absent.
   const [historyLocked, setHistoryLocked] = useState(false)
+  const [historyTransient, setHistoryTransient] = useState(false)
   const [resetConfirm, setResetConfirm] = useState(false)
-  const refreshLocked = useCallback(async () => {
+  const refreshLocked = useCallback(async (): Promise<boolean> => {
     try {
       const st = await window.api.history?.getEncryption()
-      setHistoryLocked(shouldShowLockedNotice(st))
+      const locked = shouldShowLockedNotice(st)
+      setHistoryLocked(locked)
+      setHistoryTransient(!!st && isTransientLock(st))
+      return locked
     } catch {
       setHistoryLocked(false)
+      setHistoryTransient(false)
+      return false
     }
   }, [])
 
@@ -196,13 +202,22 @@ export function RecordingsView(): ReactElement {
     refreshLocked()
   }, [loadRecordings, refreshLocked])
 
+  const handleTryAgain = useCallback(async () => {
+    setResetConfirm(false)
+    if (await refreshLocked()) setActionError(TRY_AGAIN_STILL_LOCKED)
+    else {
+      setActionError(null)
+      await loadRecordings()
+    }
+  }, [refreshLocked, loadRecordings])
+
   const handleResetLocked = useCallback(async () => {
     if (!resetConfirm) {
       setResetConfirm(true)
       return
     }
     try {
-      const res = await window.api.history.resetLocked()
+      const res = await window.api.history.resetLocked(historyTransient ? { confirmDestroy: true } : undefined)
       setActionError(res.ok ? undeletedMessage(res.undeleted) : RESET_FAILED_MESSAGE)
     } catch {
       setActionError('Failed to reset history. Please try again.')
@@ -210,7 +225,7 @@ export function RecordingsView(): ReactElement {
     setResetConfirm(false)
     await refreshLocked()
     await loadRecordings()
-  }, [resetConfirm, refreshLocked, loadRecordings])
+  }, [resetConfirm, historyTransient, refreshLocked, loadRecordings])
 
   useEffect(() => {
     let cancelled = false
@@ -634,8 +649,29 @@ export function RecordingsView(): ReactElement {
             border: `1px solid ${theme.danger}`
           }}
         >
-          <div style={{ fontWeight: 600 }}>{LOCKED_MESSAGE}</div>
-          {resetConfirm && <div style={{ margin: '4px 0', color: theme.textMuted }}>{RESET_CONFIRM.body}</div>}
+          <div style={{ fontWeight: 600 }}>{historyTransient ? LOCKED_TRANSIENT_MESSAGE : LOCKED_MESSAGE}</div>
+          {resetConfirm && (
+            <div style={{ margin: '4px 0', color: theme.textMuted }}>
+              {(historyTransient ? RESET_TRANSIENT_CONFIRM : RESET_CONFIRM).body}
+            </div>
+          )}
+          {historyTransient && (
+            <button
+              onClick={handleTryAgain}
+              style={{
+                marginTop: 6,
+                marginRight: 8,
+                background: 'transparent',
+                color: theme.danger,
+                border: `1px solid ${theme.danger}`,
+                borderRadius: 8,
+                padding: '5px 12px',
+                cursor: 'pointer'
+              }}
+            >
+              Try again
+            </button>
+          )}
           <button
             onClick={handleResetLocked}
             style={{
@@ -648,7 +684,7 @@ export function RecordingsView(): ReactElement {
               cursor: 'pointer'
             }}
           >
-            {resetConfirm ? 'Confirm reset' : 'Reset history'}
+            {resetConfirm ? (historyTransient ? RESET_TRANSIENT_CONFIRM.confirmLabel : 'Confirm reset') : historyTransient ? 'Reset history...' : 'Reset history'}
           </button>
         </div>
       )}

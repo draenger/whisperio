@@ -10,6 +10,11 @@ import {
   GITHUB_WARNING,
   LOCKED_MESSAGE,
   RESET_CONFIRM,
+  RESET_TRANSIENT_CONFIRM,
+  LOCKED_TRANSIENT_MESSAGE,
+  TRY_AGAIN_STILL_LOCKED,
+  isTransientLock,
+  KEY_REMOVAL_NOTE,
   RESET_FAILED_MESSAGE,
   undeletedMessage,
   type EncryptionStatus,
@@ -81,6 +86,7 @@ export function PrivacyPanel({ s, theme }: { s: SettingsStyles; theme: Theme }):
   }, [migrating, refresh])
 
   const view = status ? derivePrivacyView(status, progress) : null
+  const transient = !!status && isTransientLock(status, progress)
   const encrypted = !!status && (status.enabled || status.sealedOnDisk)
 
   const requestToggle = (next: boolean): void => {
@@ -110,7 +116,9 @@ export function PrivacyPanel({ s, theme }: { s: SettingsStyles; theme: Theme }):
         const res = await window.api.recordings.deleteAll()
         setMessage(undeletedMessage(res ? res.undeleted : 0))
       } else {
-        const res = await window.api.history.resetLocked()
+        const res = await window.api.history.resetLocked(
+          transient ? { confirmDestroy: true } : undefined
+        )
         setMessage(res.ok ? undeletedMessage(res.undeleted) : RESET_FAILED_MESSAGE)
       }
     } catch (err) {
@@ -135,9 +143,10 @@ export function PrivacyPanel({ s, theme }: { s: SettingsStyles; theme: Theme }):
     dialogConfirm = t.confirmLabel
     dialogBody = [t.body]
   } else if (pending?.type === 'reset') {
-    dialogTitle = RESET_CONFIRM.title
-    dialogConfirm = RESET_CONFIRM.confirmLabel
-    dialogBody = [RESET_CONFIRM.body]
+    const r = transient ? RESET_TRANSIENT_CONFIRM : RESET_CONFIRM
+    dialogTitle = r.title
+    dialogConfirm = r.confirmLabel
+    dialogBody = [r.body]
   }
   const enableDialog = pending?.type === 'toggle' && pending.dialog.kind === 'enable'
 
@@ -188,12 +197,26 @@ export function PrivacyPanel({ s, theme }: { s: SettingsStyles; theme: Theme }):
             color: theme.text
           }}
         >
-          <div style={{ fontWeight: 600 }}>{LOCKED_MESSAGE}</div>
+          <div style={{ fontWeight: 600 }}>{transient ? LOCKED_TRANSIENT_MESSAGE : LOCKED_MESSAGE}</div>
           <div style={{ ...s.hint, margin: '4px 0 10px' }}>
-            Resetting destroys the encrypted history and starts fresh. Nothing is created silently.
+            Resetting destroys the encrypted history and starts fresh. Nothing is created silently. {KEY_REMOVAL_NOTE}
           </div>
+          {transient && (
+            <button
+              style={{ ...dangerBtn, marginRight: '8px' }}
+              disabled={busy}
+              onClick={async () => {
+                setMessage(null)
+                await refresh()
+                const st = await window.api.history.getEncryption().catch(() => null)
+                if (st && st.locked) setMessage(TRY_AGAIN_STILL_LOCKED)
+              }}
+            >
+              Try again
+            </button>
+          )}
           <button style={dangerBtn} disabled={busy} onClick={() => setPending({ type: 'reset' })}>
-            Reset history
+            {transient ? 'Reset history...' : 'Reset history'}
           </button>
         </div>
       )}
@@ -208,7 +231,7 @@ export function PrivacyPanel({ s, theme }: { s: SettingsStyles; theme: Theme }):
         <div style={{ marginTop: '14px' }}>
           <div style={{ fontSize: '14px', fontWeight: 500, color: theme.text }}>Erase all history</div>
           <div style={{ ...s.hint, margin: '2px 0 8px' }}>
-            Deletes every recording and transcript. When history is encrypted the key is destroyed first.
+            Deletes every recording and transcript, including index.json.corrupt-* backups. When history is encrypted the key file is removed first.
           </div>
           <button style={dangerBtn} disabled={busy} onClick={() => setPending({ type: 'erase' })}>
             Erase all history

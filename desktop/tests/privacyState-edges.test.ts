@@ -9,6 +9,9 @@ import {
   undeletedMessage,
   GITHUB_WARNING,
   RESET_CONFIRM,
+  RESET_TRANSIENT_CONFIRM,
+  LOCKED_TRANSIENT_MESSAGE,
+  KEY_REMOVAL_NOTE,
   RESET_FAILED_MESSAGE,
   LOCKED_MESSAGE,
   type EncryptionStatus
@@ -90,7 +93,7 @@ describe('dialogs and messages edges', () => {
   })
 
   it('eraseConfirmText mentions key destruction only when encrypted', () => {
-    expect(eraseConfirmText(true).body).toMatch(/destroys the encryption key first/)
+    expect(eraseConfirmText(true).body).toMatch(/removes the encryption key file first/)
     expect(eraseConfirmText(false).body).not.toMatch(/key/)
     expect(eraseConfirmText(false).confirmLabel).toBe('Erase all')
   })
@@ -114,5 +117,21 @@ describe('dialogs and messages edges', () => {
     expect(RESET_FAILED_MESSAGE).toMatch(/Nothing was deleted/)
     expect(RESET_CONFIRM.body).toMatch(/cannot be undone/)
     expect(RESET_CONFIRM.confirmLabel).toBe('Reset history')
+  })
+
+  it('transient lock: own kind/label, no toggling; unrecoverable stays plain locked', () => {
+    const t = derivePrivacyView({ ...base, locked: true, lockKind: 'transient' }, null)
+    expect(t).toMatchObject({ kind: 'locked-transient', canToggle: false, detail: LOCKED_TRANSIENT_MESSAGE })
+    expect(derivePrivacyView(base, { state: 'locked-transient', done: 0, total: 0 }).kind).toBe('locked-transient')
+    expect(derivePrivacyView({ ...base, locked: true, lockKind: 'unrecoverable' }, null).kind).toBe('locked')
+  })
+
+  it('copy is honest: transient reset warns of permanent loss, key removal scope, corrupt backups, GitHub keys only', () => {
+    expect(RESET_TRANSIENT_CONFIRM.body).toMatch(/FOREVER/)
+    expect(RESET_TRANSIENT_CONFIRM.body).toMatch(/Try again/)
+    expect(KEY_REMOVAL_NOTE).toMatch(/keychain/)
+    expect(KEY_REMOVAL_NOTE).toMatch(/SSD/)
+    expect(eraseConfirmText(false).body).toMatch(/index\.json\.corrupt-/)
+    expect(GITHUB_WARNING).toMatch(/API keys/)
   })
 })

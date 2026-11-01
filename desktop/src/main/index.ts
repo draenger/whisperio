@@ -379,7 +379,9 @@ app.whenReady().then(() => {
   })
   ipcMain.handle('history:encryption:status', () => getEncryptionProgress())
   // Locked-history recovery: crypto-shred + start fresh. Refuses unless history is really locked.
-  ipcMain.handle('history:reset', () => resetLockedHistory())
+  ipcMain.handle('history:reset', (_e, opts?: { confirmDestroy?: boolean }) =>
+    resetLockedHistory(opts?.confirmDestroy === true)
+  )
   // Resume an interrupted audio migration (quit/crash mid-job) once at startup.
   try { sweepShreddedOrphans() } catch { /* best-effort */ }
   void resumeAudioMigration()
