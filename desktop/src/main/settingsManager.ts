@@ -141,6 +141,10 @@ export interface AppSettings {
   // dictationHotkey ever falls back to HOTKEY_CANDIDATES); defaulted non-empty
   // in DEFAULT_SETTINGS below so the feature is on out of the box.
   commandHotkey: string
+  // Main dictation (+ dictate-and-send) hotkey behaviour: 'toggle' = press to
+  // start, press again to stop; 'hold' = record while held, release to
+  // transcribe (dictation/keyHold.ts; falls back to toggle where unsupported).
+  hotkeyMode: 'toggle' | 'hold'
   // 'violet-legacy' (added in STEP0 theming wiring) was removed from the
   // product in VIOLET-OUT — see migrateLegacyTheme() below, which maps any
   // saved 'violet-legacy' value back to 'dark' on load.
@@ -300,6 +304,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   dictationHotkey: '',
   dictateAndSendHotkey: '',
   commandHotkey: 'Ctrl+Shift+C',
+  hotkeyMode: 'toggle',
   theme: 'dark',
   accentColor: 'blue',
   inputDeviceId: '',
@@ -412,7 +417,9 @@ export function loadSettings(): AppSettings {
     const raw = readFileSync(filePath, 'utf-8')
     const parsed = JSON.parse(raw) as Partial<AppSettings>
     const migrated = migrateToneMap(migrateLegacyTheme(migrateCleanupSettings(migrateVocabulary(parsed))))
-    return { ...DEFAULT_SETTINGS, ...migrated }
+    const merged = { ...DEFAULT_SETTINGS, ...migrated }
+    if (merged.hotkeyMode !== 'toggle' && merged.hotkeyMode !== 'hold') merged.hotkeyMode = 'toggle'
+    return merged
   } catch (err) {
     // A corrupt settings.json (e.g. truncated by a crash/power-loss mid-write)
     // must not silently wipe the user's API keys + config. Preserve the bad
