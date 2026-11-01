@@ -290,7 +290,7 @@ export function isLinuxKeyringIssue(): boolean {
  * through. Returns the number of keys rescued from the wrapped store.
  */
 export function rescueWeakLinuxKeys(): number {
-  if (process.platform !== 'linux' || !isLinuxKeyringIssue()) return 0
+  if (!isLinuxKeyringIssue()) return 0
   const settings = loadSettings()
   const wrapped = readWeakBackendKeys()
   let n = 0

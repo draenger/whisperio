@@ -15,9 +15,6 @@ export function KeyStorageHint({ s }: { s: { hint: CSSProperties } }): ReactElem
   useEffect(() => {
     const api = typeof window !== 'undefined' ? window.api?.settings : undefined
     api?.linuxKeyringWarning?.().then(setKeyringWarning).catch(() => setKeyringWarning(null))
-  }, [])
-  useEffect(() => {
-    const api = typeof window !== 'undefined' ? window.api?.settings : undefined
     return api?.onSecureStorageWarning?.(setWarning)
   }, [])
   if (keyringWarning) return <span style={{ ...s.hint, color: '#e5484d' }}>{keyringWarning}</span>
