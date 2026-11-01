@@ -1,5 +1,7 @@
 import { useRef, useCallback, useState } from 'react'
 import { analyzeSpeech, mixToMono, clampThresholdDbfs, shouldApplySilenceGate } from '../audio/silenceGate'
+import { trimToWav } from '../audio/silenceTrim'
+import { shouldUseTrimmed } from '../../shared/trimDecision'
 
 import { planAudioFormats } from '../audio/formatPlan'
 import { StartGuard, decideAfterGetUserMediaFailure } from '../audio/startGuard'
@@ -24,6 +26,26 @@ async function recordingHasSpeech(buffer: ArrayBuffer, thresholdDbfs?: number): 
     return true
   }
 }
+/** Decode a recording and, if >= 1 s of leading/trailing silence can be cut,
+ * return the trimmed audio as 16 kHz mono WAV. Returns null when nothing is
+ * worth trimming. Fails OPEN: any error returns null so the original is sent. */
+async function trimmedWavOrNull(buffer: ArrayBuffer): Promise<ArrayBuffer | null> {
+  try {
+    const ctx = new AudioContext({ sampleRate: 16000 })
+    try {
+      const decoded = await ctx.decodeAudioData(buffer.slice(0))
+      const channels: Float32Array[] = []
+      for (let c = 0; c < decoded.numberOfChannels; c++) channels.push(decoded.getChannelData(c))
+      return trimToWav(mixToMono(channels), decoded.sampleRate)
+    } finally {
+      ctx.close().catch(() => {})
+    }
+  } catch (err) {
+    console.warn('[Whisperio] Silence trim failed, sending original:', err)
+    return null
+  }
+}
+
 async function webmToWav(webmBuffer: ArrayBuffer): Promise<ArrayBuffer> {
   const audioCtx = new AudioContext({ sampleRate: 16000 })
   try {
@@ -350,7 +372,25 @@ export function useDictation(): UseDictationReturn {
           console.error('[Whisperio] webm→wav conversion failed, local model will be skipped:', convErr)
         }
       }
-      const text = await window.api.dictation.transcribe(arrayBuffer, 'audio.webm', wavBuffer)
+      // Optional trim of long leading/trailing silence (opt-in). Only replaces the
+      // upload; the recording saved above stays the untrimmed original. The trimmed
+      // 16 kHz WAV is uncompressed, so it is used only when it is smaller than the
+      // original upload AND under the provider size cap; otherwise the original goes.
+      let sendBuffer = arrayBuffer
+      let sendFilename = 'audio.webm'
+      if (settings.trimSilence === true) {
+        const trimmedWav = await trimmedWavOrNull(arrayBuffer)
+        if (trimmedWav && shouldUseTrimmed(arrayBuffer.byteLength, trimmedWav.byteLength, settings2.providerChain)) {
+          console.log(`[Whisperio] Silence trimmed: ${arrayBuffer.byteLength} -> ${trimmedWav.byteLength} bytes (wav)`)
+          sendBuffer = trimmedWav
+          sendFilename = 'audio.wav'
+          // The trimmed WAV also satisfies WAV-only providers (selfhosted).
+          if (plan.needsWav) wavBuffer = trimmedWav
+        } else if (trimmedWav) {
+          console.log(`[Whisperio] Silence trim skipped: trimmed wav ${trimmedWav.byteLength} B not smaller than original ${arrayBuffer.byteLength} B or over provider cap`)
+        }
+      }
+      const text = await window.api.dictation.transcribe(sendBuffer, sendFilename, wavBuffer)
       console.log(`[Whisperio] Transcription result: "${text}"`)
 
       // Real word count of the actual transcript — consumed by the overlay's

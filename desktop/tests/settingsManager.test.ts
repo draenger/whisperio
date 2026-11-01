@@ -91,6 +91,7 @@ const DEFAULT_SETTINGS = {
   saveRecordings: true,
   silenceGate: false,
   silenceGateThresholdDbfs: -50,
+  trimSilence: false,
   restoreClipboard: false,
   clipboardRestoreDelayMs: 700,
   outputRecordingHotkey: '',

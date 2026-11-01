@@ -602,6 +602,7 @@ export function SettingsForm(): ReactElement {
   const [saveRecordings, setSaveRecordings] = useState(true)
   const [silenceGate, setSilenceGate] = useState(false)
   const [silenceGateThresholdDbfs, setSilenceGateThresholdDbfs] = useState(-50)
+  const [trimSilence, setTrimSilence] = useState(false)
   const [restoreClipboard, setRestoreClipboard] = useState(false)
   const [inputDevices, setInputDevices] = useState<MediaDeviceOption[]>([])
   const [outputDevices, setOutputDevices] = useState<MediaDeviceOption[]>([])
@@ -651,6 +652,7 @@ export function SettingsForm(): ReactElement {
       setSaveRecordings(settings.saveRecordings ?? true)
       setSilenceGate(settings.silenceGate ?? false)
       setSilenceGateThresholdDbfs(settings.silenceGateThresholdDbfs ?? -50)
+      setTrimSilence(settings.trimSilence ?? false)
       setRestoreClipboard(settings.restoreClipboard ?? false)
       setOutputRecordingHotkey(settings.outputRecordingHotkey ?? '')
       setCleanupEnabled(settings.cleanupEnabled ?? false)
@@ -745,6 +747,7 @@ export function SettingsForm(): ReactElement {
       saveRecordings,
       silenceGate,
       silenceGateThresholdDbfs,
+      trimSilence,
       restoreClipboard,
       outputRecordingHotkey,
       fallbackEnabled: providerChain.length > 1,
@@ -785,7 +788,7 @@ export function SettingsForm(): ReactElement {
     groqApiKey, deepgramApiKey, assemblyaiApiKey, mistralApiKey,
     sttApiKey, transcriptionLanguage, prompt,
     vocabulary, removedDefaultVocabulary, aiPostProcessing, launchAtStartup, allowUrlControl, allowUrlStart, checkForUpdates, dictationHotkey,
-    dictateAndSendHotkey, commandHotkey, hotkeyMode, inputDeviceId, outputDeviceId, saveRecordings, silenceGate, silenceGateThresholdDbfs, restoreClipboard,
+    dictateAndSendHotkey, commandHotkey, hotkeyMode, inputDeviceId, outputDeviceId, saveRecordings, silenceGate, trimSilence, silenceGateThresholdDbfs, restoreClipboard,
     outputRecordingHotkey, cleanupEnabled, cleanupMode, cleanupAuto, cleanupTemplates,
     aiProvider, aiBaseUrl, aiModel, anthropicApiKey,
     contextAwareTone, toneMap, windowTitlePermissionEnabled
@@ -1025,6 +1028,8 @@ export function SettingsForm(): ReactElement {
                       setSilenceGate={setSilenceGate}
                       silenceGateThresholdDbfs={silenceGateThresholdDbfs}
                       setSilenceGateThresholdDbfs={setSilenceGateThresholdDbfs}
+                      trimSilence={trimSilence}
+                      setTrimSilence={setTrimSilence}
                       setSaveRecordings={setSaveRecordings}
                       inputDevices={inputDevices}
                       outputDevices={outputDevices}
@@ -2081,6 +2086,7 @@ function AudioTab({
   saveRecordings, setSaveRecordings,
   silenceGate, setSilenceGate,
   silenceGateThresholdDbfs, setSilenceGateThresholdDbfs,
+  trimSilence, setTrimSilence,
   inputDevices, outputDevices,
   s, theme
 }: {
@@ -2094,6 +2100,8 @@ function AudioTab({
   setSilenceGate: (v: boolean) => void
   silenceGateThresholdDbfs: number
   setSilenceGateThresholdDbfs: (v: number) => void
+  trimSilence: boolean
+  setTrimSilence: (v: boolean) => void
   inputDevices: MediaDeviceOption[]
   outputDevices: MediaDeviceOption[]
   s: ReturnType<typeof makeStyles>
@@ -2173,6 +2181,13 @@ function AudioTab({
             </div>
           </div>
         )}
+        <ToggleRow
+          label="Trim long silence at start/end before sending"
+          description="When 1 s or more of silence is cut, sends the shorter audio as 16 kHz WAV, but only when that file is smaller than the original and within the provider size limit (otherwise the original is sent). The saved recording stays untouched"
+          checked={trimSilence}
+          onChange={setTrimSilence}
+          theme={theme}
+        />
         {recordingCount !== null && recordingCount > 0 && (
           <button
             onClick={() => window.api.recordings.openWindow()}

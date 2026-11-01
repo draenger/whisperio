@@ -162,6 +162,7 @@ export interface AppSettings {
   silenceGate: boolean
   /** Voiced-frame threshold in dBFS, clamped to -70..-30 (lower = more sensitive). */
   silenceGateThresholdDbfs: number
+  trimSilence: boolean
   // Opt-in: after auto-paste, put the user's previous clipboard back (only if
   // the clipboard still holds the dictated text). See dictation/clipboardRestore.ts.
   restoreClipboard: boolean
@@ -330,6 +331,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   saveRecordings: true,
   silenceGate: false,
   silenceGateThresholdDbfs: -50,
+  trimSilence: false,
   restoreClipboard: false,
   clipboardRestoreDelayMs: 700,
   outputRecordingHotkey: '',
