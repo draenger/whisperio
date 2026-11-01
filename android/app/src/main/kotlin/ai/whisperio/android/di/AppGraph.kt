@@ -8,6 +8,7 @@ import ai.whisperio.android.dictation.computeSetupStatus
 import ai.whisperio.android.history.AppDatabase
 import ai.whisperio.android.history.AudioMigration
 import ai.whisperio.android.history.EncryptingHistoryStore
+import ai.whisperio.android.ui.settings.EncryptSwitch
 import ai.whisperio.android.history.HistoryStore
 import ai.whisperio.android.history.MIGRATION_1_2
 import ai.whisperio.android.history.MigrationReport
@@ -197,6 +198,12 @@ class AppGraph private constructor(private val appOrNull: Application?, private 
         }.join()
         return result
     }
+
+    /**
+     * Shared by Settings and the Home card: the busy / notice state lives here (process scoped), so it survives
+     * rotation and a screen change while a migration runs.
+     */
+    val encryptSwitch: EncryptSwitch by lazy { EncryptSwitch(appScope, ::setEncryptHistory) }
 
     /** Held for the whole of [setEncryptHistory] and [runMaintenance]: no migration or sweep overlaps another. */
     private val maintenanceLock = Mutex()

@@ -61,6 +61,10 @@
     <string name="home_finish_setup">Finish setup</string>
     <string name="home_recent">Recent</string>
     <string name="home_see_all">See all</string>
+    <string name="encrypt_card_title">Encrypt history and recordings</string>
+    <string name="encrypt_card_body">Keep transcripts and kept audio encrypted on this device, with a key held by the Android Keystore. If the key is lost (for example after a factory reset), encrypted history cannot be recovered. You can change this any time in Settings, Privacy and storage.</string>
+    <string name="encrypt_card_turn_on">Turn on</string>
+    <string name="encrypt_card_not_now">Not now</string>
     <string name="history_empty">Nothing here yet. Your dictations will show up here, on this device only.</string>
     <string name="history_detail">Dictation</string>
     <string name="history_failed">Failed</string>
