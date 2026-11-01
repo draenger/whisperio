@@ -20,6 +20,8 @@ type Phase = 'armed' | 'recording' | 'command' | 'transcribing' | 'pasting' | 'd
 interface OverlayInfo {
   sourceName: string
   stopHotkey: string
+  /** true when the dictate hotkey runs hold-to-talk (release ends recording) */
+  hold?: boolean
   recordingType: 'input' | 'output'
 }
 
@@ -245,6 +247,8 @@ export function DictationOverlay(): JSX.Element {
   const showHint = phase === 'recording' || phase === 'command'
   const hintText = isCommand ? (
     <>Speak a transform — it rewrites, doesn&rsquo;t insert &middot; Esc to cancel</>
+  ) : overlayInfo?.hold ? (
+    <>Release {stopHotkey} to transcribe &middot; Escape to cancel</>
   ) : (
     <>Press {stopHotkey} to stop &middot; Escape to cancel</>
   )

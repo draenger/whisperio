@@ -3,6 +3,8 @@ import { contextBridge, ipcRenderer } from 'electron'
 export interface OverlayInfo {
   sourceName: string
   stopHotkey: string
+  /** true when the dictate hotkey runs hold-to-talk (release ends recording) */
+  hold?: boolean
   recordingType: 'input' | 'output'
 }
 
@@ -105,6 +107,7 @@ export interface AppSettings {
   // COMMAND mode (v1.7) — see settingsManager.ts's AppSettings for the full
   // doc comment. Empty string = disabled.
   commandHotkey: string
+  hotkeyMode: 'toggle' | 'hold'
   theme: 'dark' | 'light'
   accentColor: 'graphite' | 'blue' | 'teal' | 'emerald' | 'amber'
   inputDeviceId: string
