@@ -167,6 +167,14 @@ describe('Linux without a keyring: session rescue + one-time warning', () => {
       expect(getEffectiveSettings().groqApiKey).toBe('')
     })
 
+    it('undecryptable entry + unrelated save with empty field -> entry kept', () => {
+      disk[STORE] = JSON.stringify({ groqApiKey: Buffer.from('garbage').toString('base64') })
+      const before = disk[STORE]
+      expect(rescueWeakLinuxKeys()).toBe(0)
+      saveSettingsWithKeys({ groqApiKey: '', openaiApiKey: '' })
+      expect(disk[STORE]).toBe(before)
+    })
+
     it('unchanged round-trip keeps the entry', () => {
       disk[STORE] = wrapped({ groqApiKey: 'gsk-blob' })
       const before = disk[STORE]

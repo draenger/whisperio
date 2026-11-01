@@ -195,8 +195,9 @@ export function saveSettingsWithKeys(partial: Partial<AppSettings>): AppSettings
     if (!(field in partial)) continue
     const value = (partial[field] as string | undefined) ?? ''
     if (value === '') {
-      sessionKeys.delete(field)
-      dropStaleWrapped(field)
+      // Only a key that was present this session counts as an explicit clear; an empty
+      // field for a key that failed to decrypt must not delete the recoverable entry.
+      if (sessionKeys.delete(field)) dropStaleWrapped(field)
       continue // clearing is always safe to persist
     }
     if (value === (onDisk[field] ?? '')) {
