@@ -604,6 +604,7 @@ export function SettingsForm(): ReactElement {
   const [dictationHotkey, setDictationHotkey] = useState('')
   const [dictateAndSendHotkey, setDictateAndSendHotkey] = useState('')
   const [commandHotkey, setCommandHotkey] = useState('')
+  const [hotkeyMode, setHotkeyMode] = useState<'toggle' | 'hold'>('toggle')
   const [outputRecordingHotkey, setOutputRecordingHotkey] = useState('')
 
   // --- Load settings ---
@@ -636,6 +637,7 @@ export function SettingsForm(): ReactElement {
       setDictationHotkey(settings.dictationHotkey ?? '')
       setDictateAndSendHotkey(settings.dictateAndSendHotkey ?? '')
       setCommandHotkey(settings.commandHotkey ?? '')
+      setHotkeyMode(settings.hotkeyMode === 'hold' ? 'hold' : 'toggle')
       setInputDeviceId(settings.inputDeviceId ?? '')
       setOutputDeviceId(settings.outputDeviceId ?? '')
       setSaveRecordings(settings.saveRecordings ?? true)
@@ -724,6 +726,7 @@ export function SettingsForm(): ReactElement {
       dictationHotkey,
       dictateAndSendHotkey,
       commandHotkey,
+      hotkeyMode,
       inputDeviceId,
       outputDeviceId,
       saveRecordings,
@@ -762,7 +765,7 @@ export function SettingsForm(): ReactElement {
     groqApiKey, deepgramApiKey, assemblyaiApiKey, mistralApiKey,
     sttApiKey, transcriptionLanguage, prompt,
     vocabulary, removedDefaultVocabulary, aiPostProcessing, launchAtStartup, checkForUpdates, dictationHotkey,
-    dictateAndSendHotkey, commandHotkey, inputDeviceId, outputDeviceId, saveRecordings,
+    dictateAndSendHotkey, commandHotkey, hotkeyMode, inputDeviceId, outputDeviceId, saveRecordings,
     outputRecordingHotkey, cleanupEnabled, cleanupMode, cleanupAuto, cleanupTemplates,
     aiProvider, aiBaseUrl, aiModel, anthropicApiKey,
     contextAwareTone, toneMap, windowTitlePermissionEnabled
@@ -1008,6 +1011,8 @@ export function SettingsForm(): ReactElement {
                       setDictateAndSendHotkey={setDictateAndSendHotkey}
                       commandHotkey={commandHotkey}
                       setCommandHotkey={setCommandHotkey}
+                      hotkeyMode={hotkeyMode}
+                      setHotkeyMode={setHotkeyMode}
                       outputRecordingHotkey={outputRecordingHotkey}
                       setOutputRecordingHotkey={setOutputRecordingHotkey}
                       s={s}
@@ -2234,6 +2239,7 @@ function HotkeysTab({
   dictationHotkey, setDictationHotkey,
   dictateAndSendHotkey, setDictateAndSendHotkey,
   commandHotkey, setCommandHotkey,
+  hotkeyMode, setHotkeyMode,
   outputRecordingHotkey, setOutputRecordingHotkey,
   s, theme
 }: {
@@ -2243,6 +2249,8 @@ function HotkeysTab({
   setDictateAndSendHotkey: (v: string) => void
   commandHotkey: string
   setCommandHotkey: (v: string) => void
+  hotkeyMode: 'toggle' | 'hold'
+  setHotkeyMode: (v: 'toggle' | 'hold') => void
   outputRecordingHotkey: string
   setOutputRecordingHotkey: (v: string) => void
   s: ReturnType<typeof makeStyles>
@@ -2367,6 +2375,19 @@ function HotkeysTab({
           theme={theme}
           first
         />
+
+        <div style={{ marginTop: '10px', marginBottom: '6px' }}>
+          <label style={s.label}>Dictation Hotkey Mode</label>
+          <select
+            value={hotkeyMode}
+            onChange={(e) => setHotkeyMode(e.target.value === 'hold' ? 'hold' : 'toggle')}
+            style={s.select}
+          >
+            <option value="toggle">Toggle (press to start, press again to stop)</option>
+            <option value="hold">Hold to talk</option>
+          </select>
+          <span style={s.hint}>Hold the hotkey while speaking, release to transcribe</span>
+        </div>
 
         <HotkeyInput
           label="Dictate & Send Hotkey"
