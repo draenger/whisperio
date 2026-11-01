@@ -185,7 +185,16 @@
     <string name="settings_sensitive">Traktuj transkrypcje jako poufne</string>
     <string name="settings_sensitive_hint">Ukrywa skopiowany tekst w podglądach schowka.</string>
     <string name="settings_encrypt">Szyfruj historię</string>
-    <string name="settings_encrypt_hint">Transkrypcje i zachowane nagrania są szyfrowane na tym urządzeniu kluczem przechowywanym w Android Keystore. Data, długość, dostawca, model, język, źródło i kategoria pozostają niezaszyfrowane. Jeśli klucz zostanie utracony (np. po przywróceniu ustawień fabrycznych), zaszyfrowanej historii nie da się odzyskać. Nie dotyczy tekstu kopiowanego lub wstawianego do innych aplikacji ani nagrań wysyłanych do Twojego dostawcy.</string>
+    <string name="settings_encrypt_hint">Gdy włączone, nowe transkrypcje i zachowane nagrania są przechowywane w postaci zaszyfrowanej na tym urządzeniu, kluczem z Android Keystore, a istniejąca historia jest konwertowana. Data, długość, dostawca, model, język, źródło i kategoria pozostają niezaszyfrowane. Jeśli klucz zostanie utracony (np. po przywróceniu ustawień fabrycznych), zaszyfrowanej historii nie da się odzyskać. Nie dotyczy tekstu kopiowanego lub wstawianego do innych aplikacji ani nagrań wysyłanych do Twojego dostawcy. Tekst zapisany jawnie przed włączeniem szyfrowania może fizycznie pozostać w pamięci flash urządzenia, dopóki nie zostanie nadpisany.</string>
+    <string name="settings_encrypt_status_on">Szyfrowanie jest włączone. Cała zapisana historia i zachowane nagrania są zaszyfrowane.</string>
+    <plurals name="settings_encrypt_pending">
+        <item quantity="one">%1$d element czeka na zaszyfrowanie. Do następnej udanej próby jest zapisany bez szyfrowania.</item>
+        <item quantity="few">%1$d elementy czekają na zaszyfrowanie. Do następnej udanej próby są zapisane bez szyfrowania.</item>
+        <item quantity="many">%1$d elementów czeka na zaszyfrowanie. Do następnej udanej próby są zapisane bez szyfrowania.</item>
+        <item quantity="other">%1$d elementu czeka na zaszyfrowanie. Do następnej udanej próby jest zapisany bez szyfrowania.</item>
+    </plurals>
+    <string name="settings_encrypt_locked">Brak klucza szyfrowania, więc zaszyfrowanej historii nie da się odczytać i nic nowego nie zostanie zaszyfrowane. Nie utworzono nowego klucza, aby nie pozbawić Cię danych na stałe.</string>
+    <string name="history_unreadable">Nie można odczytać zaszyfrowanych danych</string>
     <string name="settings_encrypt_on_title">Włączyć szyfrowanie?</string>
     <string name="settings_encrypt_on_body">Twoja dotychczasowa historia zostanie zaszyfrowana na tym urządzeniu. Jeśli klucz szyfrowania zostanie utracony, np. po przywróceniu ustawień fabrycznych albo awarii magazynu kluczy urządzenia, zaszyfrowanych transkrypcji i nagrań nie da się odzyskać. Szyfrowanie możesz wyłączyć w każdej chwili.</string>
     <string name="settings_encrypt_on_confirm">Włącz</string>

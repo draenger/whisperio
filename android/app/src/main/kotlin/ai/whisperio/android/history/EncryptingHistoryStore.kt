@@ -1,9 +1,14 @@
 package ai.whisperio.android.history
 
+import ai.whisperio.android.security.AudioCipher
 import ai.whisperio.android.security.DataCipher
 import ai.whisperio.android.security.Decrypted
 import kotlinx.coroutines.CancellationException
+import java.io.File
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 
@@ -31,9 +36,28 @@ class EncryptingHistoryStore(
     override fun observe(id: String): Flow<Recording?> = inner.observe(id).map { it?.let { r -> reveal(r) } }
     override suspend fun get(id: String): Recording? = inner.get(id)?.let { reveal(it) }
 
+    private val _pending = MutableStateFlow(0)
+
+    /**
+     * Items (rows with plaintext text, kept clips not yet `.wea`) that are still plain while the switch is ON,
+     * e.g. written while the Keystore failed. [runMaintenance][ai.whisperio.android.di.AppGraph.runMaintenance]
+     * seals them. 0 while the switch is OFF. Updated by [refreshPending].
+     */
+    val pendingEncryption: StateFlow<Int> = _pending.asStateFlow()
+
     override suspend fun upsert(recording: Recording) {
         val kept = keepUnreadable(recording)
-        inner.upsert(if (enabled()) (tryConceal(kept) ?: kept) else kept)
+        val on = enabled()
+        val concealed = if (on) tryConceal(kept) else null
+        // Fail-soft: a Keystore failure never loses the dictation, it is stored plain and counted as pending.
+        inner.upsert(concealed ?: kept)
+        // Recount only when something plain may have been stored (or a count is open): not on every status update.
+        if (on && (concealed == null || _pending.value > 0 || kept.audioPath?.endsWith(".m4a") == true)) refreshPending()
+    }
+
+    /** Recounts the plaintext items. Cheap enough to run after a write or a migration. */
+    suspend fun refreshPending() {
+        _pending.value = if (enabled()) dao.observeAll().first().count { it.hasPlaintextData() } else 0
     }
 
     /**
@@ -78,6 +102,7 @@ class EncryptingHistoryStore(
                 }
             }
         }
+        refreshPending()
         return MigrationReport(converted, unreadable)
     }
 
@@ -129,8 +154,24 @@ class EncryptingHistoryStore(
     }
 
     companion object {
+        /**
+         * Stable sentinel stored in [Recording.error] of an unreadable row's in-memory copy. It is NOT shown as is:
+         * the History screen maps it to the localised `history_unreadable` string.
+         */
         const val UNREADABLE = "Encrypted data cannot be read"
         private const val TRANSCRIPT = "transcript"
         private const val ERROR = "error"
     }
 }
+
+/** A text field, or a kept clip that still exists as `.m4a`, that is not sealed (what maintenance will convert). */
+internal fun Recording.hasPlaintextData(): Boolean =
+    (transcript != null && !DataCipher.isSealedText(transcript)) ||
+        (error != null && !DataCipher.isSealedText(error)) ||
+        (audioPath != null && audioPath.endsWith(".m4a") && File(audioPath).exists())
+
+/** Any field or clip carrying the sealed marker: the data key must not be replaced while this is true. */
+internal fun Recording.hasSealedData(): Boolean =
+    (transcript != null && DataCipher.isSealedText(transcript)) ||
+        (error != null && DataCipher.isSealedText(error)) ||
+        (audioPath != null && AudioCipher.isEncrypted(audioPath))

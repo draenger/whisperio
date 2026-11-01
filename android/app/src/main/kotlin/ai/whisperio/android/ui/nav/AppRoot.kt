@@ -641,6 +641,8 @@ private fun SettingsRoute(g: AppGraph, nav: NavHostController) {
     var keyChecks by remember { mutableStateOf<Map<ProviderId, KeyUi>>(emptyMap()) }
     val encryptBusy by g.encryptSwitch.busy.collectAsState()
     val encryptNotice by g.encryptSwitch.notice.collectAsState()
+    val encryptPending by g.encryptSwitch.pending.collectAsState()
+    val encryptLocked by g.encryptSwitch.locked.collectAsState()
     val enrollment = remember { KeyEnrollment(g.keyChecker, g.secrets, g.settings) }
     val models = remember { ProviderId.entries.associateWith { g.catalog.models(it) } }
     val openAiUrl = settings.baseUrls[ProviderId.OPENAI]
@@ -714,6 +716,8 @@ private fun SettingsRoute(g: AppGraph, nav: NavHostController) {
                 appLanguageCount = appLanguageCount,
                 encryptBusy = encryptBusy,
                 encryptNotice = encryptNotice,
+                encryptPending = encryptPending,
+                encryptLocked = encryptLocked,
             ),
             actions = actions,
         )
