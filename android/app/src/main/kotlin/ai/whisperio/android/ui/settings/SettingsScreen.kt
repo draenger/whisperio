@@ -265,7 +265,7 @@ fun SettingsScreen(state: SettingsUiState, actions: SettingsActions, modifier: M
                     state.encryptLocked -> stringResource(R.string.settings_encrypt_locked)
                     s.encryptHistory && state.encryptPending > 0 ->
                         pluralStringResource(R.plurals.settings_encrypt_pending, state.encryptPending, state.encryptPending)
-                    s.encryptHistory -> stringResource(R.string.settings_encrypt_status_on)
+                    s.encryptHistory && state.encryptPending == 0 -> stringResource(R.string.settings_encrypt_status_on)
                     else -> null
                 }
                 status?.let {
@@ -275,6 +275,13 @@ fun SettingsScreen(state: SettingsUiState, actions: SettingsActions, modifier: M
                         color = if (state.encryptLocked) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.liveStatus(),
                     )
+                }
+                if (state.encryptLocked) {
+                    // Recovery: opens the same confirmation as the Erase all button below.
+                    OutlinedButton(
+                        onClick = { confirmErase = true },
+                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp).heightIn(min = 48.dp),
+                    ) { Text(stringResource(R.string.settings_encrypt_locked_action), color = MaterialTheme.colorScheme.error) }
                 }
             }
             state.encryptBusy?.let { target ->

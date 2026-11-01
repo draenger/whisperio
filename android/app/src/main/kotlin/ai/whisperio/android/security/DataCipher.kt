@@ -38,6 +38,12 @@ sealed interface Decrypted<out T> {
 class DataKeyMissingException : GeneralSecurityException("data key missing while sealed data exists")
 
 /**
+ * The sealed-data probe itself failed (e.g. a transient database error), so it is unknown whether a new key may be
+ * minted. Fail closed (nothing is sealed), but this is NOT "key missing": [DataCipher.locked] is left alone.
+ */
+class DataKeyCheckException(cause: Throwable) : GeneralSecurityException("could not check for sealed data", cause)
+
+/**
  * Field/file encryption for the opt-in "Encrypt history and recordings" setting (docs/design/opt-in-encryption.md).
  *
  * A random 256-bit data key (DEK) is wrapped with the Keystore-backed [SecretCipher] and persisted through
@@ -93,7 +99,35 @@ class DataCipher(
     } catch (e: CancellationException) {
         throw e
     } catch (e: Exception) {
-        true
+        logProbeFailed()
+        throw DataKeyCheckException(e)
+    }
+
+    private fun logProbeFailed() {
+        try {
+            android.util.Log.w("DataCipher", "sealed-data probe failed; not sealing now (transient, not locked)")
+        } catch (t: Throwable) {
+            // plain JVM test without android.jar stubs
+        }
+    }
+
+    /**
+     * Re-evaluates [locked] after unreadable items were deleted: no sealed data left (or a key is back) means
+     * nothing is orphaned any more, so the flag is cleared without waiting for the next seal or a restart.
+     * Cheap when not locked. A failing probe leaves the flag as it is.
+     */
+    suspend fun recheckLocked() {
+        if (!_locked.value) return
+        keyLock.withLock {
+            if (!_locked.value) return@withLock
+            try {
+                if (keys.read() != null || !sealedDataExists()) _locked.value = false
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                logProbeFailed()
+            }
+        }
     }
 
     private fun logLocked() {

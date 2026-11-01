@@ -8,6 +8,7 @@ import ai.whisperio.android.history.RecordingStatus
 import ai.whisperio.android.history.RoomHistoryStore
 import ai.whisperio.android.history.hasSealedData
 import ai.whisperio.android.security.DataCipher
+import ai.whisperio.android.security.DataKeyCheckException
 import ai.whisperio.android.security.DataKeyMissingException
 import ai.whisperio.android.security.SecretCipher
 import ai.whisperio.android.security.WrappedKeyStore
@@ -18,6 +19,8 @@ import java.security.KeyStoreException
 import javax.crypto.Cipher
 import javax.crypto.spec.GCMParameterSpec
 import javax.crypto.spec.SecretKeySpec
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.After
@@ -93,7 +96,8 @@ class EncryptHardeningTest {
 
     @Test fun keystoreFailureWhileOnWritesPlainCountsPendingAndMaintenanceSealsIt() = runBlocking {
         val store = storeFor(DataCipher(wrapper, keys))
-        assertEquals(0, store.pendingEncryption.value)
+        assertEquals("unknown until the first count, never claims all encrypted",
+            EncryptingHistoryStore.PENDING_UNKNOWN, store.pendingEncryption.value)
 
         wrapper.failing = true
         store.upsert(row("a", "hello"))
@@ -143,6 +147,100 @@ class EncryptHardeningTest {
         assertNull(keys.blob)
         assertEquals(1, store.pendingEncryption.value)
         assertNull("old row stays unreadable, never garbled", store.get("a")!!.transcript)
+    }
+
+    private val sealedProbe: suspend () -> Boolean = { db.recordings().sealedCandidates().any { it.hasSealedData() } }
+
+    /** Seals one row, then loses the key: the state "sealed data exists, key missing". */
+    private suspend fun lockedCipher(): DataCipher {
+        storeFor(DataCipher(wrapper, keys)).upsert(row("a", "secret"))
+        keys.blob = null
+        val cipher = DataCipher(wrapper, keys, sealedDataExists = sealedProbe)
+        try {
+            cipher.sealText("x")
+            fail("expected locked")
+        } catch (e: DataKeyMissingException) {
+            // expected
+        }
+        assertTrue(cipher.locked.value)
+        return cipher
+    }
+
+    @Test fun probeFailureFailsClosedButIsTransientNotLocked() = runBlocking {
+        val cipher = DataCipher(wrapper, keys, sealedDataExists = { throw IllegalStateException("db busy") })
+        try {
+            cipher.sealText("new")
+            fail("must not mint a key when the probe fails")
+        } catch (e: DataKeyCheckException) {
+            // expected
+        }
+        assertNull("no key minted", keys.blob)
+        assertFalse("a probe error is not 'key missing'", cipher.locked.value)
+
+        // The same cipher recovers on its own once the probe works again.
+        val ok = DataCipher(wrapper, keys, sealedDataExists = { false })
+        ok.sealText("now fine")
+        assertTrue(keys.blob != null)
+    }
+
+    @Test fun lockedClearsAfterDeletingLastUnreadableItem() = runBlocking {
+        val cipher = lockedCipher()
+        val store = storeFor(cipher)
+        store.upsert(row("b", "plain"))
+        assertTrue(cipher.locked.value)
+
+        store.delete("a")
+
+        assertFalse("no sealed data left, locked must clear without a restart", cipher.locked.value)
+        cipher.sealText("again") // a new key may be minted now
+        assertTrue(keys.blob != null)
+    }
+
+    @Test fun lockedStaysWhileUnreadableItemsRemain() = runBlocking {
+        val cipher = lockedCipher()
+        val store = storeFor(cipher)
+        store.upsert(row("b", "plain"))
+        store.delete("b")
+        assertTrue(cipher.locked.value)
+    }
+
+    @Test fun lockedClearsAfterEraseAll() = runBlocking {
+        val cipher = lockedCipher()
+        val store = storeFor(cipher)
+        cipher.shred() // what AppGraph.eraseAllData does first
+        store.clear()
+        assertFalse(cipher.locked.value)
+    }
+
+    @Test fun pendingIgnoresTheActiveClipAndCountsAfterItEnds() = runBlocking {
+        val clips = File(tmp.root, "clips").also { it.mkdirs() }
+        val active = File(clips, "live.m4a").also { it.writeBytes(ByteArray(4)) }
+        var activeNow: File? = active
+        val store = EncryptingHistoryStore(
+            RoomHistoryStore(db.recordings(), File(tmp.root, "r").also { it.mkdirs() }),
+            db.recordings(), DataCipher(wrapper, keys), { on },
+            activeFile = { activeNow }, activeId = { if (activeNow != null) "live" else null },
+        )
+        // Sealed text, but its kept clip is still the in-progress .m4a.
+        store.upsert(row("live", "x").copy(audioPath = active.path))
+        store.refreshPending()
+        assertEquals("the recording in progress is not 'waiting'", 0, store.pendingEncryption.value)
+
+        activeNow = null
+        store.refreshPending()
+        assertEquals("once finished, the plain clip is pending", 1, store.pendingEncryption.value)
+    }
+
+    @Test fun concurrentRefreshesEndWithTheLatestValue() = runBlocking {
+        val store = storeFor(DataCipher(wrapper, keys))
+        wrapper.failing = true
+        for (i in 0 until 5) store.upsert(row("r$i", "t$i"))
+        wrapper.failing = false
+        store.migrate(true)
+        wrapper.failing = true
+        store.upsert(row("late", "plain"))
+        (0 until 20).map { async { store.refreshPending() } }.awaitAll()
+        assertEquals(1, store.pendingEncryption.value)
     }
 
     @Test fun firstEverSealStillMintsAKeyWhenNothingIsSealed() = runBlocking {

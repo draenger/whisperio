@@ -161,9 +161,11 @@ class AppGraph private constructor(private val appOrNull: Application?, private 
     /** Transcripts are sealed on write only while [AppSettings.encryptHistory] is ON; reads always decrypt what they find. */
     private val encryptingHistory: EncryptingHistoryStore? by lazy {
         dataCipher?.let { c ->
-            EncryptingHistoryStore(RoomHistoryStore(database.recordings(), recordingsDir), database.recordings(), c) {
-                settings.current().encryptHistory
-            }
+            EncryptingHistoryStore(RoomHistoryStore(database.recordings(), recordingsDir), database.recordings(), c,
+                enabled = { settings.current().encryptHistory },
+                activeFile = { dictation.activeFile() },
+                activeId = { dictation.activeId() },
+            )
         }
     }
 
@@ -287,6 +289,8 @@ class AppGraph private constructor(private val appOrNull: Application?, private 
     fun runMaintenance() {
         appScope.launch {
             maintenanceLock.withLock {
+                // First, so Settings never claims "all encrypted" before the first count exists.
+                encryptingHistory?.refreshPending()
                 history.sweepInterrupted(dictation.activeId())
                 history.sweepOrphanAudio(dictation.activeFile())
                 settings.current().autoDeleteDays?.let { days ->
@@ -377,6 +381,8 @@ class AppGraph private constructor(private val appOrNull: Application?, private 
                 settings.clear()
                 appLanguages.clear()
                 shareDir?.deleteRecursively()
+                dataCipher?.recheckLocked()
+                encryptingHistory?.refreshPending()
             }
         }.join()
     }

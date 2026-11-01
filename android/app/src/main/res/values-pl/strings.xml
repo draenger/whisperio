@@ -193,7 +193,8 @@
         <item quantity="many">%1$d elementów czeka na zaszyfrowanie. Do następnej udanej próby są zapisane bez szyfrowania.</item>
         <item quantity="other">%1$d elementu czeka na zaszyfrowanie. Do następnej udanej próby jest zapisany bez szyfrowania.</item>
     </plurals>
-    <string name="settings_encrypt_locked">Brak klucza szyfrowania, więc zaszyfrowanej historii nie da się odczytać i nic nowego nie zostanie zaszyfrowane. Nie utworzono nowego klucza, aby nie pozbawić Cię danych na stałe.</string>
+    <string name="settings_encrypt_locked">Brak klucza szyfrowania, więc zaszyfrowanej historii nie da się odczytać i nic nowego nie zostanie zaszyfrowane. Nie utworzono nowego klucza, aby nie pozbawić Cię danych na stałe. Usuń nieczytelne elementy albo użyj „Usuń wszystkie dane”, aby zacząć od nowa.</string>
+    <string name="settings_encrypt_locked_action">Usuń wszystkie dane i zacznij od nowa</string>
     <string name="history_unreadable">Nie można odczytać zaszyfrowanych danych</string>
     <string name="settings_encrypt_on_title">Włączyć szyfrowanie?</string>
     <string name="settings_encrypt_on_body">Twoja dotychczasowa historia zostanie zaszyfrowana na tym urządzeniu. Jeśli klucz szyfrowania zostanie utracony, np. po przywróceniu ustawień fabrycznych albo awarii magazynu kluczy urządzenia, zaszyfrowanych transkrypcji i nagrań nie da się odzyskać. Szyfrowanie możesz wyłączyć w każdej chwili.</string>

@@ -189,7 +189,8 @@
         <item quantity="one">%1$d item is waiting to be encrypted. It is stored unencrypted until the next attempt succeeds.</item>
         <item quantity="other">%1$d items are waiting to be encrypted. They are stored unencrypted until the next attempt succeeds.</item>
     </plurals>
-    <string name="settings_encrypt_locked">The encryption key is missing, so encrypted history cannot be read and nothing new can be encrypted. No new key was created, to avoid making your data unrecoverable.</string>
+    <string name="settings_encrypt_locked">The encryption key is missing, so encrypted history cannot be read and nothing new can be encrypted. No new key was created, to avoid making your data unrecoverable. Delete the unreadable items or use Erase all data to start fresh.</string>
+    <string name="settings_encrypt_locked_action">Erase all data to start fresh</string>
     <string name="history_unreadable">Encrypted data cannot be read</string>
     <string name="settings_encrypt_on_title">Turn on encryption?</string>
     <string name="settings_encrypt_on_body">Your existing history will be encrypted on this device. If the encryption key is lost, for example after a factory reset or a failure of the device key store, encrypted transcripts and audio cannot be recovered. You can turn this off at any time.</string>
