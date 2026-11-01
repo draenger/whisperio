@@ -2,11 +2,11 @@ import { clipboard, systemPreferences, Notification, app } from 'electron'
 import { execFile } from 'child_process'
 import { loadSettings } from '../settingsManager'
 import {
-  snapshotClipboard,
-  restoreClipboardIfUnchanged,
+  ClipboardRestoreCoordinator,
+  setSharedCoordinator,
   DEFAULT_RESTORE_DELAY_MS,
   type ClipboardLike,
-  type ClipboardSnapshot
+  type PasteHandle
 } from './clipboardRestore'
 
 // True only in unpackaged (development) builds; gates logging of dictated
@@ -102,6 +102,12 @@ function readRestoreSetting(): boolean {
   }
 }
 
+const coordinator = new ClipboardRestoreCoordinator(clipboard as unknown as ClipboardLike, {
+  set: (fn, ms) => setTimeout(fn, ms),
+  clear: (h) => clearTimeout(h as ReturnType<typeof setTimeout>)
+})
+setSharedCoordinator(coordinator)
+
 export async function autoPaste(
   text: string,
   opts: { restoreClipboard?: boolean; restoreDelayMs?: number } = {}
@@ -113,15 +119,16 @@ export async function autoPaste(
     console.log(`[Whisperio] autoPaste: ${text.length} chars`)
   }
   const restore = opts.restoreClipboard ?? readRestoreSetting()
-  const cb = clipboard as unknown as ClipboardLike
-  // Snapshot BEFORE overwriting the clipboard with the dictated text.
-  const snapshot: ClipboardSnapshot | null = restore ? snapshotClipboard(cb) : null
+  // Snapshot BEFORE overwriting the clipboard (reuses the original snapshot
+  // if a previous paste's restore is still pending).
+  const handle: PasteHandle | null = restore ? coordinator.begin(text) : null
   clipboard.writeText(text)
 
   // macOS: without Accessibility permission the ⌘V keystroke silently no-ops.
   // Leave the text on the clipboard and tell the user how to enable auto-paste.
   if (isMac() && !ensureAccessibilityPermission(true)) {
     console.warn('[Whisperio] No Accessibility permission — text left on clipboard, auto-paste skipped')
+    if (handle) coordinator.cancel(handle)
     new Notification({
       title: 'Whisperio — enable auto-paste',
       body: 'Your text is on the clipboard (press ⌘V). To paste automatically, enable Whisperio in System Settings → Privacy & Security → Accessibility.'
@@ -135,13 +142,13 @@ export async function autoPaste(
   // await: on macOS this resolves when osascript finished (a no-op on Windows/Linux).
   await sendKeystroke('paste')
 
-  if (snapshot) {
+  if (handle) {
     // The target app reads the clipboard asynchronously after the keystroke;
-    // restoring too early would make it paste the OLD content. Wait, then
-    // restore only if the clipboard still holds exactly what we pasted.
-    await new Promise((r) => setTimeout(r, opts.restoreDelayMs ?? DEFAULT_RESTORE_DELAY_MS))
-    const status = restoreClipboardIfUnchanged(cb, snapshot, text)
-    console.log(`[Whisperio] clipboard restore: ${status}`)
+    // restoring too early would make it paste the OLD content. Restore later,
+    // only if the clipboard still holds exactly what we pasted.
+    coordinator.schedule(handle, opts.restoreDelayMs ?? DEFAULT_RESTORE_DELAY_MS, (status) =>
+      console.log(`[Whisperio] clipboard restore: ${status}`)
+    )
   }
   console.log('[Whisperio] autoPaste done')
 }

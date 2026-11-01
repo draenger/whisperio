@@ -1,6 +1,7 @@
 import { createOverlayWindow, destroyOverlay } from './overlayWindow'
 import { registerHotkey, unregisterHotkey, getActiveHotkey, reRegisterHotkeys, pauseHotkeys, resumeHotkeys } from './hotkeyManager'
 import { ensureAccessibilityPermission } from './autoPaste'
+import { flushPendingClipboardRestore } from './clipboardRestore'
 
 export { reRegisterHotkeys, pauseHotkeys, resumeHotkeys }
 
@@ -18,6 +19,8 @@ export function initDictation(): void {
 }
 
 export function cleanupDictation(): void {
+  // Best effort: put the user's clipboard back before quitting.
+  flushPendingClipboardRestore()
   unregisterHotkey()
   destroyOverlay()
 }

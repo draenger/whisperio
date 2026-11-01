@@ -86,3 +86,95 @@ export function restoreClipboardIfUnchanged(
     return 'skipped-changed'
   }
 }
+
+export interface RestoreTimers<H = unknown> {
+  set(fn: () => void, ms: number): H
+  clear(handle: H): void
+}
+
+export interface PasteHandle {
+  id: number
+  snapshot: ClipboardSnapshot
+}
+
+interface Pending {
+  id: number
+  snapshot: ClipboardSnapshot
+  pastedText: string
+  armed: boolean
+  timer: unknown
+}
+
+/**
+ * Tracks the single outstanding "restore previous clipboard" so overlapping
+ * pastes (dictate-and-send then another dictation, command mode) keep the
+ * user's ORIGINAL clipboard instead of snapshotting the first dictated text.
+ *
+ * begin() -> write+paste -> schedule(). A new begin() while one is pending
+ * cancels its timer and reuses its original snapshot, provided the clipboard
+ * still holds that paste's text (otherwise the user copied something new, and
+ * a fresh snapshot is taken).
+ */
+export class ClipboardRestoreCoordinator {
+  private pending: Pending | null = null
+  private nextId = 1
+
+  constructor(
+    private readonly cb: ClipboardLike,
+    private readonly timers: RestoreTimers
+  ) {}
+
+  /** Call BEFORE writing `text` to the clipboard. */
+  begin(text: string): PasteHandle {
+    let snapshot: ClipboardSnapshot
+    const prev = this.pending
+    if (prev) {
+      if (prev.timer !== null) this.timers.clear(prev.timer)
+      this.pending = null
+      const current = safe(() => this.cb.readText())
+      snapshot = current === prev.pastedText ? prev.snapshot : snapshotClipboard(this.cb)
+    } else {
+      snapshot = snapshotClipboard(this.cb)
+    }
+    const id = this.nextId++
+    this.pending = { id, snapshot, pastedText: text, armed: false, timer: null }
+    return { id, snapshot }
+  }
+
+  /** Arm the delayed restore after the paste keystroke was sent. */
+  schedule(handle: PasteHandle, delayMs: number, onDone?: (status: RestoreStatus) => void): void {
+    const p = this.pending
+    if (!p || p.id !== handle.id) return // superseded by a newer paste
+    p.armed = true
+    p.timer = this.timers.set(() => {
+      if (this.pending !== p) return
+      this.pending = null
+      const status = restoreClipboardIfUnchanged(this.cb, p.snapshot, p.pastedText)
+      onDone?.(status)
+    }, delayMs)
+  }
+
+  /** Paste aborted (text intentionally left on the clipboard): forget it. */
+  cancel(handle: PasteHandle): void {
+    if (this.pending?.id === handle.id) this.pending = null
+  }
+
+  /** On quit: restore an armed pending restore right away (best effort). */
+  flush(): RestoreStatus | null {
+    const p = this.pending
+    if (!p) return null
+    this.pending = null
+    if (p.timer !== null) this.timers.clear(p.timer)
+    if (!p.armed) return null
+    return restoreClipboardIfUnchanged(this.cb, p.snapshot, p.pastedText)
+  }
+}
+
+/** Flush the module-level coordinator used by autoPaste (set by autoPaste.ts). */
+let shared: ClipboardRestoreCoordinator | null = null
+export function setSharedCoordinator(c: ClipboardRestoreCoordinator): void {
+  shared = c
+}
+export function flushPendingClipboardRestore(): RestoreStatus | null {
+  return shared ? shared.flush() : null
+}
