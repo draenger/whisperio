@@ -1296,13 +1296,21 @@ export async function transcribeConversation(
   audioBuffer: Buffer,
   filename: string
 ): Promise<DiarizedResult> {
+  // Capture everything the catch needs BEFORE the try: nothing in the catch
+  // may throw and mask the original error / lose the toast.
+  let diarizingProvider: string = 'unknown'
+  try {
+    diarizingProvider = getConfiguredDiarizingProvider(getEffectiveSettings()) ?? 'unknown'
+  } catch {
+    /* keep 'unknown' */
+  }
   try {
     return await transcribeConversationInner(audioBuffer, filename)
   } catch (err) {
     // Providers only record; this single-provider flow has no fallback, so
     // notify here (after an await, in scope).
     const e = err instanceof Error ? err : new Error(String(err))
-    notifyTranscriptionFailure([describeTranscriptionError(e, getConfiguredDiarizingProvider(getEffectiveSettings()) ?? 'unknown')])
+    notifyTranscriptionFailure([describeTranscriptionError(e, diarizingProvider)])
     throw err
   }
 }

@@ -145,7 +145,11 @@ export function notifyTranscriptionFailure(errors: WhisperioError[]): void {
   emitErrorToRenderer({ ...primary, message })
 }
 
-/** Record AND notify immediately (non-chain callers). */
+/**
+ * @deprecated No production caller left (providers use recordTranscriptionError;
+ * the chain owner uses notifyTranscriptionFailure). Kept only because
+ * errorHandler.test.ts exercises it. Records AND notifies immediately.
+ */
 export function handleTranscriptionError(error: Error, provider: string): void {
   const whisperioError = recordTranscriptionError(error, provider)
   notifyError('Transcription Error', whisperioError.message)
