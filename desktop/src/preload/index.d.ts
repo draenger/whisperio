@@ -11,7 +11,7 @@ export interface DictationAPI {
   onCancel: (callback: () => void) => () => void
   onStateChanged: (callback: (state: string) => void) => () => void
   onOverlayInfo: (callback: (info: OverlayInfo) => void) => () => void
-  sendResult: (text: string, sessionId?: number) => Promise<void>
+  sendResult: (text: string, sessionId?: number, reason?: 'silent') => Promise<void>
   transcribe: (audioData: ArrayBuffer, filename: string) => Promise<string>
 }
 
@@ -104,6 +104,7 @@ export interface AppSettings {
   outputDeviceId: string
   saveRecordings: boolean
   restoreClipboard: boolean
+  silenceGate: boolean
   outputRecordingHotkey: string
   fallbackEnabled: boolean
   githubUser: string

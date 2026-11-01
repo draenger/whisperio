@@ -152,6 +152,8 @@ export interface AppSettings {
   // Opt-in: after auto-paste, put the user's previous clipboard back (only if
   // the clipboard still holds the dictated text). See dictation/clipboardRestore.ts.
   restoreClipboard: boolean
+  /** Skip uploading recordings that contain no speech (RMS energy gate). */
+  silenceGate: boolean
   outputRecordingHotkey: string
   fallbackEnabled: boolean
   // GitHub secret-store selection (NON-SECRET metadata only). The access token
@@ -309,6 +311,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   outputDeviceId: '',
   saveRecordings: true,
   restoreClipboard: false,
+  silenceGate: true,
   outputRecordingHotkey: '',
   fallbackEnabled: false,
   githubUser: '',
