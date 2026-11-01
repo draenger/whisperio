@@ -834,6 +834,15 @@ describe('hotkeyManager', () => {
       expect(mockSendToPrimaryOverlay).toHaveBeenCalledWith('dictation:deactivate', expect.any(Number))
     })
 
+    it('broadcasts hold flag in overlay-info (true only where hold is supported)', async () => {
+      const activate = await setup()
+      await activate()
+      expect(mockBroadcastToOverlays).toHaveBeenCalledWith(
+        'dictation:overlay-info',
+        expect.objectContaining({ hold: process.platform === 'win32' || process.platform === 'darwin' })
+      )
+    })
+
     it('ignores auto-repeat presses while held', async () => {
       const activate = await setup()
       await activate()

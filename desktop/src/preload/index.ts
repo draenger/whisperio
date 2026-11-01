@@ -3,6 +3,8 @@ import { contextBridge, ipcRenderer } from 'electron'
 export interface OverlayInfo {
   sourceName: string
   stopHotkey: string
+  /** true when the dictate hotkey runs hold-to-talk (release ends recording) */
+  hold?: boolean
   recordingType: 'input' | 'output'
 }
 

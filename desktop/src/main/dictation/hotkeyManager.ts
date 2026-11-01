@@ -1,3 +1,4 @@
+import { isHoldEffective } from './overlayHint'
 import { globalShortcut, ipcMain, clipboard } from 'electron'
 import {
   showOverlay,
@@ -169,6 +170,7 @@ async function activateWith(accel: string | null): Promise<void> {
       broadcastToOverlays('dictation:overlay-info', {
         sourceName: 'System Default',
         stopHotkey: activeHotkey || 'hotkey',
+        hold: isHoldEffective(loadSettings().hotkeyMode, process.platform),
         recordingType: 'input' as const
       })
       // Register Escape as temporary cancel shortcut
@@ -225,6 +227,7 @@ async function activateOutput(): Promise<void> {
       broadcastToOverlays('dictation:overlay-info', {
         sourceName: 'System Audio',
         stopHotkey: activeOutputHotkey || 'hotkey',
+        hold: false,
         recordingType: 'output' as const
       })
       if (!globalShortcut.isRegistered('Escape')) {
@@ -282,6 +285,7 @@ async function activateCommand(): Promise<void> {
       broadcastToOverlays('dictation:overlay-info', {
         sourceName: 'System Default',
         stopHotkey: activeCommandHotkey || 'hotkey',
+        hold: false,
         recordingType: 'input' as const
       })
       if (!globalShortcut.isRegistered('Escape')) {
