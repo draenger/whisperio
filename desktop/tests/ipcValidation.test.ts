@@ -1,6 +1,6 @@
 import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { join } from 'path'
-import { mkdirSync, rmSync, writeFileSync, existsSync } from 'fs'
+import { mkdirSync, rmSync, writeFileSync, existsSync, symlinkSync } from 'fs'
 import { tmpdir } from 'os'
 
 const testDir = join(tmpdir(), `whisperio-ipcv-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`)
@@ -112,6 +112,18 @@ describe('recordingStore path confinement', () => {
     await deleteRecording(entry.id)
     expect(existsSync(rel)).toBe(true)
     expect(getRecording(entry.id)).toBeNull()
+  })
+
+  it('refuses a symlink inside the dir that points outside (when symlinks are permitted)', async () => {
+    const victim = join(outsideDir, 'target.txt')
+    writeFileSync(victim, 'secret')
+    const link = join(getRecordingsDir(), 'link.webm')
+    try {
+      symlinkSync(victim, link, 'file')
+    } catch {
+      return // no symlink privilege on this machine
+    }
+    expect(isInsideRecordingsDir(link)).toBe(false)
   })
 
   it('still reads and deletes legit recordings', async () => {

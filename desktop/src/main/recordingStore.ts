@@ -1,5 +1,5 @@
 import { app } from 'electron'
-import { existsSync, mkdirSync, writeFileSync, readFileSync, unlinkSync, renameSync } from 'fs'
+import { existsSync, realpathSync, mkdirSync, writeFileSync, readFileSync, unlinkSync, renameSync } from 'fs'
 import { join, resolve, sep } from 'path'
 import type { SpeakerSegment } from './dictation/conversation'
 
@@ -69,8 +69,18 @@ interface RecordingIndex {
  */
 export function isInsideRecordingsDir(filepath: unknown): boolean {
   if (typeof filepath !== 'string' || !filepath) return false
-  const dir = resolve(getRecordingsDir())
-  const target = resolve(filepath)
+  // Follow symlinks for paths that exist, so a link inside the dir that points
+  // outside it is refused. Non-existent paths fall back to lexical resolution.
+  const real = (p: string): string => {
+    const r = resolve(p)
+    try {
+      return existsSync(r) ? realpathSync(r) : r
+    } catch {
+      return r
+    }
+  }
+  const dir = real(getRecordingsDir())
+  const target = real(filepath)
   const prefix = dir.endsWith(sep) ? dir : dir + sep
   const norm = (p: string): string => (process.platform === 'win32' ? p.toLowerCase() : p)
   return norm(target).startsWith(norm(prefix))
