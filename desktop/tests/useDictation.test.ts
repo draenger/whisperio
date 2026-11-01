@@ -200,7 +200,7 @@ describe('useDictation — silenceGate', () => {
 
   it('skips transcribe and sends an empty "silent" result for silent audio', async () => {
     fakeAudioContext(new Float32Array(16000))
-    const { transcribe, sendResult } = mockApi({ saveRecordings: false, silenceGate: true })
+    const { transcribe, sendResult } = mockApi({ saveRecordings: true, silenceGate: true })
     const { result } = renderHook(() => useDictation())
     await act(async () => { await result.current.startRecording() })
     await act(async () => { await result.current.stopAndTranscribe(3) })
@@ -210,12 +210,13 @@ describe('useDictation — silenceGate', () => {
 
   it('still saves the recording before gating a silent clip', async () => {
     fakeAudioContext(new Float32Array(16000))
-    const { save, transcribe } = mockApi({ saveRecordings: true, silenceGate: true })
+    const { save, update, transcribe } = mockApi({ saveRecordings: true, silenceGate: true })
     const { result } = renderHook(() => useDictation())
     await act(async () => { await result.current.startRecording() })
     await act(async () => { await result.current.stopAndTranscribe(6) })
     expect(save).toHaveBeenCalledTimes(1)
     expect(transcribe).not.toHaveBeenCalled()
+    expect(update).toHaveBeenCalledWith('rec-1', expect.objectContaining({ status: 'completed', transcription: '', error: 'Silent — not transcribed' }))
   })
 
   it('fails open (still transcribes) when decoding throws', async () => {

@@ -1,6 +1,9 @@
 import { useRef, useCallback, useState } from 'react'
 import { analyzeSpeech, mixToMono, clampThresholdDbfs, shouldApplySilenceGate } from '../audio/silenceGate'
 
+import { planAudioFormats } from '../audio/formatPlan'
+import { StartGuard, decideAfterGetUserMediaFailure } from '../audio/startGuard'
+
 /** Decode a recording and report whether it contains speech. Fails OPEN:
  * any decode problem returns true so the audio is sent as before. */
 async function recordingHasSpeech(buffer: ArrayBuffer, thresholdDbfs?: number): Promise<boolean> {
@@ -21,9 +24,6 @@ async function recordingHasSpeech(buffer: ArrayBuffer, thresholdDbfs?: number): 
     return true
   }
 }
-import { planAudioFormats } from '../audio/formatPlan'
-import { StartGuard, decideAfterGetUserMediaFailure } from '../audio/startGuard'
-
 async function webmToWav(webmBuffer: ArrayBuffer): Promise<ArrayBuffer> {
   const audioCtx = new AudioContext({ sampleRate: 16000 })
   try {
@@ -325,7 +325,8 @@ export function useDictation(): UseDictationReturn {
           try {
             await window.api.recordings.update(savedRecordingId, {
               status: 'completed' as const,
-              transcription: ''
+              transcription: '',
+              error: 'Silent — not transcribed'
             })
           } catch (updateErr) {
             console.error('[Whisperio] Failed to update recording:', updateErr)
@@ -334,8 +335,6 @@ export function useDictation(): UseDictationReturn {
         await window.api.dictation.sendResult('', sessionId, 'silent')
         return
       }
-
-      // Convert webm to wav for selfhosted whisper.cpp (doesn't support webm)
 
       // whisper.cpp (selfhosted) can't read webm, cloud providers want the small
       // original: always send the webm, plus a WAV only when selfhosted is in
