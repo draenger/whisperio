@@ -46,6 +46,8 @@
     <string name="ime_mic_disabled">Dictation is off in this field</string>
     <string name="ime_password_off">Dictation is off in password fields</string>
     <string name="ime_not_inserted">Done, but the field changed. The text is in History.</string>
+    <string name="ime_not_inserted_clipboard">Couldn\'t insert the text because the field changed. It was copied to the clipboard.</string>
+    <string name="ime_not_inserted_discarded">Couldn\'t insert the text because the field changed. It was discarded (private field).</string>
     <string name="ime_backspace">Backspace</string>
     <string name="ime_space">Space</string>
     <string name="ime_enter">Enter</string>

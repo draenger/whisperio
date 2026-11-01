@@ -124,6 +124,22 @@ class HistoryDaoTest {
         assertFalse(f.exists())
     }
 
+    @Test fun updateOutcomeKeepsCategoryAndInsertedAndDoesNotResurrectDeletedRows() = runBlocking {
+        store.upsert(row("a", 1, RecordingStatus.TRANSCRIBING).copy(inserted = false))
+        store.setCategory("a", "work") // set by the user while the upload was running
+        store.updateOutcome(row("a", 1, RecordingStatus.DONE).copy(transcript = "final", provider = "groq"))
+        val a = store.get("a")!!
+        assertEquals(RecordingStatus.DONE, a.status)
+        assertEquals("final", a.transcript)
+        assertEquals("groq", a.provider)
+        assertEquals("work", a.category)
+        assertEquals(false, a.inserted)
+
+        store.delete("a")
+        store.updateOutcome(row("a", 1, RecordingStatus.DONE))
+        assertNull(store.get("a"))
+    }
+
     @Test fun interruptedConstantMatchesContract() {
         assertEquals("Interrupted", HistoryStore.INTERRUPTED)
     }

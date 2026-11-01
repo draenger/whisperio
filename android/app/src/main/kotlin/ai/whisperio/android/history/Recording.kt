@@ -79,6 +79,25 @@ interface RecordingDao {
     @Query("UPDATE recording SET category = NULL WHERE category = :categoryId")
     suspend fun clearCategory(categoryId: String): Int
 
+    /**
+     * Targeted write of the columns the dictation pipeline owns. Never touches category / inserted / created_at / source,
+     * and a row deleted meanwhile stays deleted (0 rows updated), unlike `copy` + upsert.
+     */
+    @Query(
+        "UPDATE recording SET status = :status, duration_ms = :durationMs, provider = :provider, model = :model, " +
+            "transcript = :transcript, error = :error, audio_path = :audioPath WHERE id = :id",
+    )
+    suspend fun updateOutcome(
+        id: String,
+        status: RecordingStatus,
+        durationMs: Long,
+        provider: String,
+        model: String,
+        transcript: String?,
+        error: String?,
+        audioPath: String?,
+    ): Int
+
     @Query("UPDATE recording SET audio_path = NULL WHERE audio_path IS NOT NULL")
     suspend fun clearAudioPaths()
 }
