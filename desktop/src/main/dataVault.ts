@@ -24,6 +24,14 @@ export type DataVaultAvailability =
 
 let cachedKey: Buffer | null = null
 
+// Registered by recordingStore (avoids an import cycle): returns true when sealed user data exists
+// on disk. With no key file that data is already orphaned/locked, and minting a fresh DEK would make
+// it permanently unrecoverable, so the encrypt path refuses instead.
+let sealedDataProbe: (() => boolean) | null = null
+export function registerSealedDataProbe(fn: (() => boolean) | null): void {
+  sealedDataProbe = fn
+}
+
 function keyPath(): string {
   return join(app.getPath('userData'), KEY_FILE)
 }
@@ -85,6 +93,9 @@ export function getDataKeyForEncrypt(): Buffer {
       throw new Error('History key file exists but cannot be unwrapped - refusing to replace it.')
     }
     return cachedKey
+  }
+  if (sealedDataProbe && sealedDataProbe()) {
+    throw new Error('History key file is missing but encrypted history exists - refusing to mint a new key.')
   }
   const key = generateDataKey()
   const wrapped = safeStorage.encryptString(key.toString('base64'))
