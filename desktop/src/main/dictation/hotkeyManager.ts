@@ -19,7 +19,8 @@ import { watchKeyRelease } from './keyHold'
 // surfaced via handleCommandError — see that class's doc comment for why
 // command mode can't just fail soft the way transcript cleanup does.
 import { rewriteClipboardForCommand } from '../transcribe'
-import { handleCommandError } from '../errorHandler'
+import { handleCommandError, notifyInfo } from '../errorHandler'
+import { createWatchdog, onTranscriptionActivity } from './watchdog'
 
 export type DictationState = 'idle' | 'recording' | 'transcribing' | 'pasting' | 'command'
 
@@ -89,8 +90,25 @@ let sendEnterOnResult = false
 let activeSessionIsCommand = false
 
 /** Safety timer — resets from 'transcribing' if no result comes back */
-let transcribeTimeout: ReturnType<typeof setTimeout> | null = null
-const TRANSCRIBE_TIMEOUT_MS = 60_000
+// Watchdog (not a fixed timer): transcribe.ts notes activity as each provider
+// attempt / cleanup starts, which extends the idle window; an absolute cap
+// still bounds the total. See watchdog.ts.
+const transcribeWatchdog = createWatchdog({
+  onFire: (reason) => {
+    if (state !== 'transcribing') return
+    console.error(`[Whisperio] Transcription watchdog fired (${reason}) — force-resetting to idle`)
+    // Invalidate so a result that arrives after this is dropped
+    // rather than auto-pasted into whatever now has focus.
+    invalidateSession()
+    setState('idle')
+    hideOverlay()
+    restoreTargetWindow()
+    notifyInfo('Whisperio', 'Transcription took too long and was cancelled')
+  }
+})
+onTranscriptionActivity(() => {
+  if (state === 'transcribing') transcribeWatchdog.touch()
+})
 
 export function getState(): DictationState {
   return state
@@ -101,24 +119,9 @@ function setState(newState: DictationState): void {
   state = newState
   broadcastToOverlays('dictation:state-changed', newState)
 
-  // Start/clear safety timeout for transcribing state
-  if (transcribeTimeout) {
-    clearTimeout(transcribeTimeout)
-    transcribeTimeout = null
-  }
-  if (newState === 'transcribing') {
-    transcribeTimeout = setTimeout(() => {
-      if (state === 'transcribing') {
-        console.error('[Whisperio] Transcription timed out after 60s — force-resetting to idle')
-        // Invalidate so a result that arrives after this timeout is dropped
-        // rather than auto-pasted into whatever now has focus.
-        invalidateSession()
-        setState('idle')
-        hideOverlay()
-        restoreTargetWindow()
-      }
-    }, TRANSCRIBE_TIMEOUT_MS)
-  }
+  // Start/clear watchdog for transcribing state
+  transcribeWatchdog.stop()
+  if (newState === 'transcribing') transcribeWatchdog.start()
 }
 
 async function activate(): Promise<void> {

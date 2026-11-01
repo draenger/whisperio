@@ -100,8 +100,10 @@ vi.mock('../src/main/transcribe', () => ({
 }))
 
 const mockHandleCommandError = vi.fn()
+const mockNotifyInfo = vi.fn()
 
 vi.mock('../src/main/errorHandler', () => ({
+  notifyInfo: (...args: unknown[]) => mockNotifyInfo(...args),
   handleCommandError: (...args: unknown[]) => mockHandleCommandError(...args)
 }))
 
@@ -123,6 +125,10 @@ const mockOverlayWin = {
 
 describe('hotkeyManager', () => {
   let mod: HotkeyModule
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
 
   beforeEach(async () => {
     vi.clearAllMocks()
@@ -581,6 +587,65 @@ describe('hotkeyManager', () => {
     expect(mockHideOverlay).toHaveBeenCalled()
     expect(mockRestoreTargetWindow).toHaveBeenCalled()
     vi.useRealTimers()
+  })
+
+  describe('transcription watchdog', () => {
+    async function toTranscribing(): Promise<void> {
+      vi.useFakeTimers()
+      mod.registerHotkey()
+      const activate = mockRegister.mock.calls[0][1] as () => Promise<void>
+      await activate()
+      await activate()
+      expect(mod.getState()).toBe('transcribing')
+    }
+
+    it('activity extends the idle window', async () => {
+      const { noteTranscriptionActivity } = await import('../src/main/dictation/watchdog')
+      await toTranscribing()
+      await vi.advanceTimersByTimeAsync(50_000)
+      noteTranscriptionActivity()
+      await vi.advanceTimersByTimeAsync(50_000) // 100 s total > old 60 s cap
+      expect(mod.getState()).toBe('transcribing')
+      vi.useRealTimers()
+    })
+
+    it('fires after 60 s without activity and notifies the user', async () => {
+      await toTranscribing()
+      await vi.advanceTimersByTimeAsync(60_000)
+      expect(mod.getState()).toBe('idle')
+      expect(mockNotifyInfo).toHaveBeenCalledWith(
+        'Whisperio',
+        'Transcription took too long and was cancelled'
+      )
+      vi.useRealTimers()
+    })
+
+    it('fires at the absolute cap even with continuous activity', async () => {
+      const { noteTranscriptionActivity } = await import('../src/main/dictation/watchdog')
+      await toTranscribing()
+      for (let t = 0; t < 6 * 60_000; t += 30_000) {
+        expect(mod.getState()).toBe('transcribing')
+        noteTranscriptionActivity()
+        await vi.advanceTimersByTimeAsync(30_000)
+      }
+      expect(mod.getState()).toBe('idle')
+      expect(mockNotifyInfo).toHaveBeenCalledTimes(1)
+      vi.useRealTimers()
+    })
+
+    it('drops a result that arrives after the watchdog fired', async () => {
+      await toTranscribing()
+      const handleResult = (
+        mockIpcHandle.mock.calls.find((c) => c[0] === 'dictation:result') as unknown[]
+      )[1] as (event: unknown, text: string, sessionId?: number) => Promise<void>
+      const sid = mockSendToPrimaryOverlay.mock.calls.find(
+        (c) => c[0] === 'dictation:deactivate'
+      )![1] as number
+      await vi.advanceTimersByTimeAsync(60_000)
+      await handleResult({}, 'late text', sid)
+      expect(mockAutoPaste).not.toHaveBeenCalled()
+      vi.useRealTimers()
+    })
   })
 
   // --- pause / resume / re-register ---

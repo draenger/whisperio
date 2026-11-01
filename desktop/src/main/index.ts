@@ -370,7 +370,7 @@ app.whenReady().then(() => {
     // Additive: optional WAV rendition for whisper.cpp only (see audioFormat.ts).
     const wavBuffer = coerceWavArg(wavArg)
     const wav = wavBuffer ? { buffer: wavBuffer, filename: 'audio.wav' } : null
-    return transcribeAudio(audioBuffer, filename, context, wav)
+    return transcribeAudio(audioBuffer, filename, context, wav, { fromDictation: true })
   }))
 
   // Renderer-reported capture failures (e.g. no usable microphone) -> toast

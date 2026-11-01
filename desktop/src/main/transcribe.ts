@@ -6,6 +6,7 @@ import { AppSettings, getActiveVocabulary, type ProviderId, type CleanupMode } f
 // when OS secure storage is available. See secure/keyAccessor.ts.
 import { getEffectiveSettings } from './secure/keyAccessor'
 import { recordTranscriptionError, describeTranscriptionError, notifyTranscriptionFailure, type WhisperioError } from './errorHandler'
+import { noteTranscriptionActivity } from './dictation/watchdog'
 import { guardRedirects, GUARDED_REDIRECT } from './llm/redirectGuard'
 import { OpenAICompatibleProvider, AnthropicProvider, ReplicateProvider, selectProvider, isLocalHost, type LLMProvider } from './llm/provider'
 import { cleanupTranscription, cleanupTranscriptionDetailed, formatTranscription, rewriteSelection, type CleanupResult } from './postprocess'
@@ -483,9 +484,13 @@ export async function transcribeAudio(
   // Optional WAV rendition of the same audio (live dictation only; the
   // renderer makes it when `selfhosted` is in the chain). whisper.cpp gets
   // this; every other provider gets `audioBuffer` (WebM/Opus) untouched.
-  wavAudio: AudioPayload | null = null
+  wavAudio: AudioPayload | null = null,
+  // Only the live dictation flow has a hotkey watchdog to feed; Reprocess and
+  // other callers must not extend it.
+  options: { fromDictation?: boolean } = {}
 ): Promise<string> {
   const settings = getEffectiveSettings()
+  const noteActivity = options.fromDictation ? noteTranscriptionActivity : undefined
 
   // Build effective chain: use providerChain if set, otherwise legacy sttProvider + fallback
   let chain: ProviderId[]
@@ -515,6 +520,7 @@ export async function transcribeAudio(
   let text: string | null = null
   for (let i = 0; i < configuredChain.length; i++) {
     const provider = configuredChain[i]
+    noteActivity?.()
     const audio = resolveProviderAudio(provider, { buffer: audioBuffer, filename }, wavAudio)
     if (!audio) {
       // selfhosted but we only hold WebM (e.g. Reprocess): skip, fall through.
@@ -522,7 +528,7 @@ export async function transcribeAudio(
       continue
     }
     try {
-      text = await transcribeWithProvider(settings, provider, audio.buffer, audio.filename)
+      text = await transcribeWithProvider(settings, provider, audio.buffer, audio.filename, noteActivity)
       // PACZKA METERING (v1.6): report usage after every successful STT call,
       // including local/self-hosted (isLocal forces cost to 0 there, but the
       // request/audio-seconds counters still stay complete). recordSTT()
@@ -559,6 +565,7 @@ export async function transcribeAudio(
 
   // Cleanup runs AFTER the STT chain and is fail-soft: a cleanup problem must
   // never discard a good transcript or re-bill the next STT provider.
+  noteActivity?.() // cleanup starting
   try {
     return await applyCleanup(settings, text, context)
   } catch (err) {
@@ -607,7 +614,8 @@ async function transcribeWithProvider(
   settings: AppSettings,
   provider: ProviderId,
   audioBuffer: Buffer,
-  filename: string
+  filename: string,
+  onActivity?: () => void
 ): Promise<string> {
   if (provider === 'elevenlabs') {
     const apiKey = settings.elevenlabsApiKey
@@ -715,7 +723,7 @@ async function transcribeWithProvider(
     }
     const model = settings.sttAssemblyaiModel?.trim() || ''
     const lang = settings.transcriptionLanguage?.trim() || 'auto'
-    return assemblyAITranscribe(apiKey, audioBuffer, model, lang)
+    return assemblyAITranscribe(apiKey, audioBuffer, model, lang, onActivity)
   }
 
   if (provider === 'mistral') {
