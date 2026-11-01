@@ -1,4 +1,5 @@
 import { useRef, useCallback, useState } from 'react'
+import { isIndexUnavailable } from '../recordings/historyError'
 
 async function webmToWav(webmBuffer: ArrayBuffer): Promise<ArrayBuffer> {
   const audioCtx = new AudioContext({ sampleRate: 16000 })
@@ -227,7 +228,12 @@ export function useDictation(): UseDictationReturn {
           savedRecordingId = savedRecording.id
           console.log(`[Whisperio] Recording saved: ${savedRecordingId}`)
         } catch (saveErr) {
-          console.error('[Whisperio] Failed to save recording:', saveErr)
+          // Never log content: only whether the history index was unavailable.
+          if (isIndexUnavailable(saveErr)) {
+            console.error('[Whisperio] Recording not saved: history index unavailable (locked or damaged); continuing with transcription')
+          } else {
+            console.error('[Whisperio] Failed to save recording:', saveErr)
+          }
         }
       }
 
