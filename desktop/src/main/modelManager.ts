@@ -295,7 +295,6 @@ function handleDownloadResponse(
   const fail = (err: unknown): void => {
     if (failed) return
     failed = true
-    activeDownloads.delete(modelId)
     const error = err instanceof Error ? err : new Error(String(err))
     // destroy() closes the fd ASYNCHRONOUSLY. Unlinking right away fails on
     // Windows (file still open -> EBUSY/EPERM, swallowed) and on any OS can lose
@@ -307,6 +306,9 @@ function handleDownloadResponse(
       if (settled) return
       settled = true
       try { unlinkSync(tempPath) } catch { /* ignore */ }
+      // Free the slot only now: a retry started before the temp file is gone
+      // would otherwise have its fresh .downloading file deleted by us.
+      activeDownloads.delete(modelId)
       reject(error)
     }
     if (writeStream.closed) {
