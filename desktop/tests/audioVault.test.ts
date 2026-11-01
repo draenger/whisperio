@@ -6,6 +6,19 @@ import { randomBytes } from 'crypto'
 
 const testDir = join(tmpdir(), `whisperio-aud-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`)
 
+const fsh = vi.hoisted(() => ({ renameFail: null as null | (() => void) }))
+vi.mock('fs', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('fs')>()
+  return {
+    ...actual,
+    renameSync: (a: string, b: string) => {
+      const f = fsh.renameFail
+      if (f) { fsh.renameFail = null; f() }
+      return actual.renameSync(a, b)
+    }
+  }
+})
+
 vi.mock('electron', () => ({
   app: { getPath: vi.fn(() => testDir) },
   safeStorage: {
@@ -25,7 +38,8 @@ import {
   decryptAudio,
   isEncryptedAudio,
   AudioVaultError,
-  HEADER_BYTES
+  HEADER_BYTES,
+  atomicWriteFileSync
 } from '../src/main/audioVault'
 import {
   saveRecording,
@@ -36,7 +50,7 @@ import {
   resumeAudioMigration,
   getRecording
 } from '../src/main/recordingStore'
-import { shredDataKey } from '../src/main/dataVault'
+import { shredDataKey, getDataKeyForEncrypt } from '../src/main/dataVault'
 
 const KEY = randomBytes(32)
 const SEG = 64
@@ -94,6 +108,43 @@ describe('audioVault format', () => {
     expect(() => decryptAudio(KEY, enc, 'other')).toThrow(AudioVaultError)
   })
 
+  it('derives a fresh salt and subkey per file', () => {
+    const plain = randomBytes(300)
+    const a = encryptAudio(KEY, plain, 'r', SEG)
+    const b = encryptAudio(KEY, plain, 'r', SEG)
+    expect(a.subarray(17, HEADER_BYTES).equals(b.subarray(17, HEADER_BYTES))).toBe(false)
+    expect(a.subarray(HEADER_BYTES, HEADER_BYTES + SEG).equals(b.subarray(HEADER_BYTES, HEADER_BYTES + SEG))).toBe(false)
+    expect(a.readUInt8(8)).toBe(2)
+  })
+
+  it('rejects an unknown key id', () => {
+    const enc = encryptAudio(KEY, randomBytes(10), 'r', SEG)
+    enc.write('zzzz', 9, 4, 'ascii')
+    expect(() => decryptAudio(KEY, enc, 'r')).toThrow(/key id/)
+  })
+
+  it('retries a transient EPERM rename once and succeeds', () => {
+    mkdirSync(testDir, { recursive: true })
+    const target = join(testDir, 'x.bin')
+    let calls = 0
+    fsh.renameFail = () => {
+      calls++
+      throw Object.assign(new Error('busy'), { code: 'EPERM' })
+    }
+    atomicWriteFileSync(target, target + '.tmp', Buffer.from('hello'))
+    expect(calls).toBe(1)
+    expect(readFileSync(target).toString()).toBe('hello')
+    expect(existsSync(target + '.tmp')).toBe(false)
+  })
+
+  it('does not retry a non-transient rename error and cleans the tmp file', () => {
+    mkdirSync(testDir, { recursive: true })
+    const target = join(testDir, 'y.bin')
+    fsh.renameFail = () => { throw Object.assign(new Error('nope'), { code: 'ENOSPC' }) }
+    expect(() => atomicWriteFileSync(target, target + '.tmp', Buffer.from('x'))).toThrow('nope')
+    expect(existsSync(target + '.tmp')).toBe(false)
+  })
+
   it('does not treat legacy plaintext as encrypted', () => {
     expect(isEncryptedAudio(Buffer.from([0x1a, 0x45, 0xdf, 0xa3, 1, 2, 3, 4, 5, 6, 7, 8]))).toBe(false)
     expect(isEncryptedAudio(Buffer.alloc(0))).toBe(false)
@@ -147,7 +198,7 @@ describe('recordingStore audio vault integration', () => {
     writeFileSync(rec.filepath, disk.subarray(0, disk.length - 5))
     expect(() => readRecordingAudio(rec.id)).toThrow(/authentication|truncated/)
     writeFileSync(rec.filepath, Buffer.from('WHSPAUD1garbage'))
-    expect(() => readRecordingAudio(rec.id)).toThrow(AudioVaultError)
+    expect(isEncryptedAudio(readFileSync(rec.filepath))).toBe(true) // untouched, history stays locked
   })
 
   it('migrates ON then OFF, idempotently, with mixed state readable', async () => {
@@ -172,6 +223,100 @@ describe('recordingStore audio vault integration', () => {
     expect(audioFiles().length).toBe(2)
   })
 
+  const waitUntil = async (cond: () => boolean): Promise<void> => {
+    for (let i = 0; i < 2000 && !cond(); i++) await new Promise<void>((r) => setImmediate(r))
+  }
+  const sealedCount = (): number =>
+    audioFiles().filter((f) => isEncryptedAudio(readFileSync(join(REC, f)))).length
+
+  function fakeClock(): void {
+    let t = 1_800_000_000_000
+    vi.spyOn(Date, 'now').mockImplementation(() => (t += 2000))
+  }
+
+  it('toggle ON during a running decrypt ends with all audio sealed', async () => {
+    fakeClock()
+    flag = true
+    for (let i = 0; i < 4; i++) await saveRecording(Buffer.from('audio-' + i), meta)
+    expect(sealedCount()).toBe(4)
+    flag = false
+    expect((await setHistoryEncryption(false)).ok).toBe(true)
+    const dec = migrateAudio('decrypt')
+    await waitUntil(() => sealedCount() < 4)
+    expect(sealedCount()).toBeLessThan(4)
+    flag = true
+    const enc = resumeAudioMigration()
+    await Promise.all([dec, enc])
+    expect(audioFiles().length).toBe(4)
+    expect(sealedCount()).toBe(4)
+    vi.restoreAllMocks()
+  })
+
+  it('toggle OFF during a running encrypt ends with all audio plain', async () => {
+    fakeClock()
+    const ids: string[] = []
+    for (let i = 0; i < 4; i++) ids.push((await saveRecording(Buffer.from('audio-' + i), meta)).id)
+    flag = true
+    const enc = migrateAudio('encrypt')
+    await waitUntil(() => sealedCount() > 0)
+    expect(sealedCount()).toBeGreaterThan(0)
+    flag = false
+    const dec = migrateAudio('decrypt')
+    await Promise.all([enc, dec])
+    expect(sealedCount()).toBe(0)
+    expect(readRecordingAudio(ids[3])!.toString()).toBe('audio-3')
+    vi.restoreAllMocks()
+  })
+
+  it('a save overlapping an ON toggle never leaves plaintext behind', async () => {
+    fakeClock()
+    await saveRecording(Buffer.from('old'), meta)
+    flag = false
+    const savePromise = saveRecording(marker, meta) // decides inside the queue
+    flag = true
+    const mig = migrateAudio('encrypt') // snapshots the index before the save has been registered
+    await Promise.all([savePromise, mig])
+    await migrateAudio('encrypt')
+    expect(audioFiles().length).toBe(2)
+    expect(sealedCount()).toBe(2)
+    for (const f of audioFiles()) {
+      expect(readFileSync(join(REC, f)).includes(Buffer.from('PLAINTEXT-MARKER-'))).toBe(false)
+    }
+    vi.restoreAllMocks()
+  })
+
+  it('refuses to mint a new DEK while sealed audio exists (key file lost)', async () => {
+    flag = true
+    const rec = await saveRecording(marker, meta)
+    shredDataKey()
+    expect(existsSync(join(testDir, 'data-vault.key'))).toBe(false)
+    expect(() => getDataKeyForEncrypt()).toThrow(/refusing to mint/)
+    expect(existsSync(join(testDir, 'data-vault.key'))).toBe(false)
+    await expect(saveRecording(marker, meta)).rejects.toThrow(/locked|refusing/i)
+    expect(isEncryptedAudio(readFileSync(rec.filepath))).toBe(true) // untouched, history stays locked
+  })
+
+  it('reports already-sealed files that do not open with the current key as failed', async () => {
+    fakeClock()
+    flag = true
+    const a = await saveRecording(marker, meta)
+    await saveRecording(Buffer.from('ok'), meta)
+    writeFileSync(a.filepath, encryptAudio(randomBytes(32), marker, a.id))
+    const r = await migrateAudio('encrypt')
+    expect(r).toEqual({ converted: 0, skipped: 1, failed: 1 })
+    vi.restoreAllMocks()
+  })
+
+  it('sweeps leaked save/migration tmp files at launch', async () => {
+    const rec = await saveRecording(marker, meta)
+    writeFileSync(rec.filepath + '.tmp', 'x')
+    writeFileSync(rec.filepath + '.mig.tmp', 'x')
+    await resumeAudioMigration()
+    expect(existsSync(rec.filepath + '.tmp')).toBe(false)
+    expect(existsSync(rec.filepath + '.mig.tmp')).toBe(false)
+    expect(existsSync(rec.filepath)).toBe(true)
+  })
+
   it('resumes after a crash that left a .mig.tmp and a partly migrated set', async () => {
     const a = await saveRecording(marker, meta)
     await gap()
@@ -191,7 +336,6 @@ describe('recordingStore audio vault integration', () => {
   })
 })
 
-import { getDataKeyForEncrypt } from '../src/main/dataVault'
 function KEY_FOR(): Buffer {
   return getDataKeyForEncrypt()
 }

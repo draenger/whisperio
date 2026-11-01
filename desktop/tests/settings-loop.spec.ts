@@ -88,6 +88,19 @@ const CONSUMER_ALLOWLIST: Record<string, string> = {
     'capture path is revisited.'
 }
 
+// Keys whose control does NOT write through settings:save. The UI flips them through a dedicated IPC
+// channel (settings:save strips the key in main/index.ts). The mapping is verified, not trusted: the
+// named UI file must call the named preload method AND main must register the channel.
+const CONTROL_VIA_CHANNEL: Record<string, { uiFile: string; preloadCall: string; channel: string }> = {
+  // Opt-in history encryption (D1/D3): the Privacy switch calls window.api.history.setEncryption,
+  // which invokes 'history:encryption:set'; that handler proves the key works and rewrites the index.
+  encryptHistory: {
+    uiFile: 'src/renderer/components/settings/PrivacyPanel.tsx',
+    preloadCall: 'history.setEncryption(',
+    channel: 'history:encryption:set'
+  }
+}
+
 const CONTROL_ALLOWLIST: Record<string, string> = {
   githubUser:
     "Controlled via the GitHub tab's connect/select-repo OAuth-device-flow buttons in " +
@@ -250,6 +263,20 @@ function hasControl(key: string): { ok: boolean; via: string } {
   const re = new RegExp(`\\b${key}\\b`)
   if (controlSources.some((content) => re.test(content))) {
     return { ok: true, via: 'referenced in the settings-authoring UI' }
+  }
+  const viaChannel = CONTROL_VIA_CHANNEL[key]
+  if (viaChannel) {
+    const ui = fs.readFileSync(path.join(DESKTOP_ROOT, viaChannel.uiFile), 'utf8')
+    const preload = fs.readFileSync(PRELOAD_TS_FILE, 'utf8')
+    const mainIndex = fs.readFileSync(path.join(MAIN_DIR, 'index.ts'), 'utf8')
+    if (
+      ui.includes(viaChannel.preloadCall) &&
+      preload.includes(`'${viaChannel.channel}'`) &&
+      mainIndex.includes(`'${viaChannel.channel}'`)
+    ) {
+      return { ok: true, via: `dedicated channel ${viaChannel.channel} (${viaChannel.uiFile})` }
+    }
+    return { ok: false, via: '' }
   }
   if (key in CONTROL_ALLOWLIST) return { ok: true, via: `allowlisted: ${CONTROL_ALLOWLIST[key]}` }
   return { ok: false, via: '' }

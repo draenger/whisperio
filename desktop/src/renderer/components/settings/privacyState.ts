@@ -174,3 +174,6 @@ export const RESET_CONFIRM = {
 export function shouldShowLockedNotice(status: { locked: boolean } | null | undefined): boolean {
   return !!status && status.locked === true
 }
+
+export const RESET_FAILED_MESSAGE =
+  'History was not reset: it is not locked encrypted history, or the encryption key could not be destroyed. Nothing was deleted.'

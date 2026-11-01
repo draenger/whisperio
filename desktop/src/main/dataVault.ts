@@ -24,6 +24,14 @@ export type DataVaultAvailability =
 
 let cachedKey: Buffer | null = null
 
+// Registered by recordingStore (avoids an import cycle): returns true when sealed user data exists
+// on disk. With no key file that data is already orphaned/locked, and minting a fresh DEK would make
+// it permanently unrecoverable, so the encrypt path refuses instead.
+let sealedDataProbe: (() => boolean) | null = null
+export function registerSealedDataProbe(fn: (() => boolean) | null): void {
+  sealedDataProbe = fn
+}
+
 function keyPath(): string {
   return join(app.getPath('userData'), KEY_FILE)
 }
@@ -86,6 +94,9 @@ export function getDataKeyForEncrypt(): Buffer {
     }
     return cachedKey
   }
+  if (sealedDataProbe && sealedDataProbe()) {
+    throw new Error('History key file is missing but encrypted history exists - refusing to mint a new key.')
+  }
   const key = generateDataKey()
   const wrapped = safeStorage.encryptString(key.toString('base64'))
   atomicWrite(path, wrapped.toString('base64'))
@@ -107,13 +118,18 @@ export function getDataKeyForDecrypt(): Buffer | null {
   }
 }
 
-/** Crypto-shred: delete the key file and drop the in-memory copy. Sealed history becomes unreadable. */
-export function shredDataKey(): void {
+/**
+ * Crypto-shred: delete the key file and drop the in-memory copy. Returns true only when the key file
+ * is verifiably gone. A failed delete (EPERM, AV lock) returns false: callers MUST stop before
+ * deleting any data, because the sealed history would still be readable.
+ */
+export function shredDataKey(): boolean {
   cachedKey = null
   try {
     const path = keyPath()
     if (existsSync(path)) unlinkSync(path)
+    return !existsSync(path)
   } catch {
-    /* best effort */
+    return false
   }
 }

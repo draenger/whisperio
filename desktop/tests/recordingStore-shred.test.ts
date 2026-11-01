@@ -6,7 +6,7 @@ import { tmpdir } from 'os'
 const testDir = join(tmpdir(), `whisperio-shred-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`)
 
 // Records the order of destructive calls: key shred vs file deletion.
-const h = vi.hoisted(() => ({ calls: [] as string[] }))
+const h = vi.hoisted(() => ({ calls: [] as string[], failKeyDelete: false, failIndexRename: false }))
 
 vi.mock('electron', () => ({
   app: { getPath: vi.fn(() => testDir) },
@@ -28,7 +28,7 @@ vi.mock('../src/main/dataVault', async (importOriginal) => {
     ...real,
     shredDataKey: () => {
       h.calls.push('shred-key')
-      real.shredDataKey()
+      return real.shredDataKey()
     }
   }
 })
@@ -37,7 +37,12 @@ vi.mock('fs', async (importOriginal) => {
   const real = await importOriginal<typeof import('fs')>()
   return {
     ...real,
+    renameSync: (a: string, b: string) => {
+      if (h.failIndexRename && String(a).endsWith('index.json')) throw new Error('EBUSY: locked by AV')
+      return real.renameSync(a, b)
+    },
     unlinkSync: (p: string) => {
+      if (h.failKeyDelete && String(p).endsWith('data-vault.key')) throw new Error('EPERM')
       if (String(p).endsWith('.webm')) h.calls.push('unlink-audio')
       if (String(p).endsWith('index.json')) h.calls.push('unlink-index')
       return real.unlinkSync(p)
@@ -53,11 +58,13 @@ import {
   getHistoryEncryptionStatus,
   setEncryptHistoryReader,
   resetLockedHistory,
+  KeyShredError,
   getEncryptionProgress,
   migrateAudio
 } from '../src/main/recordingStore'
 import { loadSettings } from '../src/main/settingsManager'
 import { shredDataKey } from '../src/main/dataVault'
+import { writeFileSync } from 'fs'
 
 const RECORDINGS_DIR = join(testDir, 'recordings')
 const INDEX = join(RECORDINGS_DIR, 'index.json')
@@ -82,6 +89,8 @@ describe('recordingStore - erase = crypto-shred, locked reset, progress (D3)', (
     mkdirSync(testDir, { recursive: true })
     shredDataKey()
     h.calls.length = 0
+    h.failKeyDelete = false
+    h.failIndexRename = false
   })
   afterEach(() => {
     setEncryptHistoryReader(null)
@@ -144,5 +153,67 @@ describe('recordingStore - erase = crypto-shred, locked reset, progress (D3)', (
     expect(getEncryptionProgress()).toEqual({ state: 'on', done: 0, total: 2 })
     await migrateAudio('encrypt')
     expect(getEncryptionProgress()).toEqual({ state: 'on', done: 2, total: 2 })
+  })
+
+  it('erase aborts BEFORE deleting any file when the key delete fails, and reports it', async () => {
+    await seed()
+    await setHistoryEncryption(true)
+    h.failKeyDelete = true
+    await expect(deleteAllRecordings()).rejects.toBeInstanceOf(KeyShredError)
+    expect(audioCount()).toBe(1)
+    expect(existsSync(INDEX)).toBe(true)
+    expect(h.calls).not.toContain('unlink-audio')
+    expect(h.calls).not.toContain('unlink-index')
+    h.failKeyDelete = false
+    expect(getRecordings()).toHaveLength(1) // key survived, history still readable
+  })
+
+  it('reset aborts without deleting files when the key delete fails', async () => {
+    await seed()
+    await setHistoryEncryption(true)
+    // lose the ability to open: corrupt the cached key by replacing key file content
+    const keyFile = join(testDir, 'data-vault.key')
+    writeFileSync(keyFile, 'garbage')
+    shredDataKey() // clears cache; fails? real delete works here, so recreate the file
+    writeFileSync(keyFile, 'garbage')
+    h.failKeyDelete = true
+    expect(getHistoryEncryptionStatus().locked).toBe(true)
+    expect(await resetLockedHistory()).toBe(false)
+    expect(audioCount()).toBe(1)
+    expect(existsSync(INDEX)).toBe(true)
+    expect(loadSettings().encryptHistory).toBe(true)
+  })
+
+  it('reset is refused for an unparsable PLAIN index (no sealed data): files intact', async () => {
+    await seed()
+    writeFileSync(INDEX, '{ truncated plain json')
+    h.failIndexRename = true // AV keeps it from being moved aside -> status reads as locked
+    expect(getHistoryEncryptionStatus().locked).toBe(true)
+    expect(await resetLockedHistory()).toBe(false)
+    expect(audioCount()).toBe(1)
+    expect(existsSync(INDEX)).toBe(true)
+    expect(h.calls).not.toContain('shred-key')
+  })
+
+  it('reset keeps index.json.corrupt-* backups', async () => {
+    await seed()
+    await setHistoryEncryption(true)
+    const backup = join(RECORDINGS_DIR, 'index.json.corrupt-123')
+    writeFileSync(backup, 'old')
+    shredDataKey()
+    expect(await resetLockedHistory()).toBe(true)
+    expect(existsSync(backup)).toBe(true)
+    expect(existsSync(INDEX)).toBe(false)
+    expect(audioCount()).toBe(0)
+  })
+
+  it('status while migrating answers from cached counters (no index read needed)', async () => {
+    await seed()
+    await setHistoryEncryption(true)
+    const p = migrateAudio('encrypt')
+    const mid = getEncryptionProgress()
+    expect(['migrating', 'on']).toContain(mid.state)
+    await p
+    expect(getEncryptionProgress()).toEqual({ state: 'on', done: 1, total: 1 })
   })
 })

@@ -10,6 +10,7 @@ import {
   GITHUB_WARNING,
   LOCKED_MESSAGE,
   RESET_CONFIRM,
+  RESET_FAILED_MESSAGE,
   type EncryptionStatus,
   type EncryptionProgress,
   type ToggleDialog
@@ -30,11 +31,6 @@ interface SettingsStyles {
 type Pending = { type: 'toggle'; dialog: ToggleDialog } | { type: 'erase' } | { type: 'reset' } | null
 
 const POLL_MS = 1000
-
-type LoadedSettings = Awaited<ReturnType<Window['api']['settings']['load']>>
-/** The setting this switch controls. It is NOT written via settings:save (main strips it); the
- * switch goes through history:encryption:set. Typed so a rename breaks the build. */
-export const ENCRYPT_SETTING_KEY: keyof LoadedSettings = 'encryptHistory'
 
 export function PrivacyPanel({ s, theme }: { s: SettingsStyles; theme: Theme }): ReactElement {
   const [status, setStatus] = useState<EncryptionStatus | null>(null)
@@ -66,11 +62,20 @@ export function PrivacyPanel({ s, theme }: { s: SettingsStyles; theme: Theme }):
       .catch(() => setGithubConnected(false))
   }, [refresh])
 
-  // Poll while a migration runs so the progress text moves.
+  // Poll while a migration runs so the progress text moves. The tick calls only the cheap status
+  // endpoint (cached counts in main); the full refresh (index decrypt) runs once when it ends.
   const migrating = progress?.state === 'migrating'
   useEffect(() => {
     if (!migrating) return
-    const t = setInterval(refresh, POLL_MS)
+    const t = setInterval(async () => {
+      try {
+        const pr = await window.api.history.getEncryptionStatus()
+        if (pr.state === 'migrating') setProgress(pr)
+        else await refresh()
+      } catch {
+        /* keep the previous progress */
+      }
+    }, POLL_MS)
     return () => clearInterval(t)
   }, [migrating, refresh])
 
@@ -93,17 +98,18 @@ export function PrivacyPanel({ s, theme }: { s: SettingsStyles; theme: Theme }):
     try {
       if (pending.type === 'toggle') {
         const enable = pending.dialog.kind === 'enable'
-        if (enable && pending.dialog.warnGithub && turnOffSync) {
+        const res = await window.api.history.setEncryption(enable)
+        setMessage(setResultMessage(res))
+        // Only after encryption really turned on: never drop sync for a switch that failed.
+        if (res.ok && enable && pending.dialog.warnGithub && turnOffSync) {
           await window.api.github.disconnect()
           setGithubConnected(false)
         }
-        const res = await window.api.history.setEncryption(enable)
-        setMessage(setResultMessage(res))
       } else if (pending.type === 'erase') {
         await window.api.recordings.deleteAll()
       } else {
         const ok = await window.api.history.resetLocked()
-        if (!ok) setMessage('History is not locked, nothing was reset.')
+        if (!ok) setMessage(RESET_FAILED_MESSAGE)
       }
     } catch (err) {
       setMessage(err instanceof Error ? err.message : 'Something went wrong. Please try again.')
@@ -216,7 +222,7 @@ export function PrivacyPanel({ s, theme }: { s: SettingsStyles; theme: Theme }):
           style={{
             position: 'fixed',
             inset: 0,
-            background: 'rgba(0,0,0,0.5)',
+            background: 'color-mix(in srgb, var(--wsp-bg) 70%, transparent)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
@@ -266,7 +272,7 @@ export function PrivacyPanel({ s, theme }: { s: SettingsStyles; theme: Theme }):
                 disabled={busy}
                 style={{
                   background: enableDialog ? theme.accent : theme.danger,
-                  color: enableDialog ? theme.accentInk : '#ffffff',
+                  color: enableDialog ? theme.accentInk : theme.bg,
                   border: 'none',
                   borderRadius: '8px',
                   padding: '7px 14px',
