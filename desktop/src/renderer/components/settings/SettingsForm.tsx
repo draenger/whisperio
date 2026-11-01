@@ -11,6 +11,7 @@ import { KeyStorageHint } from './KeyStorageHint'
 
 // Derived from the global window.api typings (preload) without a cross-project import
 type UpdaterState = Awaited<ReturnType<Window['api']['updater']['getStatus']>>
+type ParakeetStatus = Awaited<ReturnType<Window['api']['parakeet']['status']>>
 
 /** Subscribes to auto-update status from the main process. */
 function useUpdater(): UpdaterState | null {
@@ -211,7 +212,8 @@ const CHAIN_LABELS: Record<string, string> = {
   groq: 'Groq',
   deepgram: 'Deepgram',
   assemblyai: 'AssemblyAI',
-  mistral: 'Mistral'
+  mistral: 'Mistral',
+  parakeet: 'Parakeet'
 }
 
 function MicroLabel({ children, theme }: { children: ReactNode; theme: Theme }): ReactElement {
@@ -1570,7 +1572,9 @@ const ALL_PROVIDERS: { id: string; label: string; desc: string }[] = [
   { id: 'groq', label: 'Groq', desc: 'Fast cloud Whisper' },
   { id: 'deepgram', label: 'Deepgram', desc: 'Nova' },
   { id: 'assemblyai', label: 'AssemblyAI', desc: 'Universal' },
-  { id: 'mistral', label: 'Mistral', desc: 'Voxtral' }
+  { id: 'mistral', label: 'Mistral', desc: 'Voxtral' },
+  // EXPERIMENTAL: only listed when settings.experimentalParakeet is on.
+  { id: 'parakeet', label: 'Parakeet (experimental)', desc: 'On-device, offline' }
 ]
 
 // Built-in seed vocabulary shown as removable/restorable chips. Mirror of
@@ -1584,6 +1588,95 @@ const DEFAULT_VOCABULARY_TERMS: string[] = [
   'localhost', 'regex', 'boolean', 'middleware', 'endpoint', 'repository', 'README',
   'Vite', 'Vitest', 'Electron', 'Python', 'FastAPI', 'Whisper', 'OpenAI'
 ]
+
+/* EXPERIMENTAL: on-device Parakeet V3 (flag off by default). */
+function ExperimentalParakeetCard({
+  enabled,
+  onEnabledChange,
+  s,
+  theme
+}: {
+  enabled: boolean
+  onEnabledChange: (v: boolean) => void
+  s: ReturnType<typeof makeStyles>
+  theme: Theme
+}): ReactElement {
+  const [status, setStatus] = useState<ParakeetStatus | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const [progress, setProgress] = useState('')
+
+  useEffect(() => {
+    if (!enabled) return
+    window.api.parakeet.status().then(setStatus).catch(() => {})
+    return window.api.models.onDownloadProgress((p) => {
+      if (p.modelId.startsWith('parakeet:')) setProgress(`${p.modelId.slice(9)} ${p.percent}%`)
+    })
+  }, [enabled])
+
+  const toggle = async (v: boolean): Promise<void> => {
+    onEnabledChange(v)
+    if (v) {
+      await window.api.settings.save({ experimentalParakeet: true })
+      return
+    }
+    // Turning the flag off fully undoes it: drop 'parakeet' from the saved chain too.
+    const cur = await window.api.settings.load()
+    let chain = (cur.providerChain || []).filter((p) => p !== 'parakeet')
+    if (chain.length === 0) chain = ['openai']
+    await window.api.settings.save({ experimentalParakeet: false, providerChain: chain, sttProvider: chain[0] as 'openai' })
+  }
+
+  const download = async (): Promise<void> => {
+    setBusy(true)
+    setError('')
+    try {
+      setStatus(await window.api.parakeet.download())
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setBusy(false)
+      setProgress('')
+    }
+  }
+
+  return (
+    <div style={s.card}>
+      <SectionHeader title="Experimental" s={s} theme={theme} />
+      <label style={{ display: 'flex', gap: '8px', alignItems: 'center', fontSize: '12px', color: theme.text }}>
+        <input type="checkbox" checked={enabled} onChange={(e) => void toggle(e.target.checked)} />
+        Enable on-device Parakeet V3 (offline speech recognition)
+      </label>
+      <span style={s.hint}>
+        Experimental. Runs entirely on this computer after a one-time model download (about 640 MB). If it
+        fails, the next provider in the chain is used.
+      </span>
+      {enabled && status && (
+        <div style={{ marginTop: '8px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+          <span style={s.hint}>
+            Model: {status.ready ? (status.verified ? 'ready (verified)' : 'ready (not hash-verified)') : 'not downloaded'}
+            {' - '}Runtime: {status.runtimeInstalled ? 'installed' : 'not installed in this build'}
+          </span>
+          {!status.ready && (
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+              <button disabled={busy} onClick={() => void download()}>
+                {busy ? 'Downloading...' : 'Download model'}
+              </button>
+              {busy && <button onClick={() => void window.api.parakeet.cancel()}>Cancel</button>}
+              {progress && <span style={s.hint}>{progress}</span>}
+            </div>
+          )}
+          {status.ready && (
+            <button style={{ alignSelf: 'flex-start' }} onClick={async () => setStatus(await window.api.parakeet.delete())}>
+              Delete model
+            </button>
+          )}
+          {error && <span style={{ ...s.hint, color: theme.danger }}>{error}</span>}
+        </div>
+      )}
+    </div>
+  )
+}
 
 function CogIcon({ size = 14, color = 'currentColor' }: { size?: number; color?: string }): ReactElement {
   return (
@@ -1683,6 +1776,10 @@ function ProvidersTab({
   theme: Theme
 }): ReactElement {
   const [expandedProvider, setExpandedProvider] = useState<string | null>(null)
+  const [parakeetOn, setParakeetOn] = useState(false)
+  useEffect(() => {
+    window.api.settings.load().then((st) => setParakeetOn(st.experimentalParakeet === true)).catch(() => {})
+  }, [])
 
   const toggleProvider = useCallback((id: string) => {
     if (providerChain.includes(id)) {
@@ -1706,13 +1803,15 @@ function ProvidersTab({
   }, [providerChain, setProviderChain])
 
   // Build ordered list: enabled providers first (in chain order), then disabled
+  const visibleProviders = ALL_PROVIDERS.filter((p) => p.id !== 'parakeet' || parakeetOn)
   const orderedProviders = [
-    ...providerChain.map((id) => ALL_PROVIDERS.find((p) => p.id === id)!).filter(Boolean),
-    ...ALL_PROVIDERS.filter((p) => !providerChain.includes(p.id))
+    ...providerChain.map((id) => visibleProviders.find((p) => p.id === id)!).filter(Boolean),
+    ...visibleProviders.filter((p) => !providerChain.includes(p.id))
   ]
 
   return (
     <>
+      <ExperimentalParakeetCard enabled={parakeetOn} onEnabledChange={(v) => { setParakeetOn(v); if (!v) { const c = providerChain.filter((p) => p !== 'parakeet'); setProviderChain(c.length ? c : ['openai']) } }} s={s} theme={theme} />
       <div style={s.card}>
         <SectionHeader title="Provider Chain" s={s} theme={theme} />
         <span style={s.hint}>First = primary. If it fails, the next one kicks in. Drag order with arrows.</span>

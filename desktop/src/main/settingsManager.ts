@@ -16,6 +16,7 @@ export type ProviderId =
   | 'deepgram'
   | 'assemblyai'
   | 'mistral'
+  | 'parakeet'
 
 export type AccentColor = 'graphite' | 'blue' | 'teal' | 'emerald' | 'amber'
 
@@ -172,6 +173,8 @@ export interface AppSettings {
   clipboardRestoreDelayMs: number
   outputRecordingHotkey: string
   fallbackEnabled: boolean
+  // EXPERIMENTAL (spike): enables the on-device 'parakeet' provider. Default off.
+  experimentalParakeet: boolean
   // GitHub secret-store selection (NON-SECRET metadata only). The access token
   // and the encryption key are never stored here — they live Keychain-wrapped
   // via secretVault.ts. Secrets themselves are only ever committed to the repo
@@ -336,6 +339,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   clipboardRestoreDelayMs: 700,
   outputRecordingHotkey: '',
   fallbackEnabled: false,
+  experimentalParakeet: false,
   githubUser: '',
   githubRepo: '',
   githubBranch: ''

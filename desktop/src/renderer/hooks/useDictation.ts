@@ -362,7 +362,7 @@ export function useDictation(): UseDictationReturn {
       // original: always send the webm, plus a WAV only when selfhosted is in
       // the chain. Main picks the right one per provider (main/audioFormat.ts).
       const settings2 = await window.api.settings.load()
-      const plan = planAudioFormats(settings2.providerChain)
+      const plan = planAudioFormats(settings2.providerChain, settings2.experimentalParakeet === true)
       let wavBuffer: ArrayBuffer | null = null
       if (plan.needsWav) {
         try {

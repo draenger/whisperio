@@ -38,6 +38,9 @@
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
   },
+  "optionalDependencies": {
+    "sherpa-onnx-node": "2.0.1"
+  },
   "devDependencies": {
     "@electron-toolkit/preload": "^3.0.1",
     "@electron-toolkit/utils": "^4.0.0",
