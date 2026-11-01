@@ -111,6 +111,8 @@ export interface AppSettings {
   silenceGate: boolean
   silenceGateThresholdDbfs: number
   trimSilence: boolean
+  restoreClipboard: boolean
+  clipboardRestoreDelayMs: number
   outputRecordingHotkey: string
   fallbackEnabled: boolean
   githubUser: string

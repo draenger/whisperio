@@ -92,6 +92,8 @@ const DEFAULT_SETTINGS = {
   silenceGate: false,
   silenceGateThresholdDbfs: -50,
   trimSilence: false,
+  restoreClipboard: false,
+  clipboardRestoreDelayMs: 700,
   outputRecordingHotkey: '',
   fallbackEnabled: false,
   githubUser: '',

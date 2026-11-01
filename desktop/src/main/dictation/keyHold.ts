@@ -125,7 +125,17 @@ const WIN_NAMED: Record<string, number> = {
   NUMDIV: 0x6f
 }
 
-/** Windows virtual-key code for a normalised main key, or null if unknown. */
+/**
+ * Windows virtual-key code for a normalised main key, or null if unknown.
+ *
+ * Deliberately a STATIC table, not VkKeyScanExW: Electron maps accelerator
+ * characters to virtual keys with its own fixed table (e.g. ';' -> VK_OEM_1,
+ * '-' -> VK_OEM_MINUS) and registers via RegisterHotKey with that code, so the
+ * key that triggers the hotkey is the fixed-table VK regardless of keyboard
+ * layout. Polling that same VK keeps press and release detection on one key.
+ * (A layout-aware lookup would poll a different physical key on QWERTZ/AZERTY.)
+ * VK_A..Z / VK_0..9 are the ASCII codes by definition.
+ */
 export function winVirtualKey(key: string): number | null {
   if (/^[A-Z]$/.test(key)) return key.charCodeAt(0) // 0x41..0x5A
   if (/^[0-9]$/.test(key)) return key.charCodeAt(0) // 0x30..0x39
@@ -170,9 +180,82 @@ function warnOnce(msg: string): void {
 export function _resetKeyHoldWarnings(): void {
   warned = new Set<string>()
   backendCache.clear()
+  deps = { ...defaultDeps }
+  inputMonCache = null
+  firstPollUpStreak = 0
+  macDegraded = false
+  notified = false
 }
 
 type RawKeyState = (code: number) => boolean
+
+/** IOHIDAccessType: 0 granted, 1 denied, 2 unknown (not yet asked). */
+export type InputMonitoringAccess = 0 | 1 | 2
+
+const MSG_INPUT_MONITORING =
+  "Hold-to-talk can't read the keyboard. Grant Input Monitoring to Whisperio in System Settings → Privacy & Security, or switch to toggle mode."
+
+// Overridable seams (tests inject fakes; production resolves natives lazily).
+interface Deps {
+  checkInputMonitoring: () => InputMonitoringAccess | null
+  notify: (title: string, body: string) => void
+}
+const defaultDeps: Deps = {
+  checkInputMonitoring: () => checkInputMonitoringNative(),
+  notify: () => {}
+}
+let deps: Deps = { ...defaultDeps }
+
+/** Wire the one-time user notification (hotkeyManager passes errorHandler.notifyInfo). */
+export function setKeyHoldNotifier(fn: (title: string, body: string) => void): void {
+  deps.notify = fn
+}
+/** Test helper: override native seams. Reset with _resetKeyHoldWarnings(). */
+export function _setKeyHoldDeps(over: Partial<Deps>): void {
+  deps = { ...deps, ...over }
+}
+
+let inputMonCache: { value: (() => InputMonitoringAccess) | null } | null = null
+function checkInputMonitoringNative(): InputMonitoringAccess | null {
+  if (!inputMonCache) {
+    let fn: (() => InputMonitoringAccess) | null = null
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const koffi = require('koffi')
+      const iokit = koffi.load('/System/Library/Frameworks/IOKit.framework/IOKit')
+      const IOHIDCheckAccess = iokit.func('uint32_t IOHIDCheckAccess(uint32_t requestType)')
+      const kIOHIDRequestTypeListenEvent = 1
+      fn = () => {
+        const r = IOHIDCheckAccess(kIOHIDRequestTypeListenEvent)
+        return (r === 0 || r === 1 ? r : 2) as InputMonitoringAccess
+      }
+    } catch {
+      fn = null // API unavailable (old macOS / load failure): rely on the first-poll heuristic
+    }
+    inputMonCache = { value: fn }
+  }
+  try {
+    return inputMonCache.value ? inputMonCache.value() : null
+  } catch {
+    return null
+  }
+}
+
+// macOS: CGEventSourceKeyState reads "up" for everything without Input
+// Monitoring, which would look like an instant release -> silent cancel.
+const FIRST_POLL_UP_LIMIT = 3
+let firstPollUpStreak = 0
+let macDegraded = false
+let notified = false
+function notifyInputMonitoringOnce(): void {
+  if (notified) return
+  notified = true
+  try {
+    deps.notify('Whisperio', MSG_INPUT_MONITORING)
+  } catch {
+    /* notification is best-effort */
+  }
+}
 
 // Native backend per platform, loaded once lazily. A failed load is cached as
 // null so we neither retry koffi.load on every hotkey press nor re-warn.
@@ -218,6 +301,14 @@ export function createKeyStateReader(
     loadBackend(platform)
     return null
   }
+  if (platform === 'darwin') {
+    if (macDegraded) return null
+    // 0 granted / 1 denied / 2 unknown / null no API. Only a definite "denied" short-circuits.
+    if (deps.checkInputMonitoring() === 1) {
+      notifyInputMonitoringOnce()
+      return null
+    }
+  }
   const code = platform === 'win32' ? winVirtualKey(key) : macKeyCode(key)
   if (code === null) {
     warnOnce(`Hold-to-talk: unsupported key "${key}" — using toggle mode`)
@@ -237,6 +328,12 @@ export interface WatchOptions {
   isKeyDown?: () => boolean
   /** Injectable platform (tests). */
   platform?: NodeJS.Platform
+  /**
+   * Called when hold detection is judged unreliable mid-session (macOS first-poll
+   * heuristic). The watcher stops polling but KEEPS its safety timer; the caller
+   * must continue the recording with toggle semantics (next press stops).
+   */
+  onFallback?: () => void
 }
 
 export const DEFAULT_POLL_MS = 25
@@ -261,6 +358,8 @@ export function watchKeyRelease(
   if (!isDown) return null
 
   let done = false
+  let firstPoll = true
+  const trackFirstPoll = (opts.platform ?? process.platform) === 'darwin'
   let poll: ReturnType<typeof setInterval> | null = null
   let max: ReturnType<typeof setTimeout> | null = null
 
@@ -284,6 +383,29 @@ export function watchKeyRelease(
     } catch (err) {
       console.warn('[Whisperio] Hold-to-talk key-state read failed — releasing:', err)
       down = false
+    }
+    const wasFirst = firstPoll
+    firstPoll = false
+    if (trackFirstPoll && wasFirst) {
+      if (down) {
+        firstPollUpStreak = 0
+      } else if (++firstPollUpStreak >= FIRST_POLL_UP_LIMIT) {
+        // Key read as up immediately in consecutive sessions: permission or layout
+        // problem. Stay in toggle mode (do NOT release/cancel) and tell the user once.
+        macDegraded = true
+        if (poll) clearInterval(poll)
+        poll = null // keep `max` (safety timer) running; `stop` still clears it
+        // Warn about Input Monitoring only if the OS does not say it is granted
+        // (denied / unknown / API unavailable); granted means a different cause.
+        if (deps.checkInputMonitoring() !== 0) notifyInputMonitoringOnce()
+        else console.warn('[Whisperio] Hold-to-talk: key reads up immediately although Input Monitoring is granted — using toggle mode')
+        try {
+          opts.onFallback?.()
+        } catch (err) {
+          console.warn('[Whisperio] Hold-to-talk fallback callback failed:', err)
+        }
+        return
+      }
     }
     if (!down) fire()
   }, opts.pollMs ?? DEFAULT_POLL_MS)

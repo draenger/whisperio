@@ -3,6 +3,9 @@ import { analyzeSpeech, mixToMono, clampThresholdDbfs, shouldApplySilenceGate } 
 import { trimToWav } from '../audio/silenceTrim'
 import { shouldUseTrimmed } from '../../shared/trimDecision'
 
+import { planAudioFormats } from '../audio/formatPlan'
+import { StartGuard, decideAfterGetUserMediaFailure } from '../audio/startGuard'
+
 /** Decode a recording and report whether it contains speech. Fails OPEN:
  * any decode problem returns true so the audio is sent as before. */
 async function recordingHasSpeech(buffer: ArrayBuffer, thresholdDbfs?: number): Promise<boolean> {
@@ -23,9 +26,6 @@ async function recordingHasSpeech(buffer: ArrayBuffer, thresholdDbfs?: number): 
     return true
   }
 }
-import { planAudioFormats } from '../audio/formatPlan'
-import { StartGuard, decideAfterGetUserMediaFailure } from '../audio/startGuard'
-
 /** Decode a recording and, if >= 1 s of leading/trailing silence can be cut,
  * return the trimmed audio as 16 kHz mono WAV. Returns null when nothing is
  * worth trimming. Fails OPEN: any error returns null so the original is sent. */
@@ -347,7 +347,8 @@ export function useDictation(): UseDictationReturn {
           try {
             await window.api.recordings.update(savedRecordingId, {
               status: 'completed' as const,
-              transcription: ''
+              transcription: '',
+              error: 'Silent — not transcribed'
             })
           } catch (updateErr) {
             console.error('[Whisperio] Failed to update recording:', updateErr)
@@ -356,8 +357,6 @@ export function useDictation(): UseDictationReturn {
         await window.api.dictation.sendResult('', sessionId, 'silent')
         return
       }
-
-      // Convert webm to wav for selfhosted whisper.cpp (doesn't support webm)
 
       // whisper.cpp (selfhosted) can't read webm, cloud providers want the small
       // original: always send the webm, plus a WAV only when selfhosted is in
