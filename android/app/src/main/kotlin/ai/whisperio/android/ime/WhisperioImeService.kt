@@ -273,11 +273,10 @@ class WhisperioImeService : InputMethodService(), LifecycleOwner, ViewModelStore
             notInserted.value = NotInsertedReason.HISTORY
         } else {
             // Incognito field: nothing was saved, so History cannot hold the text. Offer it on the clipboard instead.
-            notInserted.value = NotInsertedReason.DISCARDED
-            lifecycle.coroutineScope.launch {
-                val copied = runCatching { copyPlainText(this@WhisperioImeService, result.text, sensitive = true) }.isSuccess
-                notInserted.value = notInsertedReasonFor(result.recordingId, copied)
-            }
+            // Synchronous (we are on the main thread) so the panel never flashes "discarded" before "copied".
+            val copied = shouldAutoCopyIncognito(Build.VERSION.SDK_INT) &&
+                runCatching { copyPlainText(this, result.text, sensitive = true) }.isSuccess
+            notInserted.value = notInsertedReasonFor(result.recordingId, copied)
         }
         if (outcome) window.window?.decorView?.confirmHaptic()
         if (outcome && isVoiceSubtype()) switchBackAfterVoice()
@@ -371,6 +370,9 @@ internal fun commitKeyboardResult(
     acknowledge()
     return true
 }
+
+/** Below API 33 the clipboard has no "sensitive" flag, so a private-field transcript is never auto-copied there. */
+internal fun shouldAutoCopyIncognito(sdk: Int): Boolean = sdk >= 33
 
 /** History when the row was saved; otherwise the clipboard if the copy worked, else the text is gone (private field). */
 internal fun notInsertedReasonFor(recordingId: String?, copiedToClipboard: Boolean): NotInsertedReason = when {

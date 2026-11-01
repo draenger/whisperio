@@ -11,6 +11,7 @@ import ai.whisperio.android.ime.InputSession
 import ai.whisperio.android.ime.InputSessionCounter
 import ai.whisperio.android.ime.NotInsertedReason
 import ai.whisperio.android.ime.notInsertedReasonFor
+import ai.whisperio.android.ime.shouldAutoCopyIncognito
 import ai.whisperio.android.ime.cancelKeyboardRecordingIfNeeded
 import ai.whisperio.android.ime.commitKeyboardResult
 import ai.whisperio.android.ime.keyboardStartOptions
@@ -180,6 +181,11 @@ class WhisperioImeServiceTest {
         assertEquals(RecordingSource.KEYBOARD, opts!!.source)
         assertFalse(opts.saveToHistory)
         assertEquals(session(1), opts.session)
+    }
+
+    @Test fun incognitoAutoCopyOnlyFromApi33() {
+        assertFalse(shouldAutoCopyIncognito(32))
+        assertTrue(shouldAutoCopyIncognito(33))
     }
 
     @Test fun notInsertedMessageIsHonestAboutWhereTheTextWent() {

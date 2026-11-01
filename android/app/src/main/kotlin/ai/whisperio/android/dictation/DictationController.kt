@@ -78,6 +78,8 @@ data class DictationResult(
     val text: String,
     val source: RecordingSource,
     val session: Any?,
+    /** Milliseconds between the end of recording and this result (upload + cleanup); late results must not hijack the clipboard. */
+    val transcribeMs: Long = 0,
 )
 
 /**
@@ -372,6 +374,7 @@ class DictationController(
         retry: Boolean = false,
     ) {
         val persist = currentPersist
+        val transcribeStart = nowMs()
         _state.value = DictationState.Transcribing(src)
         if (persist) writeBack(row) { it.copy(status = RecordingStatus.TRANSCRIBING, durationMs = durationMs, error = null) }
         val rid = if (persist) row.id else null
@@ -397,7 +400,7 @@ class DictationController(
                 }
             }
             _state.value = DictationState.Done(text, rid, src)
-            _results.emit(DictationResult(rid, text, src, currentSessionTag))
+            _results.emit(DictationResult(rid, text, src, currentSessionTag, nowMs() - transcribeStart))
         } catch (e: CancellationException) {
             throw e
         } catch (_: UploadTooLargeException) {

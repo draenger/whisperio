@@ -24,6 +24,8 @@ import android.app.Application
 import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.os.SystemClock
 import android.util.Log
 import android.widget.Toast
@@ -76,13 +78,37 @@ internal suspend fun copyDictateResults(
     copy: suspend (text: String, sensitive: Boolean) -> Unit,
 ) {
     results.collect { r ->
-        if (r.session == DictateActivity.SESSION_TAG) runCatching { copy(r.text, sensitive()) }
+        // A result that took very long must not overwrite something the user copied meanwhile.
+        if (r.session == DictateActivity.SESSION_TAG && r.transcribeMs <= MAX_CLIPBOARD_DELAY_MS) {
+            runCatching { copy(r.text, sensitive()) }
+        }
     }
 }
 
-/** Logs and swallows anything an app-scope coroutine throws, so one failure cannot kill the process (keyboard included). */
-internal val appScopeExceptionHandler = CoroutineExceptionHandler { _, t ->
+internal const val MAX_CLIPBOARD_DELAY_MS = 2 * 60_000L
+
+/** OOM / VM errors / linkage errors: the process is not trustworthy any more, so they must not be swallowed. */
+internal fun isFatal(t: Throwable): Boolean = t is OutOfMemoryError || t is VirtualMachineError || t is LinkageError
+
+private fun rethrowOnMain(t: Throwable) {
+    Handler(Looper.getMainLooper()).post { throw t }
+}
+
+/**
+ * Logs anything an app-scope coroutine throws, so one failure cannot kill the process (keyboard included), and calls
+ * [recover] (reset dictation so a failed write cannot leave it stuck in Recording/Transcribing). Fatal errors are
+ * rethrown via [rethrowFatal] (production: on the main thread) instead of being swallowed.
+ */
+internal fun appScopeExceptionHandler(
+    recover: () -> Unit = {},
+    rethrowFatal: (Throwable) -> Unit = ::rethrowOnMain,
+) = CoroutineExceptionHandler { _, t ->
     Log.e(LOG_TAG, "Uncaught exception in appScope", t)
+    if (isFatal(t)) {
+        rethrowFatal(t)
+    } else {
+        runCatching { recover() }
+    }
 }
 
 /** Manual DI (no Hilt, CONTRACT 3). One instance on [ai.whisperio.android.WhisperioApp]. */
@@ -110,7 +136,12 @@ class AppGraph private constructor(private val appOrNull: Application?, private 
 
     /** Single-threaded so DictationController state changes are serialised; never cancelled. */
     val appScope: CoroutineScope =
-        o?.appScope ?: CoroutineScope(SupervisorJob() + Dispatchers.Default.limitedParallelism(1) + appScopeExceptionHandler)
+        o?.appScope ?: CoroutineScope(SupervisorJob() + Dispatchers.Default.limitedParallelism(1) + appScopeExceptionHandler(recover = ::resetDictation))
+
+    private fun resetDictation() {
+        // Launched on the same scope so the abort is serialised with every other state change.
+        appScope.launch { dictation.abortAll() }
+    }
 
     val recordingsDir: File by lazy { o?.recordingsDir ?: File(app.filesDir, "recordings") }
 
