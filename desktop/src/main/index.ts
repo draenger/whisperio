@@ -34,7 +34,8 @@ import {
   getHistoryEncryptionStatus,
   setHistoryEncryption,
   getEncryptionProgress,
-  resetLockedHistory
+  resetLockedHistory,
+  sweepShreddedOrphans
 } from './recordingStore'
 import { isDataVaultAvailable } from './dataVault'
 import { searchTranscripts } from './searchService'
@@ -380,6 +381,7 @@ app.whenReady().then(() => {
   // Locked-history recovery: crypto-shred + start fresh. Refuses unless history is really locked.
   ipcMain.handle('history:reset', () => resetLockedHistory())
   // Resume an interrupted audio migration (quit/crash mid-job) once at startup.
+  try { sweepShreddedOrphans() } catch { /* best-effort */ }
   void resumeAudioMigration()
   ipcMain.handle('recordings:list', () => getRecordings())
   ipcMain.handle('recordings:get', (_e, id: string) => getRecording(id))

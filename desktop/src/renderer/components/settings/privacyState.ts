@@ -177,3 +177,9 @@ export function shouldShowLockedNotice(status: { locked: boolean } | null | unde
 
 export const RESET_FAILED_MESSAGE =
   'History was not reset: it is not locked encrypted history, or the encryption key could not be destroyed. Nothing was deleted.'
+
+/** Shown after erase/reset succeeded but some files could not be deleted yet. */
+export function undeletedMessage(n: number): string | null {
+  if (!n || n < 1) return null
+  return `${n} file(s) couldn't be deleted and will be retried at next start. They are unreadable without the key.`
+}

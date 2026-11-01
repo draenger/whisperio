@@ -30,6 +30,7 @@ import {
   isEncryptedAudio,
   atomicWriteFileSync,
   renameWithRetry,
+  unlinkWithRetry,
   peekIsEncryptedAudio,
   AudioVaultError
 } from './audioVault'
@@ -450,21 +451,111 @@ export function deleteRecording(id: string): Promise<boolean> {
   })
 }
 
+const ORPHANS_FILE = 'shredded-orphans.json'
+
+function orphansPath(): string {
+  return join(getRecordingsDir(), ORPHANS_FILE)
+}
+
+/** Names (not paths) of sealed files whose key was destroyed but which could not be deleted yet. */
+function readOrphans(): string[] {
+  try {
+    const p = orphansPath()
+    if (!existsSync(p)) return []
+    const parsed = JSON.parse(readFileSync(p, 'utf-8')) as { files?: unknown }
+    return Array.isArray(parsed.files) ? parsed.files.filter((f): f is string => typeof f === 'string') : []
+  } catch {
+    return []
+  }
+}
+
+function writeOrphans(names: string[]): void {
+  try {
+    const p = orphansPath()
+    if (names.length === 0) {
+      if (existsSync(p)) unlinkSync(p)
+      return
+    }
+    writeFileSync(p, JSON.stringify({ files: names }), 'utf-8')
+  } catch { /* best-effort: the startup sweep also finds nothing to retry then, which is acceptable */ }
+}
+
+export interface ShredReport {
+  /** Files that could not be deleted after the key was destroyed (retried at next start). */
+  undeleted: number
+}
+
+/**
+ * After a SUCCESSFUL deliberate key shred: delete EVERY audio/tmp file in the recordings dir (not
+ * only indexed ones), then the index. Anything that still cannot be deleted holds data sealed under
+ * a destroyed key (garbage); it is recorded by name in shredded-orphans.json so the sealed-data
+ * probe ignores it (else minting a new key would be refused forever) and the startup sweep retries.
+ */
+function wipeAfterShred(): ShredReport {
+  const dir = getRecordingsDir()
+  const stuck: string[] = []
+  let names: string[] = []
+  try { names = readdirSync(dir) } catch { /* nothing to wipe */ }
+  for (const f of names) {
+    if (!(f.endsWith('.webm') || f.endsWith('.tmp'))) continue
+    try { unlinkWithRetry(join(dir, f)) } catch { stuck.push(f) }
+  }
+  const indexPath = getIndexPath()
+  if (existsSync(indexPath)) {
+    try {
+      unlinkWithRetry(indexPath)
+    } catch {
+      // Cannot delete the sealed index: try replacing it with an empty plain one.
+      try { writeIndexFile({ recordings: [] }, false) } catch { stuck.push('index.json') }
+    }
+  }
+  const all = Array.from(new Set([...readOrphans(), ...stuck]))
+  writeOrphans(all)
+  return { undeleted: stuck.length }
+}
+
+/**
+ * Retry deleting files left behind by an earlier shred (startup). Entries are dropped from the list
+ * once gone. index.json is only removed while it is still unopenable (never a healthy new index).
+ */
+export function sweepShreddedOrphans(): ShredReport {
+  const names = readOrphans()
+  if (names.length === 0) return { undeleted: 0 }
+  const dir = getRecordingsDir()
+  const left: string[] = []
+  for (const f of names) {
+    const p = join(dir, f)
+    try {
+      if (!existsSync(p)) continue
+      if (f === 'index.json' && !readIndexState().locked) continue
+      unlinkWithRetry(p)
+    } catch {
+      left.push(f)
+    }
+  }
+  writeOrphans(left)
+  return { undeleted: left.length }
+}
+
 /**
  * Erase all history. When history is encrypted (sealed index on disk or the flag ON) this is a
- * crypto-shred (design 4.3): (1) destroy the wrapped data key FIRST, so everything sealed is
- * unreadable even if the next steps are interrupted or the disk keeps old blocks; (2) delete the
- * audio files; (3) drop the index. A later save mints a fresh key. Plain history keeps the old path.
+ * crypto-shred (design 4.3): (1) destroy the wrapped data key FIRST (if that fails nothing is
+ * deleted and KeyShredError is thrown); (2) delete every audio file and the index, tolerating files
+ * that cannot be deleted (reported in the result, retried at startup). Erase still succeeds then:
+ * those files are unreadable without the key. A later save mints a fresh key. Plain history keeps
+ * the old path.
  */
-export function deleteAllRecordings(): Promise<void> {
-  return enqueue(() => {
+export function deleteAllRecordings(): Promise<ShredReport> {
+  return enqueue((): ShredReport => {
     const st = readIndexState()
     if (st.locked) throw new HistoryLockedError()
     const index = st.index
     const shred = st.sealedOnDisk || encryptHistoryReader()
 
-    // step 1: key first. If it cannot be destroyed nothing is deleted and the UI gets the error.
-    if (shred && !shredDataKey()) throw new KeyShredError()
+    if (shred) {
+      if (!shredDataKey()) throw new KeyShredError()
+      return wipeAfterShred()
+    }
 
     for (const entry of index.recordings) {
       if (existsSync(entry.filepath)) {
@@ -475,42 +566,31 @@ export function deleteAllRecordings(): Promise<void> {
         }
       }
     }
-
-    if (shred) {
-      try {
-        const p = getIndexPath()
-        if (existsSync(p)) unlinkSync(p)
-      } catch {
-        /* the key is gone, so a leftover sealed index is unreadable anyway; next save replaces it */
-      }
-      return
-    }
     saveIndex({ recordings: [] })
+    return { undeleted: 0 }
   })
+}
+
+export interface ResetReport extends ShredReport {
+  ok: boolean
 }
 
 /**
  * Locked-history recovery: SEALED data exists on disk (sealed index or WHSPAUD audio) but cannot be
- * opened (key lost / keychain gone). (1) crypto-shred the key; if that fails, return false and delete
- * nothing; (2) delete audio, leaked tmp files and index.json (NOT index.json.corrupt-* backups);
- * (3) encryption OFF so the next save starts a fresh plain history. Refuses (false) for a merely
- * unparsable or AV-locked PLAIN index: that is not lost-key data and must not be destroyed.
+ * opened (key lost / keychain gone). (1) crypto-shred the key; if that fails, return ok:false and
+ * delete nothing; (2) delete audio, leaked tmp files and index.json (NOT index.json.corrupt-*
+ * backups), tolerating undeletable files like erase does; (3) encryption OFF so the next save
+ * starts a fresh history. Refuses (ok:false) for a merely unparsable or AV-locked PLAIN index: that
+ * is not lost-key data and must not be destroyed.
  */
-export function resetLockedHistory(): Promise<boolean> {
-  return enqueue((): boolean => {
-    if (!readIndexState().locked) return false
-    if (!sealedDataExists()) return false
-    if (!shredDataKey()) return false // step 1: key first, abort before touching files
-    try {
-      const dir = getRecordingsDir()
-      for (const f of readdirSync(dir)) {
-        if (f.endsWith('.webm') || f.endsWith('.tmp') || f === 'index.json') {
-          try { unlinkSync(join(dir, f)) } catch { /* best-effort: the key is already gone */ }
-        }
-      }
-    } catch { /* best-effort */ }
+export function resetLockedHistory(): Promise<ResetReport> {
+  return enqueue((): ResetReport => {
+    if (!readIndexState().locked) return { ok: false, undeleted: 0 }
+    if (!sealedDataExists()) return { ok: false, undeleted: 0 }
+    if (!shredDataKey()) return { ok: false, undeleted: 0 } // key first, abort before touching files
+    const report = wipeAfterShred()
     saveSettings({ encryptHistory: false })
-    return true
+    return { ok: true, undeleted: report.undeleted }
   })
 }
 
@@ -778,7 +858,7 @@ export function sealedDataExists(): boolean {
   try {
     const dir = getRecordingsDir()
     const indexPath = join(dir, 'index.json')
-    if (existsSync(indexPath)) {
+    if (existsSync(indexPath) && !readOrphans().includes('index.json')) {
       const txt = readFileSync(indexPath, 'utf-8')
       try {
         if (looksSealed(JSON.parse(txt))) return true
@@ -786,8 +866,9 @@ export function sealedDataExists(): boolean {
         if (/"ct"\s*:/.test(txt) && /"alg"\s*:/.test(txt)) return true
       }
     }
+    const orphans = new Set(readOrphans()) // sealed under a destroyed key: garbage, never blocks a new key
     for (const f of readdirSync(dir)) {
-      if (f.endsWith('.tmp') || f === 'index.json') continue
+      if (f.endsWith('.tmp') || f === 'index.json' || f === ORPHANS_FILE || orphans.has(f)) continue
       if (peekIsEncryptedAudio(join(dir, f))) return true
     }
   } catch { /* unreadable dir: nothing provably sealed */ }

@@ -3,7 +3,7 @@ import { useTheme } from '../../ThemeContext'
 import { TitleBar } from '../common/TitleBar'
 import { TranscriptSearch } from './TranscriptSearch'
 import type { Theme } from '../../theme'
-import { LOCKED_MESSAGE, RESET_CONFIRM, RESET_FAILED_MESSAGE, shouldShowLockedNotice } from '../settings/privacyState'
+import { LOCKED_MESSAGE, RESET_CONFIRM, RESET_FAILED_MESSAGE, shouldShowLockedNotice, undeletedMessage } from '../settings/privacyState'
 
 // Group-conversation mode (multi-speaker transcription) — mirrors
 // src/main/dictation/conversation.ts's SpeakerSegment exactly. See that
@@ -202,8 +202,8 @@ export function RecordingsView(): ReactElement {
       return
     }
     try {
-      const ok = await window.api.history.resetLocked()
-      if (!ok) setActionError(RESET_FAILED_MESSAGE)
+      const res = await window.api.history.resetLocked()
+      setActionError(res.ok ? undeletedMessage(res.undeleted) : RESET_FAILED_MESSAGE)
     } catch {
       setActionError('Failed to reset history. Please try again.')
     }
@@ -275,7 +275,9 @@ export function RecordingsView(): ReactElement {
     }
     try {
       setActionError(null)
-      await window.api.recordings.deleteAll()
+      const res = await window.api.recordings.deleteAll()
+      const warn = undeletedMessage(res ? res.undeleted : 0)
+      if (warn) setActionError(warn)
       setDeleteAllConfirm(false)
       await loadRecordings()
     } catch (err) {

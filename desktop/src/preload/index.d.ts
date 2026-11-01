@@ -215,7 +215,8 @@ export interface RecordingsAPI {
   save: (audioData: ArrayBuffer, metadata: { duration: number; provider: string }) => Promise<RecordingEntry>
   update: (id: string, updates: Partial<RecordingEntry>) => Promise<RecordingEntry | null>
   delete: (id: string) => Promise<boolean>
-  deleteAll: () => Promise<void>
+  /** Resolves with the count of files that could not be deleted (retried at startup). */
+  deleteAll: () => Promise<{ undeleted: number } | void>
   deleteByDate: (date: string) => Promise<void>
   getAudio: (id: string) => Promise<Buffer | null>
   reprocess: (id: string) => Promise<RecordingEntry | null>
@@ -402,7 +403,7 @@ export interface HistoryAPI {
   /** Coarse state plus audio conversion progress (done of total files) for the Privacy panel. */
   getEncryptionStatus: () => Promise<HistoryEncryptionProgress>
   /** Locked history only: crypto-shred, delete the history files, encryption OFF. false = refused. */
-  resetLocked: () => Promise<boolean>
+  resetLocked: () => Promise<{ ok: boolean; undeleted: number }>
 }
 
 export interface HistoryEncryptionProgress {

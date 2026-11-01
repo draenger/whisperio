@@ -6,7 +6,7 @@ import { tmpdir } from 'os'
 const testDir = join(tmpdir(), `whisperio-shred-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`)
 
 // Records the order of destructive calls: key shred vs file deletion.
-const h = vi.hoisted(() => ({ calls: [] as string[], failKeyDelete: false, failIndexRename: false }))
+const h = vi.hoisted(() => ({ calls: [] as string[], failKeyDelete: false, failIndexRename: false, stuck: null as string | null }))
 
 vi.mock('electron', () => ({
   app: { getPath: vi.fn(() => testDir) },
@@ -43,6 +43,7 @@ vi.mock('fs', async (importOriginal) => {
     },
     unlinkSync: (p: string) => {
       if (h.failKeyDelete && String(p).endsWith('data-vault.key')) throw new Error('EPERM')
+      if (h.stuck && String(p).endsWith(h.stuck)) throw new Error('stuck by AV')
       if (String(p).endsWith('.webm')) h.calls.push('unlink-audio')
       if (String(p).endsWith('index.json')) h.calls.push('unlink-index')
       return real.unlinkSync(p)
@@ -58,6 +59,7 @@ import {
   getHistoryEncryptionStatus,
   setEncryptHistoryReader,
   resetLockedHistory,
+  sweepShreddedOrphans,
   KeyShredError,
   getEncryptionProgress,
   migrateAudio
@@ -91,6 +93,7 @@ describe('recordingStore - erase = crypto-shred, locked reset, progress (D3)', (
     h.calls.length = 0
     h.failKeyDelete = false
     h.failIndexRename = false
+    h.stuck = null
   })
   afterEach(() => {
     setEncryptHistoryReader(null)
@@ -124,7 +127,7 @@ describe('recordingStore - erase = crypto-shred, locked reset, progress (D3)', (
 
   it('resetLockedHistory refuses when history is readable', async () => {
     await seed()
-    expect(await resetLockedHistory()).toBe(false)
+    expect((await resetLockedHistory()).ok).toBe(false)
     expect(getRecordings()).toHaveLength(1)
   })
 
@@ -135,7 +138,7 @@ describe('recordingStore - erase = crypto-shred, locked reset, progress (D3)', (
     h.calls.length = 0
     expect(getHistoryEncryptionStatus().locked).toBe(true)
     expect(getEncryptionProgress().state).toBe('locked')
-    expect(await resetLockedHistory()).toBe(true)
+    expect((await resetLockedHistory()).ok).toBe(true)
     expect(h.calls[0]).toBe('shred-key')
     expect(audioCount()).toBe(0)
     expect(existsSync(INDEX)).toBe(false)
@@ -178,7 +181,7 @@ describe('recordingStore - erase = crypto-shred, locked reset, progress (D3)', (
     writeFileSync(keyFile, 'garbage')
     h.failKeyDelete = true
     expect(getHistoryEncryptionStatus().locked).toBe(true)
-    expect(await resetLockedHistory()).toBe(false)
+    expect((await resetLockedHistory()).ok).toBe(false)
     expect(audioCount()).toBe(1)
     expect(existsSync(INDEX)).toBe(true)
     expect(loadSettings().encryptHistory).toBe(true)
@@ -189,7 +192,7 @@ describe('recordingStore - erase = crypto-shred, locked reset, progress (D3)', (
     writeFileSync(INDEX, '{ truncated plain json')
     h.failIndexRename = true // AV keeps it from being moved aside -> status reads as locked
     expect(getHistoryEncryptionStatus().locked).toBe(true)
-    expect(await resetLockedHistory()).toBe(false)
+    expect((await resetLockedHistory()).ok).toBe(false)
     expect(audioCount()).toBe(1)
     expect(existsSync(INDEX)).toBe(true)
     expect(h.calls).not.toContain('shred-key')
@@ -201,7 +204,7 @@ describe('recordingStore - erase = crypto-shred, locked reset, progress (D3)', (
     const backup = join(RECORDINGS_DIR, 'index.json.corrupt-123')
     writeFileSync(backup, 'old')
     shredDataKey()
-    expect(await resetLockedHistory()).toBe(true)
+    expect((await resetLockedHistory()).ok).toBe(true)
     expect(existsSync(backup)).toBe(true)
     expect(existsSync(INDEX)).toBe(false)
     expect(audioCount()).toBe(0)
@@ -215,5 +218,63 @@ describe('recordingStore - erase = crypto-shred, locked reset, progress (D3)', (
     expect(['migrating', 'on']).toContain(mid.state)
     await p
     expect(getEncryptionProgress()).toEqual({ state: 'on', done: 1, total: 1 })
+  })
+
+  async function seedTwo(): Promise<string[]> {
+    await seed()
+    await new Promise((r) => setTimeout(r, 1100))
+    await seed()
+    return readdirSync(RECORDINGS_DIR).filter((f) => f.endsWith('.webm'))
+  }
+  const ORPHANS = join(RECORDINGS_DIR, 'shredded-orphans.json')
+
+  it('erase with one undeletable sealed audio succeeds with a warning; new key mints; orphan swept at startup', async () => {
+    const files = await seedTwo()
+    expect(files).toHaveLength(2)
+    await setHistoryEncryption(true)
+    await migrateAudio('encrypt')
+    h.stuck = files[0]
+    const rep = await deleteAllRecordings()
+    expect(rep).toEqual({ undeleted: 1 })
+    expect(readdirSync(RECORDINGS_DIR).filter((f) => f.endsWith('.webm'))).toEqual([files[0]])
+    expect(JSON.parse(readFileSync(ORPHANS, 'utf-8')).files).toEqual([files[0]])
+    // The orphan is sealed under the destroyed key: it must not block a new key.
+    expect(await setHistoryEncryption(true)).toEqual({ ok: true })
+    await seed()
+    expect(getRecordings()).toHaveLength(1)
+    // Still stuck at the next start: stays listed.
+    expect(sweepShreddedOrphans()).toEqual({ undeleted: 1 })
+    // Released: swept and dropped from the list.
+    h.stuck = null
+    expect(sweepShreddedOrphans()).toEqual({ undeleted: 0 })
+    expect(existsSync(join(RECORDINGS_DIR, files[0]))).toBe(false)
+    expect(existsSync(ORPHANS)).toBe(false)
+    expect(getRecordings()).toHaveLength(1) // the new history is untouched
+  })
+
+  it('erase deletes audio files that are not in the index too', async () => {
+    await seed()
+    await setHistoryEncryption(true)
+    const stray = join(RECORDINGS_DIR, 'recording-stray.webm')
+    writeFileSync(stray, 'x')
+    await deleteAllRecordings()
+    expect(existsSync(stray)).toBe(false)
+  })
+
+  it('reset with one undeletable sealed audio succeeds with a warning and encryption can be turned ON again', async () => {
+    const files = await seedTwo()
+    await setHistoryEncryption(true)
+    await migrateAudio('encrypt')
+    shredDataKey() // key lost
+    h.stuck = files[1]
+    const rep = await resetLockedHistory()
+    expect(rep).toEqual({ ok: true, undeleted: 1 })
+    expect(loadSettings().encryptHistory).toBe(false)
+    expect(await setHistoryEncryption(true)).toEqual({ ok: true })
+    await seed()
+    expect(getRecordings()).toHaveLength(1)
+    h.stuck = null
+    expect(sweepShreddedOrphans()).toEqual({ undeleted: 0 })
+    expect(existsSync(join(RECORDINGS_DIR, files[1]))).toBe(false)
   })
 })

@@ -11,6 +11,7 @@ import {
   LOCKED_MESSAGE,
   RESET_CONFIRM,
   RESET_FAILED_MESSAGE,
+  undeletedMessage,
   type EncryptionStatus,
   type EncryptionProgress,
   type ToggleDialog
@@ -106,10 +107,11 @@ export function PrivacyPanel({ s, theme }: { s: SettingsStyles; theme: Theme }):
           setGithubConnected(false)
         }
       } else if (pending.type === 'erase') {
-        await window.api.recordings.deleteAll()
+        const res = await window.api.recordings.deleteAll()
+        setMessage(undeletedMessage(res ? res.undeleted : 0))
       } else {
-        const ok = await window.api.history.resetLocked()
-        if (!ok) setMessage(RESET_FAILED_MESSAGE)
+        const res = await window.api.history.resetLocked()
+        setMessage(res.ok ? undeletedMessage(res.undeleted) : RESET_FAILED_MESSAGE)
       }
     } catch (err) {
       setMessage(err instanceof Error ? err.message : 'Something went wrong. Please try again.')
