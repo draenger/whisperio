@@ -328,20 +328,23 @@ function cancel(): void {
 
 // --- CLI control entry points (Whisperio --toggle/--start/--stop/--cancel/--send) ---
 // Thin wrappers over the same handlers the hotkeys use; no logic duplicated.
+// They pass a null accelerator so the hold-to-talk release watcher is never
+// started (nobody holds a key): CLI starts always behave as toggle.
 export async function cliToggle(): Promise<void> {
-  await activate()
+  await activateWith(null)
 }
 
 export async function cliSend(): Promise<void> {
-  await activateAndSend()
+  sendEnterOnResult = true
+  await activateWith(null)
 }
 
 export async function cliStart(): Promise<void> {
-  if (state === 'idle') await activate()
+  if (state === 'idle') await activateWith(null)
 }
 
 export async function cliStop(): Promise<void> {
-  if (state === 'recording') await activate()
+  if (state === 'recording') await activateWith(null)
   else if (state === 'command') await activateCommand()
 }
 

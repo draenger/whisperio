@@ -959,6 +959,19 @@ describe('hotkeyManager', () => {
       expect(mockWatchKeyRelease).not.toHaveBeenCalled()
     })
 
+    it('CLI start in hold mode behaves as toggle (no release watcher, not cancelled as a tap)', async () => {
+      mockWatchKeyRelease.mockReset()
+      mockWatchKeyRelease.mockReturnValue(cancelWatch)
+      await mod.cliStart()
+      expect(mod.getState()).toBe('recording')
+      expect(mockWatchKeyRelease).not.toHaveBeenCalled()
+      vi.advanceTimersByTime(1000)
+      expect(mod.getState()).toBe('recording')
+      await mod.cliStop()
+      expect(mod.getState()).toBe('transcribing')
+      expect(mockWatchKeyRelease).not.toHaveBeenCalled()
+    })
+
     it('applies hold to the dictate-and-send hotkey', async () => {
       mockSettings.dictateAndSendHotkey = 'Ctrl+Alt+S'
       mod.registerHotkey()
