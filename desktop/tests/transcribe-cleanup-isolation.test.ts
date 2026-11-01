@@ -35,7 +35,13 @@ vi.mock('../src/main/llm/provider', async (importOriginal) => {
   return { ...actual, selectProvider: (...a: unknown[]) => mockSelect(...a) }
 })
 
-function createMockNetRequest(statusCode: number, body: string) {
+// `macrotask` fires the response callbacks from setImmediate/setTimeout (like a
+// native Electron net callback, outside any async context) instead of a microtask.
+function createMockNetRequest(statusCode: number, body: string, macrotask = false) {
+  const later = (fn: () => void): void => {
+    if (macrotask) setImmediate(fn)
+    else queueMicrotask(fn)
+  }
   const reqL: Record<string, ((...a: unknown[]) => void)[]> = {}
   const resL: Record<string, ((...a: unknown[]) => void)[]> = {}
   const response = {
@@ -49,9 +55,9 @@ function createMockNetRequest(statusCode: number, body: string) {
     write: vi.fn(),
     abort: vi.fn(),
     end: vi.fn(() => {
-      queueMicrotask(() => {
+      later(() => {
         for (const h of reqL['response'] || []) h(response)
-        queueMicrotask(() => {
+        later(() => {
           for (const h of resL['data'] || []) h(Buffer.from(body))
           for (const h of resL['end'] || []) h()
         })
@@ -184,12 +190,32 @@ describe('error notifications', () => {
     expect(String(mockNotifyError.mock.calls[0][1])).toMatch(/2 providers failed/)
   })
 
-  it('notifies once from the final error when the failure bypasses handleTranscriptionError', async () => {
+  it('no key configured: exactly one toast with the friendly key message', async () => {
     mockLoadSettings.mockReturnValue({ providerChain: ['openai'], transcriptionPrompt: '', customVocabulary: '' })
-    // No key configured: openai throws a "No OpenAI API key configured" error
+    // No key: openai throws before any request is made.
+    await expect(transcribeAudio(Buffer.from('a'), 't.webm')).rejects.toThrow(/No OpenAI API key/)
+    expect(mockNetRequest).not.toHaveBeenCalled()
+    expect(mockNotifyError).toHaveBeenCalledTimes(1)
+    expect(String(mockNotifyError.mock.calls[0][1])).toMatch(/Invalid API key/)
+  })
+
+  it('provider callbacks fired from macrotasks (outside any async context): zero toasts when fallback succeeds', async () => {
+    mockLoadSettings.mockReturnValue({ ...baseSettings, cleanupAuto: false })
+    mockNetRequest
+      .mockReturnValueOnce(createMockNetRequest(500, '{}', true))
+      .mockReturnValueOnce(createMockNetRequest(200, JSON.stringify({ text: 'ok' }), true))
+
+    expect(await transcribeAudio(Buffer.from('a'), 't.webm')).toBe('ok')
+    expect(mockNotifyError).not.toHaveBeenCalled()
+  })
+
+  it('provider callbacks fired from macrotasks: exactly one toast when all fail', async () => {
+    mockLoadSettings.mockReturnValue({ ...baseSettings, cleanupAuto: false })
+    mockNetRequest.mockImplementation(() => createMockNetRequest(500, '{}', true))
+
     await expect(transcribeAudio(Buffer.from('a'), 't.webm')).rejects.toThrow()
     expect(mockNotifyError).toHaveBeenCalledTimes(1)
-    expect(String(mockNotifyError.mock.calls[0][1])).toMatch(/Invalid API key|Settings/i)
+    expect(String(mockNotifyError.mock.calls[0][1])).toMatch(/2 providers failed/)
   })
 
   it('concurrent chains do not mix errors', async () => {
