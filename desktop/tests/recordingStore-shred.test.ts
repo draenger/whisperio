@@ -284,7 +284,7 @@ describe('recordingStore - erase = crypto-shred, locked reset, progress (D3)', (
     for (const ok of ['recording-1.webm', 'recording-1.webm.tmp', 'x.tmp', 'index.json']) {
       expect(isValidOrphanName(ok)).toBe(true)
     }
-    const bad = ['../x.webm', '..\\x.webm', 'a/b.webm', 'a\\b.webm', '/etc/passwd.webm', 'C:\\x.webm', '..', '', 'notes.txt', 'index.json.corrupt-1', 'data-vault.key', 42, null]
+    const bad = ['../x.webm', '..\\x.webm', 'a/b.webm', 'a\\b.webm', '/etc/passwd.webm', 'C:\\x.webm', 'C:x.webm', 'rec.webm:stream.webm', '..', '', 'notes.txt', 'index.json.corrupt-1', 'data-vault.key', 42, null]
     for (const b of bad) expect(isValidOrphanName(b)).toBe(false)
   })
 

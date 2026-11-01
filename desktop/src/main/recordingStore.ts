@@ -468,6 +468,7 @@ export function isValidOrphanName(f: unknown): f is string {
   if (typeof f !== 'string' || f.length === 0) return false
   if (f.includes('/') || f.includes('\\') || f.includes('\0') || f.includes('..')) return false
   if (isAbsolute(f) || basename(f) !== f) return false
+  if (f.includes(':')) return false // Windows drive-relative names / NTFS alternate data streams
   return f === 'index.json' || f.endsWith('.webm') || f.endsWith('.tmp')
 }
 
