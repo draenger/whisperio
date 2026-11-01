@@ -526,6 +526,7 @@ export function SettingsForm(): ReactElement {
   // it lived inside the .then()). See the retry screen below the loading guard.
   const [loadError, setLoadError] = useState(false)
   const [saved, setSaved] = useState(false)
+  const [saveError, setSaveError] = useState(false)
   const [appVersion, setAppVersion] = useState('')
   const updater = useUpdater()
 
@@ -741,7 +742,9 @@ export function SettingsForm(): ReactElement {
       toneMap,
       windowTitlePermissionEnabled
     }
-    await window.api.settings.save(
+    // Main refuses to write while settings.json is locked/unreadable: surface it
+    // (inline footer error) instead of an unhandled rejection + false "Saved".
+    const ok = await window.api.settings.save(
       // `aiProvider` widens ahead of preload's AppSettings type: preload's
       // `aiProvider` is still 'openai'|'anthropic'|'local' while both
       // settingsManager.ts's AiProvider and CleanupPanel's UI-facing
@@ -751,7 +754,9 @@ export function SettingsForm(): ReactElement {
       // be dropped once preload's AppSettings.aiProvider catches up (out of
       // scope for this package: preload/index.d.ts isn't in its file list).
       payload as unknown as Parameters<Window['api']['settings']['save']>[0]
-    )
+    ).then(() => true, () => false)
+    setSaveError(!ok)
+    if (!ok) return
     setSaved(true)
     // Saved pulse duration per docs/design/wz-shell-excerpts.jsx's auto-save
     // affordance contract (1400ms) — the footer flips back to the resting
@@ -1038,14 +1043,14 @@ export function SettingsForm(): ReactElement {
                   display: 'flex',
                   alignItems: 'center',
                   gap: '8px',
-                  color: saved ? theme.success : theme.accent,
+                  color: saveError ? theme.danger : saved ? theme.success : theme.accent,
                   transition: 'color 0.2s'
                 }}>
                   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M20 6L9 17l-5-5" />
                   </svg>
                   <span style={{ fontSize: '12.5px', fontWeight: 600 }}>
-                    {saved ? 'Saved' : 'Changes save automatically'}
+                    {saveError ? 'Settings file is locked — changes not saved, try again' : saved ? 'Saved' : 'Changes save automatically'}
                   </span>
                 </div>
               </div>
