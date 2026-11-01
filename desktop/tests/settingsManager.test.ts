@@ -67,7 +67,8 @@ const DEFAULT_SETTINGS = {
   aiModel: '',
   anthropicApiKey: '',
   launchAtStartup: true,
-  allowUrlControl: true,
+  allowUrlControl: false,
+  allowUrlStart: false,
   checkForUpdates: true,
   dictationHotkey: '',
   dictateAndSendHotkey: '',
@@ -488,15 +489,19 @@ describe('settingsManager', () => {
   })
 })
 
-describe('allowUrlControl default', () => {
-  it('defaults to true when absent from the file', () => {
+describe('allowUrlControl / allowUrlStart defaults (fail closed)', () => {
+  it('both default to false when absent from the file', () => {
     mockExistsSync.mockReturnValue(true)
     mockReadFileSync.mockReturnValue(JSON.stringify({ openaiApiKey: 'sk-x' }))
-    expect(loadSettings().allowUrlControl).toBe(true)
+    const r = loadSettings()
+    expect(r.allowUrlControl).toBe(false)
+    expect(r.allowUrlStart).toBe(false)
   })
-  it('keeps an explicit false', () => {
+  it('keeps an explicit true', () => {
     mockExistsSync.mockReturnValue(true)
-    mockReadFileSync.mockReturnValue(JSON.stringify({ allowUrlControl: false }))
-    expect(loadSettings().allowUrlControl).toBe(false)
+    mockReadFileSync.mockReturnValue(JSON.stringify({ allowUrlControl: true, allowUrlStart: true }))
+    const r = loadSettings()
+    expect(r.allowUrlControl).toBe(true)
+    expect(r.allowUrlStart).toBe(true)
   })
 })

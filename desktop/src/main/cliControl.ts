@@ -45,16 +45,27 @@ export interface ControlCommand {
   viaUrl: boolean
 }
 
-/** First recognized flag or whisperio:// link wins. Exact (case-insensitive)
- *  flag match only, so Chromium switches such as `--enable-features=x` and
- *  paths are ignored. */
+/** Any argv entry that looks like a whisperio: link. */
+export function hasUrlArg(argv: readonly string[]): boolean {
+  return argv.some((a) => typeof a === 'string' && a.trim().toLowerCase().startsWith('whisperio:'))
+}
+
+/** If ANY entry is a whisperio: link the whole call is URL-originated: flags are
+ *  never honoured, exactly one link is allowed and it must be the LAST entry
+ *  (that is where the OS appends it). Otherwise the first CLI flag wins. Exact
+ *  (case-insensitive) flag match only, so Chromium switches such as
+ *  `--enable-features=x` and paths are ignored. */
 export function parseControlArgv(argv: readonly string[]): ControlCommand | null {
+  if (hasUrlArg(argv)) {
+    const urls = argv.filter((a) => typeof a === 'string' && a.trim().toLowerCase().startsWith('whisperio:'))
+    if (urls.length !== 1 || argv[argv.length - 1] !== urls[0]) return null
+    const cmd = parseUrlCommand(urls[0])
+    return cmd ? { cmd, viaUrl: true } : null
+  }
   for (const arg of argv) {
     if (typeof arg !== 'string') continue
     const key = arg.trim().toLowerCase()
     if (Object.prototype.hasOwnProperty.call(FLAGS, key)) return { cmd: FLAGS[key], viaUrl: false }
-    const urlCmd = parseUrlCommand(arg)
-    if (urlCmd) return { cmd: urlCmd, viaUrl: true }
   }
   return null
 }
@@ -81,12 +92,55 @@ export function dispatchCliCommand(cmd: CliCommand, api: CliControlApi): void {
   }
 }
 
+/** Only stop/cancel are allowed by URL unless allowUrlStart; `send` never. */
+export function isUrlCommandAllowed(cmd: CliCommand, allowStart: boolean): boolean {
+  if (cmd === 'stop' || cmd === 'cancel') return true
+  if (cmd === 'send') return false
+  return allowStart // toggle / start can begin recording
+}
+
+/** Protocol is registered only when URL control is on AND (packaged OR explicit dev opt-in). */
+export function shouldRegisterProtocol(o: { isPackaged: boolean; devEnv?: string; allowUrlControl: boolean }): boolean {
+  return o.allowUrlControl === true && (o.isPackaged || o.devEnv === '1')
+}
+
+export const URL_RATE_LIMIT_MS = 1000
+
+export interface UrlGateDeps {
+  /** cached settings.allowUrlControl (fail closed: only true allows) */
+  isAllowed(): boolean
+  /** cached settings.allowUrlStart */
+  isStartAllowed(): boolean
+  /** screen locked (powerMonitor) */
+  isLocked(): boolean
+  now?(): number
+  api: CliControlApi
+  log?(msg: string): void
+}
+
+/** Single choke point for every URL-originated command (argv and open-url).
+ *  Logs only the command name. Returns true if dispatched. */
+export function createUrlDispatcher(deps: UrlGateDeps) {
+  let last = -Infinity
+  const now = deps.now ?? Date.now
+  return (cmd: CliCommand): boolean => {
+    if (deps.isAllowed() !== true) { deps.log?.(`URL command "${cmd}" ignored (URL control disabled)`); return false }
+    if (!isUrlCommandAllowed(cmd, deps.isStartAllowed() === true)) { deps.log?.(`URL command "${cmd}" not permitted via URL`); return false }
+    const startClass = cmd === 'toggle' || cmd === 'start'
+    if (startClass && deps.isLocked()) { deps.log?.(`URL command "${cmd}" ignored (screen locked)`); return false }
+    const t = now()
+    const safe = cmd === 'stop' || cmd === 'cancel'
+    if (!safe && t - last < URL_RATE_LIMIT_MS) { deps.log?.(`URL command "${cmd}" rate-limited`); return false }
+    if (!safe) last = t
+    dispatchCliCommand(cmd, deps.api)
+    return true
+  }
+}
+
 export interface OpenUrlDeps {
   /** false before app 'ready' = cold start via URL: ignored (never auto-record on launch) */
   isReady(): boolean
-  /** settings.allowUrlControl */
-  isAllowed(): boolean
-  api: CliControlApi
+  dispatch(cmd: CliCommand): unknown
   log?(msg: string): void
 }
 
@@ -97,7 +151,6 @@ export function createOpenUrlHandler(deps: OpenUrlDeps) {
     const cmd = parseUrlCommand(url)
     if (!cmd) return
     if (!deps.isReady()) { deps.log?.(`URL command "${cmd}" ignored on cold start`); return }
-    if (!deps.isAllowed()) { deps.log?.(`URL command "${cmd}" ignored (URL control disabled)`); return }
-    dispatchCliCommand(cmd, deps.api)
+    deps.dispatch(cmd)
   }
 }

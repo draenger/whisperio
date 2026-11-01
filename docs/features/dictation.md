@@ -80,23 +80,28 @@ the command is ignored (logged) - it never begins recording on launch.
 
 ### whisperio:// links
 
-The same five commands work as URLs, for tools with an "open URL" action:
-`whisperio://toggle`, `whisperio://start`, `whisperio://stop`, `whisperio://cancel`,
-`whisperio://send`.
+Off by default. Enable in Settings > General > "Allow control via whisperio:// links"
+(`allowUrlControl`). Security note: any website or app can open a `whisperio://` link, so the
+feature is opt-in and deliberately narrow.
 
-- Raycast / Alfred: "Open URL" -> `whisperio://toggle`. Shortcuts (macOS/iOS-less desktop):
-  "Open URLs" action with `whisperio://toggle`. Stream Deck: "Website" action (open in default app).
-- Windows/Linux: the link reaches the running instance through second-instance argv;
-  macOS: `app.on('open-url')`. Both go through the strict parser in `cliControl.ts`.
+- By URL only `whisperio://stop` and `whisperio://cancel` work. `whisperio://toggle` and
+  `whisperio://start` (they begin recording) additionally need "Also allow links to start
+  recording" (`allowUrlStart`, default off). `whisperio://send` is never accepted by URL
+  (use the `--send` CLI flag).
+- Start-type links are rate-limited (ignored within 1 s of the previous one) and ignored while the
+  screen is locked. stop/cancel always pass.
+- Use from Raycast / Alfred ("Open URL"), Shortcuts ("Open URLs"), Stream Deck ("Website").
+- Windows/Linux: the link reaches the running instance through second-instance argv; if any
+  argv entry is a `whisperio:` link the whole call is treated as a URL: it must be the single,
+  last entry, and CLI flags next to it are ignored. macOS: `app.on('open-url')`.
 - Strict parsing: scheme and command are case-insensitive, one trailing `/` and any
   `?query` / `#fragment` are ignored (no parameters are read). Any other host, extra path,
   or scheme is rejected silently. Only the command name is logged, never the URL.
 - Cold start: same rule as the CLI - a link that launches a not-running Whisperio just starts
   the app and the command is ignored (never records on launch).
-- Opt out: Settings > General > "Allow control via whisperio:// links" (`allowUrlControl`,
-  default on). When off, links are ignored; CLI flags are unaffected.
-- The scheme is registered at startup (`setAsDefaultProtocolClient`) and by the installer
-  (`protocols` in `.devops/electron-builder.yml`). In dev the registration points at electron + the app path.
+- The scheme is registered with the OS only when URL control is on and the app is packaged
+  (dev builds never touch the registry unless `WHISPERIO_DEV_PROTOCOL=1`); turning the setting
+  off unregisters it. The installer also declares it (`protocols` in `.devops/electron-builder.yml`).
 
 ## Entry points (file:line)
 

@@ -84,7 +84,10 @@ describe('dispatchCliCommand robustness', () => {
   })
 })
 
-import { parseUrlCommand, parseControlArgv, createOpenUrlHandler } from '../src/main/cliControl'
+import {
+  parseUrlCommand, parseControlArgv, hasUrlArg, createOpenUrlHandler, createUrlDispatcher,
+  isUrlCommandAllowed, shouldRegisterProtocol
+} from '../src/main/cliControl'
 
 describe('whisperio:// URL parsing', () => {
   it.each([
@@ -103,52 +106,146 @@ describe('whisperio:// URL parsing', () => {
     'whisperio://evil', 'whisperio://', 'whisperio:///toggle', 'http://toggle', 'javascript:toggle',
     'whisperio://toggle/extra', 'whisperio://toggle:80', 'whisperio://user@toggle', 'whisperio://constructor',
     'whisperio://toggle%20', 'whisperio:toggle', 'xwhisperio://toggle', 'whisperio://toggle\nx'
-  ])('rejects %s', (u) => {
+  ])('rejects %j', (u) => {
     expect(parseUrlCommand(u)).toBeNull()
   })
   it('rejects non-strings', () => {
     expect(parseUrlCommand(undefined)).toBeNull()
     expect(parseUrlCommand(42)).toBeNull()
   })
-  it('parseCliCommand accepts a URL argv entry and flags still work', () => {
-    expect(parseCliCommand(['C:\W.exe', 'whisperio://toggle/'])).toBe('toggle')
-    expect(parseCliCommand(['x', 'whisperio://evil', '--stop'])).toBe('stop')
-    expect(parseCliCommand(['x', 'whisperio://evil'])).toBeNull()
-  })
-  it('parseControlArgv marks the source', () => {
+})
+
+describe('parseControlArgv URL-origin hardening', () => {
+  it('URL as last entry is accepted and marked viaUrl', () => {
+    expect(parseCliCommand(['C:\\W.exe', 'whisperio://toggle/'])).toBe('toggle')
     expect(parseControlArgv(['x', 'whisperio://start'])).toEqual({ cmd: 'start', viaUrl: true })
     expect(parseControlArgv(['x', '--start'])).toEqual({ cmd: 'start', viaUrl: false })
+  })
+  it('any whisperio: entry makes the call URL-originated: flags are never honoured', () => {
+    expect(parseControlArgv(['x', '--send', 'whisperio://stop'])).toEqual({ cmd: 'stop', viaUrl: true })
+    expect(parseControlArgv(['x', '--stop', 'whisperio://evil'])).toBeNull()
+    expect(parseCliCommand(['x', 'whisperio://evil', '--stop'])).toBeNull()
+    expect(parseCliCommand(['x', 'whisperio://evil'])).toBeNull()
+  })
+  it('URL not in last position is rejected', () => {
+    expect(parseControlArgv(['x', 'whisperio://stop', '--foo'])).toBeNull()
+  })
+  it('more than one URL entry is rejected', () => {
+    expect(parseControlArgv(['x', 'whisperio://stop', 'whisperio://cancel'])).toBeNull()
+    expect(parseControlArgv(['x', 'whisperio://stop', 'whisperio://stop'])).toBeNull()
+  })
+  it('hasUrlArg detects any whisperio: entry', () => {
+    expect(hasUrlArg(['x', 'WHISPERIO:foo'])).toBe(true)
+    expect(hasUrlArg(['x', '--stop'])).toBe(false)
+  })
+})
+
+describe('URL command policy', () => {
+  it('stop/cancel always; toggle/start need allowStart; send never', () => {
+    expect(isUrlCommandAllowed('stop', false)).toBe(true)
+    expect(isUrlCommandAllowed('cancel', false)).toBe(true)
+    expect(isUrlCommandAllowed('toggle', false)).toBe(false)
+    expect(isUrlCommandAllowed('start', false)).toBe(false)
+    expect(isUrlCommandAllowed('toggle', true)).toBe(true)
+    expect(isUrlCommandAllowed('start', true)).toBe(true)
+    expect(isUrlCommandAllowed('send', true)).toBe(false)
+  })
+  it('protocol registered only when allowed and (packaged or dev env)', () => {
+    expect(shouldRegisterProtocol({ isPackaged: true, allowUrlControl: true })).toBe(true)
+    expect(shouldRegisterProtocol({ isPackaged: true, allowUrlControl: false })).toBe(false)
+    expect(shouldRegisterProtocol({ isPackaged: false, allowUrlControl: true })).toBe(false)
+    expect(shouldRegisterProtocol({ isPackaged: false, devEnv: '1', allowUrlControl: true })).toBe(true)
+    expect(shouldRegisterProtocol({ isPackaged: false, devEnv: 'yes', allowUrlControl: true })).toBe(false)
+  })
+})
+
+describe('createUrlDispatcher', () => {
+  const mk = (o: { allow?: boolean; start?: boolean; locked?: boolean } = {}) => {
+    const api = { toggle: vi.fn(), start: vi.fn(), stop: vi.fn(), cancel: vi.fn(), send: vi.fn() }
+    const log = vi.fn()
+    let t = 10_000
+    const d = createUrlDispatcher({
+      isAllowed: () => o.allow ?? true, isStartAllowed: () => o.start ?? true,
+      isLocked: () => o.locked ?? false, now: () => t, api, log
+    })
+    return { api, log, d, tick: (ms: number) => { t += ms } }
+  }
+  const total = (api: Record<string, ReturnType<typeof vi.fn>>) => Object.values(api).reduce((n, f) => n + f.mock.calls.length, 0)
+
+  it('allowUrlControl off ignores everything, including stop', () => {
+    const { api, d, log } = mk({ allow: false })
+    for (const c of ['stop', 'cancel', 'toggle', 'start', 'send'] as const) expect(d(c)).toBe(false)
+    expect(total(api)).toBe(0)
+    expect(log.mock.calls.every((c) => !String(c[0]).includes('://'))).toBe(true)
+  })
+  it('send is never dispatched, even with every flag on', () => {
+    const { api, d } = mk()
+    expect(d('send')).toBe(false)
+    expect(api.send).not.toHaveBeenCalled()
+  })
+  it('toggle/start blocked unless allowUrlStart; stop/cancel pass', () => {
+    const { api, d } = mk({ start: false })
+    expect(d('toggle')).toBe(false)
+    expect(d('start')).toBe(false)
+    expect(d('stop')).toBe(true)
+    expect(d('cancel')).toBe(true)
+    expect(api.stop).toHaveBeenCalledTimes(1)
+    expect(api.cancel).toHaveBeenCalledTimes(1)
+    expect(total(api)).toBe(2)
+  })
+  it('start-class ignored while screen locked, stop/cancel still pass', () => {
+    const { api, d } = mk({ locked: true })
+    expect(d('start')).toBe(false)
+    expect(d('toggle')).toBe(false)
+    expect(d('stop')).toBe(true)
+    expect(api.start).not.toHaveBeenCalled()
+  })
+  it('rate-limits start-class within 1s; stop/cancel always pass; resumes after 1s', () => {
+    const { api, d, tick } = mk()
+    expect(d('toggle')).toBe(true)
+    tick(500)
+    expect(d('toggle')).toBe(false)
+    expect(d('stop')).toBe(true)
+    expect(d('stop')).toBe(true)
+    expect(d('cancel')).toBe(true)
+    tick(600)
+    expect(d('start')).toBe(true)
+    expect(api.toggle).toHaveBeenCalledTimes(1)
+    expect(api.start).toHaveBeenCalledTimes(1)
   })
 })
 
 describe('createOpenUrlHandler (macOS open-url)', () => {
-  const mk = (ready: boolean, allowed: boolean) => {
-    const api = { toggle: vi.fn(), start: vi.fn(), stop: vi.fn(), cancel: vi.fn(), send: vi.fn() }
-    const log = vi.fn()
-    const h = createOpenUrlHandler({ isReady: () => ready, isAllowed: () => allowed, api, log })
-    const ev = { preventDefault: vi.fn() }
-    return { api, log, h, ev }
+  const mk = (ready: boolean) => {
+    const dispatch = vi.fn()
+    const h = createOpenUrlHandler({ isReady: () => ready, dispatch })
+    return { dispatch, h, ev: { preventDefault: vi.fn() } }
   }
-  it('dispatches when ready and allowed', () => {
-    const { api, h, ev } = mk(true, true)
+  it('dispatches a valid URL when ready', () => {
+    const { dispatch, h, ev } = mk(true)
     h(ev, 'whisperio://toggle?x=1')
-    expect(api.toggle).toHaveBeenCalledTimes(1)
+    expect(dispatch).toHaveBeenCalledWith('toggle')
     expect(ev.preventDefault).toHaveBeenCalled()
   })
-  it('ignores when the flag is off', () => {
-    const { api, h, ev, log } = mk(true, false)
-    h(ev, 'whisperio://toggle')
-    expect(Object.values(api).every((f) => f.mock.calls.length === 0)).toBe(true)
-    expect(log.mock.calls[0][0]).not.toContain('whisperio://')
-  })
   it('ignores a cold-start URL (before ready)', () => {
-    const { api, h, ev } = mk(false, true)
-    h(ev, 'whisperio://start')
-    expect(api.start).not.toHaveBeenCalled()
+    const { dispatch, h, ev } = mk(false)
+    h(ev, 'whisperio://stop')
+    expect(dispatch).not.toHaveBeenCalled()
   })
   it('ignores invalid URLs', () => {
-    const { api, h, ev } = mk(true, true)
+    const { dispatch, h, ev } = mk(true)
     h(ev, 'whisperio://evil'); h(ev, 'http://toggle')
-    expect(Object.values(api).every((f) => f.mock.calls.length === 0)).toBe(true)
+    expect(dispatch).not.toHaveBeenCalled()
+  })
+  it('end to end with the gate: flag off blocks, on allows stop', () => {
+    const api = { toggle: vi.fn(), start: vi.fn(), stop: vi.fn(), cancel: vi.fn(), send: vi.fn() }
+    let allow = false
+    const d = createUrlDispatcher({ isAllowed: () => allow, isStartAllowed: () => false, isLocked: () => false, api })
+    const h = createOpenUrlHandler({ isReady: () => true, dispatch: d })
+    h({ preventDefault() {} }, 'whisperio://stop')
+    expect(api.stop).not.toHaveBeenCalled()
+    allow = true
+    h({ preventDefault() {} }, 'whisperio://stop')
+    expect(api.stop).toHaveBeenCalledTimes(1)
   })
 })

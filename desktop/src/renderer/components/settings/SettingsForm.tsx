@@ -546,7 +546,8 @@ export function SettingsForm(): ReactElement {
   // General
   const [launchAtStartup, setLaunchAtStartup] = useState(true)
   const [checkForUpdates, setCheckForUpdates] = useState(true)
-  const [allowUrlControl, setAllowUrlControl] = useState(true)
+  const [allowUrlControl, setAllowUrlControl] = useState(false)
+  const [allowUrlStart, setAllowUrlStart] = useState(false)
 
   // Providers
   const [sttProvider, setSttProvider] = useState('openai')
@@ -633,7 +634,8 @@ export function SettingsForm(): ReactElement {
       setRemovedDefaultVocabulary(settings.removedDefaultVocabulary ?? [])
       setAiPostProcessing(settings.aiPostProcessing ?? false)
       setLaunchAtStartup(settings.launchAtStartup ?? true)
-      setAllowUrlControl(settings.allowUrlControl ?? true)
+      setAllowUrlControl(settings.allowUrlControl === true)
+      setAllowUrlStart(settings.allowUrlStart === true)
       setCheckForUpdates(settings.checkForUpdates ?? true)
       setDictationHotkey(settings.dictationHotkey ?? '')
       setDictateAndSendHotkey(settings.dictateAndSendHotkey ?? '')
@@ -723,6 +725,7 @@ export function SettingsForm(): ReactElement {
       aiPostProcessing,
       launchAtStartup,
       allowUrlControl,
+      allowUrlStart,
       checkForUpdates,
       dictationHotkey,
       dictateAndSendHotkey,
@@ -764,7 +767,7 @@ export function SettingsForm(): ReactElement {
     providerChain, apiKey, openaiBaseUrl, whisperModel, elevenlabsApiKey, replicateApiKey, sttReplicateModel,
     groqApiKey, deepgramApiKey, assemblyaiApiKey, mistralApiKey,
     sttApiKey, transcriptionLanguage, prompt,
-    vocabulary, removedDefaultVocabulary, aiPostProcessing, launchAtStartup, allowUrlControl, checkForUpdates, dictationHotkey,
+    vocabulary, removedDefaultVocabulary, aiPostProcessing, launchAtStartup, allowUrlControl, allowUrlStart, checkForUpdates, dictationHotkey,
     dictateAndSendHotkey, commandHotkey, inputDeviceId, outputDeviceId, saveRecordings,
     outputRecordingHotkey, cleanupEnabled, cleanupMode, cleanupAuto, cleanupTemplates,
     aiProvider, aiBaseUrl, aiModel, anthropicApiKey,
@@ -924,6 +927,8 @@ export function SettingsForm(): ReactElement {
                       setCheckForUpdates={setCheckForUpdates}
                       allowUrlControl={allowUrlControl}
                       setAllowUrlControl={setAllowUrlControl}
+                      allowUrlStart={allowUrlStart}
+                      setAllowUrlStart={setAllowUrlStart}
                       s={s}
                       theme={theme}
                     />
@@ -1133,6 +1138,8 @@ function GeneralTab({
   setCheckForUpdates,
   allowUrlControl,
   setAllowUrlControl,
+  allowUrlStart,
+  setAllowUrlStart,
   s,
   theme
 }: {
@@ -1142,6 +1149,8 @@ function GeneralTab({
   setCheckForUpdates: (v: boolean) => void
   allowUrlControl: boolean
   setAllowUrlControl: (v: boolean) => void
+  allowUrlStart: boolean
+  setAllowUrlStart: (v: boolean) => void
   s: ReturnType<typeof makeStyles>
   theme: Theme
 }): ReactElement {
@@ -1169,11 +1178,20 @@ function GeneralTab({
         />
         <ToggleRow
           label="Allow control via whisperio:// links"
-          description="Let Raycast, Alfred, Shortcuts or Stream Deck start/stop dictation by opening whisperio://toggle (also start, stop, cancel, send)"
+          description="Warning: any website or app can open these links. When on, whisperio://stop and whisperio://cancel work from Raycast, Alfred, Shortcuts or Stream Deck. Off by default."
           checked={allowUrlControl}
           onChange={setAllowUrlControl}
           theme={theme}
         />
+        {allowUrlControl && (
+          <ToggleRow
+            label="Also allow links to start recording"
+            description="Lets whisperio://start and whisperio://toggle begin recording (microphone) without you touching the app. Ignored while the screen is locked. whisperio://send is never allowed."
+            checked={allowUrlStart}
+            onChange={setAllowUrlStart}
+            theme={theme}
+          />
+        )}
       </div>
 
       <div style={s.card}>

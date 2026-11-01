@@ -128,8 +128,10 @@ export interface AppSettings {
   aiModel: string
   anthropicApiKey: string
   launchAtStartup: boolean
-  // Allow whisperio://toggle|start|stop|cancel|send links to drive dictation (default on).
+  // Allow whisperio://toggle|start|stop|cancel|send links to drive dictation (default OFF, fail closed).
   allowUrlControl: boolean
+  // By URL, toggle/start (begin recording) additionally need this. `send` is never allowed by URL.
+  allowUrlStart: boolean
   // Periodic GitHub release check (privacy policy section 6). Off => no network request to GitHub.
   checkForUpdates: boolean
   dictationHotkey: string
@@ -298,7 +300,8 @@ const DEFAULT_SETTINGS: AppSettings = {
   aiModel: '',
   anthropicApiKey: '',
   launchAtStartup: true,
-  allowUrlControl: true,
+  allowUrlControl: false,
+  allowUrlStart: false,
   checkForUpdates: true,
   dictationHotkey: '',
   dictateAndSendHotkey: '',

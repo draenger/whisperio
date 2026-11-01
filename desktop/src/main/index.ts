@@ -1,7 +1,7 @@
-import { app, BrowserWindow, desktopCapturer, ipcMain, session, shell } from 'electron'
+import { app, BrowserWindow, desktopCapturer, ipcMain, powerMonitor, session, shell } from 'electron'
 import path from 'path'
 import { initDictation, cleanupDictation, reRegisterHotkeys, pauseHotkeys, resumeHotkeys, cliToggle, cliSend, cliStart, cliStop, cliCancel } from './dictation'
-import { parseControlArgv, createOpenUrlHandler, dispatchCliCommand } from './cliControl'
+import { parseControlArgv, hasUrlArg, createOpenUrlHandler, createUrlDispatcher, dispatchCliCommand, shouldRegisterProtocol } from './cliControl'
 import { createTray, destroyTray } from './tray'
 import { loadSettings, saveSettings } from './settingsManager'
 import {
@@ -94,6 +94,31 @@ if (process.platform === 'linux') {
   app.commandLine.appendSwitch('ozone-platform', 'x11')
 }
 
+// whisperio:// URL control state. Default OFF (fail closed): only `=== true` enables.
+let urlSettings = { allow: false, start: false }
+let screenLocked = false
+function refreshUrlSettings(): void {
+  const st = loadSettings()
+  urlSettings = { allow: st.allowUrlControl === true, start: st.allowUrlStart === true }
+}
+// Registered only when URL control is on and (packaged or WHISPERIO_DEV_PROTOCOL=1), so a dev
+// run never takes over HKCU\Software\Classes\whisperio; removed again when turned off.
+function syncProtocolRegistration(): void {
+  try {
+    if (shouldRegisterProtocol({ isPackaged: app.isPackaged, devEnv: process.env.WHISPERIO_DEV_PROTOCOL, allowUrlControl: urlSettings.allow })) {
+      if (process.defaultApp && process.argv[1]) {
+        app.setAsDefaultProtocolClient('whisperio', process.execPath, [path.resolve(process.argv[1])])
+      } else {
+        app.setAsDefaultProtocolClient('whisperio')
+      }
+    } else if (app.isPackaged || process.env.WHISPERIO_DEV_PROTOCOL === '1') {
+      app.removeAsDefaultProtocolClient('whisperio')
+    }
+  } catch (err) {
+    console.warn('[Whisperio] could not sync whisperio:// protocol:', err instanceof Error ? err.message : err)
+  }
+}
+
 // Prevent multiple instances — if another instance is already running, focus it
 const gotSingleInstanceLock = app.requestSingleInstanceLock()
 if (!gotSingleInstanceLock) {
@@ -102,41 +127,40 @@ if (!gotSingleInstanceLock) {
   // Cold start with a control flag: the app starts normally and the command is
   // deliberately ignored (never auto-record on launch).
   const cliApi = { toggle: cliToggle, start: cliStart, stop: cliStop, cancel: cliCancel, send: cliSend }
-  const urlControlAllowed = (): boolean => loadSettings().allowUrlControl !== false
+  // Cached URL-control settings (fail closed); refreshed on settings save.
+  refreshUrlSettings()
+  const dispatchUrl = createUrlDispatcher({
+    isAllowed: () => urlSettings.allow === true,
+    isStartAllowed: () => urlSettings.start === true,
+    isLocked: () => screenLocked,
+    api: cliApi,
+    log: (m) => console.log(`[Whisperio] ${m}`)
+  })
   const coldStart = parseControlArgv(process.argv)
   if (coldStart) {
     console.log(`[Whisperio] control command "${coldStart.cmd}" ignored on cold start (app was not running)`)
   }
-  // whisperio:// links. Windows/Linux deliver them in argv (above / second-instance);
+  // whisperio:// links (registered only when allowed and packaged, see syncProtocolRegistration).
+  // Windows/Linux deliver them in argv (above / second-instance);
   // macOS fires open-url, which must be registered before 'ready'. An open-url
   // before ready is a cold start and is ignored, same rule as the CLI flags.
-  try {
-    if (process.defaultApp && process.argv[1]) {
-      app.setAsDefaultProtocolClient('whisperio', process.execPath, [path.resolve(process.argv[1])])
-    } else {
-      app.setAsDefaultProtocolClient('whisperio')
-    }
-  } catch (err) {
-    console.warn('[Whisperio] could not register whisperio:// protocol:', err instanceof Error ? err.message : err)
-  }
+  syncProtocolRegistration()
   app.on('open-url', createOpenUrlHandler({
     isReady: () => app.isReady(),
-    isAllowed: urlControlAllowed,
-    api: cliApi,
+    dispatch: dispatchUrl,
     log: (m) => console.log(`[Whisperio] ${m}`)
   }))
   app.on('second-instance', (_event, argv) => {
     const ctl = parseControlArgv(argv)
     if (ctl) {
-      if (ctl.viaUrl && !urlControlAllowed()) {
-        console.log(`[Whisperio] URL command "${ctl.cmd}" ignored (URL control disabled)`)
-        return
-      }
       // CLI/URL control (Stream Deck / scripts): act, do not steal focus.
-      dispatchCliCommand(ctl.cmd, cliApi)
+      if (ctl.viaUrl) dispatchUrl(ctl.cmd)
+      else dispatchCliCommand(ctl.cmd, cliApi)
       return
     }
-    // User tried to launch a second instance — show settings window
+    // A rejected/malformed whisperio: link must not pop the settings window either.
+    if (hasUrlArg(argv)) return
+    // User tried to launch a second instance - show settings window
     openSettingsWindow()
   })
 }
@@ -206,6 +230,9 @@ function isInternalUrl(url: string | undefined | null): boolean {
 }
 
 app.whenReady().then(() => {
+  // Screen-lock state for URL gating (start-class URL commands are ignored while locked).
+  powerMonitor.on('lock-screen', () => { screenLocked = true })
+  powerMonitor.on('unlock-screen', () => { screenLocked = false })
   // Grant media (microphone) permission ONLY to our own renderer windows.
   // Fail closed for any other origin so a future remote/iframe navigation can't
   // silently obtain mic access.
@@ -301,6 +328,10 @@ app.whenReady().then(() => {
   ipcMain.handle('settings:save', (_event, newSettings) => {
     const prevChecks = loadSettings().checkForUpdates !== false
     const saved = saveSettingsWithKeys(newSettings)
+    if ('allowUrlControl' in newSettings || 'allowUrlStart' in newSettings) {
+      refreshUrlSettings()
+      syncProtocolRegistration()
+    }
     // Only touch the update schedule when the flag actually changed (a settings save for any
     // other reason that merely carries the field must not restart the timers).
     if ('checkForUpdates' in newSettings && (saved.checkForUpdates !== false) !== prevChecks) {
