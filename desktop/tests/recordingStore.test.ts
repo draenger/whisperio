@@ -65,6 +65,23 @@ describe('recordingStore', () => {
   })
 
   describe('saveRecording', () => {
+    it('two saves in the same second get distinct files; neither audio is overwritten or lost on delete', async () => {
+      const fixed = new Date(2026, 10, 1, 12, 0, 0).getTime()
+      const spy = vi.spyOn(Date, 'now').mockReturnValue(fixed)
+      try {
+        const a = await saveRecording(Buffer.from('first-audio'), { duration: 1, provider: 'openai' })
+        const b = await saveRecording(Buffer.from('second-audio'), { duration: 1, provider: 'openai' })
+        expect(a.filepath).not.toBe(b.filepath)
+        expect(b.filename).toMatch(/-2\.webm$/)
+        expect(readFileSync(a.filepath, 'utf-8')).toBe('first-audio')
+        expect(readFileSync(b.filepath, 'utf-8')).toBe('second-audio')
+        await deleteRecording(a.id)
+        expect(existsSync(b.filepath)).toBe(true)
+      } finally {
+        spy.mockRestore()
+      }
+    })
+
     it('creates file on disk and adds to index', async () => {
       const audio = Buffer.from('fake-audio-data')
       const entry = await saveRecording(audio, { duration: 5, provider: 'openai' })
