@@ -37,6 +37,14 @@ function storePath(): string {
  */
 export function isWeakLinuxBackend(): boolean {
   if (process.platform !== 'linux') return false
+  // Selecting the backend is lazy: before the first availability check Electron reports
+  // 'unknown'. Trigger that check here so the verdict never depends on call order
+  // (callers must still run after app 'ready'; main does).
+  try {
+    safeStorage.isEncryptionAvailable()
+  } catch {
+    /* fall through to the backend query */
+  }
   const getBackend = (safeStorage as { getSelectedStorageBackend?: () => string }).getSelectedStorageBackend
   if (typeof getBackend !== 'function') return false
   const backend = getBackend.call(safeStorage)
@@ -175,4 +183,17 @@ export function readWeakBackendKeys(): Record<string, string> {
     }
   }
   return out
+}
+
+/**
+ * Remove one wrapped entry from the store file even when secure storage is
+ * unavailable. Deleting ciphertext writes no plaintext, so the fail-closed rule
+ * holds. Used when the user clears/replaces a key that would otherwise be
+ * resurrected by the session rescue on the next launch. Atomic write.
+ */
+export function dropWrappedEntry(name: string): void {
+  const store = readStore()
+  if (!(name in store)) return
+  delete store[name]
+  writeStore(store)
 }

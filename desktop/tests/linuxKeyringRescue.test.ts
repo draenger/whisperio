@@ -140,4 +140,41 @@ describe('Linux without a keyring: session rescue + one-time warning', () => {
     expect(notify).not.toHaveBeenCalled()
     expect(mockSaveSettings).not.toHaveBeenCalled()
   })
+
+  describe('clearing / replacing a rescued key (no resurrection)', () => {
+    const restart = (): void => {
+      _resetSessionKeysForTests()
+      rescueWeakLinuxKeys()
+    }
+
+    it('clear -> restart -> nothing rescued, entry gone', () => {
+      disk[STORE] = wrapped({ groqApiKey: 'gsk-blob' })
+      rescueWeakLinuxKeys()
+      saveSettingsWithKeys({ groqApiKey: '' })
+      expect(JSON.parse(disk[STORE]).groqApiKey).toBeUndefined()
+      restart()
+      expect(getEffectiveSettings().groqApiKey).toBe('')
+    })
+
+    it('replace -> restart -> old key not back, new key not persisted', () => {
+      disk[STORE] = wrapped({ groqApiKey: 'gsk-old' })
+      rescueWeakLinuxKeys()
+      saveSettingsWithKeys({ groqApiKey: 'gsk-new' })
+      expect(getEffectiveSettings().groqApiKey).toBe('gsk-new')
+      expect(JSON.parse(disk[STORE]).groqApiKey).toBeUndefined()
+      expect(JSON.stringify(settings)).not.toContain('gsk-new')
+      restart()
+      expect(getEffectiveSettings().groqApiKey).toBe('')
+    })
+
+    it('unchanged round-trip keeps the entry', () => {
+      disk[STORE] = wrapped({ groqApiKey: 'gsk-blob' })
+      const before = disk[STORE]
+      rescueWeakLinuxKeys()
+      saveSettingsWithKeys({ groqApiKey: 'gsk-blob' })
+      expect(disk[STORE]).toBe(before)
+      restart()
+      expect(getEffectiveSettings().groqApiKey).toBe('gsk-blob')
+    })
+  })
 })

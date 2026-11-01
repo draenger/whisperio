@@ -16,6 +16,7 @@ vi.mock('../src/main/secure/keyStore', () => ({
   setKey: (...args: unknown[]) => mockSetKey(...args),
   deleteKey: (...args: unknown[]) => mockDeleteKey(...args),
   listKeys: () => [],
+  dropWrappedEntry: () => undefined,
   isEncryptionAvailable: () => mockIsEncryptionAvailable()
 }))
 

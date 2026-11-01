@@ -241,10 +241,14 @@ app.whenReady().then(() => {
   migrateProviderKeysToKeyStore()
   // Linux without a keyring: keep earlier-wrapped keys usable in memory and
   // warn once per app version (no-op on Windows/macOS).
-  rescueWeakLinuxKeys()
-  maybeWarnLinuxKeyring(app.getVersion(), (message) => {
-    if (Notification.isSupported()) new Notification({ title: 'Whisperio', body: message }).show()
-  })
+  try {
+    rescueWeakLinuxKeys()
+    maybeWarnLinuxKeyring(app.getVersion(), (message) => {
+      if (Notification.isSupported()) new Notification({ title: 'Whisperio', body: message }).show()
+    })
+  } catch (err) {
+    console.error('[Whisperio] Linux keyring rescue/warning failed:', err)
+  }
 
   // Apply auto-launch setting (uses Windows Registry HKCU\...\Run)
   // Skip in dev mode — process.execPath points to bare electron.exe which

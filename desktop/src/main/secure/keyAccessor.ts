@@ -6,6 +6,7 @@ import {
   isEncryptionAvailable,
   isWeakLinuxBackend,
   hasWrappedEntries,
+  dropWrappedEntry,
   readWeakBackendKeys
 } from './keyStore'
 
@@ -48,6 +49,15 @@ function unavailableMessage(): string {
  * memory) until the app quits.
  */
 const sessionKeys = new Map<ProviderKeyField, string>()
+
+/** Delete a superseded wrapped store entry (ciphertext only; never writes plaintext). */
+function dropStaleWrapped(field: ProviderKeyField): void {
+  try {
+    dropWrappedEntry(field)
+  } catch (err) {
+    console.error(`[Whisperio] could not drop stale wrapped key "${field}":`, err)
+  }
+}
 
 let secureStorageWarningListener: ((message: string) => void) | null = null
 
@@ -186,6 +196,7 @@ export function saveSettingsWithKeys(partial: Partial<AppSettings>): AppSettings
     const value = (partial[field] as string | undefined) ?? ''
     if (value === '') {
       sessionKeys.delete(field)
+      dropStaleWrapped(field)
       continue // clearing is always safe to persist
     }
     if (value === (onDisk[field] ?? '')) {
@@ -195,6 +206,7 @@ export function saveSettingsWithKeys(partial: Partial<AppSettings>): AppSettings
     if (sessionKeys.get(field) !== value) {
       sessionKeys.set(field, value)
       sessionOnly = true
+      dropStaleWrapped(field) // replaced: the old wrapped copy must not come back
     }
     // Never persist the new secret; also clear any legacy plaintext copy it replaces.
     ;(jsonPatch as Record<string, unknown>)[field] = ''
