@@ -224,3 +224,101 @@ describe('ClipboardRestoreCoordinator', () => {
     expect(f.state.text).toBe('orig')
   })
 })
+
+describe('clipboardRestore gap coverage', () => {
+  function paste(c: ClipboardRestoreCoordinator, f: ReturnType<typeof fake>, text: string) {
+    const h = c.begin(text)
+    f.cb.writeText(text)
+    c.schedule(h, 400)
+    return h
+  }
+
+  it('snapshot survives every individual read throwing and an image whose isEmpty throws', () => {
+    const f = fake({ text: 't', html: 'h', rtf: 'r', image: true })
+    f.cb.readText = () => { throw new Error('x') }
+    f.cb.readRTF = () => { throw new Error('x') }
+    f.cb.readImage = () => ({ isEmpty: () => { throw new Error('x') } })
+    expect(snapshotClipboard(f.cb)).toEqual({ html: 'h' })
+  })
+
+  it('write failure during restore reports skipped-changed and leaves the clipboard untouched', () => {
+    const f = fake({ text: 'old' })
+    const snap = snapshotClipboard(f.cb)
+    f.cb.writeText('dictated')
+    f.cb.write = () => { throw new Error('locked') }
+    expect(restoreClipboardIfUnchanged(f.cb, snap, 'dictated')).toBe('skipped-changed')
+    expect(f.state.text).toBe('dictated')
+  })
+
+  it('onDone receives the restore status, and "skipped-changed" when the user copied', () => {
+    const f = fake({ text: 'orig' })
+    const t = fakeTimers()
+    const c = new ClipboardRestoreCoordinator(f.cb, t.timers)
+    const statuses: string[] = []
+    let h = c.begin('a'); f.cb.writeText('a'); c.schedule(h, 400, (s) => statuses.push(s))
+    t.fireAll()
+    h = c.begin('b'); f.cb.writeText('b'); c.schedule(h, 400, (s) => statuses.push(s))
+    f.cb.writeText('user')
+    t.fireAll()
+    expect(statuses).toEqual(['restored', 'skipped-changed'])
+  })
+
+  it('cancel after schedule: the already-armed timer fires but must not restore or call onDone', () => {
+    const f = fake({ text: 'orig' })
+    const t = fakeTimers()
+    const c = new ClipboardRestoreCoordinator(f.cb, t.timers)
+    const done: string[] = []
+    const h = c.begin('x'); f.cb.writeText('x'); c.schedule(h, 400, (s) => done.push(s))
+    c.cancel(h)
+    t.fireAll()
+    expect(f.state.text).toBe('x')
+    expect(done).toEqual([])
+    expect(f.writes).toHaveLength(0)
+  })
+
+  it('cancel with a stale handle does not drop the newer pending restore', () => {
+    const f = fake({ text: 'orig' })
+    const t = fakeTimers()
+    const c = new ClipboardRestoreCoordinator(f.cb, t.timers)
+    const h1 = paste(c, f, 'first')
+    paste(c, f, 'second')
+    c.cancel(h1)
+    t.fireAll()
+    expect(f.state.text).toBe('orig')
+  })
+
+  it('begin takes a fresh snapshot when reading the current text throws', () => {
+    const f = fake({ text: 'orig' })
+    const t = fakeTimers()
+    const c = new ClipboardRestoreCoordinator(f.cb, t.timers)
+    paste(c, f, 'first')
+    const realRead = f.cb.readText
+    f.cb.readText = () => { throw new Error('locked') }
+    const h2 = c.begin('second')
+    expect(h2.snapshot).toEqual({}) // every read failed -> empty, original not reused
+    f.cb.readText = realRead
+  })
+
+  it('begin ids are monotonically increasing and flush clears a timer set by schedule', () => {
+    const f = fake({ text: 'orig' })
+    const t = fakeTimers()
+    const c = new ClipboardRestoreCoordinator(f.cb, t.timers)
+    const h1 = paste(c, f, 'a')
+    expect(t.pending()).toBe(1)
+    c.flush()
+    expect(t.pending()).toBe(0)
+    const h2 = c.begin('b')
+    expect(h2.id).toBeGreaterThan(h1.id)
+  })
+
+  it('an empty original clipboard is preserved across overlap: dictated text stays, no write', () => {
+    const f = fake()
+    const t = fakeTimers()
+    const c = new ClipboardRestoreCoordinator(f.cb, t.timers)
+    paste(c, f, 'first')
+    paste(c, f, 'second')
+    t.fireAll()
+    expect(f.state.text).toBe('second')
+    expect(f.writes).toHaveLength(0)
+  })
+})
