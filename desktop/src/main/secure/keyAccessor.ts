@@ -24,6 +24,16 @@ export type ProviderKeyField = (typeof PROVIDER_KEY_FIELDS)[number]
 export const SECURE_STORAGE_UNAVAILABLE_MESSAGE =
   'Secure storage unavailable on this system; the key is kept for this session only.'
 
+/** Appended on Linux, where the usual cause is a missing or locked keyring. */
+export const SECURE_STORAGE_LINUX_HINT =
+  'To save keys permanently, install and start a keyring (gnome-keyring or KWallet), unlock it, and restart Whisperio.'
+
+function unavailableMessage(): string {
+  return process.platform === 'linux'
+    ? `${SECURE_STORAGE_UNAVAILABLE_MESSAGE} ${SECURE_STORAGE_LINUX_HINT}`
+    : SECURE_STORAGE_UNAVAILABLE_MESSAGE
+}
+
 /**
  * Fail-closed session store: when OS secure storage is unavailable, newly
  * entered provider keys are NEVER written to disk. They live here (process
@@ -57,11 +67,10 @@ export function _resetSessionKeysForTests(): void {
  */
 export function getEffectiveSettings(): AppSettings {
   const settings = loadSettings()
+  const sessionOverlay: Partial<AppSettings> = {}
+  for (const [field, value] of sessionKeys) sessionOverlay[field] = value
   if (!isEncryptionAvailable()) {
-    if (sessionKeys.size === 0) return settings
-    const sessionOverlay: Partial<AppSettings> = {}
-    for (const [field, value] of sessionKeys) sessionOverlay[field] = value
-    return { ...settings, ...sessionOverlay }
+    return sessionKeys.size === 0 ? settings : { ...settings, ...sessionOverlay }
   }
   const overlay: Partial<AppSettings> = {}
   for (const field of PROVIDER_KEY_FIELDS) {
@@ -70,7 +79,8 @@ export function getEffectiveSettings(): AppSettings {
       overlay[field] = stored
     }
   }
-  return { ...settings, ...overlay }
+  // Session keys (a write the key store refused) are newer than anything stored.
+  return { ...settings, ...overlay, ...sessionOverlay }
 }
 
 /**
@@ -100,7 +110,7 @@ function writeKeyField(field: ProviderKeyField, value: string): boolean {
     const readBack = getKey(field)
     if (readBack === value) return true
     console.error(
-      `[Whisperio] round-trip verification failed for provider key "${field}" — keeping the plaintext copy in settings.json.`
+      `[Whisperio] round-trip verification failed for provider key "${field}" — not stored in the key store.`
     )
     return false
   } catch (err) {
@@ -126,53 +136,70 @@ function writeKeyField(field: ProviderKeyField, value: string): boolean {
 export function saveSettingsWithKeys(partial: Partial<AppSettings>): AppSettings {
   const jsonPatch: Partial<AppSettings> = { ...partial }
   if (isEncryptionAvailable()) {
-    sessionKeys.clear()
-    for (const field of PROVIDER_KEY_FIELDS) {
-      if (!(field in partial)) continue
-      const value = (partial[field] as string | undefined) ?? ''
-      if (writeKeyField(field, value)) {
-        // Routed to (or cleared from) the key store — don't also keep the
-        // secret sitting in settings.json.
-        ;(jsonPatch as Record<string, unknown>)[field] = ''
-      }
-      // If routing failed, fall through and let the plaintext value save to
-      // settings.json as it always has.
-    }
-  }
-  if (!isEncryptionAvailable()) {
-    // FAIL CLOSED: never persist a new secret in plaintext. Keep it in
-    // memory for this session, tell the renderer, and log a warning.
-    const onDisk = loadSettings()
     let sessionOnly = false
+    let onDisk: AppSettings | null = null
     for (const field of PROVIDER_KEY_FIELDS) {
       if (!(field in partial)) continue
       const value = (partial[field] as string | undefined) ?? ''
-      if (value === '') {
-        sessionKeys.delete(field)
-        continue // clearing is always safe to persist
-      }
-      if (value === (onDisk[field] ?? '')) {
-        delete (jsonPatch as Record<string, unknown>)[field] // unchanged legacy value, nothing new to write
-        continue
-      }
-      if (sessionKeys.get(field) !== value) {
+      sessionKeys.delete(field)
+      if (!writeKeyField(field, value)) {
+        onDisk ??= loadSettings()
+        if (value === (onDisk[field] ?? '')) {
+          // Unchanged legacy plaintext copy (its migration failed too): leave it where it is
+          // and retry on the next launch. Blanking it here would lose the only persisted copy.
+          delete (jsonPatch as Record<string, unknown>)[field]
+          continue
+        }
+        // FAIL CLOSED: the key store refused the write (or the read-back did
+        // not match). Never fall back to plaintext on disk; keep the key in
+        // memory for this session and tell the renderer.
         sessionKeys.set(field, value)
         sessionOnly = true
       }
-      // Never persist the new secret; also clear any legacy plaintext copy it replaces.
+      // Routed to (or cleared from) the key store, or held in memory only:
+      // either way settings.json must not keep the secret.
       ;(jsonPatch as Record<string, unknown>)[field] = ''
-
     }
     if (sessionOnly) {
       console.warn(
-        '[Whisperio] OS secure storage unavailable — provider key(s) kept in memory for this session only, not persisted.'
+        '[Whisperio] OS secure storage write failed — provider key(s) kept in memory for this session only, not persisted.'
       )
-      secureStorageWarningListener?.(SECURE_STORAGE_UNAVAILABLE_MESSAGE)
+      secureStorageWarningListener?.(unavailableMessage())
     }
     const saved = saveSettings(jsonPatch)
     return sessionKeys.size === 0 ? saved : { ...saved, ...Object.fromEntries(sessionKeys) }
   }
-  return saveSettings(jsonPatch)
+  // Storage unavailable. FAIL CLOSED: never persist a new secret in plaintext. Keep it in
+  // memory for this session, tell the renderer, and log a warning.
+  const onDisk = loadSettings()
+  let sessionOnly = false
+  for (const field of PROVIDER_KEY_FIELDS) {
+    if (!(field in partial)) continue
+    const value = (partial[field] as string | undefined) ?? ''
+    if (value === '') {
+      sessionKeys.delete(field)
+      continue // clearing is always safe to persist
+    }
+    if (value === (onDisk[field] ?? '')) {
+      delete (jsonPatch as Record<string, unknown>)[field] // unchanged legacy value, nothing new to write
+      continue
+    }
+    if (sessionKeys.get(field) !== value) {
+      sessionKeys.set(field, value)
+      sessionOnly = true
+    }
+    // Never persist the new secret; also clear any legacy plaintext copy it replaces.
+    ;(jsonPatch as Record<string, unknown>)[field] = ''
+
+  }
+  if (sessionOnly) {
+    console.warn(
+      '[Whisperio] OS secure storage unavailable — provider key(s) kept in memory for this session only, not persisted.'
+    )
+    secureStorageWarningListener?.(unavailableMessage())
+  }
+  const saved = saveSettings(jsonPatch)
+  return sessionKeys.size === 0 ? saved : { ...saved, ...Object.fromEntries(sessionKeys) }
 }
 
 /**
