@@ -1,5 +1,5 @@
 import { app } from 'electron'
-import { existsSync, mkdirSync, writeFileSync, readFileSync, unlinkSync, renameSync } from 'fs'
+import { existsSync, mkdirSync, writeFileSync, readFileSync, unlinkSync, renameSync, readdirSync } from 'fs'
 import { join } from 'path'
 import type { SpeakerSegment } from './dictation/conversation'
 import { loadSettings, saveSettings } from './settingsManager'
@@ -14,6 +14,13 @@ import {
   serializeEnvelope,
   type SecretEnvelope
 } from './secretCrypto'
+import {
+  encryptAudio,
+  decryptAudio,
+  isEncryptedAudio,
+  atomicWriteFileSync,
+  AudioVaultError
+} from './audioVault'
 
 export interface RecordingEntry {
   id: string
@@ -338,15 +345,27 @@ export function saveRecording(
   }
 ): Promise<RecordingEntry> {
   // Refuse before touching disk when history is locked (no orphan audio file, no overwrite).
-  if (readIndexState().locked) return Promise.reject(new HistoryLockedError())
+  const stRead = readIndexState()
+  if (stRead.locked) return Promise.reject(new HistoryLockedError())
   const dir = getRecordingsDir()
   const id = generateId()
   const timestamp = Date.now()
   const filename = `recording-${formatTimestamp(timestamp)}.webm`
   const filepath = join(dir, filename)
 
-  // The audio file has a unique name, so writing it outside the lock is safe.
-  writeFileSync(filepath, audioBuffer)
+  // The audio file has a unique name, so writing it outside the lock is safe. When history
+  // encryption is ON (or the index is already sealed) the audio is sealed BEFORE it touches disk:
+  // plaintext is never written, and an unavailable vault rejects the save (fail closed).
+  try {
+    if (stRead.sealedOnDisk || encryptHistoryReader()) {
+      const sealed = encryptAudio(getDataKeyForEncrypt(), audioBuffer, id)
+      atomicWriteFileSync(filepath, `${filepath}.tmp`, sealed)
+    } else {
+      writeFileSync(filepath, audioBuffer)
+    }
+  } catch (err) {
+    return Promise.reject(err)
+  }
 
   const entry: RecordingEntry = {
     id,
@@ -484,11 +503,114 @@ export function deleteRecordingsByDate(dateStr: string): Promise<void> {
   })
 }
 
-export function getRecordingAudio(id: string): Buffer | null {
+/**
+ * Single read path for kept audio (re-transcribe, playback IPC, export). Dispatches on the header
+ * magic: legacy plaintext passes through, sealed audio is authenticated + decrypted IN MEMORY (never
+ * written to disk). Returns null when the recording/file does not exist. Throws AudioVaultError
+ * (clear message) when the file is sealed but cannot be opened.
+ */
+export function readRecordingAudio(id: string): Buffer | null {
   const entry = getRecording(id)
   if (!entry) return null
   if (!existsSync(entry.filepath)) return null
-  return readFileSync(entry.filepath)
+  const raw = readFileSync(entry.filepath)
+  if (!isEncryptedAudio(raw)) return raw
+  const key = getDataKeyForDecrypt()
+  if (!key) throw new AudioVaultError('Recording is encrypted and the history key is unavailable')
+  return decryptAudio(key, raw, entry.id)
+}
+
+/** Back-compat name used by the IPC layer; same single read path. */
+export const getRecordingAudio = readRecordingAudio
+
+export interface AudioMigrationResult {
+  converted: number
+  skipped: number
+  failed: number
+}
+
+let migrationRunning: Promise<AudioMigrationResult> | null = null
+
+/**
+ * Background audio migration: seal existing plaintext audio ('encrypt') or restore it ('decrypt').
+ * Idempotent per file (already-converted files are skipped), resumable (stale `*.mig.tmp` leftovers
+ * are swept), and mixed state is always valid because reads dispatch on the header. Per file: read,
+ * convert in memory, write `<file>.mig.tmp` + fsync, atomic rename over the same path (the index
+ * needs no change and the file is readable at every instant). One file per queue slot so saves and
+ * deletes interleave instead of waiting for the whole job.
+ */
+export function migrateAudio(direction: 'encrypt' | 'decrypt'): Promise<AudioMigrationResult> {
+  if (migrationRunning) return migrationRunning
+  const job = (async (): Promise<AudioMigrationResult> => {
+    const result: AudioMigrationResult = { converted: 0, skipped: 0, failed: 0 }
+    const st = readIndexState()
+    if (st.locked) return result
+    let key: Buffer | null
+    try {
+      key = direction === 'encrypt' ? getDataKeyForEncrypt() : getDataKeyForDecrypt()
+    } catch {
+      key = null
+    }
+    if (!key) {
+      result.failed = st.index.recordings.filter((r) => !r.deletedAt).length
+      return result
+    }
+    try {
+      const dir = getRecordingsDir()
+      for (const f of readdirSync(dir)) {
+        if (f.endsWith('.mig.tmp')) {
+          try { unlinkSync(join(dir, f)) } catch { /* best-effort */ }
+        }
+      }
+    } catch { /* best-effort */ }
+
+    const ids = st.index.recordings.filter((r) => !r.deletedAt).map((r) => r.id)
+    for (const id of ids) {
+      const r = await enqueue((): 'converted' | 'skipped' | 'failed' => {
+        try {
+          const entry = loadIndex().recordings.find((e) => e.id === id && !e.deletedAt)
+          if (!entry || !existsSync(entry.filepath)) return 'skipped'
+          // Re-check intent inside the slot: a later toggle must not be fought by a stale job.
+          if (direction === 'encrypt' && !encryptHistoryReader()) return 'skipped'
+          const raw = readFileSync(entry.filepath)
+          const sealed = isEncryptedAudio(raw)
+          if (direction === 'encrypt' ? sealed : !sealed) return 'skipped'
+          const out =
+            direction === 'encrypt' ? encryptAudio(key!, raw, entry.id) : decryptAudio(key!, raw, entry.id)
+          atomicWriteFileSync(entry.filepath, `${entry.filepath}.mig.tmp`, out)
+          return 'converted'
+        } catch (err) {
+          console.error(
+            `[Whisperio] audio migration (${direction}) failed for ${id}:`,
+            err instanceof Error ? err.message : err
+          )
+          return 'failed'
+        }
+      })
+      result[r]++
+      await new Promise<void>((resolve) => setImmediate(resolve))
+    }
+    return result
+  })()
+  migrationRunning = job.finally(() => {
+    migrationRunning = null
+  })
+  return migrationRunning
+}
+
+/** Startup/after-toggle hook: converge audio to the current setting. Never throws. */
+export async function resumeAudioMigration(): Promise<AudioMigrationResult | null> {
+  try {
+    const st = readIndexState()
+    if (st.locked) return null
+    if (encryptHistoryReader()) return await migrateAudio('encrypt')
+    // OFF: only decrypt once the index itself is plain (setHistoryEncryption(false) completed).
+    if (!st.sealedOnDisk) return await migrateAudio('decrypt')
+    return null
+  } catch (err) {
+    console.error('[Whisperio] audio migration aborted:', err instanceof Error ? err.message : err)
+    return null
+  }
 }
 
 export type SetHistoryEncryptionResult =

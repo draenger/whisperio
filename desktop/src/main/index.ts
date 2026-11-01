@@ -29,6 +29,7 @@ import {
   deleteAllRecordings,
   deleteRecordingsByDate,
   getRecordingAudio,
+  resumeAudioMigration,
   updateRecording,
   getHistoryEncryptionStatus,
   setHistoryEncryption
@@ -110,7 +111,15 @@ async function reprocessRecording(id: string) {
   const entry = getRecording(id)
   if (!entry) return null
 
-  const audioBuffer = getRecordingAudio(id)
+  let audioBuffer: Buffer | null
+  try {
+    audioBuffer = getRecordingAudio(id)
+  } catch (err) {
+    return updateRecording(id, {
+      status: 'failed',
+      error: err instanceof Error ? err.message : 'Audio could not be decrypted'
+    })
+  }
   if (!audioBuffer) return null
 
   try {
@@ -359,9 +368,14 @@ app.whenReady().then(() => {
     ...getHistoryEncryptionStatus(),
     vault: isDataVaultAvailable()
   }))
-  ipcMain.handle('history:encryption:set', (_e, enabled: unknown) =>
-    setHistoryEncryption(enabled === true)
-  )
+  ipcMain.handle('history:encryption:set', async (_e, enabled: unknown) => {
+    const res = await setHistoryEncryption(enabled === true)
+    // Convert existing audio in the background (idempotent, resumable); never blocks the toggle.
+    if (res.ok) void resumeAudioMigration()
+    return res
+  })
+  // Resume an interrupted audio migration (quit/crash mid-job) once at startup.
+  void resumeAudioMigration()
   ipcMain.handle('recordings:list', () => getRecordings())
   ipcMain.handle('recordings:get', (_e, id: string) => getRecording(id))
   ipcMain.handle('recordings:save', async (_e, audioBuffer: Buffer, metadata: { duration: number; provider: string }) => {
@@ -388,7 +402,14 @@ app.whenReady().then(() => {
   ipcMain.handle('recordings:delete', (_e, id: string) => deleteRecording(id))
   ipcMain.handle('recordings:deleteAll', () => deleteAllRecordings())
   ipcMain.handle('recordings:deleteByDate', (_e, date: string) => deleteRecordingsByDate(date))
-  ipcMain.handle('recordings:getAudio', (_e, id: string) => getRecordingAudio(id))
+  ipcMain.handle('recordings:getAudio', (_e, id: string) => {
+    try {
+      return getRecordingAudio(id)
+    } catch (err) {
+      console.error('[Whisperio] recordings:getAudio failed:', err instanceof Error ? err.message : err)
+      return null
+    }
+  })
   ipcMain.handle('recordings:reprocess', (_e, id: string) => reprocessRecording(id))
   ipcMain.handle('recordings:cleanup', (_e, id: string, options: OnDemandCleanupRequest) =>
     handleRecordingsCleanup(id, options)
