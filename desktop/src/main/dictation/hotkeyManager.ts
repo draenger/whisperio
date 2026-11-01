@@ -54,13 +54,21 @@ let currentSessionId = 0
 /** Start a fresh session and return its id. */
 function startSession(): number {
   cancelHoldWatch()
+  clearSessionFlags()
   return ++currentSessionId
 }
 
 /** Invalidate any in-flight session so a late result is dropped. */
 function invalidateSession(): void {
   cancelHoldWatch()
+  clearSessionFlags()
   currentSessionId++
+}
+
+/** Clear per-session flags; called by every start/reset/invalidate path. */
+function clearSessionFlags(): void {
+  sendEnterForSession = null
+  activeSessionIsCommand = false
 }
 
 /**
@@ -86,8 +94,9 @@ function cancelHoldWatch(): void {
   holdDegraded = false
 }
 
-/** When true, press Enter after pasting the result */
-let sendEnterOnResult = false
+/** Session id for which Enter must be pressed after pasting (dictate-and-send),
+ * or null. Bound to a session id so a stale flag can never apply to a later one. */
+let sendEnterForSession: number | null = null
 
 /** When true, the in-flight session was started via the COMMAND hotkey — its
  * transcript is a spoken REWRITE INSTRUCTION for the clipboard, not text to
@@ -171,7 +180,7 @@ function startHoldWatch(accel: string | null, pressedAt: number): void {
   holdCancel = cancelFn
 }
 
-async function activateWith(accel: string | null): Promise<void> {
+async function activateWith(accel: string | null, sendEnter = false): Promise<void> {
   try {
     const pressedAt = Date.now()
     console.log(`[Whisperio] Hotkey pressed — current state: ${state}`)
@@ -188,6 +197,7 @@ async function activateWith(accel: string | null): Promise<void> {
         return
       }
       startSession()
+      if (sendEnter) sendEnterForSession = currentSessionId
       setState('recording')
       showOverlay()
       // Only the primary overlay records audio; all overlays show visual state
@@ -206,6 +216,7 @@ async function activateWith(accel: string | null): Promise<void> {
       startHoldWatch(accel, pressedAt)
     } else if (state === 'recording') {
       // Second tap — stop recording, transcribe
+      if (sendEnter) sendEnterForSession = currentSessionId
       unregisterEscape()
       setState('transcribing')
       // Tag the result the renderer is about to produce with this session id.
@@ -232,8 +243,7 @@ async function activateWith(accel: string | null): Promise<void> {
 }
 
 async function activateAndSend(): Promise<void> {
-  sendEnterOnResult = true
-  await activateWith(activeSendHotkey)
+  await activateWith(activeSendHotkey, true)
 }
 
 async function activateOutput(): Promise<void> {
@@ -347,8 +357,6 @@ function cancel(): void {
   // Invalidate so any in-flight transcription's result is dropped rather than
   // pasted after the user cancelled.
   invalidateSession()
-  sendEnterOnResult = false
-  activeSessionIsCommand = false
   unregisterEscape()
   sendToPrimaryOverlay('dictation:cancel')
   setState('idle')
@@ -364,8 +372,7 @@ export async function cliToggle(): Promise<void> {
 }
 
 export async function cliSend(): Promise<void> {
-  sendEnterOnResult = true
-  await activateWith(null)
+  await activateWith(null, true)
 }
 
 export async function cliStart(): Promise<void> {
@@ -396,15 +403,15 @@ async function handleResult(
   // timed out. Without this, a slow transcription that resolves after the user
   // moved on would auto-paste (and possibly Enter) stale, potentially sensitive
   // text into whatever window now has focus. Checked FIRST so a stale result
-  // can't consume the current session's sendEnterOnResult flag.
+  // can't consume the current session's sendEnterForSession flag.
   if (typeof sessionId === 'number' && sessionId !== currentSessionId) {
     console.warn(
       `[Whisperio] Dropping stale transcription result (session ${sessionId} ≠ current ${currentSessionId})`
     )
     return
   }
-  const shouldSend = sendEnterOnResult
-  sendEnterOnResult = false
+  const shouldSend = sendEnterForSession !== null && sendEnterForSession === currentSessionId
+  sendEnterForSession = null
   const isCommand = activeSessionIsCommand
   activeSessionIsCommand = false
   unregisterEscape()
