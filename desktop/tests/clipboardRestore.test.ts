@@ -3,6 +3,9 @@ import {
   snapshotClipboard,
   restoreClipboardIfUnchanged,
   isSnapshotEmpty,
+  ClipboardRestoreCoordinator,
+  setSharedCoordinator,
+  flushPendingClipboardRestore,
   type ClipboardLike
 } from '../src/main/dictation/clipboardRestore'
 
@@ -98,5 +101,126 @@ describe('restoreClipboardIfUnchanged', () => {
     f.cb.readText = () => 'x'
     f.cb.write = () => { throw new Error('locked') }
     expect(() => restoreClipboardIfUnchanged(f.cb, snap, 'x')).not.toThrow()
+  })
+})
+
+function fakeTimers() {
+  const q = new Map<number, () => void>()
+  let n = 0
+  return {
+    timers: {
+      set: (fn: () => void) => { q.set(++n, fn); return n },
+      clear: (h: unknown) => { q.delete(h as number) }
+    },
+    pending: () => q.size,
+    fireAll: () => { const fns = [...q.values()]; q.clear(); fns.forEach((f) => f()) }
+  }
+}
+
+describe('ClipboardRestoreCoordinator', () => {
+  function paste(c: ClipboardRestoreCoordinator, f: ReturnType<typeof fake>, text: string) {
+    const h = c.begin(text)
+    f.cb.writeText(text)
+    c.schedule(h, 400)
+    return h
+  }
+
+  it('non-overlapping pastes each restore their own previous clipboard', () => {
+    const f = fake({ text: 'orig' })
+    const t = fakeTimers()
+    const c = new ClipboardRestoreCoordinator(f.cb, t.timers)
+    paste(c, f, 'first')
+    t.fireAll()
+    expect(f.state.text).toBe('orig')
+    f.cb.writeText('later')
+    paste(c, f, 'second')
+    t.fireAll()
+    expect(f.state.text).toBe('later')
+  })
+
+  it('overlapping pastes restore the ORIGINAL clipboard', () => {
+    const f = fake({ text: 'orig', html: '<i>orig</i>' })
+    const t = fakeTimers()
+    const c = new ClipboardRestoreCoordinator(f.cb, t.timers)
+    paste(c, f, 'first')
+    paste(c, f, 'second') // within the restore window
+    expect(t.pending()).toBe(1) // first timer cancelled
+    t.fireAll()
+    expect(f.state.text).toBe('orig')
+    expect(f.state.html).toBe('<i>orig</i>')
+  })
+
+  it('overlap while the first paste is not yet armed still keeps the original', () => {
+    const f = fake({ text: 'orig' })
+    const t = fakeTimers()
+    const c = new ClipboardRestoreCoordinator(f.cb, t.timers)
+    const h1 = c.begin('first')
+    f.cb.writeText('first')
+    paste(c, f, 'second')
+    c.schedule(h1, 400) // stale, ignored
+    expect(t.pending()).toBe(1)
+    t.fireAll()
+    expect(f.state.text).toBe('orig')
+  })
+
+  it('user copied something in between -> no restore, and fresh snapshot is used next', () => {
+    const f = fake({ text: 'orig' })
+    const t = fakeTimers()
+    const c = new ClipboardRestoreCoordinator(f.cb, t.timers)
+    paste(c, f, 'first')
+    f.cb.writeText('user copy')
+    t.fireAll()
+    expect(f.state.text).toBe('user copy')
+
+    paste(c, f, 'a')
+    f.cb.writeText('user copy 2')
+    paste(c, f, 'b') // pending clipboard != 'a' -> fresh snapshot
+    t.fireAll()
+    expect(f.state.text).toBe('user copy 2')
+  })
+
+  it('flush on quit restores immediately if clipboard still equals pasted text', () => {
+    const f = fake({ text: 'orig' })
+    const t = fakeTimers()
+    const c = new ClipboardRestoreCoordinator(f.cb, t.timers)
+    paste(c, f, 'first')
+    expect(c.flush()).toBe('restored')
+    expect(f.state.text).toBe('orig')
+    expect(t.pending()).toBe(0)
+    expect(c.flush()).toBeNull()
+  })
+
+  it('flush does not restore when the user changed the clipboard, or when unarmed', () => {
+    const f = fake({ text: 'orig' })
+    const t = fakeTimers()
+    const c = new ClipboardRestoreCoordinator(f.cb, t.timers)
+    paste(c, f, 'first')
+    f.cb.writeText('user')
+    expect(c.flush()).toBe('skipped-changed')
+    expect(f.state.text).toBe('user')
+
+    c.begin('x')
+    f.cb.writeText('x')
+    expect(c.flush()).toBeNull()
+    expect(f.state.text).toBe('x')
+  })
+
+  it('cancel drops the pending restore', () => {
+    const f = fake({ text: 'orig' })
+    const t = fakeTimers()
+    const c = new ClipboardRestoreCoordinator(f.cb, t.timers)
+    const h = c.begin('x')
+    f.cb.writeText('x')
+    c.cancel(h)
+    expect(c.flush()).toBeNull()
+  })
+
+  it('flushPendingClipboardRestore uses the shared coordinator', () => {
+    const f = fake({ text: 'orig' })
+    const c = new ClipboardRestoreCoordinator(f.cb, fakeTimers().timers)
+    setSharedCoordinator(c)
+    paste(c, f, 'first')
+    expect(flushPendingClipboardRestore()).toBe('restored')
+    expect(f.state.text).toBe('orig')
   })
 })
