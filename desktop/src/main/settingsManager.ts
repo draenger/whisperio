@@ -1,4 +1,5 @@
 import { app } from 'electron'
+import { clampRestoreDelay } from './dictation/clipboardRestore'
 import { readFileSync, writeFileSync, existsSync, renameSync, openSync, fsyncSync, closeSync, unlinkSync } from 'fs'
 import { join } from 'path'
 // Type-only — no runtime dependency on the LLM prompt-building module (same
@@ -530,6 +531,7 @@ export function loadSettings(): AppSettings {
   settingsUnavailable = false
   const migrated = migrateToneMap(migrateLegacyTheme(migrateCleanupSettings(migrateVocabulary(parsed as Partial<AppSettings>))))
   const merged = { ...DEFAULT_SETTINGS, ...migrated }
+  merged.clipboardRestoreDelayMs = clampRestoreDelay(merged.clipboardRestoreDelayMs)
   if (merged.hotkeyMode !== 'toggle' && merged.hotkeyMode !== 'hold') merged.hotkeyMode = 'toggle'
   return merged
 }

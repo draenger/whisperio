@@ -15,6 +15,16 @@
  * and clearing it could race the paste just the same.
  */
 
+/**
+ * Known limitation / future work: clipboard-history managers (and password
+ * managers' secrets) are NOT excluded. Windows' "ExcludeClipboardContentFromMonitorProcessing"
+ * / "CanIncludeInClipboardHistory" and macOS' "org.nspasteboard.TransientType" would
+ * have to be set in the SAME clipboard write as the text, but every Electron
+ * clipboard write empties the clipboard first, so extra formats written
+ * separately wipe the text. This needs a single native multi-format write.
+ * Files and app-specific/custom formats are not snapshotted or restored.
+ */
+
 export interface ClipboardImageLike {
   isEmpty(): boolean
 }
@@ -85,16 +95,12 @@ export function snapshotClipboard(cb: ClipboardLike): ClipboardSnapshot {
 export function restoreClipboardIfUnchanged(
   cb: ClipboardLike,
   snapshot: ClipboardSnapshot,
-  pastedText: string,
-  onRestored?: (snapshot: ClipboardSnapshot) => void
+  pastedText: string
 ): RestoreStatus {
   if (isSnapshotEmpty(snapshot)) return 'skipped-empty-snapshot'
   try {
     if (cb.readText() !== pastedText) return 'skipped-changed'
     cb.write(snapshot)
-    // Best effort: keep the restored (possibly secret) content out of
-    // clipboard history / cloud sync.
-    onRestored?.(snapshot)
     return 'restored'
   } catch (err) {
     console.warn('[Whisperio] clipboard restore failed:', (err as Error)?.message)
@@ -136,9 +142,7 @@ export class ClipboardRestoreCoordinator {
 
   constructor(
     private readonly cb: ClipboardLike,
-    private readonly timers: RestoreTimers,
-    /** Called right after a successful restore write (mark it transient). */
-    private readonly afterRestore?: (snapshot: ClipboardSnapshot) => void
+    private readonly timers: RestoreTimers
   ) {}
 
   /** Call BEFORE writing `text` to the clipboard. */
@@ -190,7 +194,7 @@ export class ClipboardRestoreCoordinator {
         p.timer = this.timers.set(tick, RESTORE_POLL_INTERVAL_MS)
         return
       }
-      finish(restoreClipboardIfUnchanged(this.cb, p.snapshot, p.pastedText, this.afterRestore))
+      finish(restoreClipboardIfUnchanged(this.cb, p.snapshot, p.pastedText))
     }
     p.timer = this.timers.set(tick, delayMs)
   }
@@ -207,7 +211,7 @@ export class ClipboardRestoreCoordinator {
     this.pending = null
     if (p.timer !== null) this.timers.clear(p.timer)
     if (!p.armed) return null
-    return restoreClipboardIfUnchanged(this.cb, p.snapshot, p.pastedText, this.afterRestore)
+    return restoreClipboardIfUnchanged(this.cb, p.snapshot, p.pastedText)
   }
 }
 

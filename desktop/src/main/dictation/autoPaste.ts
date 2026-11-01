@@ -5,10 +5,10 @@ import {
   ClipboardRestoreCoordinator,
   setSharedCoordinator,
   DEFAULT_RESTORE_DELAY_MS,
+  clampRestoreDelay,
   type ClipboardLike,
   type PasteHandle
 } from './clipboardRestore'
-import { markClipboardTransient, writeTransientText } from './clipboardFormats'
 
 // True only in unpackaged (development) builds; gates logging of dictated
 // content so user speech never reaches production stdout. Guarded so it
@@ -116,14 +116,6 @@ const coordinator = new ClipboardRestoreCoordinator(
   {
     set: (fn, ms) => setTimeout(fn, ms),
     clear: (h) => clearTimeout(h as ReturnType<typeof setTimeout>)
-  },
-  // Restored content may be a secret: keep it out of history managers too.
-  // Skipped for text-less snapshots (clobbering could not be detected).
-  (snapshot) => {
-    if (snapshot.text === undefined) return
-    markClipboardTransient(clipboard, process.platform, snapshot.text, () =>
-      (clipboard as unknown as ClipboardLike).write(snapshot)
-    )
   }
 )
 setSharedCoordinator(coordinator)
@@ -142,7 +134,7 @@ export async function autoPaste(
   // Snapshot BEFORE overwriting the clipboard (reuses the original snapshot
   // if a previous paste's restore is still pending).
   const handle: PasteHandle | null = restore ? coordinator.begin(text) : null
-  writeTransientText(clipboard, text, process.platform)
+  clipboard.writeText(text)
 
   // macOS: without Accessibility permission the ⌘V keystroke silently no-ops.
   // Leave the text on the clipboard and tell the user how to enable auto-paste.
@@ -166,9 +158,13 @@ export async function autoPaste(
     // The target app reads the clipboard asynchronously after the keystroke;
     // restoring too early would make it paste the OLD content. Restore later,
     // only if the clipboard still holds exactly what we pasted.
-    coordinator.schedule(handle, clampRestoreDelay(opts.restoreDelayMs ?? readRestoreDelay()), (status) =>
-      console.log(`[Whisperio] clipboard restore: ${status}`)
-    )
+    try {
+      coordinator.schedule(handle, clampRestoreDelay(opts.restoreDelayMs ?? readRestoreDelay()), (status) =>
+        console.log(`[Whisperio] clipboard restore: ${status}`)
+      )
+    } catch (err) {
+      console.warn('[Whisperio] clipboard restore scheduling failed:', (err as Error)?.message)
+    }
   }
   console.log('[Whisperio] autoPaste done')
 }

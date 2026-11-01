@@ -1217,7 +1217,7 @@ function GeneralTab({
         <SectionHeader title="Pasting" s={s} theme={theme} />
         <ToggleRow
           label="Restore my previous clipboard after pasting"
-          description="Put back what you had copied before dictating (only if nothing new was copied in the meantime)"
+          description="Put back the text, image, HTML or RTF you had copied before dictating, if nothing new was copied in the meantime. Files and app-specific formats are not restored. Best-effort timing; off by default."
           checked={restoreClipboard}
           onChange={setRestoreClipboard}
           theme={theme}
