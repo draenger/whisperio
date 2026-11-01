@@ -126,10 +126,14 @@ function getIndexPath(): string {
  * Callers must NOT treat this as "empty history": a following saveIndex() would
  * overwrite the only copy. IPC handlers surface it as a rejected call.
  */
+export const INDEX_UNAVAILABLE_CODE = 'INDEX_UNAVAILABLE'
+
 export class IndexUnavailableError extends Error {
-  readonly code = 'INDEX_UNAVAILABLE'
+  readonly code = INDEX_UNAVAILABLE_CODE
   constructor(message: string) {
-    super(message)
+    // Electron's ipcMain.handle drops custom error classes/props and only keeps
+    // the message, so the code is embedded as a prefix the renderer can match.
+    super(`[${INDEX_UNAVAILABLE_CODE}] ${message}`)
     this.name = 'IndexUnavailableError'
   }
 }
