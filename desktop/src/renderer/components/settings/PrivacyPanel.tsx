@@ -12,6 +12,9 @@ import {
   RESET_CONFIRM,
   RESET_TRANSIENT_CONFIRM,
   LOCKED_TRANSIENT_MESSAGE,
+  INDEX_UNAVAILABLE_MESSAGE,
+  TRY_AGAIN_STILL_UNAVAILABLE,
+  isIndexUnavailable,
   TRY_AGAIN_STILL_LOCKED,
   isTransientLock,
   KEY_REMOVAL_NOTE,
@@ -87,6 +90,7 @@ export function PrivacyPanel({ s, theme }: { s: SettingsStyles; theme: Theme }):
 
   const view = status ? derivePrivacyView(status, progress) : null
   const transient = !!status && isTransientLock(status, progress)
+  const idxUnavailable = !!status && isIndexUnavailable(status, progress)
   const encrypted = !!status && (status.enabled || status.sealedOnDisk)
 
   const requestToggle = (next: boolean): void => {
@@ -197,11 +201,11 @@ export function PrivacyPanel({ s, theme }: { s: SettingsStyles; theme: Theme }):
             color: theme.text
           }}
         >
-          <div style={{ fontWeight: 600 }}>{transient ? LOCKED_TRANSIENT_MESSAGE : LOCKED_MESSAGE}</div>
-          <div style={{ ...s.hint, margin: '4px 0 10px' }}>
+          <div style={{ fontWeight: 600 }}>{idxUnavailable ? INDEX_UNAVAILABLE_MESSAGE : transient ? LOCKED_TRANSIENT_MESSAGE : LOCKED_MESSAGE}</div>
+          {!idxUnavailable && <div style={{ ...s.hint, margin: '4px 0 10px' }}>
             Resetting destroys the encrypted history and starts fresh. Nothing is created silently. {KEY_REMOVAL_NOTE}
-          </div>
-          {transient && (
+          </div>}
+          {(transient || idxUnavailable) && (
             <button
               style={{ ...dangerBtn, marginRight: '8px' }}
               disabled={busy}
@@ -209,15 +213,17 @@ export function PrivacyPanel({ s, theme }: { s: SettingsStyles; theme: Theme }):
                 setMessage(null)
                 await refresh()
                 const st = await window.api.history.getEncryption().catch(() => null)
-                if (st && st.locked) setMessage(TRY_AGAIN_STILL_LOCKED)
+                if (st && st.locked) setMessage(idxUnavailable ? TRY_AGAIN_STILL_UNAVAILABLE : TRY_AGAIN_STILL_LOCKED)
               }}
             >
               Try again
             </button>
           )}
-          <button style={dangerBtn} disabled={busy} onClick={() => setPending({ type: 'reset' })}>
-            {transient ? 'Reset history...' : 'Reset history'}
-          </button>
+          {!idxUnavailable && (
+            <button style={dangerBtn} disabled={busy} onClick={() => setPending({ type: 'reset' })}>
+              {transient ? 'Reset history...' : 'Reset history'}
+            </button>
+          )}
         </div>
       )}
 

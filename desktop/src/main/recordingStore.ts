@@ -207,9 +207,11 @@ export interface HistoryEncryptionStatus {
   /**
    * Only present when locked. 'unrecoverable': sealed data but the key file is MISSING.
    * 'transient': key file present but could not be unwrapped (locked Keychain/keyring may be
-   * temporary): offer "Try again" before any destructive reset.
+   * temporary): offer "Try again" before any destructive reset. 'unavailable': the index file
+   * could not be read (AV/backup lock, damage) and no sealed data was found: plain history merely
+   * unavailable, nothing deleted, reset refused.
    */
-  lockKind?: 'transient' | 'unrecoverable'
+  lockKind?: 'transient' | 'unrecoverable' | 'unavailable'
 }
 
 function lockKindNow(): 'transient' | 'unrecoverable' {
@@ -390,7 +392,7 @@ export function getHistoryEncryptionStatus(): HistoryEncryptionStatus {
     enabled = false
   }
   return st.locked
-    ? { enabled, sealedOnDisk: st.sealedOnDisk, locked: true, lockKind: unavailable ? 'transient' : lockKindNow() }
+    ? { enabled, sealedOnDisk: st.sealedOnDisk, locked: true, lockKind: unavailable ? (sealedDataExists() ? 'transient' : 'unavailable') : lockKindNow() }
     : { enabled, sealedOnDisk: st.sealedOnDisk, locked: false }
 }
 
@@ -590,12 +592,15 @@ function orphansPath(): string {
  * ours to delete - `*.webm`, `*.tmp` or exactly `index.json`. Anything with a separator, `..` or an
  * absolute path is dropped on read.
  */
+/** Quarantined index backups (plain or sealed copies) left behind by a failed erase. */
+const CORRUPT_BACKUP_RE = /^index\.json\.corrupt-[0-9]+(\.sealed)?(\.json)?$/
+
 export function isValidOrphanName(f: unknown): f is string {
   if (typeof f !== 'string' || f.length === 0) return false
   if (f.includes('/') || f.includes('\\') || f.includes('\0') || f.includes('..')) return false
   if (isAbsolute(f) || basename(f) !== f) return false
   if (f.includes(':')) return false // Windows drive-relative names / NTFS alternate data streams
-  return f === 'index.json' || f.endsWith('.webm') || f.endsWith('.tmp')
+  return f === 'index.json' || CORRUPT_BACKUP_RE.test(f) || f.endsWith('.webm') || f.endsWith('.tmp')
 }
 
 /** Drop a name from the orphan list (a new file legitimately reuses it). Never throws. */
@@ -720,7 +725,8 @@ export function deleteAllRecordings(): Promise<ShredReport> {
     const st = readIndexState()
     if (st.locked) throw new HistoryLockedError()
     const index = st.index
-    const shred = st.sealedOnDisk || encryptHistoryReader()
+    // Flag OFF but sealed audio left (e.g. failed decrypt migration): still shred + delete.
+    const shred = st.sealedOnDisk || encryptHistoryReader() || sealedDataExists()
 
     if (shred) {
       if (!shredDataKey()) throw new KeyShredError()
@@ -784,7 +790,7 @@ export function resetLockedHistory(confirmDestroy?: boolean): Promise<ResetRepor
   })
 }
 
-export type EncryptionUiState = 'off' | 'on' | 'migrating' | 'locked' | 'locked-transient'
+export type EncryptionUiState = 'off' | 'on' | 'migrating' | 'locked' | 'locked-transient' | 'unavailable'
 
 export interface EncryptionProgress {
   state: EncryptionUiState
@@ -805,7 +811,9 @@ export function getEncryptionProgress(): EncryptionProgress {
   try {
     st = readIndexState()
   } catch (err) {
-    if (err instanceof IndexUnavailableError) return { state: 'locked-transient', done: 0, total: 0 }
+    if (err instanceof IndexUnavailableError) {
+      return { state: sealedDataExists() ? 'locked-transient' : 'unavailable', done: 0, total: 0 }
+    }
     throw err
   }
   if (st.locked) {

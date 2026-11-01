@@ -161,6 +161,14 @@ describe('index state: locked variants', () => {
     expect(readFileSync(INDEX, 'utf-8')).toBe('{ not json')
   })
 
+  it('plain index merely unavailable reports lockKind unavailable (not the encrypted-key copy)', () => {
+    mkdirSync(DIR, { recursive: true })
+    writeFileSync(INDEX, '{ not json')
+    h.failRename = /index.json$/
+    expect(getHistoryEncryptionStatus()).toMatchObject({ locked: true, lockKind: 'unavailable' })
+    expect(getEncryptionProgress().state).toBe('unavailable')
+  })
+
   it('status survives an encryptHistory reader that throws (reports enabled=false)', () => {
     setEncryptHistoryReader(() => {
       throw new Error('settings unreadable')

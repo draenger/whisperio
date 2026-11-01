@@ -3,7 +3,7 @@ import { useTheme } from '../../ThemeContext'
 import { TitleBar } from '../common/TitleBar'
 import { TranscriptSearch } from './TranscriptSearch'
 import type { Theme } from '../../theme'
-import { LOCKED_MESSAGE, LOCKED_TRANSIENT_MESSAGE, RESET_TRANSIENT_CONFIRM, TRY_AGAIN_STILL_LOCKED, isTransientLock, RESET_CONFIRM, RESET_FAILED_MESSAGE, shouldShowLockedNotice, undeletedMessage } from '../settings/privacyState'
+import { INDEX_UNAVAILABLE_MESSAGE, isIndexUnavailable, LOCKED_MESSAGE, LOCKED_TRANSIENT_MESSAGE, RESET_TRANSIENT_CONFIRM, TRY_AGAIN_STILL_LOCKED, isTransientLock, RESET_CONFIRM, RESET_FAILED_MESSAGE, shouldShowLockedNotice, undeletedMessage } from '../settings/privacyState'
 
 // Group-conversation mode (multi-speaker transcription) — mirrors
 // src/main/dictation/conversation.ts's SpeakerSegment exactly. See that
@@ -116,6 +116,7 @@ export function RecordingsView(): ReactElement {
   // empty list that silently starts new history. Fail-soft if the bridge is absent.
   const [historyLocked, setHistoryLocked] = useState(false)
   const [historyTransient, setHistoryTransient] = useState(false)
+  const [historyUnavailable, setHistoryUnavailable] = useState(false)
   const [resetConfirm, setResetConfirm] = useState(false)
   const refreshLocked = useCallback(async (): Promise<boolean> => {
     try {
@@ -123,10 +124,12 @@ export function RecordingsView(): ReactElement {
       const locked = shouldShowLockedNotice(st)
       setHistoryLocked(locked)
       setHistoryTransient(!!st && isTransientLock(st))
+      setHistoryUnavailable(!!st && isIndexUnavailable(st))
       return locked
     } catch {
       setHistoryLocked(false)
       setHistoryTransient(false)
+      setHistoryUnavailable(false)
       return false
     }
   }, [])
@@ -649,13 +652,13 @@ export function RecordingsView(): ReactElement {
             border: `1px solid ${theme.danger}`
           }}
         >
-          <div style={{ fontWeight: 600 }}>{historyTransient ? LOCKED_TRANSIENT_MESSAGE : LOCKED_MESSAGE}</div>
-          {resetConfirm && (
+          <div style={{ fontWeight: 600 }}>{historyUnavailable ? INDEX_UNAVAILABLE_MESSAGE : historyTransient ? LOCKED_TRANSIENT_MESSAGE : LOCKED_MESSAGE}</div>
+          {resetConfirm && !historyUnavailable && (
             <div style={{ margin: '4px 0', color: theme.textMuted }}>
               {(historyTransient ? RESET_TRANSIENT_CONFIRM : RESET_CONFIRM).body}
             </div>
           )}
-          {historyTransient && (
+          {(historyTransient || historyUnavailable) && (
             <button
               onClick={handleTryAgain}
               style={{
@@ -672,7 +675,7 @@ export function RecordingsView(): ReactElement {
               Try again
             </button>
           )}
-          <button
+          {!historyUnavailable && (<button
             onClick={handleResetLocked}
             style={{
               marginTop: 6,
@@ -685,7 +688,7 @@ export function RecordingsView(): ReactElement {
             }}
           >
             {resetConfirm ? (historyTransient ? RESET_TRANSIENT_CONFIRM.confirmLabel : 'Confirm reset') : historyTransient ? 'Reset history...' : 'Reset history'}
-          </button>
+          </button>)}
         </div>
       )}
 

@@ -8,6 +8,9 @@ import {
   vaultReasonText,
   ERASE_ORDER,
   LOCKED_MESSAGE,
+  INDEX_UNAVAILABLE_MESSAGE,
+  isIndexUnavailable,
+  undeletedMessage,
   type EncryptionStatus
 } from '../src/renderer/components/settings/privacyState'
 
@@ -90,5 +93,23 @@ describe('messages', () => {
   })
   it('documented erase order is key before files', () => {
     expect(ERASE_ORDER.indexOf('shred-key')).toBeLessThan(ERASE_ORDER.indexOf('delete-files'))
+  })
+})
+
+describe('index unavailable (plain history merely unreadable)', () => {
+  it('has its own state and copy, no toggle, never the encrypted-key message', () => {
+    const st = { ...base, locked: true, lockKind: 'unavailable' as const }
+    expect(isIndexUnavailable(st)).toBe(true)
+    const v = derivePrivacyView(st, { state: 'unavailable', done: 0, total: 0 })
+    expect(v).toMatchObject({ kind: 'index-unavailable', canToggle: false, detail: INDEX_UNAVAILABLE_MESSAGE })
+    expect(v.detail).toContain('nothing was deleted')
+    expect(v.detail).not.toContain('encrypted')
+  })
+  it('progress alone also selects it; transient/locked are not unavailable', () => {
+    expect(isIndexUnavailable(base, { state: 'unavailable' })).toBe(true)
+    expect(isIndexUnavailable({ ...base, locked: true, lockKind: 'transient' })).toBe(false)
+  })
+  it('undeletedMessage says files are removed on next start', () => {
+    expect(undeletedMessage(2)).toContain('removed on next start')
   })
 })

@@ -10,12 +10,12 @@ export interface EncryptionStatus {
   sealedOnDisk: boolean
   locked: boolean
   /** Present when locked: 'transient' = key file exists but could not be unwrapped (maybe temporary). */
-  lockKind?: 'transient' | 'unrecoverable'
+  lockKind?: 'transient' | 'unrecoverable' | 'unavailable'
   vault: VaultAvailability
 }
 
 export interface EncryptionProgress {
-  state: 'off' | 'on' | 'migrating' | 'locked' | 'locked-transient'
+  state: 'off' | 'on' | 'migrating' | 'locked' | 'locked-transient' | 'unavailable'
   done: number
   total: number
 }
@@ -29,7 +29,10 @@ export const LOCKED_MESSAGE = "History is encrypted and can't be unlocked on thi
 export const LOCKED_TRANSIENT_MESSAGE =
   "History is encrypted but the key couldn't be unlocked right now. Your operating system's secure storage (Keychain, keyring) may be locked or busy. Unlock it and try again before resetting."
 
-export type PrivacyKind = 'off' | 'on' | 'migrating' | 'locked' | 'locked-transient' | 'unavailable'
+export const INDEX_UNAVAILABLE_MESSAGE =
+  'History file is locked by another program or damaged — nothing was deleted. Close backup/antivirus tools and try again.'
+
+export type PrivacyKind = 'off' | 'on' | 'migrating' | 'locked' | 'locked-transient' | 'unavailable' | 'index-unavailable'
 
 export interface PrivacyView {
   kind: PrivacyKind
@@ -52,8 +55,27 @@ export function isTransientLock(
   return status.locked === true && status.lockKind === 'transient'
 }
 
+/** Plain history file merely unreadable (no sealed data): try again, never reset. */
+export function isIndexUnavailable(
+  status: { locked: boolean; lockKind?: string },
+  progress?: { state: string } | null
+): boolean {
+  if (progress?.state === 'unavailable') return true
+  return status.locked === true && status.lockKind === 'unavailable'
+}
+
 /** Maps main-process status + progress to what the panel shows. Fail-closed: locked wins. */
 export function derivePrivacyView(status: EncryptionStatus, progress: EncryptionProgress | null): PrivacyView {
+  if (isIndexUnavailable(status, progress)) {
+    return {
+      kind: 'index-unavailable',
+      label: 'History file unavailable',
+      detail: INDEX_UNAVAILABLE_MESSAGE,
+      checked: status.enabled,
+      canToggle: false,
+      progressText: null
+    }
+  }
   if (isTransientLock(status, progress)) {
     return {
       kind: 'locked-transient',
@@ -211,6 +233,8 @@ export function shouldShowLockedNotice(status: { locked: boolean } | null | unde
   return !!status && status.locked === true
 }
 
+export const TRY_AGAIN_STILL_UNAVAILABLE = 'History file is still unavailable. Close backup/antivirus tools and try again.'
+
 export const TRY_AGAIN_STILL_LOCKED = 'Still locked. Unlock your keychain/keyring and try again, or reset (destroys history).'
 
 export const RESET_FAILED_MESSAGE =
@@ -219,5 +243,5 @@ export const RESET_FAILED_MESSAGE =
 /** Shown after erase/reset succeeded but some files could not be deleted yet. */
 export function undeletedMessage(n: number): string | null {
   if (!n || n < 1) return null
-  return `${n} file(s) couldn't be deleted and will be retried at next start. They are unreadable without the key.`
+  return `${n} file(s) couldn't be deleted and will be removed on next start. They are unreadable without the key.`
 }

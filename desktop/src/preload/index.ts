@@ -401,7 +401,7 @@ export interface HistoryEncryptionStatus {
   enabled: boolean
   sealedOnDisk: boolean
   locked: boolean
-  lockKind?: 'transient' | 'unrecoverable'
+  lockKind?: 'transient' | 'unrecoverable' | 'unavailable'
   vault: { ok: true } | { ok: false; reason: 'unavailable' | 'weak-backend' }
 }
 
@@ -421,7 +421,7 @@ export interface HistoryAPI {
 }
 
 export interface HistoryEncryptionProgress {
-  state: 'off' | 'on' | 'migrating' | 'locked' | 'locked-transient'
+  state: 'off' | 'on' | 'migrating' | 'locked' | 'locked-transient' | 'unavailable'
   done: number
   total: number
 }

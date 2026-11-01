@@ -336,6 +336,40 @@ describe('recordingStore - erase = crypto-shred, locked reset, progress (D3)', (
     expect(getRecordings()).toHaveLength(1) // the new history is untouched
   })
 
+  it('isValidOrphanName accepts exactly index.json.corrupt-N backups (plain basename)', () => {
+    for (const ok of ['index.json.corrupt-123', 'index.json.corrupt-123.sealed.json', 'index.json.corrupt-123.json', 'index.json.corrupt-123.sealed']) {
+      expect(isValidOrphanName(ok)).toBe(true)
+    }
+    for (const bad of ['index.json.corrupt-', 'index.json.corrupt-abc', 'index.json.corrupt-1/x', '../index.json.corrupt-1', 'index.json.corrupt-1:s', 'index.json.corrupt-1..json', 'x.index.json.corrupt-1']) {
+      expect(isValidOrphanName(bad)).toBe(false)
+    }
+  })
+
+  it('startup sweep deletes a stuck index.json.corrupt-* backup listed as orphan', () => {
+    mkdirSync(RECORDINGS_DIR, { recursive: true })
+    const names = ['index.json.corrupt-111', 'index.json.corrupt-222.sealed.json']
+    for (const n of names) writeFileSync(join(RECORDINGS_DIR, n), 'x')
+    writeFileSync(ORPHANS, JSON.stringify({ files: names }))
+    expect(sweepShreddedOrphans()).toEqual({ undeleted: 0 })
+    for (const n of names) expect(existsSync(join(RECORDINGS_DIR, n))).toBe(false)
+    expect(existsSync(ORPHANS)).toBe(false)
+  })
+
+  it('flag OFF but sealed audio remains: erase still shreds the key and deletes the sealed files', async () => {
+    await seed()
+    await setHistoryEncryption(true)
+    await migrateAudio('encrypt')
+    const recs = getRecordings()
+    // Plain index + flag OFF, sealed audio left behind (e.g. failed decrypt migration).
+    writeFileSync(INDEX, JSON.stringify({ recordings: recs }))
+    setEncryptHistoryReader(() => false)
+    expect(getHistoryEncryptionStatus().sealedOnDisk).toBe(false)
+    const rep = await deleteAllRecordings()
+    expect(rep).toEqual({ undeleted: 0 })
+    expect(readdirSync(RECORDINGS_DIR).filter((f) => f.endsWith('.webm'))).toEqual([])
+    expect(existsSync(join(testDir, 'data-vault.key'))).toBe(false)
+  })
+
   it('erase deletes audio files that are not in the index too', async () => {
     await seed()
     await setHistoryEncryption(true)
@@ -367,7 +401,7 @@ describe('recordingStore - erase = crypto-shred, locked reset, progress (D3)', (
     for (const ok of ['recording-1.webm', 'recording-1.webm.tmp', 'x.tmp', 'index.json']) {
       expect(isValidOrphanName(ok)).toBe(true)
     }
-    const bad = ['../x.webm', '..\\x.webm', 'a/b.webm', 'a\\b.webm', '/etc/passwd.webm', 'C:\\x.webm', 'C:x.webm', 'rec.webm:stream.webm', '..', '', 'notes.txt', 'index.json.corrupt-1', 'data-vault.key', 42, null]
+    const bad = ['../x.webm', '..\\x.webm', 'a/b.webm', 'a\\b.webm', '/etc/passwd.webm', 'C:\\x.webm', 'C:x.webm', 'rec.webm:stream.webm', '..', '', 'notes.txt', 'index.json.corrupt-x', 'data-vault.key', 42, null]
     for (const b of bad) expect(isValidOrphanName(b)).toBe(false)
   })
 
