@@ -25,6 +25,8 @@ import android.view.inputmethod.InputMethodManager
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.platform.ComposeView
+import ai.whisperio.android.ui.common.KeepScreenOn
+import ai.whisperio.android.ui.common.needsScreenOn
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.LifecycleRegistry
@@ -132,6 +134,7 @@ class WhisperioImeService : InputMethodService(), LifecycleOwner, ViewModelStore
             setContent {
                 WhisperioTheme {
                     val ui by panelState.collectAsState()
+                    KeepScreenOn(needsScreenOn(ui.dictation))
                     ImePanel(ui, actions)
                 }
             }
@@ -189,13 +192,13 @@ class WhisperioImeService : InputMethodService(), LifecycleOwner, ViewModelStore
 
     override fun onFinishInputView(finishingInput: Boolean) {
         super.onFinishInputView(finishingInput)
-        // Focus lost / IME hidden while recording: stop and discard, no background recording (CONTRACT 5).
-        cancelKeyboardRecordingIfNeeded(graph.dictation)
+        // Focus lost / IME hidden / screen off while recording: stop and transcribe (keep the audio), no background recording.
+        stopKeyboardRecordingIfNeeded(graph.dictation)
         lifecycleRegistry.currentState = Lifecycle.State.STARTED
     }
 
     override fun onDestroy() {
-        cancelKeyboardRecordingIfNeeded(graph.dictation)
+        stopKeyboardRecordingIfNeeded(graph.dictation)
         lifecycleRegistry.currentState = Lifecycle.State.DESTROYED
         store.clear()
         super.onDestroy()
@@ -327,13 +330,15 @@ internal class InputSessionCounter {
     fun onFinishInput() { value++ }
 }
 
-/** Focus lost / IME hidden while the keyboard is recording: stop and discard (CONTRACT 5). */
-internal fun shouldCancelKeyboardRecording(s: DictationState): Boolean =
+/** Focus lost / IME hidden / screen off while the keyboard is recording: stop and transcribe, never discard (CONTRACT 5). */
+internal fun shouldStopKeyboardRecording(s: DictationState): Boolean =
     s is DictationState.Recording && s.source == RecordingSource.KEYBOARD
 
-/** The decision shared by onFinishInputView and onDestroy: cancel only a keyboard-owned recording. */
-internal fun cancelKeyboardRecordingIfNeeded(c: DictationController) {
-    if (shouldCancelKeyboardRecording(c.state.value)) c.cancel()
+/** The decision shared by onFinishInputView and onDestroy: stop (and transcribe) only a keyboard-owned recording. */
+internal fun stopKeyboardRecordingIfNeeded(c: DictationController) = stopKeyboardRecordingIfNeeded(c.state.value, c::stopAndTranscribe)
+
+internal fun stopKeyboardRecordingIfNeeded(state: DictationState, stop: () -> Unit) {
+    if (shouldStopKeyboardRecording(state)) stop()
 }
 
 /**

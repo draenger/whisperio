@@ -9,10 +9,10 @@ import ai.whisperio.android.history.RecordingSource
 import ai.whisperio.android.ime.FieldKey
 import ai.whisperio.android.ime.InputSession
 import ai.whisperio.android.ime.InputSessionCounter
-import ai.whisperio.android.ime.cancelKeyboardRecordingIfNeeded
+import ai.whisperio.android.ime.stopKeyboardRecordingIfNeeded
 import ai.whisperio.android.ime.commitKeyboardResult
 import ai.whisperio.android.ime.keyboardStartOptions
-import ai.whisperio.android.ime.shouldCancelKeyboardRecording
+import ai.whisperio.android.ime.shouldStopKeyboardRecording
 import android.text.InputType
 import android.view.View
 import android.view.inputmethod.BaseInputConnection
@@ -23,6 +23,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
@@ -93,32 +94,37 @@ class WhisperioImeServiceTest {
         assertEquals(3L, c.value)
     }
 
-    @Test fun finishInputViewCancelsKeyboardRecordingOnly() {
+    @Test fun finishInputViewStopsKeyboardRecordingOnly() {
         val rec = DictationState.Recording(0f, 0, false, RecordingSource.KEYBOARD)
-        assertTrue(shouldCancelKeyboardRecording(rec))
-        assertFalse(shouldCancelKeyboardRecording(rec.copy(source = RecordingSource.TILE)))
-        assertFalse(shouldCancelKeyboardRecording(DictationState.Idle))
-        assertFalse(shouldCancelKeyboardRecording(DictationState.Transcribing(RecordingSource.KEYBOARD)))
+        assertTrue(shouldStopKeyboardRecording(rec))
+        assertFalse(shouldStopKeyboardRecording(rec.copy(source = RecordingSource.TILE)))
+        assertFalse(shouldStopKeyboardRecording(DictationState.Idle))
+        assertFalse(shouldStopKeyboardRecording(DictationState.Transcribing(RecordingSource.KEYBOARD)))
     }
 
-    @Test fun destroyDecisionCancelsOnlyKeyboardRecording() = runTest {
+    @Test fun finishInputViewCallsStopAndTranscribeNotCancel() {
+        var stops = 0
+        val rec = DictationState.Recording(0f, 0, false, RecordingSource.KEYBOARD)
+        stopKeyboardRecordingIfNeeded(rec) { stops++ }
+        assertEquals(1, stops)
+        stopKeyboardRecordingIfNeeded(rec.copy(source = RecordingSource.APP)) { stops++ }
+        stopKeyboardRecordingIfNeeded(DictationState.Idle) { stops++ }
+        assertEquals(1, stops)
+    }
+
+    @Test fun destroyDecisionStopsOnlyKeyboardRecording() = runTest {
         val c = controller(FakeRecorder(), FakeHistory())
         c.start(StartOptions(RecordingSource.TILE))
         runCurrent()
         assertTrue(c.state.value is DictationState.Recording)
-        cancelKeyboardRecordingIfNeeded(c) // what onDestroy runs: a tile recording must survive the IME dying
-        runCurrent()
+        stopKeyboardRecordingIfNeeded(c) // what onDestroy runs: a tile recording must survive the IME dying
+        advanceTimeBy(1_000); runCurrent()
         assertTrue(c.state.value is DictationState.Recording)
         c.cancel()
         runCurrent()
-        c.start(keyboardStartOptions(false, 0, session(1))!!)
-        runCurrent()
-        cancelKeyboardRecordingIfNeeded(c)
-        runCurrent()
-        assertEquals(DictationState.Idle, c.state.value)
     }
 
-    @Test fun finishInputViewCancelDiscardsRealRecording() = runTest {
+    @Test fun finishInputViewKeepsAndTranscribesRealRecording() = runTest {
         val recorder = FakeRecorder()
         val history = FakeHistory()
         val c = controller(recorder, history)
@@ -126,11 +132,12 @@ class WhisperioImeServiceTest {
         runCurrent()
         assertTrue(c.state.value is DictationState.Recording)
         // the exact helper onFinishInputView and onDestroy both call
-        cancelKeyboardRecordingIfNeeded(c)
-        runCurrent()
-        assertEquals(DictationState.Idle, c.state.value)
+        stopKeyboardRecordingIfNeeded(c)
+        advanceTimeBy(1_000); runCurrent()
+        assertTrue(c.state.value !is DictationState.Recording)
+        assertTrue(c.state.value != DictationState.Idle || history.rows.value.isNotEmpty())
         assertTrue(recorder.released > 0)
-        assertTrue(history.rows.value.isEmpty())
+        assertTrue(history.rows.value.isNotEmpty()) // not discarded
     }
 
     @Test fun commitsWhenSameSessionTextFieldAndViewShown() {
