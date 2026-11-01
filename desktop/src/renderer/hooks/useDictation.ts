@@ -1,4 +1,5 @@
 import { useRef, useCallback, useState } from 'react'
+import { planAudioFormats } from '../audio/formatPlan'
 import { StartGuard, decideAfterGetUserMediaFailure } from '../audio/startGuard'
 
 async function webmToWav(webmBuffer: ArrayBuffer): Promise<ArrayBuffer> {
@@ -288,22 +289,21 @@ export function useDictation(): UseDictationReturn {
         }
       }
 
-      // Convert webm to wav for selfhosted whisper.cpp (doesn't support webm)
+      // whisper.cpp (selfhosted) can't read webm, cloud providers want the small
+      // original: always send the webm, plus a WAV only when selfhosted is in
+      // the chain. Main picks the right one per provider (main/audioFormat.ts).
       const settings2 = await window.api.settings.load()
-      const chain = settings2.providerChain || []
-      const needsWav = chain.includes('selfhosted')
-      let sendBuffer = arrayBuffer
-      let sendFilename = 'audio.webm'
-      if (needsWav) {
+      const plan = planAudioFormats(settings2.providerChain)
+      let wavBuffer: ArrayBuffer | null = null
+      if (plan.needsWav) {
         try {
-          sendBuffer = await webmToWav(arrayBuffer)
-          sendFilename = 'audio.wav'
-          console.log(`[Whisperio] Converted to wav: ${sendBuffer.byteLength} bytes`)
+          wavBuffer = await webmToWav(arrayBuffer)
+          console.log(`[Whisperio] Converted to wav: ${wavBuffer.byteLength} bytes`)
         } catch (convErr) {
-          console.error('[Whisperio] webm→wav conversion failed, sending webm:', convErr)
+          console.error('[Whisperio] webm→wav conversion failed, local model will be skipped:', convErr)
         }
       }
-      const text = await window.api.dictation.transcribe(sendBuffer, sendFilename)
+      const text = await window.api.dictation.transcribe(arrayBuffer, 'audio.webm', wavBuffer)
       console.log(`[Whisperio] Transcription result: "${text}"`)
 
       // Real word count of the actual transcript — consumed by the overlay's

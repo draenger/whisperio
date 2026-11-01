@@ -239,6 +239,9 @@ describe('error notifications', () => {
     })
     mockNetRequest.mockImplementation(() => createMockNetRequest(500, '{}'))
 
-    await expect(transcribeAudio(Buffer.from('a'), 't.webm')).rejects.toThrow(/Self-hosted API error 500/)
+    await expect(transcribeAudio(Buffer.from('a'), 't.webm', null, WAV)).rejects.toThrow(/Self-hosted API error 500/)
   })
 })
+
+// A WAV rendition: the self-hosted (whisper.cpp) provider is skipped without one (see audioFormat.ts).
+const WAV = { buffer: Buffer.from("w"), filename: "audio.wav" }

@@ -11,6 +11,7 @@ import { OpenAICompatibleProvider, AnthropicProvider, ReplicateProvider, selectP
 import { cleanupTranscription, cleanupTranscriptionDetailed, formatTranscription, rewriteSelection, type CleanupResult } from './postprocess'
 import { getServerStatus, ensureManagedServerForUrl } from './localServer'
 import { recordSTT, estimateAudioSeconds } from './usageTracker'
+import { resolveProviderAudio, LOCAL_MODEL_NEEDS_WAV_MESSAGE, type AudioPayload } from './audioFormat'
 import { getRecording, updateRecording } from './recordingStore'
 // Context-aware tone (v1.5 Work Item B). resolveToneProfile is the only
 // piece of context.ts's logic this file needs — the actual `active-win` call
@@ -478,7 +479,11 @@ export async function transcribeAudio(
   // recording's ORIGINALLY-captured context for reprocessRecording(). This
   // module never calls getActiveContext() itself; see the import comment
   // above for why that split matters for reprocessing correctness.
-  context: DictationContext | null = null
+  context: DictationContext | null = null,
+  // Optional WAV rendition of the same audio (live dictation only; the
+  // renderer makes it when `selfhosted` is in the chain). whisper.cpp gets
+  // this; every other provider gets `audioBuffer` (WebM/Opus) untouched.
+  wavAudio: AudioPayload | null = null
 ): Promise<string> {
   const settings = getEffectiveSettings()
 
@@ -510,8 +515,14 @@ export async function transcribeAudio(
   let text: string | null = null
   for (let i = 0; i < configuredChain.length; i++) {
     const provider = configuredChain[i]
+    const audio = resolveProviderAudio(provider, { buffer: audioBuffer, filename }, wavAudio)
+    if (!audio) {
+      // selfhosted but we only hold WebM (e.g. Reprocess): skip, fall through.
+      if (!firstError) firstError = new Error(LOCAL_MODEL_NEEDS_WAV_MESSAGE)
+      continue
+    }
     try {
-      text = await transcribeWithProvider(settings, provider, audioBuffer, filename)
+      text = await transcribeWithProvider(settings, provider, audio.buffer, audio.filename)
       // PACZKA METERING (v1.6): report usage after every successful STT call,
       // including local/self-hosted (isLocal forces cost to 0 there, but the
       // request/audio-seconds counters still stay complete). recordSTT()
@@ -519,7 +530,11 @@ export async function transcribeAudio(
       // transcription.
       recordSTT({
         provider,
-        audioSeconds: estimateAudioSeconds(audioBuffer, filename),
+        // Exact duration from the WAV when we have one (as before this
+        // change), else the WebM byte-rate estimate.
+        audioSeconds: wavAudio
+          ? estimateAudioSeconds(wavAudio.buffer, wavAudio.filename)
+          : estimateAudioSeconds(audio.buffer, audio.filename),
         isLocal: provider === 'selfhosted'
       })
       if (firstError) {

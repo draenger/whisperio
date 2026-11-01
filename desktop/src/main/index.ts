@@ -18,6 +18,7 @@ import {
   handleRecordingsCleanup,
   type OnDemandCleanupRequest
 } from './transcribe'
+import { coerceWavArg } from './audioFormat'
 import { transcriptText } from './dictation/conversation'
 import { openSettingsWindow } from './settingsWindow'
 import { getRecentErrors, notifyError } from './errorHandler'
@@ -119,6 +120,8 @@ async function reprocessRecording(id: string) {
     const context: DictationContext | null = entry.recordedProcessName
       ? { processName: entry.recordedProcessName, windowTitle: entry.recordedWindowTitle ?? '' }
       : null
+    // Only the stored WebM is available here: selfhosted (whisper.cpp) is
+    // skipped with a clear error, cloud providers proceed (audioFormat.ts).
     const text = await transcribeAudio(audioBuffer, entry.filename, context)
     return updateRecording(id, { status: 'completed', transcription: text, error: undefined })
   } catch (err) {
@@ -351,7 +354,7 @@ app.whenReady().then(() => {
   ipcMain.handle('usage:reset', guard(() => resetUsage()))
 
   // Register transcription IPC handler
-  ipcMain.handle('dictation:transcribe', guard(async (_event, audioBuffer: Buffer, filename: string) => {
+  ipcMain.handle('dictation:transcribe', guard(async (_event, audioBuffer: Buffer, filename: string, wavArg?: unknown) => {
     // Reset the local whisper-server idle clock so an actively-used server is
     // not reclaimed by the idle sweep mid-session (no-op when it's not running).
     markServerUsed()
@@ -364,7 +367,10 @@ app.whenReady().then(() => {
     const context = settings.contextAwareTone
       ? await getActiveContext({ includeWindowTitle: settings.windowTitlePermissionEnabled })
       : null
-    return transcribeAudio(audioBuffer, filename, context)
+    // Additive: optional WAV rendition for whisper.cpp only (see audioFormat.ts).
+    const wavBuffer = coerceWavArg(wavArg)
+    const wav = wavBuffer ? { buffer: wavBuffer, filename: 'audio.wav' } : null
+    return transcribeAudio(audioBuffer, filename, context, wav)
   }))
 
   // Renderer-reported capture failures (e.g. no usable microphone) -> toast
