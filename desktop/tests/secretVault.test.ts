@@ -52,7 +52,11 @@ vi.mock('fs', () => ({
   unlinkSync: (p: string) => {
     fsState.calls.push({ op: 'unlink', path: p })
     delete fsState.disk[p]
-  }
+  },
+  readdirSync: (dir: string) =>
+    Object.keys(fsState.disk)
+      .filter((p) => p.startsWith(dir) && !p.slice(dir.length + 1).match(/[\\/]/))
+      .map((p) => p.slice(dir.length + 1))
 }))
 
 import {
@@ -305,6 +309,9 @@ describe('data-encryption key lifecycle', () => {
     const backups = Object.keys(fsState.disk).filter((k) => k.includes('.malformed-'))
     expect(backups).toHaveLength(1)
     expect(fsState.disk[backups[0]]).toBe(blob)
+    // A second attempt must not pile up another backup copy.
+    expect(() => getOrCreateDataKey()).toThrow(VaultLockedError)
+    expect(Object.keys(fsState.disk).filter((k) => k.includes('.malformed-'))).toHaveLength(1)
   })
 
   it('sealForRepo / openFromRepo propagate the lock (nothing sealed under a new key)', () => {

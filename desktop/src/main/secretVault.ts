@@ -1,6 +1,6 @@
 import { app, safeStorage } from 'electron'
-import { readFileSync, writeFileSync, existsSync, renameSync, unlinkSync, copyFileSync } from 'fs'
-import { join } from 'path'
+import { readFileSync, writeFileSync, existsSync, renameSync, unlinkSync, copyFileSync, readdirSync } from 'fs'
+import { join, dirname, basename } from 'path'
 import {
   generateDataKey,
   encryptWithKey,
@@ -115,7 +115,9 @@ export function getOrCreateDataKey(): Buffer {
       const wrappedB64 = readFileSync(path, 'utf-8')
       const dek = safeStorage.decryptString(Buffer.from(wrappedB64, 'base64'))
       key = Buffer.from(dek, 'base64')
-    } catch {
+    } catch (err) {
+      // Error name only (never the message: it could echo key material or paths).
+      console.warn('[secretVault] key unlock failed:', err instanceof Error ? err.name : typeof err)
       throw new VaultLockedError(
         'The secret vault key could not be unlocked (Keychain locked, access denied, or entry changed). ' +
           'Unlock the Keychain and try again; the existing key was left untouched.'
@@ -124,7 +126,11 @@ export function getOrCreateDataKey(): Buffer {
     if (key.length === 32) return key
     // Decrypted fine but malformed: keep a backup copy for recovery, leave the file in place.
     try {
-      copyFileSync(path, `${path}.malformed-${Date.now()}.bak`)
+      // One backup is enough: the file is never modified, so don't add a copy per call.
+      const dir = dirname(path)
+      const prefix = `${basename(path)}.malformed-`
+      const hasBackup = readdirSync(dir).some((f) => f.startsWith(prefix) && f.endsWith('.bak'))
+      if (!hasBackup) copyFileSync(path, `${path}.malformed-${Date.now()}.bak`)
     } catch {
       /* best effort */
     }
