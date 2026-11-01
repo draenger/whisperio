@@ -7,6 +7,7 @@ import { RecordingsView } from '../recordings/RecordingsPanel'
 import { CleanupPanel, type CleanupMode, type AiProvider, type CleanupTemplate } from './CleanupPanel'
 import { ContextTonePanel, type ToneProfileId } from './ContextTonePanel'
 import { UsagePanel } from './UsagePanel'
+import { PrivacyPanel } from './PrivacyPanel'
 import { KeyStorageHint } from './KeyStorageHint'
 
 // Derived from the global window.api typings (preload) without a cross-project import
@@ -169,7 +170,7 @@ function RecentErrorsPanel({ s, theme }: { s: ReturnType<typeof makeStyles>; the
   )
 }
 
-type TabId = 'general' | 'providers' | 'audio' | 'hotkeys' | 'sync' | 'recordings' | 'usage' | 'updates'
+type TabId = 'general' | 'providers' | 'audio' | 'hotkeys' | 'sync' | 'recordings' | 'privacy' | 'usage' | 'updates'
 
 type NavGroup = {
   label: string
@@ -183,6 +184,7 @@ const TAB_ICONS: Record<string, string> = {
   hotkeys: 'M3 5h18a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1zM6 9h.01M10 9h.01M14 9h.01M18 9h.01M6 13h.01M9 13h6M18 13h.01',
   sync: 'M21 2v6h-6M3 12a9 9 0 0 1 15-6.7L21 8M3 22v-6h6M21 12a9 9 0 0 1-15 6.7L3 16',
   recordings: 'M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zM12 7v5l3 2',
+  privacy: 'M12 2 4 5v6c0 5 3.4 9.3 8 11 4.6-1.7 8-6 8-11V5l-8-3zM9 12l2 2 4-4',
   usage: 'M3 3v18h18M7 15l4-6 3 3 5-8',
   updates: 'M21 12a9 9 0 1 1-2.64-6.36M21 3v6h-6'
 }
@@ -503,7 +505,8 @@ export function SettingsForm(): ReactElement {
       label: 'Library',
       tabs: [
         { id: 'sync', label: 'Sync' },
-        { id: 'recordings', label: 'Recordings' }
+        { id: 'recordings', label: 'Recordings' },
+        { id: 'privacy', label: 'Privacy' }
       ]
     },
     {
@@ -1018,6 +1021,8 @@ export function SettingsForm(): ReactElement {
                   {activeTab === 'sync' && (
                     <SyncTab s={s} theme={theme} />
                   )}
+
+                  {activeTab === 'privacy' && <PrivacyPanel s={s} theme={theme} />}
 
                   {activeTab === 'usage' && (
                     <>

@@ -1,6 +1,7 @@
 import { app, safeStorage } from 'electron'
-import { readFileSync, writeFileSync, existsSync, renameSync, unlinkSync } from 'fs'
+import { readFileSync, writeFileSync, existsSync, renameSync, unlinkSync, statSync } from 'fs'
 import { join } from 'path'
+import { unlinkWithRetry } from './audioVault'
 import { generateDataKey, DATA_KEY_BYTES } from './secretCrypto'
 
 /**
@@ -118,13 +119,39 @@ export function getDataKeyForDecrypt(): Buffer | null {
   }
 }
 
-/** Crypto-shred: delete the key file and drop the in-memory copy. Sealed history becomes unreadable. */
-export function shredDataKey(): void {
+/** True when the wrapped key file is present (it may still fail to unwrap, e.g. a locked keychain). */
+export function dataKeyFileExists(): boolean {
+  // statSync, not existsSync: existsSync returns false on ANY stat error (EPERM/EACCES), which would
+  // misreport a present-but-unreadable key as missing (= "unrecoverable" -> reset allowed). Only
+  // ENOENT means absent; every other error counts as present (fail-safe toward "transient").
+  return !isAbsent(keyPath())
+}
+
+function isAbsent(path: string): boolean {
+  try {
+    statSync(path)
+    return false
+  } catch (err) {
+    return (err as NodeJS.ErrnoException | null)?.code === 'ENOENT'
+  }
+}
+
+/**
+ * Key removal ("shred"): delete the wrapped key file and drop the in-memory copy. HONEST SCOPE: this
+ * is only an unlink of data-vault.key. The key that WRAPS it lives in the OS keychain / DPAPI /
+ * keyring and is NOT removed. On SSDs/journaling filesystems the old wrapped key bytes may
+ * physically remain until overwritten; sealed data stays unreadable only because the file is gone
+ * and the app never reads it again - not because the wrapping key was destroyed. Returns true only
+ * when the key file is verifiably gone. A failed delete (EPERM, AV lock) returns false: callers MUST stop before
+ * deleting any data, because the sealed history would still be readable.
+ */
+export function shredDataKey(): boolean {
   cachedKey = null
   try {
     const path = keyPath()
-    if (existsSync(path)) unlinkSync(path)
+    if (!isAbsent(path)) unlinkWithRetry(path)
+    return isAbsent(path)
   } catch {
-    /* best effort */
+    return false
   }
 }
