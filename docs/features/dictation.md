@@ -51,6 +51,58 @@ apps) and **Output recording** (records system audio instead of the mic, e.g. me
 6. Overlay windows are created per display and tracked as displays come and go
    (`desktop/src/main/dictation/overlayWindow.ts:192`).
 
+## Command-line control (Stream Deck / scripts)
+
+A running Whisperio can be driven from the command line:
+
+| Flag | Effect |
+|------|--------|
+| `--toggle` | Same as the dictation hotkey (start, or stop and transcribe) |
+| `--send` | Same as the Dictate & Send hotkey (toggle, then Enter after paste) |
+| `--start` | Start recording only if idle |
+| `--stop` | Stop and transcribe only if recording (also ends command-mode capture) |
+| `--cancel` | Cancel the current session, if any |
+
+The second process hands its argv to the running instance
+(`app.on('second-instance')`, `desktop/src/main/cliControl.ts`) and exits; the settings
+window is not shown when a flag is present. A launch without a flag still opens settings.
+
+Cold start: if Whisperio is NOT running, launching it with a flag starts the app normally and
+the command is ignored (logged) - it never begins recording on launch.
+
+- Stream Deck: action "System: Open" -> `"C:\Users\<you>\AppData\Local\Programs\Whisperio\Whisperio.exe" --toggle`
+  (use your real install path; one button per flag).
+- macOS: call the binary directly so argv reaches the running instance:
+  `/Applications/Whisperio.app/Contents/MacOS/Whisperio --toggle`.
+  `open -a Whisperio --args --toggle` is not reliable for an already-running app (LaunchServices
+  just activates it and does not spawn a second process with your args).
+- Not yet verified on a real machine.
+
+### whisperio:// links
+
+Off by default. Enable in Settings > General > "Allow control via whisperio:// links"
+(`allowUrlControl`). Security note: any website or app can open a `whisperio://` link, so the
+feature is opt-in and deliberately narrow.
+
+- By URL only `whisperio://stop` and `whisperio://cancel` work. `whisperio://toggle` and
+  `whisperio://start` (they begin recording) additionally need "Also allow links to start
+  recording" (`allowUrlStart`, default off). `whisperio://send` is never accepted by URL
+  (use the `--send` CLI flag).
+- Start-type links are rate-limited (ignored within 1 s of the previous one) and ignored while the
+  screen is locked. stop/cancel always pass.
+- Use from Raycast / Alfred ("Open URL"), Shortcuts ("Open URLs"), Stream Deck ("Website").
+- Windows/Linux: the link reaches the running instance through second-instance argv; if any
+  argv entry is a `whisperio:` link the whole call is treated as a URL: it must be the single,
+  last entry, and CLI flags next to it are ignored. macOS: `app.on('open-url')`.
+- Strict parsing: scheme and command are case-insensitive, one trailing `/` and any
+  `?query` / `#fragment` are ignored (no parameters are read). Any other host, extra path,
+  or scheme is rejected silently. Only the command name is logged, never the URL.
+- Cold start: same rule as the CLI - a link that launches a not-running Whisperio just starts
+  the app and the command is ignored (never records on launch).
+- The scheme is registered with the OS only when URL control is on and the app is packaged
+  (dev builds never touch the registry unless `WHISPERIO_DEV_PROTOCOL=1`); turning the setting
+  off unregisters it. The installer also declares it (`protocols` in `.devops/electron-builder.yml`).
+
 ## Entry points (file:line)
 
 - `desktop/src/main/dictation/index.ts:7` — `initDictation()` (called from

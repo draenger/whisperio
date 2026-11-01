@@ -7,8 +7,8 @@
 // mobile/WhisperioApp/Sources/WhisperioApp/Engine/MistralProvider.swift.
 import { net, app } from 'electron'
 import { guardRedirects, GUARDED_REDIRECT } from './redirectGuard'
-import { handleTranscriptionError } from '../errorHandler'
 import { audioMimeFromFilename } from './audioMime'
+import { recordTranscriptionError } from '../errorHandler'
 
 const MISTRAL_STT_URL = 'https://api.mistral.ai/v1/audio/transcriptions'
 export const DEFAULT_MISTRAL_MODEL = 'voxtral-small-latest'
@@ -87,7 +87,7 @@ export function mistralTranscribe(
         settled = true
         request.abort()
         const err = new Error('Mistral transcription request timed out after 45s')
-        handleTranscriptionError(err, 'mistral')
+        recordTranscriptionError(err, 'mistral')
         reject(err)
       }
     }, 45_000)
@@ -115,7 +115,7 @@ export function mistralTranscribe(
         if (response.statusCode !== 200) {
           if (isDev()) console.error(`[Whisperio] Mistral API error body: ${responseBody}`)
           const err = new Error(`Mistral API error ${response.statusCode}`)
-          handleTranscriptionError(err, 'mistral')
+          recordTranscriptionError(err, 'mistral')
           settle(reject)(err)
           return
         }
@@ -124,22 +124,22 @@ export function mistralTranscribe(
           settle(resolve)(data.text)
         } catch {
           const err = new Error(`Failed to parse transcription response (HTTP ${response.statusCode})`)
-          handleTranscriptionError(err, 'mistral')
+          recordTranscriptionError(err, 'mistral')
           settle(reject)(err)
         }
       })
       response.on('error', (err: Error) => {
-        handleTranscriptionError(err, 'mistral')
+        recordTranscriptionError(err, 'mistral')
         settle(reject)(err)
       })
     })
 
     guardRedirects(request, MISTRAL_STT_URL, (err) => {
-      handleTranscriptionError(err, 'mistral')
+      recordTranscriptionError(err, 'mistral')
       settle(reject)(err)
     })
     request.on('error', (err: Error) => {
-      handleTranscriptionError(err, 'mistral')
+      recordTranscriptionError(err, 'mistral')
       settle(reject)(err)
     })
     request.write(body)

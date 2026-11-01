@@ -5,12 +5,14 @@ import { AppSettings, getActiveVocabulary, type ProviderId, type CleanupMode } f
 // the encrypted key store (secure/keyStore.ts), key store taking precedence
 // when OS secure storage is available. See secure/keyAccessor.ts.
 import { getEffectiveSettings } from './secure/keyAccessor'
-import { handleTranscriptionError, notifyInfo } from './errorHandler'
+import { recordTranscriptionError, describeTranscriptionError, notifyTranscriptionFailure, type WhisperioError } from './errorHandler'
+import { noteTranscriptionActivity } from './dictation/watchdog'
 import { guardRedirects, GUARDED_REDIRECT } from './llm/redirectGuard'
 import { OpenAICompatibleProvider, AnthropicProvider, ReplicateProvider, selectProvider, isLocalHost, type LLMProvider } from './llm/provider'
 import { cleanupTranscription, cleanupTranscriptionDetailed, formatTranscription, rewriteSelection, type CleanupResult } from './postprocess'
-import { getServerStatus } from './localServer'
+import { getServerStatus, ensureManagedServerForUrl } from './localServer'
 import { recordSTT, estimateAudioSeconds } from './usageTracker'
+import { resolveProviderAudio, LOCAL_MODEL_NEEDS_WAV_MESSAGE, type AudioPayload } from './audioFormat'
 import { getRecording, updateRecording } from './recordingStore'
 // Context-aware tone (v1.5 Work Item B). resolveToneProfile is the only
 // piece of context.ts's logic this file needs — the actual `active-win` call
@@ -82,6 +84,9 @@ const REPLICATE_API_BASE = 'https://api.replicate.com/v1'
 // clip is short, so this is generous headroom for the client-side abort.
 const REPLICATE_TIMEOUT_MS = 55_000
 
+// Upper bound for automatic transcript cleanup; after this the raw text is used.
+export const CLEANUP_TIMEOUT_MS = 20_000
+
 const PROVIDER_LABELS: Record<ProviderId, string> = {
   openai: 'OpenAI',
   elevenlabs: 'ElevenLabs',
@@ -150,6 +155,19 @@ function candidateFingerprint(settings: AppSettings): string {
  * instances persist across calls instead of being rebuilt — and their cache
  * defeated — on every dictation/cleanup invocation.
  */
+/**
+ * Construct one LLM candidate; a throwing constructor (bad/insecure base URL,
+ * see llm/provider.ts assertSecureBaseUrl) just omits that candidate so a bad
+ * AI config can never break dictation.
+ */
+function pushCandidate(list: LLMProvider[], make: () => LLMProvider): void {
+  try {
+    list.push(make())
+  } catch (err) {
+    console.warn('[Whisperio] Skipping LLM cleanup provider:', err instanceof Error ? err.message : String(err))
+  }
+}
+
 export function buildCleanupCandidates(settings: AppSettings): LLMProvider[] {
   const fingerprint = candidateFingerprint(settings)
   if (cachedCandidates && cachedCandidatesFingerprint === fingerprint) {
@@ -161,7 +179,7 @@ export function buildCleanupCandidates(settings: AppSettings): LLMProvider[] {
   const model = settings.aiModel?.trim() || ''
 
   if (settings.openaiApiKey || settings.aiProvider === 'openai') {
-    candidates.push(
+    pushCandidate(candidates, () =>
       new OpenAICompatibleProvider({
         id: 'openai',
         baseUrl: baseUrl || 'https://api.openai.com',
@@ -172,7 +190,7 @@ export function buildCleanupCandidates(settings: AppSettings): LLMProvider[] {
   }
 
   if (settings.anthropicApiKey) {
-    candidates.push(
+    pushCandidate(candidates, () =>
       new AnthropicProvider({
         id: 'anthropic',
         apiKey: settings.anthropicApiKey,
@@ -185,7 +203,7 @@ export function buildCleanupCandidates(settings: AppSettings): LLMProvider[] {
   // settingsManager.ts's doc comment on that key) — one key unlocks both a
   // Replicate STT provider and this Replicate LLM cleanup candidate.
   if (settings.replicateApiKey) {
-    candidates.push(
+    pushCandidate(candidates, () =>
       new ReplicateProvider({
         id: 'replicate',
         apiKey: settings.replicateApiKey,
@@ -201,13 +219,13 @@ export function buildCleanupCandidates(settings: AppSettings): LLMProvider[] {
   // an explicit aiBaseUrl for it.
   const localBaseUrl =
     settings.aiProvider === 'local' && baseUrl ? baseUrl : `http://127.0.0.1:${getServerStatus().port}`
-  candidates.push(
+  pushCandidate(candidates, () =>
     new OpenAICompatibleProvider({
       id: 'local',
       baseUrl: localBaseUrl,
       model: model || DEFAULT_LOCAL_CLEANUP_MODEL
     })
-  )
+    )
 
   cachedCandidates = candidates
   cachedCandidatesFingerprint = fingerprint
@@ -263,17 +281,30 @@ async function applyCleanup(settings: AppSettings, raw: string, context: Dictati
   const controller = new AbortController()
   activeCleanupAbort = controller
 
+  let timer: ReturnType<typeof setTimeout> | undefined
   try {
-    const vocab = getActiveVocabulary(settings)
-    const provider = await selectProvider(settings, buildCleanupCandidates(settings))
-    return await cleanupTranscription(raw, {
-      cleanupMode: settings.cleanupMode,
-      vocab,
-      tone: resolveToneDescription(settings, context),
-      provider,
-      signal: controller.signal
+    const run = (async (): Promise<string> => {
+      const vocab = getActiveVocabulary(settings)
+      const provider = await selectProvider(settings, buildCleanupCandidates(settings))
+      return cleanupTranscription(raw, {
+        cleanupMode: settings.cleanupMode,
+        vocab,
+        tone: resolveToneDescription(settings, context),
+        provider,
+        signal: controller.signal
+      })
+    })()
+    run.catch(() => {})
+    const timeout = new Promise<string>((resolve) => {
+      timer = setTimeout(() => {
+        controller.abort()
+        resolve(raw)
+      }, CLEANUP_TIMEOUT_MS)
     })
+    // Fail-soft: cleanup must never lose a good transcript.
+    return await Promise.race([run, timeout]).catch(() => raw)
   } finally {
+    if (timer) clearTimeout(timer)
     if (activeCleanupAbort === controller) {
       activeCleanupAbort = null
     }
@@ -450,9 +481,17 @@ export async function transcribeAudio(
   // recording's ORIGINALLY-captured context for reprocessRecording(). This
   // module never calls getActiveContext() itself; see the import comment
   // above for why that split matters for reprocessing correctness.
-  context: DictationContext | null = null
+  context: DictationContext | null = null,
+  // Optional WAV rendition of the same audio (live dictation only; the
+  // renderer makes it when `selfhosted` is in the chain). whisper.cpp gets
+  // this; every other provider gets `audioBuffer` (WebM/Opus) untouched.
+  wavAudio: AudioPayload | null = null,
+  // Only the live dictation flow has a hotkey watchdog to feed; Reprocess and
+  // other callers must not extend it.
+  options: { fromDictation?: boolean } = {}
 ): Promise<string> {
   const settings = getEffectiveSettings()
+  const noteActivity = options.fromDictation ? noteTranscriptionActivity : undefined
 
   // Build effective chain: use providerChain if set, otherwise legacy sttProvider + fallback
   let chain: ProviderId[]
@@ -473,12 +512,24 @@ export async function transcribeAudio(
     configuredChain.push(chain[0])
   }
 
+  // Providers only RECORD their errors and throw (they fire from native
+  // callbacks, so they must not decide about toasts). The catch below runs
+  // after an await, in this function's own scope: it collects each failure and
+  // ONE notification is shown only if the whole chain failed.
+  const failures: WhisperioError[] = []
   let firstError: Error | null = null
-
+  let text: string | null = null
   for (let i = 0; i < configuredChain.length; i++) {
     const provider = configuredChain[i]
+    noteActivity?.()
+    const audio = resolveProviderAudio(provider, { buffer: audioBuffer, filename }, wavAudio)
+    if (!audio) {
+      // selfhosted but we only hold WebM (e.g. Reprocess): skip, fall through.
+      if (!firstError) firstError = new Error(LOCAL_MODEL_NEEDS_WAV_MESSAGE)
+      continue
+    }
     try {
-      const text = await transcribeWithProvider(settings, provider, audioBuffer, filename)
+      text = await transcribeWithProvider(settings, provider, audio.buffer, audio.filename, noteActivity)
       // PACZKA METERING (v1.6): report usage after every successful STT call,
       // including local/self-hosted (isLocal forces cost to 0 there, but the
       // request/audio-seconds counters still stay complete). recordSTT()
@@ -486,20 +537,42 @@ export async function transcribeAudio(
       // transcription.
       recordSTT({
         provider,
-        audioSeconds: estimateAudioSeconds(audioBuffer, filename),
+        // Exact duration from the WAV when we have one (as before this
+        // change), else the WebM byte-rate estimate.
+        audioSeconds: wavAudio
+          ? estimateAudioSeconds(wavAudio.buffer, wavAudio.filename)
+          : estimateAudioSeconds(audio.buffer, audio.filename),
         isLocal: provider === 'selfhosted'
       })
-      return await applyCleanup(settings, text, context)
-    } catch (err) {
-      if (!firstError) firstError = err instanceof Error ? err : new Error(String(err))
-      if (i < configuredChain.length - 1) {
-        const next = configuredChain[i + 1]
-        notifyInfo('Whisperio', `${PROVIDER_LABELS[provider]} failed. Trying ${PROVIDER_LABELS[next]}...`)
+      if (firstError) {
+        // Not a toast, but a broken primary must not be completely silent.
+        console.warn(
+          `[Whisperio] ${PROVIDER_LABELS[configuredChain[0]]} failed (${firstError.message}); ${PROVIDER_LABELS[provider]} succeeded.`
+        )
       }
+      break
+    } catch (err) {
+      const e = err instanceof Error ? err : new Error(String(err))
+      if (!firstError) firstError = e
+      failures.push(describeTranscriptionError(e, provider))
     }
   }
 
-  throw firstError || new Error('No providers configured. Open Settings to set up a provider.')
+  if (text === null) {
+    const finalError = firstError || new Error('No providers configured. Open Settings to set up a provider.')
+    notifyTranscriptionFailure(failures.length ? failures : [describeTranscriptionError(finalError, configuredChain[0] ?? 'unknown')])
+    throw finalError
+  }
+
+  // Cleanup runs AFTER the STT chain and is fail-soft: a cleanup problem must
+  // never discard a good transcript or re-bill the next STT provider.
+  noteActivity?.() // cleanup starting
+  try {
+    return await applyCleanup(settings, text, context)
+  } catch (err) {
+    console.warn('[Whisperio] Cleanup failed, using raw transcript:', err instanceof Error ? err.message : String(err))
+    return text
+  }
 }
 
 function isProviderConfigured(settings: AppSettings, provider: ProviderId): boolean {
@@ -542,13 +615,14 @@ async function transcribeWithProvider(
   settings: AppSettings,
   provider: ProviderId,
   audioBuffer: Buffer,
-  filename: string
+  filename: string,
+  onActivity?: () => void
 ): Promise<string> {
   if (provider === 'elevenlabs') {
     const apiKey = settings.elevenlabsApiKey
     if (!apiKey) {
       const err = new Error('No ElevenLabs API key configured. Open Settings to set it.')
-      handleTranscriptionError(err, 'elevenlabs')
+      recordTranscriptionError(err, 'elevenlabs')
       throw err
     }
     const vocab = getActiveVocabulary(settings)
@@ -560,7 +634,7 @@ async function transcribeWithProvider(
     const baseUrl = settings.openaiBaseUrl?.trim()
     if (!baseUrl) {
       const err = new Error('No self-hosted server URL configured. Open Settings to set it.')
-      handleTranscriptionError(err, 'selfhosted')
+      recordTranscriptionError(err, 'selfhosted')
       throw err
     }
     // CONNECTION SECURITY: only allow http:// for loopback/private hosts (the
@@ -571,7 +645,7 @@ async function transcribeWithProvider(
       parsedUrl = new URL(baseUrl)
     } catch {
       const err = new Error(`Self-hosted server URL is invalid: "${baseUrl}". Open Settings to fix it.`)
-      handleTranscriptionError(err, 'selfhosted')
+      recordTranscriptionError(err, 'selfhosted')
       throw err
     }
     if (parsedUrl.protocol !== 'https:' && !isLocalHost(parsedUrl.hostname)) {
@@ -579,7 +653,7 @@ async function transcribeWithProvider(
         `Self-hosted server URL must use https:// for a public host (got ${parsedUrl.protocol}//${parsedUrl.hostname}). ` +
           'http:// is only allowed for loopback/private addresses. Open Settings to fix it.'
       )
-      handleTranscriptionError(err, 'selfhosted')
+      recordTranscriptionError(err, 'selfhosted')
       throw err
     }
     const model = settings.whisperModel?.trim() || SELFHOSTED_MODEL
@@ -590,6 +664,16 @@ async function transcribeWithProvider(
     // Bearer token for a private/self-hosted server that requires auth — empty
     // (the default) preserves today's no-Authorization-header behavior.
     const sttApiKey = settings.sttApiKey?.trim() || ''
+    // The managed local server is stopped after idle (and not started at app
+    // launch): (re)start it on demand so this request does not hit a refused
+    // connection. Best-effort: a failed ensure must not block the request (the
+    // user's own server may be up); if the request fails the chain falls
+    // through as usual.
+    try {
+      await ensureManagedServerForUrl(baseUrl, model)
+    } catch (err) {
+      if (isDev()) console.warn('[Whisperio] Could not ensure local whisper server:', err)
+    }
     return whisperTranscribe(sttApiKey, audioBuffer, filename, prompt, endpoint, model, true, lang)
   }
 
@@ -597,7 +681,7 @@ async function transcribeWithProvider(
     const apiKey = settings.replicateApiKey
     if (!apiKey) {
       const err = new Error('No Replicate API key configured. Open Settings to set it.')
-      handleTranscriptionError(err, 'replicate')
+      recordTranscriptionError(err, 'replicate')
       throw err
     }
     const model = settings.sttReplicateModel?.trim() || DEFAULT_REPLICATE_MODEL
@@ -610,7 +694,7 @@ async function transcribeWithProvider(
     const apiKey = settings.groqApiKey
     if (!apiKey) {
       const err = new Error('No Groq API key configured. Open Settings to set it.')
-      handleTranscriptionError(err, 'groq')
+      recordTranscriptionError(err, 'groq')
       throw err
     }
     const model = settings.sttGroqModel?.trim() || ''
@@ -623,7 +707,7 @@ async function transcribeWithProvider(
     const apiKey = settings.deepgramApiKey
     if (!apiKey) {
       const err = new Error('No Deepgram API key configured. Open Settings to set it.')
-      handleTranscriptionError(err, 'deepgram')
+      recordTranscriptionError(err, 'deepgram')
       throw err
     }
     const model = settings.sttDeepgramModel?.trim() || ''
@@ -635,19 +719,19 @@ async function transcribeWithProvider(
     const apiKey = settings.assemblyaiApiKey
     if (!apiKey) {
       const err = new Error('No AssemblyAI API key configured. Open Settings to set it.')
-      handleTranscriptionError(err, 'assemblyai')
+      recordTranscriptionError(err, 'assemblyai')
       throw err
     }
     const model = settings.sttAssemblyaiModel?.trim() || ''
     const lang = settings.transcriptionLanguage?.trim() || 'auto'
-    return assemblyAITranscribe(apiKey, audioBuffer, model, lang)
+    return assemblyAITranscribe(apiKey, audioBuffer, model, lang, onActivity)
   }
 
   if (provider === 'mistral') {
     const apiKey = settings.mistralApiKey
     if (!apiKey) {
       const err = new Error('No Mistral API key configured. Open Settings to set it.')
-      handleTranscriptionError(err, 'mistral')
+      recordTranscriptionError(err, 'mistral')
       throw err
     }
     const model = settings.sttMistralModel?.trim() || ''
@@ -660,7 +744,7 @@ async function transcribeWithProvider(
   const apiKey = settings.openaiApiKey
   if (!apiKey) {
     const err = new Error('No OpenAI API key configured. Open Settings to set it.')
-    handleTranscriptionError(err, 'openai')
+    recordTranscriptionError(err, 'openai')
     throw err
   }
 
@@ -677,6 +761,8 @@ async function transcribeWithProvider(
 }
 
 function whisperTranscribe(apiKey: string, audioBuffer: Buffer, filename: string, prompt: string, baseUrl: string, model: string, directUrl = false, language = 'auto'): Promise<string> {
+  const errProvider = directUrl ? 'selfhosted' : 'openai'
+  const errLabel = directUrl ? 'Self-hosted' : 'OpenAI'
   const boundary = `----Whisperio${Date.now()}`
 
   const parts: Buffer[] = []
@@ -729,8 +815,8 @@ function whisperTranscribe(apiKey: string, audioBuffer: Buffer, filename: string
       if (!settled) {
         settled = true
         request.abort()
-        const err = new Error('OpenAI transcription request timed out after 45s')
-        handleTranscriptionError(err, 'openai')
+        const err = new Error(`${errLabel} transcription request timed out after 45s`)
+        recordTranscriptionError(err, errProvider)
         reject(err)
       }
     }, 45_000)
@@ -771,8 +857,8 @@ function whisperTranscribe(apiKey: string, audioBuffer: Buffer, filename: string
         if (response.statusCode !== 200) {
           // Keep the raw provider body out of the user-facing Error message.
           if (isDev()) console.error(`[Whisperio] OpenAI API error body: ${responseBody}`)
-          const err = new Error(`OpenAI API error ${response.statusCode}`)
-          handleTranscriptionError(err, directUrl ? 'selfhosted' : 'openai')
+          const err = new Error(`${errLabel} API error ${response.statusCode}`)
+          recordTranscriptionError(err, errProvider)
           settle(reject)(err)
           return
         }
@@ -785,9 +871,9 @@ function whisperTranscribe(apiKey: string, audioBuffer: Buffer, filename: string
           // transcribeAudio() actually gets a turn.
           if (typeof data.text !== 'string') {
             const err = new Error(
-              `${directUrl ? 'Self-hosted' : 'OpenAI'} transcription response contained no text (HTTP ${response.statusCode})`
+              `${errLabel} transcription response contained no text (HTTP ${response.statusCode})`
             )
-            handleTranscriptionError(err, directUrl ? 'selfhosted' : 'openai')
+            recordTranscriptionError(err, errProvider)
             settle(reject)(err)
             return
           }
@@ -795,24 +881,24 @@ function whisperTranscribe(apiKey: string, audioBuffer: Buffer, filename: string
           settle(resolve)(data.text)
         } catch {
           const err = new Error(`Failed to parse transcription response (HTTP ${response.statusCode})`)
-          handleTranscriptionError(err, 'openai')
+          recordTranscriptionError(err, errProvider)
           settle(reject)(err)
         }
       })
       response.on('error', (err: Error) => {
-        handleTranscriptionError(err, 'openai')
+        recordTranscriptionError(err, errProvider)
         settle(reject)(err)
       })
     })
 
     // Never follow a redirect that downgrades to http / changes host (would leak key + audio).
     guardRedirects(request, targetUrl, (err) => {
-      handleTranscriptionError(err, 'selfhosted')
+      recordTranscriptionError(err, errProvider)
       settle(reject)(err)
     })
 
     request.on('error', (err: Error) => {
-      handleTranscriptionError(err, 'openai')
+      recordTranscriptionError(err, errProvider)
       settle(reject)(err)
     })
     request.write(body)
@@ -863,7 +949,7 @@ function elevenLabsTranscribe(apiKey: string, audioBuffer: Buffer, filename: str
         settled = true
         request.abort()
         const err = new Error('ElevenLabs transcription request timed out after 45s')
-        handleTranscriptionError(err, 'elevenlabs')
+        recordTranscriptionError(err, 'elevenlabs')
         reject(err)
       }
     }, 45_000)
@@ -897,7 +983,7 @@ function elevenLabsTranscribe(apiKey: string, audioBuffer: Buffer, filename: str
         if (response.statusCode !== 200) {
           if (isDev()) console.error(`[Whisperio] ElevenLabs API error body: ${responseBody}`)
           const err = new Error(`ElevenLabs API error ${response.statusCode}`)
-          handleTranscriptionError(err, 'elevenlabs')
+          recordTranscriptionError(err, 'elevenlabs')
           settle(reject)(err)
           return
         }
@@ -909,31 +995,31 @@ function elevenLabsTranscribe(apiKey: string, audioBuffer: Buffer, filename: str
             const err = new Error(
               `ElevenLabs transcription response contained no text (HTTP ${response.statusCode})`
             )
-            handleTranscriptionError(err, 'elevenlabs')
+            recordTranscriptionError(err, 'elevenlabs')
             settle(reject)(err)
             return
           }
           settle(resolve)(data.text)
         } catch {
           const err = new Error(`Failed to parse transcription response (HTTP ${response.statusCode})`)
-          handleTranscriptionError(err, 'elevenlabs')
+          recordTranscriptionError(err, 'elevenlabs')
           settle(reject)(err)
         }
       })
       response.on('error', (err: Error) => {
-        handleTranscriptionError(err, 'elevenlabs')
+        recordTranscriptionError(err, 'elevenlabs')
         settle(reject)(err)
       })
     })
 
     // Never follow a redirect that downgrades to http / changes host (would leak key + audio).
     guardRedirects(request, targetUrl, (err) => {
-      handleTranscriptionError(err, 'elevenlabs')
+      recordTranscriptionError(err, 'elevenlabs')
       settle(reject)(err)
     })
 
     request.on('error', (err: Error) => {
-      handleTranscriptionError(err, 'elevenlabs')
+      recordTranscriptionError(err, 'elevenlabs')
       settle(reject)(err)
     })
     request.write(body)
@@ -1018,7 +1104,7 @@ function elevenLabsTranscribeDiarized(
         settled = true
         request.abort()
         const err = new Error('ElevenLabs transcription request timed out after 45s')
-        handleTranscriptionError(err, 'elevenlabs')
+        recordTranscriptionError(err, 'elevenlabs')
         reject(err)
       }
     }, 45_000)
@@ -1052,7 +1138,7 @@ function elevenLabsTranscribeDiarized(
         if (response.statusCode !== 200) {
           if (isDev()) console.error(`[Whisperio] ElevenLabs API error body: ${responseBody}`)
           const err = new Error(`ElevenLabs API error ${response.statusCode}`)
-          handleTranscriptionError(err, 'elevenlabs')
+          recordTranscriptionError(err, 'elevenlabs')
           settle(reject)(err)
           return
         }
@@ -1070,24 +1156,24 @@ function elevenLabsTranscribeDiarized(
           settle(resolve)({ segments, text })
         } catch {
           const err = new Error(`Failed to parse transcription response (HTTP ${response.statusCode})`)
-          handleTranscriptionError(err, 'elevenlabs')
+          recordTranscriptionError(err, 'elevenlabs')
           settle(reject)(err)
         }
       })
       response.on('error', (err: Error) => {
-        handleTranscriptionError(err, 'elevenlabs')
+        recordTranscriptionError(err, 'elevenlabs')
         settle(reject)(err)
       })
     })
 
     // Never follow a redirect that downgrades to http / changes host (would leak key + audio).
     guardRedirects(request, targetUrl, (err) => {
-      handleTranscriptionError(err, 'elevenlabs')
+      recordTranscriptionError(err, 'elevenlabs')
       settle(reject)(err)
     })
 
     request.on('error', (err: Error) => {
-      handleTranscriptionError(err, 'elevenlabs')
+      recordTranscriptionError(err, 'elevenlabs')
       settle(reject)(err)
     })
     request.write(body)
@@ -1150,7 +1236,7 @@ function openAITranscribeDiarized(
         settled = true
         request.abort()
         const err = new Error('OpenAI transcription request timed out after 45s')
-        handleTranscriptionError(err, 'openai')
+        recordTranscriptionError(err, 'openai')
         reject(err)
       }
     }, 45_000)
@@ -1184,7 +1270,7 @@ function openAITranscribeDiarized(
         if (response.statusCode !== 200) {
           if (isDev()) console.error(`[Whisperio] OpenAI API error body: ${responseBody}`)
           const err = new Error(`OpenAI API error ${response.statusCode}`)
-          handleTranscriptionError(err, 'openai')
+          recordTranscriptionError(err, 'openai')
           settle(reject)(err)
           return
         }
@@ -1195,24 +1281,24 @@ function openAITranscribeDiarized(
           settle(resolve)({ segments, text })
         } catch {
           const err = new Error(`Failed to parse transcription response (HTTP ${response.statusCode})`)
-          handleTranscriptionError(err, 'openai')
+          recordTranscriptionError(err, 'openai')
           settle(reject)(err)
         }
       })
       response.on('error', (err: Error) => {
-        handleTranscriptionError(err, 'openai')
+        recordTranscriptionError(err, 'openai')
         settle(reject)(err)
       })
     })
 
     // Never follow a redirect that downgrades to http / changes host (would leak key + audio).
     guardRedirects(request, targetUrl, (err) => {
-      handleTranscriptionError(err, 'openai')
+      recordTranscriptionError(err, 'openai')
       settle(reject)(err)
     })
 
     request.on('error', (err: Error) => {
-      handleTranscriptionError(err, 'openai')
+      recordTranscriptionError(err, 'openai')
       settle(reject)(err)
     })
     request.write(body)
@@ -1244,6 +1330,29 @@ export async function transcribeConversation(
   audioBuffer: Buffer,
   filename: string
 ): Promise<DiarizedResult> {
+  // Capture everything the catch needs BEFORE the try: nothing in the catch
+  // may throw and mask the original error / lose the toast.
+  let diarizingProvider: string = 'unknown'
+  try {
+    diarizingProvider = getConfiguredDiarizingProvider(getEffectiveSettings()) ?? 'unknown'
+  } catch {
+    /* keep 'unknown' */
+  }
+  try {
+    return await transcribeConversationInner(audioBuffer, filename)
+  } catch (err) {
+    // Providers only record; this single-provider flow has no fallback, so
+    // notify here (after an await, in scope).
+    const e = err instanceof Error ? err : new Error(String(err))
+    notifyTranscriptionFailure([describeTranscriptionError(e, diarizingProvider)])
+    throw err
+  }
+}
+
+async function transcribeConversationInner(
+  audioBuffer: Buffer,
+  filename: string
+): Promise<DiarizedResult> {
   const settings = getEffectiveSettings()
   const provider = getConfiguredDiarizingProvider(settings)
 
@@ -1251,7 +1360,7 @@ export async function transcribeConversation(
     const err = new Error(
       'Add an ElevenLabs, OpenAI, Deepgram or AssemblyAI key to transcribe conversations. Open Settings to set one up.'
     )
-    handleTranscriptionError(err, 'elevenlabs')
+    recordTranscriptionError(err, 'elevenlabs')
     throw err
   }
 
@@ -1346,7 +1455,7 @@ async function replicateTranscribe(
     })
   } catch (err) {
     const error = err instanceof Error ? err : new Error(String(err))
-    handleTranscriptionError(error, 'replicate')
+    recordTranscriptionError(error, 'replicate')
     throw error
   } finally {
     clearTimeout(timeout)
@@ -1357,7 +1466,7 @@ async function replicateTranscribe(
   if (!response.ok) {
     if (isDev()) console.error(`[Whisperio] Replicate API error body: ${rawText}`)
     const err = new Error(`Replicate API error ${response.status}`)
-    handleTranscriptionError(err, 'replicate')
+    recordTranscriptionError(err, 'replicate')
     throw err
   }
 
@@ -1366,7 +1475,7 @@ async function replicateTranscribe(
     body = JSON.parse(rawText) as ReplicatePredictionResponse
   } catch {
     const err = new Error(`Failed to parse Replicate response (HTTP ${response.status})`)
-    handleTranscriptionError(err, 'replicate')
+    recordTranscriptionError(err, 'replicate')
     throw err
   }
 
@@ -1375,14 +1484,14 @@ async function replicateTranscribe(
   // a model-side error — either way there's no usable output yet.
   if (body.status && body.status !== 'succeeded') {
     const err = new Error(`Replicate prediction did not complete in time (status: ${body.status})`)
-    handleTranscriptionError(err, 'replicate')
+    recordTranscriptionError(err, 'replicate')
     throw err
   }
 
   const text = extractReplicateTranscription(body.output)
   if (text === null) {
     const err = new Error('Replicate response did not contain a transcription')
-    handleTranscriptionError(err, 'replicate')
+    recordTranscriptionError(err, 'replicate')
     throw err
   }
   return text
