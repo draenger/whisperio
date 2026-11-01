@@ -535,7 +535,9 @@ function sweepLeakedAudioTmp(): void {
  */
 export function migrateAudio(direction: 'encrypt' | 'decrypt'): Promise<AudioMigrationResult> {
   if (migrationRunning) {
-    if (migrationRunning.direction === direction) return migrationRunning.promise
+    // Always chain (even same direction): an ON -> OFF -> ON flip within one sweep would otherwise
+    // leave files skipped during the OFF window as plaintext until next launch. A redundant pass
+    // costs only 8-byte header peeks. entry.promise clears migrationRunning before it settles.
     return migrationRunning.promise.then(() => migrateAudio(direction))
   }
   const job = (async (): Promise<AudioMigrationResult> => {
