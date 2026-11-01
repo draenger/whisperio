@@ -37,6 +37,8 @@ export interface SecretEnvelope {
   tag: string
   /** Optional key id (additive; absent on every pre-existing envelope). Informational only. */
   kid?: string
+  /** AAD format version of the caller's context (absent = legacy v1, kid NOT bound into AAD). */
+  av?: number
 }
 
 /** Generate a fresh 256-bit data key. Caller is responsible for storing it securely. */
