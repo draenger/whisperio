@@ -12,7 +12,7 @@ export interface DictationAPI {
   onStateChanged: (callback: (state: string) => void) => () => void
   onOverlayInfo: (callback: (info: OverlayInfo) => void) => () => void
   sendResult: (text: string, sessionId?: number) => Promise<void>
-  transcribe: (audioData: ArrayBuffer, filename: string) => Promise<string>
+  transcribe: (audioData: ArrayBuffer, filename: string, wavData?: ArrayBuffer | null) => Promise<string>
 }
 
 export interface ModelInfo {
