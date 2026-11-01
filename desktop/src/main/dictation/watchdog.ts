@@ -6,8 +6,9 @@
  * Fires `onFire` when EITHER
  *  - no activity was noted for `idleMs` (a hung chain), or
  *  - `maxMs` elapsed since start() (absolute cap).
- * Activity = noteTranscriptionActivity(), called by transcribe.ts when each
- * provider attempt / cleanup starts. Deliberately dependency-free so
+ * Activity = noteTranscriptionActivity(), called by transcribe.ts (live dictation
+ * only, not Reprocess) when each provider attempt / cleanup starts and on each
+ * AssemblyAI poll. Deliberately dependency-free so
  * transcribe.ts can import it without a cycle with hotkeyManager.
  */
 

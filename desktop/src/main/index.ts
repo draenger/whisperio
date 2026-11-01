@@ -341,7 +341,7 @@ app.whenReady().then(() => {
     const context = settings.contextAwareTone
       ? await getActiveContext({ includeWindowTitle: settings.windowTitlePermissionEnabled })
       : null
-    return transcribeAudio(audioBuffer, filename, context)
+    return transcribeAudio(audioBuffer, filename, context, { fromDictation: true })
   })
 
   // Register error IPC handler

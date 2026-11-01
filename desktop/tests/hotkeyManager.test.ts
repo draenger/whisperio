@@ -1,4 +1,4 @@
-import { vi, describe, it, expect, beforeEach } from 'vitest'
+import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest'
 
 // --- Electron mocks ---
 const mockRegister = vi.fn()
@@ -117,6 +117,10 @@ const mockOverlayWin = {
 
 describe('hotkeyManager', () => {
   let mod: HotkeyModule
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
 
   beforeEach(async () => {
     vi.clearAllMocks()

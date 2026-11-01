@@ -450,9 +450,13 @@ export async function transcribeAudio(
   // recording's ORIGINALLY-captured context for reprocessRecording(). This
   // module never calls getActiveContext() itself; see the import comment
   // above for why that split matters for reprocessing correctness.
-  context: DictationContext | null = null
+  context: DictationContext | null = null,
+  // Only the live dictation flow has a hotkey watchdog to feed; Reprocess and
+  // other callers must not extend it.
+  options: { fromDictation?: boolean } = {}
 ): Promise<string> {
   const settings = getEffectiveSettings()
+  const noteActivity = options.fromDictation ? noteTranscriptionActivity : undefined
 
   // Build effective chain: use providerChain if set, otherwise legacy sttProvider + fallback
   let chain: ProviderId[]
@@ -477,9 +481,9 @@ export async function transcribeAudio(
 
   for (let i = 0; i < configuredChain.length; i++) {
     const provider = configuredChain[i]
-    noteTranscriptionActivity()
+    noteActivity?.()
     try {
-      const text = await transcribeWithProvider(settings, provider, audioBuffer, filename)
+      const text = await transcribeWithProvider(settings, provider, audioBuffer, filename, noteActivity)
       // PACZKA METERING (v1.6): report usage after every successful STT call,
       // including local/self-hosted (isLocal forces cost to 0 there, but the
       // request/audio-seconds counters still stay complete). recordSTT()
@@ -490,7 +494,7 @@ export async function transcribeAudio(
         audioSeconds: estimateAudioSeconds(audioBuffer, filename),
         isLocal: provider === 'selfhosted'
       })
-      noteTranscriptionActivity() // cleanup starting
+      noteActivity?.() // cleanup starting
       return await applyCleanup(settings, text, context)
     } catch (err) {
       if (!firstError) firstError = err instanceof Error ? err : new Error(String(err))
@@ -544,7 +548,8 @@ async function transcribeWithProvider(
   settings: AppSettings,
   provider: ProviderId,
   audioBuffer: Buffer,
-  filename: string
+  filename: string,
+  onActivity?: () => void
 ): Promise<string> {
   if (provider === 'elevenlabs') {
     const apiKey = settings.elevenlabsApiKey
@@ -642,7 +647,7 @@ async function transcribeWithProvider(
     }
     const model = settings.sttAssemblyaiModel?.trim() || ''
     const lang = settings.transcriptionLanguage?.trim() || 'auto'
-    return assemblyAITranscribe(apiKey, audioBuffer, model, lang)
+    return assemblyAITranscribe(apiKey, audioBuffer, model, lang, onActivity)
   }
 
   if (provider === 'mistral') {
