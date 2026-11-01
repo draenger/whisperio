@@ -133,6 +133,7 @@ export interface SettingsAPI {
   // informational — used to render an honest hint next to key fields; never
   // gates saving/loading, which always falls back to settings.json.
   keyStorageAvailable: () => Promise<boolean>
+  linuxKeyringWarning: () => Promise<string | null>
   onSecureStorageWarning: (callback: (message: string) => void) => () => void
 }
 
@@ -467,6 +468,7 @@ const settingsApi: SettingsAPI = {
   pauseHotkeys: () => ipcRenderer.send('hotkeys:pause'),
   resumeHotkeys: () => ipcRenderer.send('hotkeys:resume'),
   keyStorageAvailable: () => ipcRenderer.invoke('settings:keyStorageAvailable'),
+  linuxKeyringWarning: () => ipcRenderer.invoke('settings:linuxKeyringWarning'),
   onSecureStorageWarning: (callback) => {
     const handler = (_e: unknown, message: string): void => callback(message)
     ipcRenderer.on('settings:secure-storage-warning', handler)

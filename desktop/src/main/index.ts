@@ -1,4 +1,4 @@
-import { app, BrowserWindow, desktopCapturer, ipcMain, session, shell } from 'electron'
+import { app, BrowserWindow, desktopCapturer, ipcMain, Notification, session, shell } from 'electron'
 import { initDictation, cleanupDictation, reRegisterHotkeys, pauseHotkeys, resumeHotkeys } from './dictation'
 import { createTray, destroyTray } from './tray'
 import { loadSettings, saveSettings } from './settingsManager'
@@ -6,7 +6,11 @@ import {
   getEffectiveSettings,
   saveSettingsWithKeys,
   setSecureStorageWarningListener,
-  migrateProviderKeysToKeyStore
+  migrateProviderKeysToKeyStore,
+  rescueWeakLinuxKeys,
+  maybeWarnLinuxKeyring,
+  isLinuxKeyringIssue,
+  LINUX_KEYRING_WARNING
 } from './secure/keyAccessor'
 import { isEncryptionAvailable as isKeyStoreAvailable } from './secure/keyStore'
 import {
@@ -235,6 +239,12 @@ app.whenReady().then(() => {
   // settings, and before the settings:load/settings:save IPC handlers are
   // registered, so the renderer never observes the pre-migration state.
   migrateProviderKeysToKeyStore()
+  // Linux without a keyring: keep earlier-wrapped keys usable in memory and
+  // warn once per app version (no-op on Windows/macOS).
+  rescueWeakLinuxKeys()
+  maybeWarnLinuxKeyring(app.getVersion(), (message) => {
+    if (Notification.isSupported()) new Notification({ title: 'Whisperio', body: message }).show()
+  })
 
   // Apply auto-launch setting (uses Windows Registry HKCU\...\Run)
   // Skip in dev mode — process.execPath points to bare electron.exe which
@@ -289,6 +299,7 @@ app.whenReady().then(() => {
   // "...unavailable, new keys are kept for this session only"). Never gates
   // any functionality — keys entered while storage is unavailable still work
   // for the session, they are just not persisted (fail closed).
+  ipcMain.handle('settings:linuxKeyringWarning', () => (isLinuxKeyringIssue() ? LINUX_KEYRING_WARNING : null))
   ipcMain.handle('settings:keyStorageAvailable', () => isKeyStoreAvailable())
 
   // Pause/resume hotkeys during shortcut recording in settings

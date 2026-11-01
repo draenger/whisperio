@@ -68,6 +68,7 @@ const DEFAULT_SETTINGS = {
   anthropicApiKey: '',
   launchAtStartup: true,
   checkForUpdates: true,
+  linuxKeyringWarningShownFor: '',
   dictationHotkey: '',
   dictateAndSendHotkey: '',
   commandHotkey: 'Ctrl+Shift+C',

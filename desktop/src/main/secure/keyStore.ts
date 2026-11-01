@@ -35,7 +35,7 @@ function storePath(): string {
  * (`basic_text`, or `unknown` before a backend was picked): that is obfuscation,
  * not encryption, so it must count as unavailable.
  */
-function isWeakLinuxBackend(): boolean {
+export function isWeakLinuxBackend(): boolean {
   if (process.platform !== 'linux') return false
   const getBackend = (safeStorage as { getSelectedStorageBackend?: () => string }).getSelectedStorageBackend
   if (typeof getBackend !== 'function') return false
@@ -142,4 +142,37 @@ export function deleteKey(name: string): void {
 export function listKeys(): string[] {
   if (!isEncryptionAvailable()) return []
   return Object.keys(readStore())
+}
+
+/**
+ * True when at least one entry was wrapped into the store earlier (e.g. by 1.5.x
+ * with the `basic_text` backend). Works regardless of availability: it only reads
+ * the file, never decrypts.
+ */
+export function hasWrappedEntries(): boolean {
+  return Object.keys(readStore()).length > 0
+}
+
+/**
+ * Linux weak-backend rescue read: decrypt every entry of the store with the
+ * `basic_text` backend (Electron's hard-coded password), so keys wrapped by
+ * 1.5.x stay usable in memory. Returns {} unless this is Linux with a weak
+ * backend (elsewhere getKey is the only path). Never writes anything.
+ */
+export function readWeakBackendKeys(): Record<string, string> {
+  if (!isWeakLinuxBackend()) return {}
+  const out: Record<string, string> = {}
+  try {
+    if (!safeStorage.isEncryptionAvailable()) return out
+  } catch {
+    return out
+  }
+  for (const [name, ciphertext] of Object.entries(readStore())) {
+    try {
+      out[name] = safeStorage.decryptString(Buffer.from(ciphertext, 'base64'))
+    } catch (err) {
+      console.error(`[Whisperio] could not rescue provider key "${name}" from the weak store:`, err)
+    }
+  }
+  return out
 }
