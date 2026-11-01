@@ -78,6 +78,8 @@ data class DictationResult(
     val text: String,
     val source: RecordingSource,
     val session: Any?,
+    /** Milliseconds between the end of recording and this result (upload + cleanup); late results must not hijack the clipboard. */
+    val transcribeMs: Long = 0,
 )
 
 /**
@@ -200,7 +202,7 @@ class DictationController(
             // Busy before the launch so a queued start() cannot slip past the busy check. APP: a retried KEYBOARD/TILE
             // row must not show up as transcribing in the keyboard / DictateActivity (the stored source is unchanged).
             _state.value = DictationState.Transcribing(RecordingSource.APP)
-            session = scope.launch { transcribe(row, file, row.durationMs, s, RecordingSource.APP) }
+            session = scope.launch { transcribe(row, file, row.durationMs, s, RecordingSource.APP, retry = true) }
         }
     }
 
@@ -247,7 +249,7 @@ class DictationController(
                 _state.value = DictationState.Idle
                 return
             }
-            history.upsert(
+            history.updateOutcome(
                 fresh.copy(status = RecordingStatus.DONE, provider = res.provider.wire, model = res.model, transcript = text, error = null),
             )
             _state.value = DictationState.Idle
@@ -369,8 +371,10 @@ class DictationController(
         durationMs: Long,
         s: AppSettings,
         src: RecordingSource = row.source,
+        retry: Boolean = false,
     ) {
         val persist = currentPersist
+        val transcribeStart = nowMs()
         _state.value = DictationState.Transcribing(src)
         if (persist) writeBack(row) { it.copy(status = RecordingStatus.TRANSCRIBING, durationMs = durationMs, error = null) }
         val rid = if (persist) row.id else null
@@ -379,7 +383,7 @@ class DictationController(
             val res = transcriber.transcribe(TranscriptionRequest(file, s.language, s.vocabulary), chain)
             var text = res.text.trim()
             if (s.cleanupEnabled && text.isNotEmpty()) text = tidy.tidy(text).trim()
-            if (text.isEmpty()) return failTranscription(row, durationMs, DictationError.NO_SPEECH, null, persist, file)
+            if (text.isEmpty()) return failTranscription(row, durationMs, DictationError.NO_SPEECH, null, persist, file, retry)
             val keep = persist && s.keepAudio
             if (!keep) file.delete()
             if (persist) {
@@ -396,14 +400,14 @@ class DictationController(
                 }
             }
             _state.value = DictationState.Done(text, rid, src)
-            _results.emit(DictationResult(rid, text, src, currentSessionTag))
+            _results.emit(DictationResult(rid, text, src, currentSessionTag, nowMs() - transcribeStart))
         } catch (e: CancellationException) {
             throw e
         } catch (_: UploadTooLargeException) {
             // The size limit is enforced by :core; the port maps it so the UI keeps its dedicated message.
-            failTranscription(row, durationMs, DictationError.TOO_LARGE, null, persist, file)
+            failTranscription(row, durationMs, DictationError.TOO_LARGE, null, persist, file, retry)
         } catch (t: Throwable) {
-            failTranscription(row, durationMs, DictationError.PROVIDER, t.message?.let { ProviderError.redactSecrets(it) }?.take(MAX_ERROR_CHARS), persist, file)
+            failTranscription(row, durationMs, DictationError.PROVIDER, t.message?.let { ProviderError.redactSecrets(it) }?.take(MAX_ERROR_CHARS), persist, file, retry)
         }
     }
 
@@ -414,8 +418,10 @@ class DictationController(
         detail: String?,
         persist: Boolean,
         file: File,
+        retry: Boolean = false,
     ) {
-        val keepFile = persist && settings.current().keepAudio
+        // A failed history retry must never delete the only clip, whatever "Keep audio" says now.
+        val keepFile = persist && (retry || settings.current().keepAudio)
         if (!keepFile) file.delete()
         if (persist) {
             // Keep the audio on failure (only when the user keeps audio) so they can retry from history.
@@ -434,7 +440,8 @@ class DictationController(
     /** Applies [change] to the CURRENT stored row; a row deleted meanwhile is never resurrected. */
     private suspend fun writeBack(row: Recording, change: (Recording) -> Recording) {
         val fresh = history.get(row.id) ?: return
-        history.upsert(change(fresh))
+        // Targeted UPDATE of transcript/status/error/...: a category or inserted flag set while we transcribed survives.
+        history.updateOutcome(change(fresh))
     }
 
     private fun fail(error: DictationError) {

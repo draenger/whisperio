@@ -12,6 +12,12 @@ interface HistoryStore {
     suspend fun upsert(recording: Recording)
     suspend fun setInserted(id: String, inserted: Boolean)
 
+    /**
+     * Writes only the pipeline-owned columns of [r] (status, duration, provider, model, transcript, error, audio path) to the
+     * existing row [r].id. Category, inserted flag and the rest are left as stored; a missing row is not recreated.
+     */
+    suspend fun updateOutcome(r: Recording)
+
     /** CONTRACT-1.2 F3: sets (or with null clears) one row's category without touching any other column. */
     suspend fun setCategory(id: String, category: String?)
 
@@ -54,6 +60,9 @@ class RoomHistoryStore(
     override suspend fun get(id: String) = dao.get(id)
     override suspend fun upsert(recording: Recording) = dao.upsert(recording)
     override suspend fun setInserted(id: String, inserted: Boolean) = dao.setInserted(id, inserted)
+    override suspend fun updateOutcome(r: Recording) {
+        dao.updateOutcome(r.id, r.status, r.durationMs, r.provider, r.model, r.transcript, r.error, r.audioPath)
+    }
     override suspend fun setCategory(id: String, category: String?) = dao.setCategory(id, category)
     override suspend fun clearCategory(categoryId: String) { dao.clearCategory(categoryId) }
 

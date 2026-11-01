@@ -46,6 +46,8 @@
     <string name="ime_mic_disabled">Dyktowanie jest wyłączone w tym polu</string>
     <string name="ime_password_off">Dyktowanie jest wyłączone w polach haseł</string>
     <string name="ime_not_inserted">Gotowe, ale pole się zmieniło. Tekst jest w Historii.</string>
+    <string name="ime_not_inserted_clipboard">Nie udało się wstawić tekstu, bo pole się zmieniło. Skopiowano go do schowka.</string>
+    <string name="ime_not_inserted_discarded">Nie udało się wstawić tekstu (pole prywatne) — odrzucono go.</string>
     <string name="ime_backspace">Usuń znak</string>
     <string name="ime_space">Spacja</string>
     <string name="ime_enter">Enter</string>
