@@ -812,13 +812,8 @@ describe('hotkeyManager', () => {
     })
 
     it('cliStop ends a command-mode session', async () => {
-      mod.registerHotkey()
-      const cmdCall = mockRegister.mock.calls.find((c) => c[0] === 'Ctrl+Shift+C')
       mockSettings.commandHotkey = 'Ctrl+Shift+C'
-      mod.unregisterHotkey()
-      mockRegister.mockClear()
       mod.registerHotkey()
-      void cmdCall
       const fn = mockRegister.mock.calls.find((c) => c[0] === 'Ctrl+Shift+C')![1] as () => Promise<void>
       await fn()
       expect(mod.getState()).toBe('command')
