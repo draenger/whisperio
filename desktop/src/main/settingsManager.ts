@@ -158,6 +158,10 @@ export interface AppSettings {
   inputDeviceId: string
   outputDeviceId: string
   saveRecordings: boolean
+  /** Skip uploading recordings that contain no speech (RMS energy gate). */
+  silenceGate: boolean
+  /** Voiced-frame threshold in dBFS, clamped to -70..-30 (lower = more sensitive). */
+  silenceGateThresholdDbfs: number
   // Opt-in: after auto-paste, put the user's previous clipboard back (only if
   // the clipboard still holds the dictated text). See dictation/clipboardRestore.ts.
   restoreClipboard: boolean
@@ -324,6 +328,8 @@ const DEFAULT_SETTINGS: AppSettings = {
   inputDeviceId: '',
   outputDeviceId: '',
   saveRecordings: true,
+  silenceGate: false,
+  silenceGateThresholdDbfs: -50,
   restoreClipboard: false,
   clipboardRestoreDelayMs: 700,
   outputRecordingHotkey: '',
@@ -501,6 +507,12 @@ function quarantineCorrupt(filePath: string): boolean {
   return false
 }
 
+export function clampSilenceGateThreshold(v: unknown): number {
+  const n = typeof v === 'number' ? v : Number.NaN
+  if (!Number.isFinite(n)) return -50
+  return Math.min(-30, Math.max(-70, n))
+}
+
 export function loadSettings(): AppSettings {
   const filePath = getSettingsPath()
   if (!existsSync(filePath)) {
@@ -533,6 +545,7 @@ export function loadSettings(): AppSettings {
   const merged = { ...DEFAULT_SETTINGS, ...migrated }
   merged.clipboardRestoreDelayMs = clampRestoreDelay(merged.clipboardRestoreDelayMs)
   if (merged.hotkeyMode !== 'toggle' && merged.hotkeyMode !== 'hold') merged.hotkeyMode = 'toggle'
+  merged.silenceGateThresholdDbfs = clampSilenceGateThreshold(merged.silenceGateThresholdDbfs)
   return merged
 }
 

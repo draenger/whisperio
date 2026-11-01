@@ -1,7 +1,29 @@
 import { useRef, useCallback, useState } from 'react'
+import { analyzeSpeech, mixToMono, clampThresholdDbfs, shouldApplySilenceGate } from '../audio/silenceGate'
+
 import { planAudioFormats } from '../audio/formatPlan'
 import { StartGuard, decideAfterGetUserMediaFailure } from '../audio/startGuard'
 
+/** Decode a recording and report whether it contains speech. Fails OPEN:
+ * any decode problem returns true so the audio is sent as before. */
+async function recordingHasSpeech(buffer: ArrayBuffer, thresholdDbfs?: number): Promise<boolean> {
+  try {
+    const ctx = new AudioContext({ sampleRate: 16000 })
+    try {
+      const decoded = await ctx.decodeAudioData(buffer.slice(0))
+      const channels: Float32Array[] = []
+      for (let c = 0; c < decoded.numberOfChannels; c++) channels.push(decoded.getChannelData(c))
+      const result = analyzeSpeech(mixToMono(channels), decoded.sampleRate, { thresholdDbfs: clampThresholdDbfs(thresholdDbfs) })
+      console.log(`[Whisperio] Silence gate: peak ${result.peakDbfs.toFixed(1)} dBFS, voiced ${Math.round(result.voicedMs)} ms`)
+      return result.hasSpeech
+    } finally {
+      ctx.close().catch(() => {})
+    }
+  } catch (err) {
+    console.warn('[Whisperio] Silence gate decode failed, sending anyway:', err)
+    return true
+  }
+}
 async function webmToWav(webmBuffer: ArrayBuffer): Promise<ArrayBuffer> {
   const audioCtx = new AudioContext({ sampleRate: 16000 })
   try {
@@ -276,6 +298,7 @@ export function useDictation(): UseDictationReturn {
       // Save recording to disk before transcription — gated on the
       // 'Save recordings to disk' setting; transcription still happens either way.
       const settings = await window.api.settings.load()
+
       if (settings.saveRecordings) {
         try {
           const savedRecording = await window.api.recordings.save(
@@ -287,6 +310,30 @@ export function useDictation(): UseDictationReturn {
         } catch (saveErr) {
           console.error('[Whisperio] Failed to save recording:', saveErr)
         }
+      }
+
+      // Silence gate runs AFTER the save above so a misjudged clip is never lost;
+      // it only skips the upload/transcription. Opt-in, and only acts when the clip is
+      // saved (otherwise a drop would lose the audio). Fails open on decode errors.
+      if (
+        shouldApplySilenceGate(settings.silenceGate, savedRecordingId !== null && savedRecordingId !== undefined) &&
+        !(await recordingHasSpeech(arrayBuffer, settings.silenceGateThresholdDbfs))
+      ) {
+        console.warn('[Whisperio] Recording is silent — skipping transcription')
+        setLastWordCount(null)
+        if (savedRecordingId) {
+          try {
+            await window.api.recordings.update(savedRecordingId, {
+              status: 'completed' as const,
+              transcription: '',
+              error: 'Silent — not transcribed'
+            })
+          } catch (updateErr) {
+            console.error('[Whisperio] Failed to update recording:', updateErr)
+          }
+        }
+        await window.api.dictation.sendResult('', sessionId, 'silent')
+        return
       }
 
       // whisper.cpp (selfhosted) can't read webm, cloud providers want the small

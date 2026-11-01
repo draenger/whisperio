@@ -397,7 +397,8 @@ function unregisterEscape(): void {
 async function handleResult(
   _event: Electron.IpcMainInvokeEvent,
   text: string,
-  sessionId?: number
+  sessionId?: number,
+  reason?: 'silent'
 ): Promise<void> {
   // Drop results from a session the user already cancelled / force-reset / that
   // timed out. Without this, a slow transcription that resolves after the user
@@ -416,6 +417,7 @@ async function handleResult(
   activeSessionIsCommand = false
   unregisterEscape()
   if (!text || !text.trim()) {
+    if (reason === 'silent') notifyInfo('Whisperio', 'Nothing heard — recording was silent')
     setState('idle')
     hideOverlay()
     restoreTargetWindow()

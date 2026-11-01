@@ -600,6 +600,8 @@ export function SettingsForm(): ReactElement {
   const [inputDeviceId, setInputDeviceId] = useState('')
   const [outputDeviceId, setOutputDeviceId] = useState('')
   const [saveRecordings, setSaveRecordings] = useState(true)
+  const [silenceGate, setSilenceGate] = useState(false)
+  const [silenceGateThresholdDbfs, setSilenceGateThresholdDbfs] = useState(-50)
   const [restoreClipboard, setRestoreClipboard] = useState(false)
   const [inputDevices, setInputDevices] = useState<MediaDeviceOption[]>([])
   const [outputDevices, setOutputDevices] = useState<MediaDeviceOption[]>([])
@@ -647,6 +649,8 @@ export function SettingsForm(): ReactElement {
       setInputDeviceId(settings.inputDeviceId ?? '')
       setOutputDeviceId(settings.outputDeviceId ?? '')
       setSaveRecordings(settings.saveRecordings ?? true)
+      setSilenceGate(settings.silenceGate ?? false)
+      setSilenceGateThresholdDbfs(settings.silenceGateThresholdDbfs ?? -50)
       setRestoreClipboard(settings.restoreClipboard ?? false)
       setOutputRecordingHotkey(settings.outputRecordingHotkey ?? '')
       setCleanupEnabled(settings.cleanupEnabled ?? false)
@@ -739,6 +743,8 @@ export function SettingsForm(): ReactElement {
       inputDeviceId,
       outputDeviceId,
       saveRecordings,
+      silenceGate,
+      silenceGateThresholdDbfs,
       restoreClipboard,
       outputRecordingHotkey,
       fallbackEnabled: providerChain.length > 1,
@@ -779,7 +785,7 @@ export function SettingsForm(): ReactElement {
     groqApiKey, deepgramApiKey, assemblyaiApiKey, mistralApiKey,
     sttApiKey, transcriptionLanguage, prompt,
     vocabulary, removedDefaultVocabulary, aiPostProcessing, launchAtStartup, allowUrlControl, allowUrlStart, checkForUpdates, dictationHotkey,
-    dictateAndSendHotkey, commandHotkey, hotkeyMode, inputDeviceId, outputDeviceId, saveRecordings, restoreClipboard,
+    dictateAndSendHotkey, commandHotkey, hotkeyMode, inputDeviceId, outputDeviceId, saveRecordings, silenceGate, silenceGateThresholdDbfs, restoreClipboard,
     outputRecordingHotkey, cleanupEnabled, cleanupMode, cleanupAuto, cleanupTemplates,
     aiProvider, aiBaseUrl, aiModel, anthropicApiKey,
     contextAwareTone, toneMap, windowTitlePermissionEnabled
@@ -1015,6 +1021,10 @@ export function SettingsForm(): ReactElement {
                       outputDeviceId={outputDeviceId}
                       setOutputDeviceId={setOutputDeviceId}
                       saveRecordings={saveRecordings}
+                      silenceGate={silenceGate}
+                      setSilenceGate={setSilenceGate}
+                      silenceGateThresholdDbfs={silenceGateThresholdDbfs}
+                      setSilenceGateThresholdDbfs={setSilenceGateThresholdDbfs}
                       setSaveRecordings={setSaveRecordings}
                       inputDevices={inputDevices}
                       outputDevices={outputDevices}
@@ -2069,6 +2079,8 @@ function AudioTab({
   inputDeviceId, setInputDeviceId,
   outputDeviceId, setOutputDeviceId,
   saveRecordings, setSaveRecordings,
+  silenceGate, setSilenceGate,
+  silenceGateThresholdDbfs, setSilenceGateThresholdDbfs,
   inputDevices, outputDevices,
   s, theme
 }: {
@@ -2078,6 +2090,10 @@ function AudioTab({
   setOutputDeviceId: (v: string) => void
   saveRecordings: boolean
   setSaveRecordings: (v: boolean) => void
+  silenceGate: boolean
+  setSilenceGate: (v: boolean) => void
+  silenceGateThresholdDbfs: number
+  setSilenceGateThresholdDbfs: (v: number) => void
   inputDevices: MediaDeviceOption[]
   outputDevices: MediaDeviceOption[]
   s: ReturnType<typeof makeStyles>
@@ -2128,6 +2144,35 @@ function AudioTab({
           onChange={setSaveRecordings}
           theme={theme}
         />
+        <ToggleRow
+          label="Skip silent recordings (don't send audio with no speech)"
+          description="Saves cost and avoids made-up text on silent audio. Acts only when 'Save recordings to disk' is on, so a skipped clip is never lost."
+          checked={silenceGate}
+          onChange={setSilenceGate}
+          theme={theme}
+        />
+        {silenceGate && (
+          <div style={{ padding: '4px 0 8px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <input
+                type="range"
+                min={-70}
+                max={-30}
+                step={1}
+                value={silenceGateThresholdDbfs}
+                onChange={(e) => setSilenceGateThresholdDbfs(Math.min(-30, Math.max(-70, Number(e.target.value))))}
+                aria-label="Silence gate threshold (dBFS)"
+                style={{ flex: 1 }}
+              />
+              <span style={{ fontSize: '12px', color: theme.textMuted, minWidth: '64px', textAlign: 'right' }}>
+                {silenceGateThresholdDbfs} dBFS
+              </span>
+            </div>
+            <div style={{ fontSize: '12px', color: theme.textMuted, marginTop: '2px' }}>
+              Lower = more sensitive to quiet speech
+            </div>
+          </div>
+        )}
         {recordingCount !== null && recordingCount > 0 && (
           <button
             onClick={() => window.api.recordings.openWindow()}
