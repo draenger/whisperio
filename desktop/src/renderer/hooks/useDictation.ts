@@ -38,8 +38,8 @@ interface UseDictationReturn {
    * data from the actual transcript, used by DictationOverlay to render the
    * post-paste "done" confirmation. Null once no transcript is available. */
   lastWordCount: number | null
-  startRecording: () => Promise<void>
-  startOutputRecording: () => Promise<void>
+  startRecording: (sessionId?: number) => Promise<void>
+  startOutputRecording: (sessionId?: number) => Promise<void>
   stopAndTranscribe: (sessionId?: number) => Promise<void>
   cancelRecording: () => void
 }
@@ -60,7 +60,7 @@ export function useDictation(): UseDictationReturn {
     setIsRecording(false)
   }, [])
 
-  const startRecording = useCallback(async () => {
+  const startRecording = useCallback(async (sessionId?: number) => {
     console.log('[Whisperio] startRecording called')
     // Supersede any earlier in-flight start and release a stream/recorder left
     // from a previous session so a second press never leaks the first mic.
@@ -70,11 +70,12 @@ export function useDictation(): UseDictationReturn {
       try { prevRecorder.stop() } catch { /* already stopped */ }
     }
     stopTracks()
-    // Main is waiting in 'recording'; on a failed start tell the user and
-    // reset main to idle instead of staying silent.
+    // Main is waiting in 'recording'; on a failed start reset it to idle FIRST
+    // (tagged with this session so a later session is never reset), then tell
+    // the user via the error toast.
     const failStart = async (message: string): Promise<void> => {
+      try { await window.api.dictation.sendResult('', sessionId) } catch { /* best effort */ }
       try { await window.api.dictation.reportError?.('Microphone unavailable', message) } catch { /* best effort */ }
-      try { await window.api.dictation.sendResult('') } catch { /* best effort */ }
     }
     try {
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
@@ -148,8 +149,18 @@ export function useDictation(): UseDictationReturn {
     }
   }, [stopTracks])
 
-  const startOutputRecording = useCallback(async () => {
+  const startOutputRecording = useCallback(async (sessionId?: number) => {
     console.log('[Whisperio] startOutputRecording called (system audio)')
+    const token = startGuardRef.current.begin()
+    const prevRecorder = mediaRecorderRef.current
+    if (prevRecorder && prevRecorder.state !== 'inactive') {
+      try { prevRecorder.stop() } catch { /* already stopped */ }
+    }
+    stopTracks()
+    const failStart = async (message: string): Promise<void> => {
+      try { await window.api.dictation.sendResult('', sessionId) } catch { /* best effort */ }
+      try { await window.api.dictation.reportError?.('System audio unavailable', message) } catch { /* best effort */ }
+    }
     try {
       // Use getDisplayMedia to capture system audio (loopback)
       // The main process setDisplayMediaRequestHandler auto-selects the source
@@ -158,12 +169,20 @@ export function useDictation(): UseDictationReturn {
         video: false
       } as MediaStreamConstraints)
 
+      // Stopped/cancelled/superseded while the request was pending: release now.
+      if (!startGuardRef.current.isCurrent(token)) {
+        stream.getTracks().forEach((t) => t.stop())
+        console.log('[Whisperio] Output start superseded — released freshly acquired stream')
+        return
+      }
+
       // We only need the audio tracks — drop any video tracks
       stream.getVideoTracks().forEach((t) => t.stop())
 
       const audioTracks = stream.getAudioTracks()
       if (audioTracks.length === 0) {
         console.error('[Whisperio] No audio tracks in display media stream')
+        await failStart('No system audio track was available.')
         return
       }
       console.log('[Whisperio] Got system audio stream:', audioTracks.length, 'tracks')
@@ -196,6 +215,10 @@ export function useDictation(): UseDictationReturn {
       console.log('[Whisperio] Output recording started')
     } catch (err) {
       console.error('[Whisperio] Failed to start output recording:', err)
+      if (startGuardRef.current.isCurrent(token)) {
+        stopTracks()
+        await failStart(err instanceof Error ? err.message : String(err))
+      }
     }
   }, [])
 

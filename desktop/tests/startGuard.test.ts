@@ -23,6 +23,13 @@ describe('StartGuard', () => {
     expect(g.isCurrent(a)).toBe(false)
     expect(g.isCurrent(b)).toBe(true)
   })
+  it('invalidate() twice (stop then cancel) keeps old tokens dead and does not revive them', () => {
+    const g = new StartGuard()
+    const t = g.begin()
+    g.invalidate()
+    g.invalidate()
+    expect(g.isCurrent(t)).toBe(false)
+  })
   it('a start after invalidate gets a current token', () => {
     const g = new StartGuard()
     g.begin()

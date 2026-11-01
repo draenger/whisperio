@@ -112,7 +112,7 @@ async function activate(): Promise<void> {
       setState('recording')
       showOverlay()
       // Only the primary overlay records audio; all overlays show visual state
-      sendToPrimaryOverlay('dictation:activate')
+      sendToPrimaryOverlay('dictation:activate', currentSessionId)
       // Send overlay info (audio source + hotkey) to all overlays
       broadcastToOverlays('dictation:overlay-info', {
         sourceName: 'System Default',
@@ -168,7 +168,7 @@ async function activateOutput(): Promise<void> {
       startSession()
       setState('recording')
       showOverlay()
-      sendToPrimaryOverlay('dictation:activate-output')
+      sendToPrimaryOverlay('dictation:activate-output', currentSessionId)
       broadcastToOverlays('dictation:overlay-info', {
         sourceName: 'System Audio',
         stopHotkey: activeOutputHotkey || 'hotkey',
@@ -225,7 +225,7 @@ async function activateCommand(): Promise<void> {
       showOverlay()
       // Command mode records mic input exactly like normal dictation — the
       // spoken words are the rewrite INSTRUCTION, not text to insert.
-      sendToPrimaryOverlay('dictation:activate')
+      sendToPrimaryOverlay('dictation:activate', currentSessionId)
       broadcastToOverlays('dictation:overlay-info', {
         sourceName: 'System Default',
         stopHotkey: activeCommandHotkey || 'hotkey',

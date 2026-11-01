@@ -501,7 +501,7 @@ describe('hotkeyManager', () => {
 
     await activateOutput() // -> recording
     expect(mod.getState()).toBe('recording')
-    expect(mockSendToPrimaryOverlay).toHaveBeenCalledWith('dictation:activate-output')
+    expect(mockSendToPrimaryOverlay).toHaveBeenCalledWith('dictation:activate-output', expect.any(Number))
 
     await activateOutput() // -> transcribing
     expect(mod.getState()).toBe('transcribing')
@@ -653,7 +653,7 @@ describe('hotkeyManager', () => {
     expect(mod.getState()).toBe('command')
     // Reuses the SAME recording-start event as normal dictation — no
     // renderer changes needed to capture the spoken instruction.
-    expect(mockSendToPrimaryOverlay).toHaveBeenCalledWith('dictation:activate')
+    expect(mockSendToPrimaryOverlay).toHaveBeenCalledWith('dictation:activate', expect.any(Number))
 
     await activateCommand() // -> transcribing
     expect(mod.getState()).toBe('transcribing')

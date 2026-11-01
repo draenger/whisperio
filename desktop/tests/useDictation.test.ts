@@ -209,8 +209,26 @@ describe('useDictation — start race and device fallback', () => {
       Object.assign(new Error('denied'), { name: 'NotAllowedError' })
     )
     const { result } = renderHook(() => useDictation())
-    await act(async () => { await result.current.startRecording() })
+    await act(async () => { await result.current.startRecording(9) })
     expect(reportError).toHaveBeenCalled()
-    expect(sendResult).toHaveBeenCalledWith('')
+    expect(sendResult).toHaveBeenCalledWith('', 9)
+    expect(sendResult.mock.invocationCallOrder[0]).toBeLessThan(reportError.mock.invocationCallOrder[0])
+  })
+
+  it('releases the system-audio stream when stop arrives while getDisplayMedia is pending', async () => {
+    mockApi({ saveRecordings: false })
+    const stream = fakeAudioStream()
+    let resolveGdm!: (s: MediaStream) => void
+    Object.defineProperty(navigator.mediaDevices, 'getDisplayMedia', {
+      value: vi.fn().mockReturnValue(new Promise<MediaStream>((r) => { resolveGdm = r })),
+      configurable: true
+    })
+    const { result } = renderHook(() => useDictation())
+    let startP!: Promise<void>
+    await act(async () => { startP = result.current.startOutputRecording(4) })
+    await act(async () => { result.current.cancelRecording() })
+    await act(async () => { resolveGdm(stream); await startP })
+    expect(stream.getTracks()[0].stop).toHaveBeenCalled()
+    expect(result.current.isRecording).toBe(false)
   })
 })
