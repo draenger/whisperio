@@ -490,6 +490,66 @@ describe('hotkeyManager', () => {
     expect(mockSendEnter).not.toHaveBeenCalled()
   })
 
+  describe('dictate-and-send Enter flag does not leak across sessions', () => {
+    function resultHandler(): (event: unknown, text: string) => Promise<void> {
+      return (mockIpcHandle.mock.calls.find((c) => c[0] === 'dictation:result') as unknown[])[1] as (
+        event: unknown,
+        text: string
+      ) => Promise<void>
+    }
+
+    it('send -> force-reset -> normal dictation presses no Enter', async () => {
+      mod.registerHotkey()
+      await mod.cliSend() // recording, send armed
+      await mod.cliToggle() // transcribing
+      await mod.cliToggle() // force-reset
+      expect(mod.getState()).toBe('idle')
+      await mod.cliToggle()
+      await mod.cliToggle()
+      await resultHandler()({}, 'normal')
+      expect(mockAutoPaste).toHaveBeenCalledWith('normal')
+      expect(mockSendEnter).not.toHaveBeenCalled()
+    })
+
+    it('send -> watchdog fires -> next dictation presses no Enter', async () => {
+      vi.useFakeTimers()
+      mod.registerHotkey()
+      await mod.cliSend()
+      await mod.cliToggle()
+      await vi.advanceTimersByTimeAsync(60_000)
+      expect(mod.getState()).toBe('idle')
+      await mod.cliToggle()
+      await mod.cliToggle()
+      await resultHandler()({}, 'after watchdog')
+      await vi.runAllTimersAsync()
+      expect(mockAutoPaste).toHaveBeenCalledWith('after watchdog')
+      expect(mockSendEnter).not.toHaveBeenCalled()
+      vi.useRealTimers()
+    })
+
+    it('send -> cancel -> next dictation presses no Enter', async () => {
+      mod.registerHotkey()
+      await mod.cliSend()
+      mod.cliCancel()
+      await mod.cliToggle()
+      await mod.cliToggle()
+      await resultHandler()({}, 'after cancel')
+      expect(mockSendEnter).not.toHaveBeenCalled()
+    })
+
+    it('send normal flow still presses Enter exactly once', async () => {
+      vi.useFakeTimers()
+      mod.registerHotkey()
+      await mod.cliSend()
+      await mod.cliToggle()
+      const p = resultHandler()({}, 'go')
+      await vi.runAllTimersAsync()
+      await p
+      expect(mockSendEnter).toHaveBeenCalledTimes(1)
+      vi.useRealTimers()
+    })
+  })
+
   it('handleResult swallows autoPaste errors and returns to idle', async () => {
     mockAutoPaste.mockRejectedValueOnce(new Error('paste failed'))
     mod.registerHotkey()
