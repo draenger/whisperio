@@ -43,7 +43,6 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -139,7 +138,7 @@ class AppGraph private constructor(private val appOrNull: Application?, private 
     }
 
     /** Probe for [DataCipher]: any sealed row or clip means a missing data key must never be replaced silently. */
-    private suspend fun sealedDataExists(): Boolean = database.recordings().observeAll().first().any { it.hasSealedData() }
+    private suspend fun sealedDataExists(): Boolean = database.recordings().sealedCandidates().any { it.hasSealedData() }
 
     /** Kept clips (`<id>.m4a.wea`); shares the history data key. Null only in a test graph without a cipher. */
     val audioCipher: AudioCipher? by lazy { dataCipher?.let(::AudioCipher) }

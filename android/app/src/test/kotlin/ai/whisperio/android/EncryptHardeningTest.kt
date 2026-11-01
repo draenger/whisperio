@@ -124,7 +124,7 @@ class EncryptHardeningTest {
         assertTrue(DataCipher.isSealedText(rawText("a")!!))
 
         keys.blob = null // data_key gone (cleared app data of the DataStore, restore, ...)
-        val probe: suspend () -> Boolean = { db.recordings().observeAll().first().any { it.hasSealedData() } }
+        val probe: suspend () -> Boolean = { db.recordings().sealedCandidates().any { it.hasSealedData() } }
         val cipher = DataCipher(wrapper, keys, sealedDataExists = probe)
         assertFalse(cipher.locked.value)
 
@@ -146,7 +146,7 @@ class EncryptHardeningTest {
     }
 
     @Test fun firstEverSealStillMintsAKeyWhenNothingIsSealed() = runBlocking {
-        val probe: suspend () -> Boolean = { db.recordings().observeAll().first().any { it.hasSealedData() } }
+        val probe: suspend () -> Boolean = { db.recordings().sealedCandidates().any { it.hasSealedData() } }
         val cipher = DataCipher(wrapper, keys, sealedDataExists = probe)
         storeFor(cipher).upsert(row("a", "first"))
         assertTrue(DataCipher.isSealedText(rawText("a")!!))
