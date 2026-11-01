@@ -169,13 +169,13 @@ export function DictationOverlay(): JSX.Element {
       }
     }
 
-    const unsubActivate = window.api.dictation.onActivate(() => {
+    const unsubActivate = window.api.dictation.onActivate((sessionId) => {
       resolveLocalProvider()
-      startRecording()
+      startRecording(sessionId)
     })
-    const unsubActivateOutput = window.api.dictation.onActivateOutput(() => {
+    const unsubActivateOutput = window.api.dictation.onActivateOutput((sessionId) => {
       resolveLocalProvider()
-      startOutputRecording()
+      startOutputRecording(sessionId)
     })
     const unsubDeactivate = window.api.dictation.onDeactivate((sessionId) => {
       stopAndTranscribe(sessionId).catch((err) => {

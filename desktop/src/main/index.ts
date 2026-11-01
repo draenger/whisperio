@@ -18,7 +18,7 @@ import {
 } from './transcribe'
 import { transcriptText } from './dictation/conversation'
 import { openSettingsWindow } from './settingsWindow'
-import { getRecentErrors } from './errorHandler'
+import { getRecentErrors, notifyError } from './errorHandler'
 import { openRecordingsWindow } from './recordingsWindow'
 import {
   type RecordingEntry,
@@ -342,6 +342,11 @@ app.whenReady().then(() => {
       ? await getActiveContext({ includeWindowTitle: settings.windowTitlePermissionEnabled })
       : null
     return transcribeAudio(audioBuffer, filename, context)
+  })
+
+  // Renderer-reported capture failures (e.g. no usable microphone) -> toast
+  ipcMain.handle('dictation:error', (_event, title: string, body: string) => {
+    notifyError(String(title).slice(0, 100), String(body).slice(0, 300))
   })
 
   // Register error IPC handler

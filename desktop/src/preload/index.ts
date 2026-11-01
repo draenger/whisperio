@@ -9,13 +9,14 @@ export interface OverlayInfo {
 }
 
 export interface DictationAPI {
-  onActivate: (callback: () => void) => () => void
-  onActivateOutput: (callback: () => void) => () => void
+  onActivate: (callback: (sessionId?: number) => void) => () => void
+  onActivateOutput: (callback: (sessionId?: number) => void) => () => void
   onDeactivate: (callback: (sessionId: number) => void) => () => void
   onCancel: (callback: () => void) => () => void
   onStateChanged: (callback: (state: string) => void) => () => void
   onOverlayInfo: (callback: (info: OverlayInfo) => void) => () => void
   sendResult: (text: string, sessionId?: number) => Promise<void>
+  reportError?: (title: string, body: string) => Promise<void>
   transcribe: (audioData: ArrayBuffer, filename: string) => Promise<string>
 }
 
@@ -413,16 +414,22 @@ export interface WhisperioAPI {
 }
 
 const dictationApi: DictationAPI = {
-  onActivate: (callback: () => void) => {
-    ipcRenderer.on('dictation:activate', callback)
+  onActivate: (callback: (sessionId?: number) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, sessionId?: number): void => {
+      callback(sessionId)
+    }
+    ipcRenderer.on('dictation:activate', handler)
     return () => {
-      ipcRenderer.removeListener('dictation:activate', callback)
+      ipcRenderer.removeListener('dictation:activate', handler)
     }
   },
-  onActivateOutput: (callback: () => void) => {
-    ipcRenderer.on('dictation:activate-output', callback)
+  onActivateOutput: (callback: (sessionId?: number) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, sessionId?: number): void => {
+      callback(sessionId)
+    }
+    ipcRenderer.on('dictation:activate-output', handler)
     return () => {
-      ipcRenderer.removeListener('dictation:activate-output', callback)
+      ipcRenderer.removeListener('dictation:activate-output', handler)
     }
   },
   onDeactivate: (callback: (sessionId: number) => void) => {
@@ -460,6 +467,8 @@ const dictationApi: DictationAPI = {
   },
   sendResult: (text: string, sessionId?: number) =>
     ipcRenderer.invoke('dictation:result', text, sessionId),
+  reportError: (title: string, body: string) =>
+    ipcRenderer.invoke('dictation:error', title, body),
   transcribe: (audioData: ArrayBuffer, filename: string) =>
     ipcRenderer.invoke('dictation:transcribe', Buffer.from(audioData), filename)
 }
