@@ -95,6 +95,8 @@ export interface AppSettings {
   anthropicApiKey: string
   launchAtStartup: boolean
   checkForUpdates: boolean
+  // Read-only here: switched only via history:encryption:set (settings:save strips it).
+  encryptHistory: boolean
   dictationHotkey: string
   dictateAndSendHotkey: string
   commandHotkey: string
@@ -381,10 +383,29 @@ export interface ConversationAPI {
   save: (audioData: ArrayBuffer, metadata: { duration: number; filename?: string }) => Promise<RecordingEntry>
 }
 
+export interface HistoryEncryptionStatus {
+  enabled: boolean
+  sealedOnDisk: boolean
+  locked: boolean
+  vault: { ok: true } | { ok: false; reason: 'unavailable' | 'weak-backend' }
+}
+
+export type SetHistoryEncryptionResult =
+  | { ok: true }
+  | { ok: false; reason: 'unavailable' | 'weak-backend' | 'locked' }
+
+export interface HistoryAPI {
+  /** Encryption status of the saved-history index plus OS key-vault availability. */
+  getEncryption: () => Promise<HistoryEncryptionStatus>
+  /** Opt in/out of history encryption. Fails closed (flag stays unchanged) on any non-ok result. */
+  setEncryption: (enabled: boolean) => Promise<SetHistoryEncryptionResult>
+}
+
 export interface WhisperioAPI {
   dictation: DictationAPI
   settings: SettingsAPI
   recordings: RecordingsAPI
+  history: HistoryAPI
   models: ModelsAPI
   server: ServerAPI
   errors: ErrorAPI

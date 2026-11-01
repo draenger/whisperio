@@ -78,6 +78,7 @@ const DEFAULT_SETTINGS = {
   saveRecordings: true,
   outputRecordingHotkey: '',
   fallbackEnabled: false,
+  encryptHistory: false,
   githubUser: '',
   githubRepo: '',
   githubBranch: ''
