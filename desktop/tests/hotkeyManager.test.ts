@@ -792,4 +792,71 @@ describe('hotkeyManager', () => {
     mod.resumeHotkeys()
     expect(mockRegister).toHaveBeenCalledWith('Ctrl+Shift+C', expect.any(Function))
   })
+  describe('CLI control entry points', () => {
+    it('cliStart starts only from idle', async () => {
+      await mod.cliStart()
+      expect(mod.getState()).toBe('recording')
+      await mod.cliStart() // already recording: no-op (must not stop)
+      expect(mod.getState()).toBe('recording')
+    })
+
+    it('cliStop stops only a recording', async () => {
+      await mod.cliStop() // idle: no-op
+      expect(mod.getState()).toBe('idle')
+      expect(mockEnsureOverlayReady).not.toHaveBeenCalled()
+      await mod.cliStart()
+      await mod.cliStop()
+      expect(mod.getState()).toBe('transcribing')
+      await mod.cliStop() // transcribing: no-op (no force reset)
+      expect(mod.getState()).toBe('transcribing')
+    })
+
+    it('cliStop ends a command-mode session', async () => {
+      mod.registerHotkey()
+      const cmdCall = mockRegister.mock.calls.find((c) => c[0] === 'Ctrl+Shift+C')
+      mockSettings.commandHotkey = 'Ctrl+Shift+C'
+      mod.unregisterHotkey()
+      mockRegister.mockClear()
+      mod.registerHotkey()
+      void cmdCall
+      const fn = mockRegister.mock.calls.find((c) => c[0] === 'Ctrl+Shift+C')![1] as () => Promise<void>
+      await fn()
+      expect(mod.getState()).toBe('command')
+      await mod.cliStop()
+      expect(mod.getState()).toBe('transcribing')
+    })
+
+    it('cliToggle toggles idle -> recording -> transcribing', async () => {
+      await mod.cliToggle()
+      expect(mod.getState()).toBe('recording')
+      await mod.cliToggle()
+      expect(mod.getState()).toBe('transcribing')
+    })
+
+    it('cliSend behaves like toggle and sends Enter after paste', async () => {
+      mod.registerHotkey()
+      const handleResult = (
+        mockIpcHandle.mock.calls.find((c) => c[0] === 'dictation:result') as unknown[]
+      )[1] as (event: unknown, text: string) => Promise<void>
+      await mod.cliSend()
+      expect(mod.getState()).toBe('recording')
+      await mod.cliToggle()
+      await handleResult({}, 'hello')
+      expect(mockSendEnter).toHaveBeenCalled()
+    })
+
+    it('cliCancel is a no-op when idle', () => {
+      mod.cliCancel()
+      expect(mockHideOverlay).not.toHaveBeenCalled()
+      expect(mockSendToPrimaryOverlay).not.toHaveBeenCalled()
+    })
+
+    it('cliCancel cancels an active recording', async () => {
+      await mod.cliStart()
+      mod.cliCancel()
+      expect(mod.getState()).toBe('idle')
+      expect(mockSendToPrimaryOverlay).toHaveBeenCalledWith('dictation:cancel')
+      expect(mockHideOverlay).toHaveBeenCalled()
+    })
+  })
 })

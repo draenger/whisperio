@@ -272,6 +272,29 @@ function cancel(): void {
   restoreTargetWindow()
 }
 
+// --- CLI control entry points (Whisperio --toggle/--start/--stop/--cancel/--send) ---
+// Thin wrappers over the same handlers the hotkeys use; no logic duplicated.
+export async function cliToggle(): Promise<void> {
+  await activate()
+}
+
+export async function cliSend(): Promise<void> {
+  await activateAndSend()
+}
+
+export async function cliStart(): Promise<void> {
+  if (state === 'idle') await activate()
+}
+
+export async function cliStop(): Promise<void> {
+  if (state === 'recording') await activate()
+  else if (state === 'command') await activateCommand()
+}
+
+export function cliCancel(): void {
+  if (state !== 'idle') cancel()
+}
+
 function unregisterEscape(): void {
   if (globalShortcut.isRegistered('Escape')) {
     globalShortcut.unregister('Escape')

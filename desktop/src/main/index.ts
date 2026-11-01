@@ -1,5 +1,6 @@
 import { app, BrowserWindow, desktopCapturer, ipcMain, session, shell } from 'electron'
-import { initDictation, cleanupDictation, reRegisterHotkeys, pauseHotkeys, resumeHotkeys } from './dictation'
+import { initDictation, cleanupDictation, reRegisterHotkeys, pauseHotkeys, resumeHotkeys, cliToggle, cliSend, cliStart, cliStop, cliCancel } from './dictation'
+import { parseCliCommand, dispatchCliCommand } from './cliControl'
 import { createTray, destroyTray } from './tray'
 import { loadSettings, saveSettings } from './settingsManager'
 import {
@@ -97,7 +98,21 @@ const gotSingleInstanceLock = app.requestSingleInstanceLock()
 if (!gotSingleInstanceLock) {
   app.quit()
 } else {
-  app.on('second-instance', () => {
+  // Cold start with a control flag: the app starts normally and the command is
+  // deliberately ignored (never auto-record on launch).
+  const coldStartCmd = parseCliCommand(process.argv)
+  if (coldStartCmd) {
+    console.log(`[Whisperio] CLI command "--${coldStartCmd}" ignored on cold start (app was not running)`)
+  }
+  app.on('second-instance', (_event, argv) => {
+    const cmd = parseCliCommand(argv)
+    if (cmd) {
+      // CLI control (Stream Deck / scripts): act, do not steal focus.
+      dispatchCliCommand(cmd, {
+        toggle: cliToggle, start: cliStart, stop: cliStop, cancel: cliCancel, send: cliSend
+      })
+      return
+    }
     // User tried to launch a second instance — show settings window
     openSettingsWindow()
   })
