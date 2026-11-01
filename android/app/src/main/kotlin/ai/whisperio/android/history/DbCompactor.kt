@@ -26,13 +26,11 @@ open class DbCompactor(
     open suspend fun compact(): Boolean = withContext(io) {
         try {
             val sdb = db.openHelper.writableDatabase
-            // wal_checkpoint returns a row (busy, log, checkpointed): it must be read, execSQL would reject it.
-            sdb.query("PRAGMA wal_checkpoint(TRUNCATE)").use { it.moveToFirst() }
+            if (!checkpointed(sdb)) return@withContext false
             // VACUUM cannot run inside a transaction; none is open here.
             sdb.execSQL("VACUUM")
             // The VACUUM itself was logged to the WAL: truncate it too so the rewritten pages are the only copy.
-            sdb.query("PRAGMA wal_checkpoint(TRUNCATE)").use { it.moveToFirst() }
-            true
+            checkpointed(sdb)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -41,12 +39,19 @@ open class DbCompactor(
         }
     }
 
-    /** `PRAGMA secure_delete` is per connection: also remembered so [SecureDeleteCallback] applies it to later connections. */
-    open suspend fun setSecureDelete(on: Boolean) {
-        onOpen.wanted.set(on)
+    /** wal_checkpoint returns a row (busy, log, checkpointed): column 0 != 0 means it was blocked and did not finish. */
+    private fun checkpointed(sdb: SupportSQLiteDatabase): Boolean =
+        sdb.query("PRAGMA wal_checkpoint(TRUNCATE)").use { !it.moveToFirst() || it.getInt(0) == 0 }
+
+    /**
+     * Turns `PRAGMA secure_delete` ON for this connection and for later ones ([SecureDeleteCallback]). There is
+     * deliberately no OFF: Android's SQLite is usually built with secure_delete ON, and we must not weaken it.
+     */
+    open suspend fun enableSecureDelete() {
+        onOpen.wanted.set(true)
         withContext(io) {
             try {
-                apply(db.openHelper.writableDatabase, on)
+                applySecureDelete(db.openHelper.writableDatabase)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -60,14 +65,13 @@ open class DbCompactor(
         db.openHelper.writableDatabase.query("PRAGMA secure_delete").use { if (it.moveToFirst()) it.getInt(0) else -1 }
     }
 
-    private fun apply(sdb: SupportSQLiteDatabase, on: Boolean) = applySecureDelete(sdb, on)
 }
 
 private const val TAG = "DbCompactor"
 
-private fun applySecureDelete(sdb: SupportSQLiteDatabase, on: Boolean) {
+private fun applySecureDelete(sdb: SupportSQLiteDatabase) {
     // The pragma returns a row, so it goes through query(), not execSQL().
-    sdb.query("PRAGMA secure_delete=${if (on) "ON" else "OFF"}").use { it.moveToFirst() }
+    sdb.query("PRAGMA secure_delete=ON").use { it.moveToFirst() }
 }
 
 /**
@@ -79,7 +83,7 @@ class SecureDeleteCallback : RoomDatabase.Callback() {
 
     override fun onOpen(db: SupportSQLiteDatabase) {
         try {
-            applySecureDelete(db, wanted.get())
+            if (wanted.get()) applySecureDelete(db)
         } catch (e: Exception) {
             Log.w(TAG, "secure_delete not applied on open: ${e.javaClass.simpleName}")
         }

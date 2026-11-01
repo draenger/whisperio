@@ -211,10 +211,8 @@ class AppGraph private constructor(private val appOrNull: Application?, private 
                 val report = migrateAudio(enabled, store.migrate(enabled))
                 // Old plaintext survives in the WAL and in freed pages: scrub it, but never fail the switch over it.
                 if (enabled) {
-                    applySecureDelete(true)
+                    enableSecureDelete()
                     compactDatabase()
-                } else {
-                    applySecureDelete(false)
                 }
                 result = EncryptHistoryResult.Done(report)
             }
@@ -232,9 +230,9 @@ class AppGraph private constructor(private val appOrNull: Application?, private 
     private val maintenanceLock = Mutex()
 
     /** Best effort, so a migration is still reported as done when it fails. */
-    private suspend fun applySecureDelete(on: Boolean) {
+    private suspend fun enableSecureDelete() {
         try {
-            compactor.setSecureDelete(on)
+            compactor.enableSecureDelete()
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -249,7 +247,12 @@ class AppGraph private constructor(private val appOrNull: Application?, private 
     private suspend fun compactDatabase() {
         try {
             settings.setNeedsCompaction(true)
-            if (compactor.compact()) settings.setNeedsCompaction(false)
+            if (compactor.compact()) {
+                settings.setNeedsCompaction(false)
+                settings.setCompactionFailedAt(0L)
+            } else {
+                settings.setCompactionFailedAt(System.currentTimeMillis())
+            }
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -279,16 +282,22 @@ class AppGraph private constructor(private val appOrNull: Application?, private 
                 }
                 // Finish an encryption switch interrupted by process death, or seal rows written while the key failed
                 // (no-op when every row is already in place). Last, so a slow pass never delays the sweeps above.
+                var sealedNow = false
                 encryptingHistory?.let { store ->
                     val on = settings.current().encryptHistory
                     if (!on || dataKeyUsable()) {
                         val report = migrateAudio(on, store.migrate(on))
                         // Rows sealed just now left plaintext behind in the file.
-                        if (on && report.converted > 0) settings.setNeedsCompaction(true)
+                        if (on && report.converted > 0) {
+                            settings.setNeedsCompaction(true)
+                            sealedNow = true
+                        }
                     }
                 }
-                applySecureDelete(settings.current().encryptHistory)
-                if (settings.needsCompaction()) compactDatabase()
+                if (settings.current().encryptHistory) enableSecureDelete()
+                // A failed attempt is retried at most once a day; fresh plaintext skips the wait.
+                val waited = System.currentTimeMillis() - settings.compactionFailedAt()
+                if (settings.needsCompaction() && (sealedNow || waited >= COMPACTION_RETRY_MS)) compactDatabase()
             }
         }
     }
@@ -331,6 +340,7 @@ class AppGraph private constructor(private val appOrNull: Application?, private 
 
     private companion object {
         const val KEY_PROBE = "whisperio-key-probe"
+        const val COMPACTION_RETRY_MS = 86_400_000L
     }
 
     /**

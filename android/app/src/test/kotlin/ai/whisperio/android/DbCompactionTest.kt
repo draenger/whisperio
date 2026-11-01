@@ -16,6 +16,7 @@ import ai.whisperio.android.settings.AppLanguageStore
 import ai.whisperio.android.settings.SettingsRepository
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.room.Room
+import androidx.room.RoomDatabase
 import androidx.test.core.app.ApplicationProvider
 import java.io.File
 import kotlinx.coroutines.CoroutineScope
@@ -41,16 +42,17 @@ import org.robolectric.annotation.Config
 /** Counts calls and can be told to fail, in place of the real VACUUM. */
 private class SpyCompactor(db: AppDatabase, var succeed: Boolean = true) : DbCompactor(db) {
     var compactCalls = 0
-    val secureDeleteCalls = mutableListOf<Boolean>()
 
     override suspend fun compact(): Boolean {
         compactCalls++
         return succeed
     }
 
-    override suspend fun setSecureDelete(on: Boolean) {
-        secureDeleteCalls += on
-        super.setSecureDelete(on)
+    var enableCalls = 0
+
+    override suspend fun enableSecureDelete() {
+        enableCalls++
+        super.enableSecureDelete()
     }
 }
 
@@ -68,7 +70,9 @@ class DbCompactionTest {
     private var files = 0
 
     @Before fun setUp() {
-        db = Room.inMemoryDatabaseBuilder(ApplicationProvider.getApplicationContext(), AppDatabase::class.java)
+        // File-backed WAL, so the checkpoint path is exercised too.
+        db = Room.databaseBuilder(ApplicationProvider.getApplicationContext(), AppDatabase::class.java, File(tmp.root, "t.db").path)
+            .setJournalMode(RoomDatabase.JournalMode.WRITE_AHEAD_LOGGING)
             .allowMainThreadQueries().build()
         settings = SettingsRepository(store("settings"), InMemorySecretStore(), FakeCatalog())
         keys = DataStoreWrappedKeyStore(store("data_key"))
@@ -115,12 +119,15 @@ class DbCompactionTest {
         val big = "x".repeat(4000)
         for (i in 1..40) g.history.upsert(row("r$i", big))
         db.openHelper.writableDatabase.execSQL("DELETE FROM recording WHERE id IN (SELECT id FROM recording LIMIT 30)")
-        assertTrue("setup must leave free pages", pragma("PRAGMA freelist_count") > 0)
+        // With auto_vacuum=FULL there may be no free pages to start with; the final state is asserted either way.
+        val pagesBefore = pragma("PRAGMA page_count")
+        val freeBefore = pragma("PRAGMA freelist_count")
 
         val res = g.setEncryptHistory(true)
 
         assertTrue(res is EncryptHistoryResult.Done)
         assertEquals(0L, pragma("PRAGMA freelist_count"))
+        if (freeBefore > 0) assertTrue(pragma("PRAGMA page_count") < pagesBefore)
         assertEquals(1L, pragma("PRAGMA secure_delete"))
         assertFalse(settings.needsCompaction())
     }
@@ -133,21 +140,21 @@ class DbCompactionTest {
         g.setEncryptHistory(true)
 
         assertEquals(1, spy.compactCalls)
-        assertEquals(listOf(true), spy.secureDeleteCalls)
+        assertEquals(1, spy.enableCalls)
         assertFalse(settings.needsCompaction())
     }
 
-    @Test fun turningOffClearsSecureDeleteAndDoesNotCompact() = runBlocking {
+    @Test fun turningOffNeverWritesSecureDeleteOffAndDoesNotCompact() = runBlocking {
         val spy = SpyCompactor(db)
         val g = graph(spy)
         g.setEncryptHistory(true)
-        assertEquals(1L, pragma("PRAGMA secure_delete"))
 
         g.setEncryptHistory(false)
 
-        assertEquals(0L, pragma("PRAGMA secure_delete"))
-        assertEquals(listOf(true, false), spy.secureDeleteCalls)
+        // Only ON is ever issued: the platform default (usually ON) is never weakened.
+        assertEquals(1, spy.enableCalls)
         assertEquals(1, spy.compactCalls)
+        assertEquals(1L, pragma("PRAGMA secure_delete"))
     }
 
     @Test fun failedVacuumKeepsTheMigrationSuccessfulAndRaisesTheFlag() = runBlocking {
@@ -172,20 +179,27 @@ class DbCompactionTest {
         val before = spy.compactCalls
 
         spy.succeed = true
+        // A failed attempt is retried at most once a day: not yet.
+        g.runMaintenance()
+        delay(300)
+        assertEquals(before, spy.compactCalls)
+        assertTrue(settings.needsCompaction())
+
+        settings.setCompactionFailedAt(0L) // pretend the failure was more than a day ago
         g.runMaintenance()
 
         awaitAll { !settings.needsCompaction() }
         assertEquals(before + 1, spy.compactCalls)
     }
 
-    @Test fun maintenanceWithoutTheFlagDoesNotCompact() = runBlocking {
+    @Test fun maintenanceWithoutTheFlagDoesNotCompactOrEnableSecureDeleteWhileOff() = runBlocking {
         val spy = SpyCompactor(db)
         val g = graph(spy)
 
         g.runMaintenance()
-        awaitAll { spy.secureDeleteCalls.isNotEmpty() }
+        delay(300)
 
         assertEquals(0, spy.compactCalls)
-        assertEquals(listOf(false), spy.secureDeleteCalls)
+        assertEquals(0, spy.enableCalls)
     }
 }
