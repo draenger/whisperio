@@ -5,7 +5,7 @@ import { AppSettings, getActiveVocabulary, type ProviderId, type CleanupMode } f
 // the encrypted key store (secure/keyStore.ts), key store taking precedence
 // when OS secure storage is available. See secure/keyAccessor.ts.
 import { getEffectiveSettings } from './secure/keyAccessor'
-import { handleTranscriptionError, notifyInfo } from './errorHandler'
+import { handleTranscriptionError, deferTranscriptionErrors } from './errorHandler'
 import { guardRedirects, GUARDED_REDIRECT } from './llm/redirectGuard'
 import { OpenAICompatibleProvider, AnthropicProvider, ReplicateProvider, selectProvider, isLocalHost, type LLMProvider } from './llm/provider'
 import { cleanupTranscription, cleanupTranscriptionDetailed, formatTranscription, rewriteSelection, type CleanupResult } from './postprocess'
@@ -81,6 +81,9 @@ const REPLICATE_API_BASE = 'https://api.replicate.com/v1'
 // clip is short, so this is generous headroom for the client-side abort.
 const REPLICATE_TIMEOUT_MS = 55_000
 
+// Upper bound for automatic transcript cleanup; after this the raw text is used.
+export const CLEANUP_TIMEOUT_MS = 20_000
+
 const PROVIDER_LABELS: Record<ProviderId, string> = {
   openai: 'OpenAI',
   elevenlabs: 'ElevenLabs',
@@ -149,6 +152,19 @@ function candidateFingerprint(settings: AppSettings): string {
  * instances persist across calls instead of being rebuilt — and their cache
  * defeated — on every dictation/cleanup invocation.
  */
+/**
+ * Construct one LLM candidate; a throwing constructor (bad/insecure base URL,
+ * see llm/provider.ts assertSecureBaseUrl) just omits that candidate so a bad
+ * AI config can never break dictation.
+ */
+function pushCandidate(list: LLMProvider[], make: () => LLMProvider): void {
+  try {
+    list.push(make())
+  } catch (err) {
+    console.warn('[Whisperio] Skipping LLM cleanup provider:', err instanceof Error ? err.message : String(err))
+  }
+}
+
 export function buildCleanupCandidates(settings: AppSettings): LLMProvider[] {
   const fingerprint = candidateFingerprint(settings)
   if (cachedCandidates && cachedCandidatesFingerprint === fingerprint) {
@@ -160,7 +176,7 @@ export function buildCleanupCandidates(settings: AppSettings): LLMProvider[] {
   const model = settings.aiModel?.trim() || ''
 
   if (settings.openaiApiKey || settings.aiProvider === 'openai') {
-    candidates.push(
+    pushCandidate(candidates, () =>
       new OpenAICompatibleProvider({
         id: 'openai',
         baseUrl: baseUrl || 'https://api.openai.com',
@@ -171,7 +187,7 @@ export function buildCleanupCandidates(settings: AppSettings): LLMProvider[] {
   }
 
   if (settings.anthropicApiKey) {
-    candidates.push(
+    pushCandidate(candidates, () =>
       new AnthropicProvider({
         id: 'anthropic',
         apiKey: settings.anthropicApiKey,
@@ -184,7 +200,7 @@ export function buildCleanupCandidates(settings: AppSettings): LLMProvider[] {
   // settingsManager.ts's doc comment on that key) — one key unlocks both a
   // Replicate STT provider and this Replicate LLM cleanup candidate.
   if (settings.replicateApiKey) {
-    candidates.push(
+    pushCandidate(candidates, () =>
       new ReplicateProvider({
         id: 'replicate',
         apiKey: settings.replicateApiKey,
@@ -200,13 +216,13 @@ export function buildCleanupCandidates(settings: AppSettings): LLMProvider[] {
   // an explicit aiBaseUrl for it.
   const localBaseUrl =
     settings.aiProvider === 'local' && baseUrl ? baseUrl : `http://127.0.0.1:${getServerStatus().port}`
-  candidates.push(
+  pushCandidate(candidates, () =>
     new OpenAICompatibleProvider({
       id: 'local',
       baseUrl: localBaseUrl,
       model: model || DEFAULT_LOCAL_CLEANUP_MODEL
     })
-  )
+    )
 
   cachedCandidates = candidates
   cachedCandidatesFingerprint = fingerprint
@@ -262,17 +278,30 @@ async function applyCleanup(settings: AppSettings, raw: string, context: Dictati
   const controller = new AbortController()
   activeCleanupAbort = controller
 
+  let timer: ReturnType<typeof setTimeout> | undefined
   try {
-    const vocab = getActiveVocabulary(settings)
-    const provider = await selectProvider(settings, buildCleanupCandidates(settings))
-    return await cleanupTranscription(raw, {
-      cleanupMode: settings.cleanupMode,
-      vocab,
-      tone: resolveToneDescription(settings, context),
-      provider,
-      signal: controller.signal
+    const run = (async (): Promise<string> => {
+      const vocab = getActiveVocabulary(settings)
+      const provider = await selectProvider(settings, buildCleanupCandidates(settings))
+      return cleanupTranscription(raw, {
+        cleanupMode: settings.cleanupMode,
+        vocab,
+        tone: resolveToneDescription(settings, context),
+        provider,
+        signal: controller.signal
+      })
+    })()
+    run.catch(() => {})
+    const timeout = new Promise<string>((resolve) => {
+      timer = setTimeout(() => {
+        controller.abort()
+        resolve(raw)
+      }, CLEANUP_TIMEOUT_MS)
     })
+    // Fail-soft: cleanup must never lose a good transcript.
+    return await Promise.race([run, timeout]).catch(() => raw)
   } finally {
+    if (timer) clearTimeout(timer)
     if (activeCleanupAbort === controller) {
       activeCleanupAbort = null
     }
@@ -473,32 +502,53 @@ export async function transcribeAudio(
   }
 
   let firstError: Error | null = null
+  let text: string | null = null
+  const failures: string[] = []
 
-  for (let i = 0; i < configuredChain.length; i++) {
-    const provider = configuredChain[i]
-    try {
-      const text = await transcribeWithProvider(settings, provider, audioBuffer, filename)
-      // PACZKA METERING (v1.6): report usage after every successful STT call,
-      // including local/self-hosted (isLocal forces cost to 0 there, but the
-      // request/audio-seconds counters still stay complete). recordSTT()
-      // never throws, so this can't turn a metering hiccup into a broken
-      // transcription.
-      recordSTT({
-        provider,
-        audioSeconds: estimateAudioSeconds(audioBuffer, filename),
-        isLocal: provider === 'selfhosted'
-      })
-      return await applyCleanup(settings, text, context)
-    } catch (err) {
-      if (!firstError) firstError = err instanceof Error ? err : new Error(String(err))
-      if (i < configuredChain.length - 1) {
-        const next = configuredChain[i + 1]
-        notifyInfo('Whisperio', `${PROVIDER_LABELS[provider]} failed. Trying ${PROVIDER_LABELS[next]}...`)
+  // Per-hop failures are recorded, not toasted: only a fully failed chain
+  // notifies (one summary). See errorHandler.deferTranscriptionErrors.
+  const batch = deferTranscriptionErrors()
+  try {
+    for (let i = 0; i < configuredChain.length; i++) {
+      const provider = configuredChain[i]
+      try {
+        text = await transcribeWithProvider(settings, provider, audioBuffer, filename)
+        // PACZKA METERING (v1.6): report usage after every successful STT call,
+        // including local/self-hosted (isLocal forces cost to 0 there, but the
+        // request/audio-seconds counters still stay complete). recordSTT()
+        // never throws, so this can't turn a metering hiccup into a broken
+        // transcription.
+        recordSTT({
+          provider,
+          audioSeconds: estimateAudioSeconds(audioBuffer, filename),
+          isLocal: provider === 'selfhosted'
+        })
+        break
+      } catch (err) {
+        const e = err instanceof Error ? err : new Error(String(err))
+        if (!firstError) firstError = e
+        failures.push(`${PROVIDER_LABELS[provider]}: ${e.message}`)
       }
     }
+  } catch (err) {
+    batch.discard()
+    throw err
   }
 
-  throw firstError || new Error('No providers configured. Open Settings to set up a provider.')
+  if (text === null) {
+    batch.flush(failures.length > 1 ? `All providers failed. ${failures.join(' | ')}` : undefined)
+    throw firstError || new Error('No providers configured. Open Settings to set up a provider.')
+  }
+  batch.discard()
+
+  // Cleanup runs AFTER the STT chain and is fail-soft: a cleanup problem must
+  // never discard a good transcript or re-bill the next STT provider.
+  try {
+    return await applyCleanup(settings, text, context)
+  } catch (err) {
+    console.warn('[Whisperio] Cleanup failed, using raw transcript:', err instanceof Error ? err.message : String(err))
+    return text
+  }
 }
 
 function isProviderConfigured(settings: AppSettings, provider: ProviderId): boolean {
@@ -676,6 +726,8 @@ async function transcribeWithProvider(
 }
 
 function whisperTranscribe(apiKey: string, audioBuffer: Buffer, filename: string, prompt: string, baseUrl: string, model: string, directUrl = false, language = 'auto'): Promise<string> {
+  const errProvider = directUrl ? 'selfhosted' : 'openai'
+  const errLabel = directUrl ? 'Self-hosted' : 'OpenAI'
   const boundary = `----Whisperio${Date.now()}`
 
   const parts: Buffer[] = []
@@ -728,8 +780,8 @@ function whisperTranscribe(apiKey: string, audioBuffer: Buffer, filename: string
       if (!settled) {
         settled = true
         request.abort()
-        const err = new Error('OpenAI transcription request timed out after 45s')
-        handleTranscriptionError(err, 'openai')
+        const err = new Error(`${errLabel} transcription request timed out after 45s`)
+        handleTranscriptionError(err, errProvider)
         reject(err)
       }
     }, 45_000)
@@ -770,8 +822,8 @@ function whisperTranscribe(apiKey: string, audioBuffer: Buffer, filename: string
         if (response.statusCode !== 200) {
           // Keep the raw provider body out of the user-facing Error message.
           if (isDev()) console.error(`[Whisperio] OpenAI API error body: ${responseBody}`)
-          const err = new Error(`OpenAI API error ${response.statusCode}`)
-          handleTranscriptionError(err, directUrl ? 'selfhosted' : 'openai')
+          const err = new Error(`${errLabel} API error ${response.statusCode}`)
+          handleTranscriptionError(err, errProvider)
           settle(reject)(err)
           return
         }
@@ -784,9 +836,9 @@ function whisperTranscribe(apiKey: string, audioBuffer: Buffer, filename: string
           // transcribeAudio() actually gets a turn.
           if (typeof data.text !== 'string') {
             const err = new Error(
-              `${directUrl ? 'Self-hosted' : 'OpenAI'} transcription response contained no text (HTTP ${response.statusCode})`
+              `${errLabel} transcription response contained no text (HTTP ${response.statusCode})`
             )
-            handleTranscriptionError(err, directUrl ? 'selfhosted' : 'openai')
+            handleTranscriptionError(err, errProvider)
             settle(reject)(err)
             return
           }
@@ -794,24 +846,24 @@ function whisperTranscribe(apiKey: string, audioBuffer: Buffer, filename: string
           settle(resolve)(data.text)
         } catch {
           const err = new Error(`Failed to parse transcription response (HTTP ${response.statusCode})`)
-          handleTranscriptionError(err, 'openai')
+          handleTranscriptionError(err, errProvider)
           settle(reject)(err)
         }
       })
       response.on('error', (err: Error) => {
-        handleTranscriptionError(err, 'openai')
+        handleTranscriptionError(err, errProvider)
         settle(reject)(err)
       })
     })
 
     // Never follow a redirect that downgrades to http / changes host (would leak key + audio).
     guardRedirects(request, targetUrl, (err) => {
-      handleTranscriptionError(err, 'selfhosted')
+      handleTranscriptionError(err, errProvider)
       settle(reject)(err)
     })
 
     request.on('error', (err: Error) => {
-      handleTranscriptionError(err, 'openai')
+      handleTranscriptionError(err, errProvider)
       settle(reject)(err)
     })
     request.write(body)

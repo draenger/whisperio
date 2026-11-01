@@ -79,6 +79,30 @@ export function parseApiError(error: Error): { statusCode: number | null, respon
   return { statusCode: null, responseBody: message }
 }
 
+// Deferred-notification mode: while a provider chain runs, per-hop errors are
+// recorded (recent-errors list) but their toast/renderer broadcast is held back.
+// The chain owner then flush()es one summary if everything failed, or discard()s.
+let pendingErrors: WhisperioError[] | null = null
+
+export function deferTranscriptionErrors(): { flush: (summary?: string) => void; discard: () => void } {
+  const mine: WhisperioError[] = []
+  pendingErrors = mine
+  const end = (): void => {
+    if (pendingErrors === mine) pendingErrors = null
+  }
+  return {
+    flush: (summary?: string) => {
+      end()
+      const last = mine[mine.length - 1]
+      if (!last) return
+      const message = summary ?? last.message
+      notifyError('Transcription Error', message)
+      emitErrorToRenderer({ ...last, message })
+    },
+    discard: end
+  }
+}
+
 export function handleTranscriptionError(error: Error, provider: string): void {
   const { statusCode, responseBody } = parseApiError(error)
 
@@ -115,8 +139,12 @@ export function handleTranscriptionError(error: Error, provider: string): void {
   }
 
   addRecentError(whisperioError)
-  notifyError('Transcription Error', userMessage)
-  emitErrorToRenderer(whisperioError)
+  if (pendingErrors) {
+    pendingErrors.push(whisperioError)
+  } else {
+    notifyError('Transcription Error', userMessage)
+    emitErrorToRenderer(whisperioError)
+  }
 
   console.error(`[Whisperio] ${provider} error [${category}]: ${error.message}`)
 }

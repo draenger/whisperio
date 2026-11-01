@@ -182,10 +182,7 @@ describe('fallback auto-retry', () => {
 
     await transcribeAudio(Buffer.from('audio'), 'test.webm')
 
-    expect(mockNotifyInfo).toHaveBeenCalledWith(
-      'Whisperio',
-      'OpenAI failed. Trying ElevenLabs...'
-    )
+    expect(mockNotifyInfo).not.toHaveBeenCalled()
   })
 
   it('falls back from ElevenLabs to OpenAI (bidirectional)', async () => {
@@ -204,9 +201,6 @@ describe('fallback auto-retry', () => {
 
     const result = await transcribeAudio(Buffer.from('audio'), 'test.webm')
     expect(result).toBe('openai fallback')
-    expect(mockNotifyInfo).toHaveBeenCalledWith(
-      'Whisperio',
-      'ElevenLabs failed. Trying OpenAI...'
-    )
+    expect(mockNotifyInfo).not.toHaveBeenCalled()
   })
 })
