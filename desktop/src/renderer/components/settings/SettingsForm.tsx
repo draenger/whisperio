@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef, type ReactElement, type ReactNode } from 'react'
+import { chainWithoutParakeet } from '../../../shared/providerFormat'
 import { useTheme } from '../../ThemeContext'
 import { TitleBar } from '../common/TitleBar'
 import type { Theme, ThemeMode } from '../../theme'
@@ -1653,8 +1654,7 @@ function ExperimentalParakeetCard({
     }
     // Turning the flag off fully undoes it: drop 'parakeet' from the saved chain too.
     const cur = await window.api.settings.load()
-    let chain = (cur.providerChain || []).filter((p) => p !== 'parakeet')
-    if (chain.length === 0) chain = ['openai']
+    const chain = chainWithoutParakeet(cur.providerChain)
     await window.api.settings.save({ experimentalParakeet: false, providerChain: chain, sttProvider: chain[0] as 'openai' })
   }
 

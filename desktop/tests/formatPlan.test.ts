@@ -9,3 +9,16 @@ describe('planAudioFormats', () => {
     expect(planAudioFormats([])).toEqual({ sendOriginal: true, needsWav: false })
   })
 })
+
+describe('planAudioFormats with the experimental parakeet flag', () => {
+  it('flag off: a stale parakeet entry does not force WAV', () => {
+    expect(planAudioFormats(['openai', 'parakeet'])).toEqual({ sendOriginal: true, needsWav: false })
+    expect(planAudioFormats(['openai', 'parakeet'], false)).toEqual({ sendOriginal: true, needsWav: false })
+  })
+  it('flag on: parakeet needs WAV', () => {
+    expect(planAudioFormats(['openai', 'parakeet'], true)).toEqual({ sendOriginal: true, needsWav: true })
+  })
+  it('flag off: selfhosted still needs WAV', () => {
+    expect(planAudioFormats(['parakeet', 'selfhosted'], false).needsWav).toBe(true)
+  })
+})

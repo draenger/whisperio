@@ -572,10 +572,12 @@ app.whenReady().then(() => {
     return { ...getParakeetModelStatus(), runtimeInstalled: isParakeetRuntimeInstalled() }
   }))
   ipcMain.handle('parakeet:cancel', guard(() => {
+    if (!parakeetEnabled()) throw new Error('Parakeet is experimental and disabled.')
     cancelParakeetDownload(cancelDownload)
     return true
   }))
   ipcMain.handle('parakeet:delete', guard(async () => {
+    if (!parakeetEnabled()) throw new Error('Parakeet is experimental and disabled.')
     await shutdownParakeet()
     deleteParakeetModel()
     return { ...getParakeetModelStatus(), runtimeInstalled: isParakeetRuntimeInstalled() }

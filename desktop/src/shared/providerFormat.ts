@@ -21,3 +21,9 @@ export function chainNeedsWav(
   if (!chain) return false
   return chain.some((id) => (id === 'parakeet' && experimentalParakeet !== true ? false : providerNeedsWav(id)))
 }
+
+/** Chain with the experimental 'parakeet' removed; never empty (falls back to openai). */
+export function chainWithoutParakeet(chain: readonly string[] | undefined | null): string[] {
+  const out = (chain ?? []).filter((p) => p !== 'parakeet')
+  return out.length > 0 ? out : ['openai']
+}
