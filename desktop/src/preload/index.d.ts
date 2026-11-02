@@ -105,6 +105,8 @@ export interface AppSettings {
   commandHotkey: string
   hotkeyMode: 'toggle' | 'hold'
   theme: 'dark' | 'light'
+  /** Internal: app version the Linux basic_text warning was last shown for (no UI control). */
+  linuxKeyringWarningShownFor: string
   accentColor: 'graphite' | 'blue' | 'teal' | 'emerald' | 'amber'
   inputDeviceId: string
   outputDeviceId: string
@@ -137,6 +139,7 @@ export interface SettingsAPI {
   // src/main/secure/keyStore.ts). Informational only — used to render an
   // honest hint next to key fields; never gates saving/loading.
   keyStorageAvailable: () => Promise<boolean>
+  linuxKeyringWarning: () => Promise<string | null>
   onSecureStorageWarning: (callback: (message: string) => void) => () => void
 }
 

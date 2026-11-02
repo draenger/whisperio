@@ -80,6 +80,7 @@ const DEFAULT_SETTINGS = {
   allowUrlControl: false,
   allowUrlStart: false,
   checkForUpdates: true,
+  linuxKeyringWarningShownFor: '',
   dictationHotkey: '',
   dictateAndSendHotkey: '',
   commandHotkey: 'Ctrl+Shift+C',

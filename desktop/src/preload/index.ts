@@ -113,6 +113,8 @@ export interface AppSettings {
   restoreClipboard: boolean
   clipboardRestoreDelayMs: number
   theme: 'dark' | 'light'
+  /** Internal: app version the Linux basic_text warning was last shown for (no UI control). */
+  linuxKeyringWarningShownFor: string
   accentColor: 'graphite' | 'blue' | 'teal' | 'emerald' | 'amber'
   inputDeviceId: string
   outputDeviceId: string
@@ -144,6 +146,7 @@ export interface SettingsAPI {
   // informational — used to render an honest hint next to key fields; never
   // gates saving/loading, which always falls back to settings.json.
   keyStorageAvailable: () => Promise<boolean>
+  linuxKeyringWarning: () => Promise<string | null>
   onSecureStorageWarning: (callback: (message: string) => void) => () => void
 }
 
@@ -488,6 +491,7 @@ const settingsApi: SettingsAPI = {
   pauseHotkeys: () => ipcRenderer.send('hotkeys:pause'),
   resumeHotkeys: () => ipcRenderer.send('hotkeys:resume'),
   keyStorageAvailable: () => ipcRenderer.invoke('settings:keyStorageAvailable'),
+  linuxKeyringWarning: () => ipcRenderer.invoke('settings:linuxKeyringWarning'),
   onSecureStorageWarning: (callback) => {
     const handler = (_e: unknown, message: string): void => callback(message)
     ipcRenderer.on('settings:secure-storage-warning', handler)

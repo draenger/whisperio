@@ -1,4 +1,4 @@
-import { app, BrowserWindow, desktopCapturer, dialog, ipcMain, powerMonitor, session, shell, type IpcMainInvokeEvent, type IpcMainEvent } from 'electron'
+import { app, BrowserWindow, desktopCapturer, dialog, ipcMain, Notification, powerMonitor, session, shell, type IpcMainInvokeEvent, type IpcMainEvent } from 'electron'
 import path from 'path'
 import { assertTrustedSender, isTrustedAppUrl, sanitizeRecordingUpdate } from './ipcValidation'
 import { initDictation, cleanupDictation, reRegisterHotkeys, pauseHotkeys, resumeHotkeys, cliToggle, cliSend, cliStart, cliStop, cliCancel } from './dictation'
@@ -10,8 +10,14 @@ import {
   getEffectiveSettings,
   saveSettingsWithKeys,
   setSecureStorageWarningListener,
-  migrateProviderKeysToKeyStore
+  migrateProviderKeysToKeyStore,
+  rescueWeakLinuxKeys,
+  rewrapWeakLinuxKeys,
+  maybeWarnLinuxKeyring,
+  isLinuxKeyringIssue,
+  LINUX_KEYRING_WARNING
 } from './secure/keyAccessor'
+import { errName } from './secure/errName'
 import { isEncryptionAvailable as isKeyStoreAvailable } from './secure/keyStore'
 import {
   transcribeAudio,
@@ -331,6 +337,17 @@ app.whenReady().then(() => {
   } catch (err) {
     console.error('[Whisperio] provider-key migration failed (' + ((err as NodeJS.ErrnoException | null)?.code ?? 'unknown') + '); continuing startup.')
   }
+  // Linux without a keyring: keep earlier-wrapped keys usable in memory and
+  // warn once per app version (no-op on Windows/macOS).
+  try {
+    rescueWeakLinuxKeys()
+    rewrapWeakLinuxKeys()
+    maybeWarnLinuxKeyring(app.getVersion(), (message) => {
+      if (Notification.isSupported()) new Notification({ title: 'Whisperio', body: message }).show()
+    })
+  } catch (err) {
+    console.error(`[Whisperio] Linux keyring rescue/warning failed (${errName(err)}).`)
+  }
 
   // Apply auto-launch setting (uses Windows Registry HKCU\...\Run)
   // Skip in dev mode — process.execPath points to bare electron.exe which
@@ -384,6 +401,7 @@ app.whenReady().then(() => {
   // "...unavailable, new keys are kept for this session only"). Never gates
   // any functionality — keys entered while storage is unavailable still work
   // for the session, they are just not persisted (fail closed).
+  ipcMain.handle('settings:linuxKeyringWarning', guard(() => (isLinuxKeyringIssue() ? LINUX_KEYRING_WARNING : null)))
   ipcMain.handle('settings:keyStorageAvailable', guard(() => isKeyStoreAvailable()))
 
   // Pause/resume hotkeys during shortcut recording in settings
