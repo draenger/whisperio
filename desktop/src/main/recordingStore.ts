@@ -654,7 +654,7 @@ function wipeAfterShred(): ShredReport {
   for (const f of names) {
     // index.json.corrupt-* backups may hold plaintext history: erase/reset removes them too
     // (every other path keeps them).
-    if (!(f.endsWith('.webm') || f.endsWith('.tmp') || f.startsWith('index.json.corrupt-'))) continue
+    if (!(f.endsWith('.webm') || f.endsWith('.tmp') || CORRUPT_BACKUP_RE.test(f))) continue
     try { unlinkWithRetry(join(dir, f)) } catch { stuck.push(f) }
   }
   const indexPath = getIndexPath()
@@ -745,7 +745,7 @@ export function deleteAllRecordings(): Promise<ShredReport> {
     let undeleted = 0
     try {
       for (const f of readdirSync(getRecordingsDir())) {
-        if (!f.startsWith('index.json.corrupt-')) continue
+        if (!CORRUPT_BACKUP_RE.test(f)) continue // exact backup names only, never look-alikes
         try { unlinkWithRetry(join(getRecordingsDir(), f)) } catch { undeleted++ }
       }
     } catch { /* no recordings dir: nothing to remove */ }
