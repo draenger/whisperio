@@ -347,7 +347,7 @@ function formatTimestamp(ts: number): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`
 }
 
-export function saveRecording(
+export async function saveRecording(
   audioBuffer: Buffer,
   metadata: {
     duration: number

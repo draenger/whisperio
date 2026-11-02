@@ -22,6 +22,7 @@ vi.mock('fs', async (importOriginal) => {
   return {
     ...actual,
     unlinkSync: vi.fn(actual.unlinkSync),
+    writeFileSync: vi.fn(actual.writeFileSync),
     readFileSync: vi.fn(actual.readFileSync),
     renameSync: vi.fn(actual.renameSync),
     copyFileSync: vi.fn(actual.copyFileSync)
@@ -70,21 +71,61 @@ describe('recordingStore', () => {
   })
 
   describe('saveRecording', () => {
-    it('two saves in the same second get distinct files; neither audio is overwritten or lost on delete', async () => {
+    it('three saves in the same second get distinct files with intact audio', async () => {
       const fixed = new Date(2026, 10, 1, 12, 0, 0).getTime()
       const spy = vi.spyOn(Date, 'now').mockReturnValue(fixed)
       try {
         const a = await saveRecording(Buffer.from('first-audio'), { duration: 1, provider: 'openai' })
         const b = await saveRecording(Buffer.from('second-audio'), { duration: 1, provider: 'openai' })
-        expect(a.filepath).not.toBe(b.filepath)
-        expect(b.filename).toMatch(/^recording-\d{4}-\d{2}-\d{2}-\d{6}-2\.webm$/)
+        const c = await saveRecording(Buffer.from('third-audio'), { duration: 1, provider: 'openai' })
+        expect([a.filename, b.filename, c.filename]).toEqual([
+          'recording-2026-11-01-120000.webm',
+          'recording-2026-11-01-120000-2.webm',
+          'recording-2026-11-01-120000-3.webm'
+        ])
         expect(readFileSync(a.filepath, 'utf-8')).toBe('first-audio')
         expect(readFileSync(b.filepath, 'utf-8')).toBe('second-audio')
+        expect(readFileSync(c.filepath, 'utf-8')).toBe('third-audio')
         await deleteRecording(a.id)
         expect(existsSync(b.filepath)).toBe(true)
+        expect(existsSync(c.filepath)).toBe(true)
       } finally {
         spy.mockRestore()
       }
+    })
+
+    it('rejects a non-EEXIST audio write error without adding an index entry', async () => {
+      const error = new Error('EACCES: permission denied') as NodeJS.ErrnoException
+      error.code = 'EACCES'
+      vi.mocked(writeFileSync).mockImplementationOnce((() => { throw error }) as never)
+
+      await expect(saveRecording(Buffer.from('audio'), { duration: 1, provider: 'openai' })).rejects.toBe(error)
+      expect(loadIndex().recordings).toHaveLength(0)
+      expect(readdirSync(getRecordingsDir()).filter((name) => name.endsWith('.webm'))).toHaveLength(0)
+    })
+
+    it('rejects after exhausting exclusive-create collisions', async () => {
+      const actual = await vi.importActual<typeof import('fs')>('fs')
+      const write = vi.mocked(writeFileSync)
+      const before = write.mock.calls.length
+      const error = new Error('EEXIST: file already exists') as NodeJS.ErrnoException
+      error.code = 'EEXIST'
+      write.mockImplementation(((path: string, data: unknown, options: unknown) => {
+        if (typeof options === 'object' && options !== null && 'flag' in options && options.flag === 'wx') {
+          throw error
+        }
+        return (actual.writeFileSync as (...args: unknown[]) => void)(path, data, options)
+      }) as never)
+      try {
+        await expect(saveRecording(Buffer.from('audio'), { duration: 1, provider: 'openai' })).rejects.toBe(error)
+      } finally {
+        write.mockImplementation(actual.writeFileSync as never)
+      }
+      expect(write.mock.calls.slice(before).filter(([, , options]) =>
+        typeof options === 'object' && options !== null && 'flag' in options && options.flag === 'wx'
+      )).toHaveLength(1000) // base name + suffixes -2..-1000
+      expect(loadIndex().recordings).toHaveLength(0)
+      expect(readdirSync(getRecordingsDir()).filter((name) => name.endsWith('.webm'))).toHaveLength(0)
     })
 
     it('creates file on disk and adds to index', async () => {
