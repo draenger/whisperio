@@ -2,6 +2,16 @@
 
 Ideas assessed but not scheduled. Priority: P1 next up, P2 later / low value, P3 parked.
 
+## P2 — Encryption follow-ups from the 2026-11-02 security review
+
+Details: [opt-in encryption design, section 9](design/opt-in-encryption.md).
+
+- **Desktop: delete sealed corrupt-index backups on shred (L5).** `sealCorruptBackups()` output becomes unreadable after Erase + re-enable; remove `index.json.corrupt-*.sealed.json` in `shredDataKey()`.
+- **Desktop: residual plaintext note in D3 copy (L4).** The Privacy switch copy must say that history saved before enabling may stay on disk until overwritten (as Android `settings_encrypt_hint` does).
+- **Cross-platform format before any sync/export (L6).** Define one envelope, AAD and key-transfer scheme before history sync or encrypted export is built.
+- **Android: revisit `setUnlockedDeviceRequired` with the phase-2 biometric lock (L1b).** Blocked today by screen-off dictation.
+- **Android: "Fix" on the locked banner opens Settings at the top.** Add a scroll-to-Privacy argument to the Settings route.
+
 ## P2 — "Sign in with ChatGPT" for AI rewrite (desktop only)
 
 **Idea.** Let a user with ChatGPT Plus/Pro power Whisperio's text features from their ChatGPT plan instead

@@ -196,3 +196,15 @@ Parallelism: Android and desktop are independent after the spec. iOS needs the M
 | 7 | Desktop plaintext key fallback | **Fixed now**, independent of this feature (PR #19) | Bug-class fix |
 
 Still owned by Daniel (not decided here): everything in Play Console (RECORD_AUDIO declaration, Data safety submission), legal texts (privacy policy, terms), desktop release 1.5.2.
+
+## 9. Known divergences and residual plaintext (security review 2026-11-02)
+
+The review of the whole series (#20-#24, #35, #36, #42, #44) passed with notes. Fixed before merge: M1 (desktop audio is sealed by #35, D2) and M2 (Android Home banner while locked), plus L1 (opportunistic StrongBox) and L2 (Tink pinned at 1.23.0, `roundTripOfAMultiSegmentFile` guards `subtle` API bumps). The items below are accepted and documented, not bugs.
+
+| # | What | Where | Why accepted / what to do |
+|---|---|---|---|
+| L4 | Residual plaintext on the storage medium after enabling. Android: `AudioMigration` deletes the plain `.m4a` without overwriting; SQLite pages are handled by #42 (VACUUM + `secure_delete`). Desktop: the old plain `index.json` (replaced via `renameSync`) and plain `.webm` (replaced by D2 migration) stay in free filesystem blocks; there is no desktop equivalent of #42. | `AudioMigration.kt`, `recordingStore.ts` | App-level encryption at rest does not promise forensic erasure; flash wear levelling makes overwrite unreliable anyway. Copy must say so on every platform (Android: `settings_encrypt_hint` already does; desktop D3 copy must too). |
+| L5 | Desktop `index.json.corrupt-*.sealed.json` backups are sealed with the current key. After Erase (shred) and re-enable, a new key is minted and the old backups stay unreadable forever. | `recordingStore.ts` `sealCorruptBackups()`, `dataVault.ts` | Already "preserved, not browsable" in code. Backlog: delete them on shred. |
+| L6 | Formats and keys differ per platform: desktop JSON envelope `{v,alg,iv,ct,tag,kid,av}` with AAD `whisperio/index/v2|kid=...`; Android binary `WE1|nonce|ct+tag` (base64) with AAD `"$id:$field"`; keys are per device. | `secretCrypto.ts`, `DataCipher.kt` | No history sync or export between devices today, so no interop is needed. Any future sync or encrypted export must first define one shared format, AAD and key-transfer scheme. |
+| L3 | Android retry writes a temporary plain `<id>.retry.m4a` for the provider upload. | `DictationController.kt` | Unavoidable for upload; deleted in `finally` and by `sweepOrphanAudio` (tested). |
+| L1b | `setUnlockedDeviceRequired(true)` is NOT set on the Android Keystore key. | `KeystoreSecretStore.kt` | Screen-off / locked-screen dictation (#57) must keep writing. Revisit with the phase-2 biometric design (3.4). |
