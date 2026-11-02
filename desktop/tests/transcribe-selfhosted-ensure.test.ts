@@ -76,7 +76,7 @@ describe('selfhosted ensure is best-effort', () => {
     mockEnsure.mockResolvedValue(undefined)
     mockLoadSettings.mockReturnValue(base)
     mockNetRequest.mockReturnValue(createMockNetRequest(200, JSON.stringify({ text: 'ok' })))
-    expect(await transcribeAudio(Buffer.from('a'), 'r.webm')).toBe('ok')
+    expect(await transcribeAudio(Buffer.from('a'), 'r.webm', null, WAV)).toBe('ok')
     expect(mockEnsure).toHaveBeenCalledWith('http://127.0.0.1:8178', 'ggml-base')
   })
 
@@ -84,7 +84,7 @@ describe('selfhosted ensure is best-effort', () => {
     mockEnsure.mockRejectedValue(new Error('spawn failed'))
     mockLoadSettings.mockReturnValue(base)
     mockNetRequest.mockReturnValue(createMockNetRequest(200, JSON.stringify({ text: 'user server' })))
-    expect(await transcribeAudio(Buffer.from('a'), 'r.webm')).toBe('user server')
+    expect(await transcribeAudio(Buffer.from('a'), 'r.webm', null, WAV)).toBe('user server')
     expect(mockNetRequest).toHaveBeenCalledWith(
       expect.objectContaining({ url: 'http://127.0.0.1:8178/inference' })
     )
@@ -101,7 +101,10 @@ describe('selfhosted ensure is best-effort', () => {
     mockNetRequest
       .mockReturnValueOnce(createMockNetRequest(500, '{"error":"down"}'))
       .mockReturnValueOnce(createMockNetRequest(200, JSON.stringify({ text: 'openai fallback' })))
-    expect(await transcribeAudio(Buffer.from('a'), 'r.webm')).toBe('openai fallback')
+    expect(await transcribeAudio(Buffer.from('a'), 'r.webm', null, WAV)).toBe('openai fallback')
     expect(mockNetRequest).toHaveBeenCalledTimes(2)
   })
 })
+
+// A WAV rendition: the self-hosted (whisper.cpp) provider is skipped without one (see audioFormat.ts).
+const WAV = { buffer: Buffer.from("w"), filename: "audio.wav" }

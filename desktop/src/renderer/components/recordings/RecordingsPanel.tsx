@@ -724,7 +724,7 @@ export function RecordingsView(): ReactElement {
                     <div style={s.recordingText}>
                       {rec.status === 'completed' && rec.transcription
                         ? truncateText(rec.transcription)
-                        : rec.status === 'failed' && rec.error
+                        : (rec.status === 'failed' || (rec.status === 'completed' && !rec.transcription)) && rec.error
                           ? rec.error
                           : rec.status === 'pending'
                             ? 'Processing...'
@@ -1173,8 +1173,8 @@ function RecordingDetail({
       {!failed && rec.segments && rec.segments.length > 0 ? (
         <ConversationSegments theme={theme} rec={rec} />
       ) : (
-        <div style={{ fontSize: 14.5, color: failed ? theme.danger : theme.text, lineHeight: 1.75, whiteSpace: 'pre-wrap' }}>
-          {failed ? rec.error || 'Transcription failed.' : rec.transcription || 'No transcription available.'}
+        <div style={{ fontSize: 14.5, color: failed ? theme.danger : !rec.transcription && rec.error ? theme.textMuted : theme.text, lineHeight: 1.75, whiteSpace: 'pre-wrap' }}>
+          {failed ? rec.error || 'Transcription failed.' : rec.transcription || rec.error || 'No transcription available.'}
         </div>
       )}
 

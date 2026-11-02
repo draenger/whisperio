@@ -7,6 +7,7 @@
 // mobile/WhisperioApp/Sources/WhisperioApp/Engine/MistralProvider.swift.
 import { net, app } from 'electron'
 import { guardRedirects, GUARDED_REDIRECT } from './redirectGuard'
+import { audioMimeFromFilename } from './audioMime'
 import { recordTranscriptionError } from '../errorHandler'
 
 const MISTRAL_STT_URL = 'https://api.mistral.ai/v1/audio/transcriptions'
@@ -57,7 +58,7 @@ export function mistralTranscribe(
   const parts: Buffer[] = []
 
   parts.push(Buffer.from(
-    `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="${safeFilename}"\r\nContent-Type: audio/webm\r\n\r\n`
+    `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="${safeFilename}"\r\nContent-Type: ${audioMimeFromFilename(filename, audioBuffer)}\r\n\r\n`
   ))
   parts.push(audioBuffer)
   parts.push(Buffer.from('\r\n'))
