@@ -245,6 +245,8 @@ export async function pushSecrets(opts: PushOptions = {}): Promise<SyncResult> {
     } catch (err) {
       // A locked vault is a different, retryable problem; anything else means "not our key".
       if (err instanceof VaultLockedError) throw err
+      // Vault unavailable (no OS keychain) is not a key mismatch either: report it as it is.
+      if (!isVaultAvailable()) throw err
       throw new RemoteSealedWithOtherKeyError()
     }
   }

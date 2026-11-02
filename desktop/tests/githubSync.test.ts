@@ -247,6 +247,22 @@ const sealedBlob = (sha: string) => ({
 })
 
 describe('pushSecrets', () => {
+  it('remote blob + vault unavailable: reports the vault error, not a key mismatch; no write', async () => {
+    const s = await load()
+    store.readRemoteBlob.mockResolvedValue({ sha: 'old', contentBase64: Buffer.from('SEALED({})').toString('base64') })
+    vault.available = false
+    vault.openFromRepo.mockImplementationOnce(() => {
+      throw new Error('OS Keychain is unavailable')
+    })
+    try {
+      const err = (await s.pushSecrets().catch((e: Error) => e)) as Error
+      expect(err.message).toBe('OS Keychain is unavailable')
+      expect(store.writeRemoteBlob).not.toHaveBeenCalled()
+    } finally {
+      vault.available = true
+    }
+  })
+
   it('guards: no token / no repo, with no network', async () => {
     const s = await load()
     storedToken = ''
