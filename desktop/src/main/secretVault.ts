@@ -1,4 +1,5 @@
 import { app, safeStorage } from 'electron'
+import { isEncryptionAvailable } from './secure/keyStore'
 import { readFileSync, writeFileSync, existsSync, renameSync, unlinkSync, copyFileSync, readdirSync } from 'fs'
 import { join, dirname, basename } from 'path'
 import {
@@ -53,24 +54,12 @@ export class VaultLockedError extends Error {
 }
 
 /**
- * On Linux without a keyring Electron falls back to a hard-coded password (`basic_text`, or
- * `unknown` before a backend was picked): obfuscation, not encryption — counts as unavailable.
- * Mirrors secure/keyStore.ts.
+ * True when the OS-backed encryption (macOS Keychain) is usable. Delegates to
+ * secure/keyStore.ts, which also treats Linux `basic_text`/`unknown` (no keyring) as unavailable.
  */
-function isWeakLinuxBackend(): boolean {
-  if (process.platform !== 'linux') return false
-  const getBackend = (safeStorage as { getSelectedStorageBackend?: () => string })
-    .getSelectedStorageBackend
-  if (typeof getBackend !== 'function') return false
-  const backend = getBackend.call(safeStorage)
-  return backend === 'basic_text' || backend === 'unknown'
-}
-
-/** True when the OS-backed encryption (macOS Keychain) is usable. */
 export function isVaultAvailable(): boolean {
   try {
-    if (!safeStorage.isEncryptionAvailable()) return false
-    return !isWeakLinuxBackend()
+    return isEncryptionAvailable()
   } catch {
     return false
   }
