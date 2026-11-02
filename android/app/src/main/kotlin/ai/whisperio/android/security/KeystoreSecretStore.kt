@@ -1,6 +1,7 @@
 package ai.whisperio.android.security
 
 import ai.whisperio.core.ProviderId
+import android.os.Build
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyPermanentlyInvalidatedException
 import android.security.keystore.KeyProperties
@@ -9,6 +10,7 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import java.security.KeyStore
+import java.security.ProviderException
 import java.security.UnrecoverableKeyException
 import java.util.Base64
 import javax.crypto.AEADBadTagException
@@ -69,19 +71,21 @@ class AndroidKeystoreCipher(private val alias: String = ALIAS) : SecretCipher {
 
     private fun getOrCreateKey(): SecretKey {
         loadKey()?.let { return it }
-        val spec = KeyGenParameterSpec.Builder(
-            alias,
-            KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT,
-        )
-            .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
-            .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
-            .setKeySize(256)
-            .setUserAuthenticationRequired(false)
-            .setRandomizedEncryptionRequired(true)
-            .build()
-        return KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore")
-            .apply { init(spec) }
-            .generateKey()
+        return generateWithStrongBoxFallback(strongBoxSupported = Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) { strongBox ->
+            val builder = KeyGenParameterSpec.Builder(
+                alias,
+                KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT,
+            )
+                .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
+                .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
+                .setKeySize(256)
+                .setUserAuthenticationRequired(false) // screen-off dictation must keep working: no unlocked-device requirement
+                .setRandomizedEncryptionRequired(true)
+            if (strongBox && Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) builder.setIsStrongBoxBacked(true)
+            KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore")
+                .apply { init(builder.build()) }
+                .generateKey()
+        }
     }
 
     companion object {
@@ -138,5 +142,19 @@ class KeystoreSecretStore(
 
     override val configured: Flow<Set<ProviderId>> = store.data.map { prefs ->
         ProviderId.entries.filter { prefs.contains(keyFor(it)) }.toSet()
+    }
+}
+
+/**
+ * Opportunistic StrongBox: try [gen] with StrongBox first and, when the device has none (StrongBoxUnavailableException,
+ * a [ProviderException] subclass, thrown at generateKey), retry exactly once without it. Only affects NEW keys.
+ * Any other failure propagates; without StrongBox support [gen] runs once with `false`.
+ */
+internal fun <T> generateWithStrongBoxFallback(strongBoxSupported: Boolean, gen: (strongBox: Boolean) -> T): T {
+    if (!strongBoxSupported) return gen(false)
+    return try {
+        gen(true)
+    } catch (e: ProviderException) {
+        gen(false)
     }
 }
