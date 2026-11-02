@@ -2732,8 +2732,10 @@ export function ToggleRow({
             background: checked ? '#ffffff' : theme.textMuted,
             position: 'absolute',
             top: '2px',
-            left: checked ? '20px' : '2px',
-            transition: 'left 0.2s, background 0.2s'
+            left: '2px',
+            // transform, not left: animates on the compositor without a layout pass per frame.
+            transform: checked ? 'translateX(18px)' : 'translateX(0)',
+            transition: 'transform 0.2s, background 0.2s'
           }}
         />
       </div>
