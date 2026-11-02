@@ -32,13 +32,13 @@ class StrongBoxFallbackTest {
         try {
             generateWithStrongBoxFallback<String>(true) { calls += it; throw ProviderException("boom") }
             fail()
-        } catch (_: ProviderException) {}
+        } catch (ignored: ProviderException) {}
         assertEquals(listOf(true, false), calls)
         calls.clear()
         try {
             generateWithStrongBoxFallback<String>(true) { calls += it; throw IllegalStateException("x") }
             fail()
-        } catch (_: IllegalStateException) {}
+        } catch (ignored: IllegalStateException) {}
         assertEquals(listOf(true), calls)
     }
 }

@@ -140,7 +140,6 @@ fun AppRoot() {
     val g = LocalContext.current.graph
     val settings by g.settings.flow.collectAsState(initial = null)
     val s = settings ?: return // first DataStore read; avoids flashing onboarding for returning users
-    val settingsScroll = remember { SettingsScrollTarget() }
     // Try-it bookkeeping lives here (not in OnboardingRoute) so it outlives onboarding: a transcription still in flight
     // when the user finishes is acknowledged silently instead of surfacing on Home.
     var tryActive by rememberSaveable { mutableStateOf(false) }
@@ -311,6 +310,8 @@ private fun MainShell(g: AppGraph) {
     val backStack by nav.currentBackStackEntryAsState()
     val route = backStack?.destination?.route
     val snackbar = remember { SnackbarHostState() }
+    // One-shot "scroll Settings to Privacy" request from the Home locked banner's Fix; outlives tab switches.
+    val settingsScroll = remember { SettingsScrollTarget() }
     // F9: a finished transcription ticks while this window is on screen (confirmHaptic ignores a detached view).
     val shellView = LocalView.current
     LaunchedEffect(Unit) { g.dictation.results.collect { r ->

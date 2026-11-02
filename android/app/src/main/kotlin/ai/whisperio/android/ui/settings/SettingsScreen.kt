@@ -154,7 +154,7 @@ fun SettingsScreen(
         val top = privacyTop
         if (scrollTo == SettingsSection.PRIVACY && top != null) {
             scrollState.animateScrollTo(top)
-            onScrollConsumed(scrollTo)
+            onScrollConsumed(SettingsSection.PRIVACY)
         }
     }
     var confirmErase by rememberSaveable { mutableStateOf(false) }

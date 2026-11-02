@@ -141,8 +141,8 @@ class EncryptCardTest {
 
 /** M2: the Home "encryption is locked" banner shows only for encryption ON + locked. */
 class EncryptLockedBannerTest {
-    private val on = ai.whisperio.android.settings.AppSettings(encryptHistory = true)
-    private val off = ai.whisperio.android.settings.AppSettings(encryptHistory = false)
+    private val on = ai.whisperio.android.settings.AppSettings(order = emptyList(), encryptHistory = true)
+    private val off = ai.whisperio.android.settings.AppSettings(order = emptyList(), encryptHistory = false)
 
     @Test fun lockedAndOnShowsBanner() = assertTrue(shouldShowEncryptLockedBanner(on, locked = true))
     @Test fun offHidesBanner() = assertFalse(shouldShowEncryptLockedBanner(off, locked = true))
