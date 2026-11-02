@@ -10,6 +10,8 @@ Details: [opt-in encryption design, section 9](design/opt-in-encryption.md).
 - **Desktop: residual plaintext note in D3 copy (L4).** The Privacy switch copy must say that history saved before enabling may stay on disk until overwritten (as Android `settings_encrypt_hint` does).
 - **Cross-platform format before any sync/export (L6).** Define one envelope, AAD and key-transfer scheme before history sync or encrypted export is built.
 - **Android: revisit `setUnlockedDeviceRequired` with the phase-2 biometric lock (L1b).** Blocked today by screen-off dictation.
+- **Desktop: renderer never receives raw provider keys (review #37/#40, L2).** `settings:load` (`index.ts` ~276) sends the effective keys to the renderer. Send `hasKey` flags + masked values instead, and accept a key only on write.
+- **Desktop D3 copy: locked key rejects dictation.** With encryption ON and the key locked, desktop refuses to save a dictation (fail closed), unlike Android, which saves plain and shows a banner. The Privacy copy must say so.
 - **Android: "Fix" on the locked banner opens Settings at the top.** Add a scroll-to-Privacy argument to the Settings route.
 
 ## P2 — "Sign in with ChatGPT" for AI rewrite (desktop only)
