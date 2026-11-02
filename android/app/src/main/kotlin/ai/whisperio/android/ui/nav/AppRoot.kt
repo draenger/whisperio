@@ -60,6 +60,8 @@ import ai.whisperio.android.ui.settings.shouldOfferEncryptCard
 import ai.whisperio.android.ui.settings.shouldShowEncryptLockedBanner
 import ai.whisperio.android.ui.settings.SettingsActions
 import ai.whisperio.android.ui.settings.SettingsScreen
+import ai.whisperio.android.ui.settings.SettingsScrollTarget
+import ai.whisperio.android.ui.settings.SettingsSection
 import ai.whisperio.android.ui.settings.SettingsUiState
 import ai.whisperio.core.ExportFormat
 import ai.whisperio.core.Recap
@@ -138,6 +140,7 @@ fun AppRoot() {
     val g = LocalContext.current.graph
     val settings by g.settings.flow.collectAsState(initial = null)
     val s = settings ?: return // first DataStore read; avoids flashing onboarding for returning users
+    val settingsScroll = remember { SettingsScrollTarget() }
     // Try-it bookkeeping lives here (not in OnboardingRoute) so it outlives onboarding: a transcription still in flight
     // when the user finishes is acknowledged silently instead of surfacing on Home.
     var tryActive by rememberSaveable { mutableStateOf(false) }
@@ -345,10 +348,10 @@ private fun MainShell(g: AppGraph) {
         },
     ) { padding ->
         NavHost(nav, startDestination = Routes.HOME, modifier = Modifier.padding(padding)) {
-            composable(Routes.HOME) { HomeRoute(g, nav) }
+            composable(Routes.HOME) { HomeRoute(g, nav, settingsScroll) }
             composable(Routes.HISTORY) { HistoryRoute(g, nav, snackbar) }
             composable(Routes.DETAIL) { entry -> DetailRoute(g, nav, entry.arguments?.getString("id").orEmpty(), snackbar) }
-            composable(Routes.SETTINGS) { SettingsRoute(g, nav) }
+            composable(Routes.SETTINGS) { SettingsRoute(g, nav, settingsScroll) }
             composable(Routes.CATEGORIES) { CategoriesRoute(g, nav) }
             composable(Routes.RECAP) { RecapRoute(g, nav, snackbar) }
             composable(Routes.ABOUT) {
@@ -365,7 +368,7 @@ private fun MainShell(g: AppGraph) {
 }
 
 @Composable
-private fun HomeRoute(g: AppGraph, nav: NavHostController) {
+private fun HomeRoute(g: AppGraph, nav: NavHostController, settingsScroll: SettingsScrollTarget) {
     val ctx = LocalContext.current
     val view = LocalView.current
     val scope = rememberCoroutineScope()
@@ -432,6 +435,7 @@ private fun HomeRoute(g: AppGraph, nav: NavHostController) {
                     cardRun = false
                 }
                 override fun onEncryptLockedFix() {
+                    settingsScroll.request(SettingsSection.PRIVACY)
                     nav.navigate(Routes.SETTINGS) {
                         popUpTo(Routes.HOME) { saveState = true }
                         launchSingleTop = true
@@ -641,7 +645,8 @@ private fun CategoriesRoute(g: AppGraph, nav: NavHostController) {
 }
 
 @Composable
-private fun SettingsRoute(g: AppGraph, nav: NavHostController) {
+private fun SettingsRoute(g: AppGraph, nav: NavHostController, settingsScroll: SettingsScrollTarget) {
+    val scrollTarget by settingsScroll.pending.collectAsState()
     val scope = rememberCoroutineScope()
     val settings by g.settings.flow.collectAsState(initial = AppSettings(order = g.settings.defaultOrder()))
     val configured by g.secrets.configured.collectAsState(initial = emptySet())
@@ -715,6 +720,8 @@ private fun SettingsRoute(g: AppGraph, nav: NavHostController) {
     }
     run {
         SettingsScreen(
+            scrollTo = scrollTarget,
+            onScrollConsumed = settingsScroll::consume,
             state = SettingsUiState(
                 settings = settings,
                 configured = configured,

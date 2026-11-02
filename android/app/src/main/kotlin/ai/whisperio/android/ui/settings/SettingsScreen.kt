@@ -40,7 +40,11 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInParent
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -135,8 +139,24 @@ interface SettingsActions {
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun SettingsScreen(state: SettingsUiState, actions: SettingsActions, modifier: Modifier = Modifier) {
+fun SettingsScreen(
+    state: SettingsUiState,
+    actions: SettingsActions,
+    modifier: Modifier = Modifier,
+    scrollTo: SettingsSection? = null,
+    onScrollConsumed: (SettingsSection) -> Unit = {},
+) {
     val s = state.settings
+    val scrollState = rememberScrollState()
+    var privacyTop by remember { mutableStateOf<Int?>(null) }
+    // Waits for the Privacy title to be laid out, scrolls it to the top of the viewport, then consumes the request.
+    LaunchedEffect(scrollTo, privacyTop) {
+        val top = privacyTop
+        if (scrollTo == SettingsSection.PRIVACY && top != null) {
+            scrollState.animateScrollTo(top)
+            onScrollConsumed(scrollTo)
+        }
+    }
     var confirmErase by rememberSaveable { mutableStateOf(false) }
     var confirmAudio by rememberSaveable { mutableStateOf(false) }
     /** Target value of the "Encrypt history" switch waiting for confirmation; null = no dialog. */
@@ -148,7 +168,7 @@ fun SettingsScreen(state: SettingsUiState, actions: SettingsActions, modifier: M
         Column(
             Modifier
                 .widthIn(max = 640.dp)
-                .verticalScroll(rememberScrollState())
+                .verticalScroll(scrollState)
                 .padding(horizontal = 20.dp, vertical = 8.dp),
         ) {
             SectionTitle(stringResource(R.string.settings_providers))
@@ -230,7 +250,7 @@ fun SettingsScreen(state: SettingsUiState, actions: SettingsActions, modifier: M
                 modifier = Modifier.heightIn(min = 48.dp),
             )
 
-            SectionTitle(stringResource(R.string.settings_privacy_storage), Modifier.testTag(PRIVACY_SECTION_TAG))
+            SectionTitle(stringResource(R.string.settings_privacy_storage), Modifier.onGloballyPositioned { privacyTop = it.positionInParent().y.toInt() }.testTag(PRIVACY_SECTION_TAG))
             SwitchRow(
                 stringResource(R.string.settings_consent),
                 stringResource(R.string.settings_consent_hint),
