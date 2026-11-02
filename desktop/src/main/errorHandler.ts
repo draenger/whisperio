@@ -79,7 +79,7 @@ export function parseApiError(error: Error): { statusCode: number | null, respon
   return { statusCode: null, responseBody: message }
 }
 
-export function handleTranscriptionError(error: Error, provider: string): void {
+function buildTranscriptionError(error: Error, provider: string): WhisperioError {
   const { statusCode, responseBody } = parseApiError(error)
 
   let category: ErrorCategory
@@ -104,21 +104,56 @@ export function handleTranscriptionError(error: Error, provider: string): void {
     category = categorizeError(statusCode, responseBody)
   }
 
-  const userMessage = getErrorMessage(category, error.message)
-
-  const whisperioError: WhisperioError = {
+  return {
     category,
-    message: userMessage,
+    message: getErrorMessage(category, error.message),
     provider,
     timestamp: Date.now(),
     rawError: error.message
   }
+}
 
+/** Pure mapping of a raw error to the friendly WhisperioError. No side effects. */
+export function describeTranscriptionError(error: Error, provider: string): WhisperioError {
+  return buildTranscriptionError(error, provider)
+}
+
+/**
+ * Provider-level hook: map + RECORD (recent-errors list, log) and return the
+ * friendly error, but do NOT notify. Provider code calls this from native
+ * callbacks and then throws; whoever owns the call (the transcribeAudio chain
+ * loop, which runs after an await and so is always in a known place) decides
+ * whether the user hears about it.
+ */
+export function recordTranscriptionError(error: Error, provider: string): WhisperioError {
+  const whisperioError = buildTranscriptionError(error, provider)
   addRecentError(whisperioError)
-  notifyError('Transcription Error', userMessage)
-  emitErrorToRenderer(whisperioError)
+  console.error(`[Whisperio] ${provider} error [${whisperioError.category}]: ${error.message}`)
+  return whisperioError
+}
 
-  console.error(`[Whisperio] ${provider} error [${category}]: ${error.message}`)
+/**
+ * One notification for a failed provider chain: the primary (first) failure's
+ * friendly message, plus a count when more than one provider failed.
+ */
+export function notifyTranscriptionFailure(errors: WhisperioError[]): void {
+  const primary = errors[0]
+  if (!primary) return
+  const message =
+    errors.length > 1 ? `${primary.message} (${errors.length} providers failed)` : primary.message
+  notifyError('Transcription Error', message)
+  emitErrorToRenderer({ ...primary, message })
+}
+
+/**
+ * @deprecated No production caller left (providers use recordTranscriptionError;
+ * the chain owner uses notifyTranscriptionFailure). Kept only because
+ * errorHandler.test.ts exercises it. Records AND notifies immediately.
+ */
+export function handleTranscriptionError(error: Error, provider: string): void {
+  const whisperioError = recordTranscriptionError(error, provider)
+  notifyError('Transcription Error', whisperioError.message)
+  emitErrorToRenderer(whisperioError)
 }
 
 // COMMAND mode (v1.7 — dictation/hotkeyManager.ts's 'command' DictationState):

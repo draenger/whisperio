@@ -72,6 +72,17 @@ export interface ConnectPrompt {
   expiresIn: number
 }
 
+/** True only for an https URL on github.com (the device-flow verification page). */
+export function isGithubVerificationUri(uri: unknown): boolean {
+  if (typeof uri !== 'string') return false
+  try {
+    const u = new URL(uri)
+    return u.protocol === 'https:' && u.hostname === 'github.com' && !u.username && !u.password && !u.port
+  } catch {
+    return false
+  }
+}
+
 /**
  * Kick off device flow: request a code, open the system browser to the
  * verification page, and hand the user-facing code back to the renderer. The
@@ -88,7 +99,12 @@ export async function beginConnect(): Promise<ConnectPrompt> {
     expiresAt: Date.now() + code.expiresIn * 1000
   }
   // Open the real browser — device flow needs no embedded webview / redirect.
-  await shell.openExternal(code.verificationUri).catch(() => {})
+  // The URI comes from a network response: only ever open https://github.com.
+  if (isGithubVerificationUri(code.verificationUri)) {
+    await shell.openExternal(code.verificationUri).catch(() => {})
+  } else {
+    console.warn('[githubSync] refusing to open unexpected verification URI')
+  }
   return {
     userCode: code.userCode,
     verificationUri: code.verificationUri,
