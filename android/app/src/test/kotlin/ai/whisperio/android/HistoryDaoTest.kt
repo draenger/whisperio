@@ -110,6 +110,18 @@ class HistoryDaoTest {
         assertEquals("text x", r.transcript)
     }
 
+    @Test fun deleteAllAudioSkipsTheActiveRecording() = runBlocking {
+        val old = audio("old")
+        val live = audio("live")
+        store.upsert(row("old", 1, audio = old))
+        store.upsert(row("live", 2, RecordingStatus.RECORDING, audio = live))
+        store.deleteAllAudio(keepId = "live", keepFile = live)
+        assertFalse(old.exists())
+        assertTrue(live.exists())
+        assertNull(store.get("old")!!.audioPath)
+        assertEquals(live.path, store.get("live")!!.audioPath)
+    }
+
     @Test fun setInsertedTracksKeyboardCommits() = runBlocking {
         store.upsert(row("k", 1).copy(source = RecordingSource.KEYBOARD, inserted = false))
         store.setInserted("k", true)

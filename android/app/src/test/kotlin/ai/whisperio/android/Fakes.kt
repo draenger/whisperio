@@ -123,8 +123,8 @@ class FakeHistory(private val recordingsDir: File? = null) : HistoryStore {
         }
         return n
     }
-    override suspend fun deleteAllAudio() {
-        rows.value.values.forEach { r -> r.audioPath?.let { File(it).delete() }; upsert(r.copy(audioPath = null)) }
+    override suspend fun deleteAllAudio(keepId: String?, keepFile: File?) {
+        rows.value.values.filter { it.id != keepId }.forEach { r -> r.audioPath?.let { File(it).delete() }; upsert(r.copy(audioPath = null)) }
     }
     override suspend fun clear() { rows.value.keys.toList().forEach { delete(it) } }
 }

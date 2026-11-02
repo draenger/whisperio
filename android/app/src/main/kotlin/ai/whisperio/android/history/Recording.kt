@@ -81,6 +81,9 @@ interface RecordingDao {
 
     @Query("UPDATE recording SET audio_path = NULL WHERE audio_path IS NOT NULL")
     suspend fun clearAudioPaths()
+
+    @Query("UPDATE recording SET audio_path = NULL WHERE audio_path IS NOT NULL AND id != :keepId")
+    suspend fun clearAudioPathsExcept(keepId: String)
 }
 
 @Database(entities = [Recording::class], version = 2, exportSchema = true)

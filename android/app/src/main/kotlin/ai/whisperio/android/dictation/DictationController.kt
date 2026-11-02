@@ -143,12 +143,17 @@ class DictationController(
             val id = currentId
             currentFile?.delete()
             if (id != null && currentPersist) history.delete(id)
+            currentFile = null
+            currentId = null
             _state.value = DictationState.Idle
         }
     }
 
     /** The audio file of the active session, if any (maintenance sweeps must not touch it). */
     fun activeFile(): File? = currentFile
+
+    /** Whether the active session saves to history (false for incognito keyboard fields). */
+    fun activePersists(): Boolean = currentPersist
 
     /** Id of the history row of the active recording/transcription, null when idle (or no-history mode). */
     fun activeId(): String? = if (busy && currentPersist) currentId else null
@@ -312,7 +317,14 @@ class DictationController(
         if (options.saveToHistory) history.upsert(row)
         _state.value = DictationState.Recording(0f, 0, false, options.source)
 
-        session = scope.launch { recordLoop(row, s, options) }
+        session = scope.launch {
+            try {
+                recordLoop(row, s, options)
+            } finally {
+                // The session is over: the file is deleted or owned by its row, so sweeps/delete-all no longer need to skip it.
+                if (currentFile === file) currentFile = null
+            }
+        }
     }
 
     private fun onFocusLost() {
