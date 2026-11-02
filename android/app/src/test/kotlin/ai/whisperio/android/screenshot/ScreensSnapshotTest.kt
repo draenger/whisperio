@@ -35,7 +35,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performScrollTo
+import androidx.test.core.app.ApplicationProvider
+import ai.whisperio.android.R
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -349,17 +352,24 @@ open class SettingsSnapshotTest {
     @Test @Config(qualifiers = PHONE)
     fun encryptBusy() = rule.snapshot("settings_encrypt_busy") { SettingsScreen(state().copy(encryptBusy = true), noop) }
 
-    // The tests above capture the top of Settings; this one scrolls the Privacy section (with the encrypt switch) into view.
+    // The tests above capture the top of Settings; these scroll the whole Privacy section (with the encrypt switch) into view.
+    // performScrollTo() scrolls minimally, so scroll to the section title first and then to its last item (Delete recordings).
+    private fun androidx.compose.ui.test.junit4.ComposeContentTestRule.scrollPrivacyIntoView() {
+        onNodeWithTag(PRIVACY_SECTION_TAG).performScrollTo()
+        val ctx = ApplicationProvider.getApplicationContext<android.content.Context>()
+        onNodeWithText(ctx.getString(R.string.settings_delete_audio)).performScrollTo()
+    }
+
     @Test @Config(qualifiers = PHONE)
     fun privacySection() = rule.snapshot(
         "settings_privacy",
-        beforeCapture = { onNodeWithTag(PRIVACY_SECTION_TAG).performScrollTo() },
+        beforeCapture = { scrollPrivacyIntoView() },
     ) { SettingsScreen(state(), noop) }
 
     @Test @Config(qualifiers = PHONE)
     fun privacySectionEncryptOn() = rule.snapshot(
         "settings_privacy_encrypt_on",
-        beforeCapture = { onNodeWithTag(PRIVACY_SECTION_TAG).performScrollTo() },
+        beforeCapture = { scrollPrivacyIntoView() },
     ) { SettingsScreen(state().let { it.copy(settings = it.settings.copy(encryptHistory = true)) }, noop) }
 
     @Test @Config(qualifiers = ScreenshotConfig.TABLET)

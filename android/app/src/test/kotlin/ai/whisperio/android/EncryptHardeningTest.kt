@@ -237,8 +237,9 @@ class EncryptHardeningTest {
         for (i in 0 until 5) store.upsert(row("r$i", "t$i"))
         wrapper.failing = false
         store.migrate(true)
-        wrapper.failing = true
-        store.upsert(row("late", "plain"))
+        // After migrate the DEK is cached, so a Keystore failure no longer leaves a row plain. Write one plain
+        // row straight to the DAO (as an older plain write would have) so exactly one item is pending.
+        db.recordings().upsert(row("late", "plain"))
         (0 until 20).map { async { store.refreshPending() } }.awaitAll()
         assertEquals(1, store.pendingEncryption.value)
     }
