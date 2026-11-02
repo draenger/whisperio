@@ -12,6 +12,7 @@ import ai.whisperio.android.settings.decideLanguageChoice
 import ai.whisperio.android.settings.languageAfterRestart
 import ai.whisperio.android.ui.common.Languages
 import ai.whisperio.android.ui.common.confirmHaptic
+import ai.whisperio.android.ui.common.copyPlainText
 import ai.whisperio.android.ui.common.label
 import ai.whisperio.android.ui.theme.WhisperioTheme
 import android.content.Intent
@@ -78,7 +79,7 @@ class WhisperioImeService : InputMethodService(), LifecycleOwner, ViewModelStore
 
     private val field = MutableStateFlow(FieldState())
     private val micGranted = MutableStateFlow(false)
-    private val notInserted = MutableStateFlow(false)
+    private val notInserted = MutableStateFlow<NotInsertedReason?>(null)
     private val sessionCounter = InputSessionCounter()
     private var selStart = -1
     private var selEnd = -1
@@ -106,7 +107,8 @@ class WhisperioImeService : InputMethodService(), LifecycleOwner, ViewModelStore
                 passwordField = f.password,
                 setupNeeded = !status.ready,
                 providerLabel = "${primary.first.label(this)} - ${primary.second}",
-                notInserted = ni,
+                notInserted = ni != null,
+                notInsertedReason = ni ?: NotInsertedReason.HISTORY,
                 language = effectiveLanguage(settings.perAppLanguage, f.language, settings.language),
                 fieldSeq = f.seq,
             )
@@ -185,7 +187,7 @@ class WhisperioImeService : InputMethodService(), LifecycleOwner, ViewModelStore
         )
         if (pkg != null && keepLanguage == null) loadSavedLanguage(pkg)
         if (!restarting) {
-            notInserted.value = false
+            notInserted.value = null
             graph.dictation.acknowledge()
         }
     }
@@ -257,7 +259,7 @@ class WhisperioImeService : InputMethodService(), LifecycleOwner, ViewModelStore
                     language = panelState.value.language,
                 ) ?: return // mic disabled in password fields
                 micGranted.value = graph.micGranted()
-                notInserted.value = false
+                notInserted.value = null
                 controller.start(options)
             }
         }
@@ -269,7 +271,17 @@ class WhisperioImeService : InputMethodService(), LifecycleOwner, ViewModelStore
             markInserted = { graph.dictation.markInserted(it, true) },
             acknowledge = { graph.dictation.acknowledge() },
         ) ?: return
-        notInserted.value = !outcome
+        if (outcome) {
+            notInserted.value = null
+        } else if (result.recordingId != null) {
+            notInserted.value = NotInsertedReason.HISTORY
+        } else {
+            // Incognito field: nothing was saved, so History cannot hold the text. Offer it on the clipboard instead.
+            // Synchronous (we are on the main thread) so the panel never flashes "discarded" before "copied".
+            val copied = shouldAutoCopyIncognito(Build.VERSION.SDK_INT) &&
+                runCatching { copyPlainText(this, result.text, sensitive = true) }.isSuccess
+            notInserted.value = notInsertedReasonFor(result.recordingId, copied)
+        }
         if (outcome) window.window?.decorView?.confirmHaptic()
         if (outcome && isVoiceSubtype()) switchBackAfterVoice()
     }
@@ -366,6 +378,16 @@ internal fun commitKeyboardResult(
     result.recordingId?.let(markInserted)
     acknowledge()
     return true
+}
+
+/** Below API 33 the clipboard has no "sensitive" flag, so a private-field transcript is never auto-copied there. */
+internal fun shouldAutoCopyIncognito(sdk: Int): Boolean = sdk >= 33
+
+/** History when the row was saved; otherwise the clipboard if the copy worked, else the text is gone (private field). */
+internal fun notInsertedReasonFor(recordingId: String?, copiedToClipboard: Boolean): NotInsertedReason = when {
+    recordingId != null -> NotInsertedReason.HISTORY
+    copiedToClipboard -> NotInsertedReason.CLIPBOARD
+    else -> NotInsertedReason.DISCARDED
 }
 
 /** Mic start options for the bound field; null in password fields (mic disabled). */
