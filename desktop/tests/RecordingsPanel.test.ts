@@ -325,3 +325,19 @@ describe('RecordingsPanel — on-demand Clean up action', () => {
     expect(cleanupMock).not.toHaveBeenCalled()
   })
 })
+
+describe('RecordingsView history unreadable notice', () => {
+  it('shows the notice with Retry when recordings:list rejects with INDEX_UNAVAILABLE, and recovers on retry', async () => {
+    const list = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("Error invoking remote method 'recordings:list': Error: [INDEX_UNAVAILABLE] locked"))
+      .mockResolvedValue([{ ...RECORDING }])
+    mockApi({ recordings: { list } })
+    render(createElement(RecordingsView))
+    await waitFor(() => expect(screen.getByTestId('recordings-history-unreadable')).toBeTruthy())
+    expect(screen.queryByText('No recordings yet')).toBeNull()
+    fireEvent.click(screen.getByText('Retry'))
+    await waitFor(() => expect(screen.queryByTestId('recordings-history-unreadable')).toBeNull())
+    expect(list).toHaveBeenCalledTimes(2)
+  })
+})

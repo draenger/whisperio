@@ -1,6 +1,6 @@
 import { shell } from 'electron'
 import { loadSettings, saveSettings, type AppSettings } from './settingsManager'
-import { saveSettingsWithKeys } from './secure/keyAccessor'
+import { getEffectiveSettings, saveSettingsWithKeys } from './secure/keyAccessor'
 import {
   isVaultAvailable,
   sealForRepo,
@@ -201,7 +201,10 @@ export interface SyncResult {
  */
 export async function pushSecrets(): Promise<SyncResult> {
   const token = requireToken()
-  const settings = loadSettings()
+  // Effective settings, not loadSettings(): since #19 the provider keys live in the OS
+  // secure store and settings.json holds blanks, so loadSettings() would push empty keys
+  // and overwrite the user's only remote copy.
+  const settings = getEffectiveSettings()
   const repo = settings.githubRepo
   if (!repo) throw new Error('No repository selected')
   const branch = settings.githubBranch || undefined
