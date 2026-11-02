@@ -75,6 +75,24 @@ describe('keyStore', () => {
       expect(isEncryptionAvailable()).toBe(true)
     })
 
+    it.each(['basic_text', 'unknown'])('is false on Linux when the backend is %s (hard-coded password, not encryption)', (backend) => {
+      const platform = Object.getOwnPropertyDescriptor(process, 'platform')!
+      const store = safeStorage as unknown as { getSelectedStorageBackend?: () => string }
+      store.getSelectedStorageBackend = () => backend
+      try {
+        Object.defineProperty(process, 'platform', { value: 'linux' })
+        expect(isEncryptionAvailable()).toBe(false)
+        store.getSelectedStorageBackend = () => 'gnome_libsecret'
+        expect(isEncryptionAvailable()).toBe(true)
+        Object.defineProperty(process, 'platform', { value: 'win32' })
+        store.getSelectedStorageBackend = () => backend
+        expect(isEncryptionAvailable()).toBe(true) // the backend only matters on Linux
+      } finally {
+        Object.defineProperty(process, 'platform', platform)
+        delete store.getSelectedStorageBackend
+      }
+    })
+
     it('fails soft to false if safeStorage throws', () => {
       vi.mocked(safeStorage.isEncryptionAvailable).mockImplementation(() => {
         throw new Error('Keychain unreachable')

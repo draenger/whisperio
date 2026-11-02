@@ -59,6 +59,25 @@ const CLEANUP_TEMPERATURE = 0.2
 // grow the text much). Guard against it by falling back to `raw`.
 const HALLUCINATION_LENGTH_RATIO = 1.6
 
+// Command-mode and template/custom-instruction rewrites legitimately expand or
+// translate text (e.g. "expand into a full email", "translate"), so the 1.6x
+// ratio is wrong for them. They get only a generous absolute cap that still
+// catches runaway generations: max(4x input, input + 4000 chars).
+function exceedsLengthGuard(cleaned: string, raw: string, guard: LengthGuard): boolean {
+  if (guard === 'ratio') return cleaned.length > raw.length * HALLUCINATION_LENGTH_RATIO
+  return cleaned.length > Math.max(raw.length * 4, raw.length + 4000)
+}
+
+type LengthGuard = 'ratio' | 'lenient'
+
+// If the model echoes our data delimiters, strip a wrapping pair (fail-soft).
+function stripDelimiterTags(text: string): string {
+  return text
+    .replace(/^\s*<(?:transcript|clipboard)>\s*/i, '')
+    .replace(/\s*<\/(?:transcript|clipboard)>\s*$/i, '')
+    .trim()
+}
+
 function isAbort(err: unknown, signal: AbortSignal | undefined): boolean {
   if (signal?.aborted) return true
   return err instanceof Error && err.name === 'AbortError'
@@ -102,7 +121,7 @@ function stripWrapping(text: string): string {
 // the provider and applies the same fail-soft guard rails (no provider,
 // empty/whitespace raw, empty completion, hallucination-length guard, abort)
 // either way. Never throws.
-async function runCleanupCore(raw: string, messages: LLMMessage[], provider: LLMProvider | null, signal?: AbortSignal): Promise<CleanupResult> {
+async function runCleanupCore(raw: string, messages: LLMMessage[], provider: LLMProvider | null, signal?: AbortSignal, guard: LengthGuard = 'ratio'): Promise<CleanupResult> {
   if (!raw || !raw.trim()) return { text: raw, ok: false }
 
   if (!provider) {
@@ -129,9 +148,9 @@ async function runCleanupCore(raw: string, messages: LLMMessage[], provider: LLM
       }
     })
 
-    const cleaned = stripWrapping(completion)
+    const cleaned = stripWrapping(stripDelimiterTags(completion))
     if (!cleaned) return { text: raw, ok: false }
-    if (cleaned.length > raw.length * HALLUCINATION_LENGTH_RATIO) return { text: raw, ok: false }
+    if (exceedsLengthGuard(cleaned, raw, guard)) return { text: raw, ok: false }
     return { text: cleaned, ok: true }
   } catch (err) {
     if (isAbort(err, signal)) {
@@ -188,7 +207,7 @@ export async function cleanupTranscriptionDetailed(raw: string, opts: CleanupOpt
 export async function formatTranscription(raw: string, opts: FormatOptions): Promise<CleanupResult> {
   if (!opts.instruction || !opts.instruction.trim()) return { text: raw, ok: false }
   const messages = buildFormatMessages({ raw, instruction: opts.instruction })
-  return runCleanupCore(raw, messages, opts.provider, opts.signal)
+  return runCleanupCore(raw, messages, opts.provider, opts.signal, 'lenient')
 }
 
 export interface CommandRewriteOptions {
@@ -213,5 +232,5 @@ export interface CommandRewriteOptions {
 export async function rewriteSelection(selection: string, opts: CommandRewriteOptions): Promise<CleanupResult> {
   if (!opts.command || !opts.command.trim()) return { text: selection, ok: false }
   const messages = buildCommandMessages({ command: opts.command, selection })
-  return runCleanupCore(selection, messages, opts.provider, opts.signal)
+  return runCleanupCore(selection, messages, opts.provider, opts.signal, 'lenient')
 }

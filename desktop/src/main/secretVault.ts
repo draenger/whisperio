@@ -1,4 +1,5 @@
 import { app, safeStorage } from 'electron'
+import { isEncryptionAvailable } from './secure/keyStore'
 import { readFileSync, writeFileSync, existsSync, renameSync, unlinkSync } from 'fs'
 import { join } from 'path'
 import {
@@ -42,7 +43,7 @@ function userDataPath(name: string): string {
 /** True when the OS-backed encryption (macOS Keychain) is usable. */
 export function isVaultAvailable(): boolean {
   try {
-    return safeStorage.isEncryptionAvailable()
+    return isEncryptionAvailable()
   } catch {
     return false
   }
