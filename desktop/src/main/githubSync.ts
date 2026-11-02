@@ -8,7 +8,9 @@ import {
   saveGithubToken,
   loadGithubToken,
   hasGithubToken,
-  clearGithubToken
+  clearGithubToken,
+  hasDataKey,
+  VaultLockedError
 } from './secretVault'
 import {
   isClientConfigured,
@@ -189,6 +191,24 @@ function collectSecrets(settings: AppSettings): Record<SecretKey, string> {
   return out
 }
 
+/**
+ * Thrown by pushSecrets when the repo already holds a sealed blob that the current local key
+ * cannot open (or no local key exists at all). Overwriting would destroy the only copy that the
+ * old key can still decrypt, so the push is refused unless the caller opts in via overwriteRemote.
+ */
+export class RemoteSealedWithOtherKeyError extends Error {
+  readonly code = 'REMOTE_SEALED_WITH_OTHER_KEY'
+  constructor() {
+    super('The GitHub copy was sealed with a different key. Pull or remove it first.')
+    this.name = 'RemoteSealedWithOtherKeyError'
+  }
+}
+
+export interface PushOptions {
+  /** Explicitly allow replacing a remote blob this device's key cannot open. Not wired to the UI. */
+  overwriteRemote?: boolean
+}
+
 export interface SyncResult {
   ok: true
   path: string
@@ -199,7 +219,7 @@ export interface SyncResult {
  * Encrypt the local secrets client-side and commit ONLY the ciphertext envelope
  * to the chosen repo. Never writes plaintext.
  */
-export async function pushSecrets(): Promise<SyncResult> {
+export async function pushSecrets(opts: PushOptions = {}): Promise<SyncResult> {
   const token = requireToken()
   // Effective settings, not loadSettings(): since #19 the provider keys live in the OS
   // secure store and settings.json holds blanks, so loadSettings() would push empty keys
@@ -214,12 +234,28 @@ export async function pushSecrets(): Promise<SyncResult> {
     updatedAt: new Date().toISOString(),
     secrets: collectSecrets(settings)
   }
+  // Read the remote first: whether it can be opened decides if sealing (which would mint a key
+  // when none exists) is safe at all.
+  const existing = await readRemoteBlob(token, repo, SECRET_PATH, branch)
+  if (existing && !opts.overwriteRemote) {
+    // No local key file: sealing would mint a new key and orphan the remote copy. Never mint to probe.
+    if (!hasDataKey()) throw new RemoteSealedWithOtherKeyError()
+    try {
+      openFromRepo(Buffer.from(existing.contentBase64 ?? '', 'base64').toString('utf-8'))
+    } catch (err) {
+      // A locked vault is a different, retryable problem; anything else means "not our key".
+      if (err instanceof VaultLockedError) throw err
+      // Vault unavailable (no OS keychain) is not a key mismatch either: report it as it is.
+      if (!isVaultAvailable()) throw err
+      throw new RemoteSealedWithOtherKeyError()
+    }
+  }
+
   // Seal (AES-256-GCM under the local Keychain-held key), then base64 for the
   // Contents API. The repo only ever sees the sealed envelope.
   const sealed = sealForRepo(JSON.stringify(payload))
   const contentBase64 = Buffer.from(sealed, 'utf-8').toString('base64')
 
-  const existing = await readRemoteBlob(token, repo, SECRET_PATH, branch)
   await writeRemoteBlob(
     token,
     repo,

@@ -25,6 +25,7 @@ vi.mock('../src/main/secure/keyAccessor', () => ({
 let storedToken = ''
 const vault = {
   available: true,
+  hasKey: true,
   sealForRepo: vi.fn((s: string) => `SEALED(${s})`),
   openFromRepo: vi.fn((s: string) => {
     const m = /^SEALED\(([\s\S]*)\)$/.exec(s)
@@ -40,6 +41,8 @@ vi.mock('../src/main/secretVault', () => ({
     storedToken = t
   },
   loadGithubToken: () => storedToken,
+  hasDataKey: () => vault.hasKey,
+  VaultLockedError: class VaultLockedError extends Error {},
   hasGithubToken: () => storedToken !== '',
   clearGithubToken: () => {
     storedToken = ''
@@ -238,7 +241,28 @@ describe('listRepositories', () => {
   })
 })
 
+const sealedBlob = (sha: string) => ({
+  contentBase64: Buffer.from('SEALED({})', 'utf-8').toString('base64'),
+  sha
+})
+
 describe('pushSecrets', () => {
+  it('remote blob + vault unavailable: reports the vault error, not a key mismatch; no write', async () => {
+    const s = await load()
+    store.readRemoteBlob.mockResolvedValue({ sha: 'old', contentBase64: Buffer.from('SEALED({})').toString('base64') })
+    vault.available = false
+    vault.openFromRepo.mockImplementationOnce(() => {
+      throw new Error('OS Keychain is unavailable')
+    })
+    try {
+      const err = (await s.pushSecrets().catch((e: Error) => e)) as Error
+      expect(err.message).toBe('OS Keychain is unavailable')
+      expect(store.writeRemoteBlob).not.toHaveBeenCalled()
+    } finally {
+      vault.available = true
+    }
+  })
+
   it('guards: no token / no repo, with no network', async () => {
     const s = await load()
     storedToken = ''
@@ -254,7 +278,7 @@ describe('pushSecrets', () => {
     settings = { ...settings, openaiApiKey: '', elevenlabsApiKey: '' }
     secureKeys = { openaiApiKey: 'sk-secure', elevenlabsApiKey: 'el-secure' }
     try {
-      store.readRemoteBlob.mockResolvedValue({ sha: 'old', content: '' })
+      store.readRemoteBlob.mockResolvedValue(sealedBlob('old'))
       store.writeRemoteBlob.mockResolvedValue({ sha: 'n' })
       await s.pushSecrets()
       const inner = JSON.parse(vault.sealForRepo.mock.calls[0][0])
@@ -287,7 +311,7 @@ describe('pushSecrets', () => {
     const s = await load()
     settings.githubBranch = ''
     delete settings.elevenlabsApiKey
-    store.readRemoteBlob.mockResolvedValue({ contentBase64: 'x', sha: 'OLD' })
+    store.readRemoteBlob.mockResolvedValue(sealedBlob('OLD'))
     store.writeRemoteBlob.mockResolvedValue({ sha: 'n' })
     await s.pushSecrets()
     expect(store.readRemoteBlob.mock.calls[0][3]).toBeUndefined()
@@ -298,7 +322,7 @@ describe('pushSecrets', () => {
 
   it('conflict (409/422) from write propagates and nothing is saved locally', async () => {
     const s = await load()
-    store.readRemoteBlob.mockResolvedValue({ contentBase64: 'x', sha: 'STALE' })
+    store.readRemoteBlob.mockResolvedValue(sealedBlob('STALE'))
     store.writeRemoteBlob.mockRejectedValue(new Error('GitHub write failed (HTTP 409)'))
     await expect(s.pushSecrets()).rejects.toThrow('HTTP 409')
     expect(saveSettings).not.toHaveBeenCalled()
@@ -316,13 +340,67 @@ describe('pushSecrets', () => {
     expect(saveSettingsWithKeys).not.toHaveBeenCalled()
   })
 
-  it('sealing failure aborts before any network call', async () => {
+  it('sealing failure aborts before any write', async () => {
     const s = await load()
     vault.sealForRepo.mockImplementationOnce(() => {
       throw new Error('vault locked')
     })
+    store.readRemoteBlob.mockResolvedValue(null)
     await expect(s.pushSecrets()).rejects.toThrow('vault locked')
-    expect(store.readRemoteBlob).not.toHaveBeenCalled()
+    expect(store.writeRemoteBlob).not.toHaveBeenCalled()
+  })
+})
+
+describe('pushSecrets: remote sealed with another key (L1)', () => {
+  it('local key file missing + remote blob exists: rejects, no key minted, nothing written', async () => {
+    const s = await load()
+    vault.hasKey = false
+    store.readRemoteBlob.mockResolvedValue(sealedBlob('REMOTE'))
+    const err = (await s.pushSecrets().catch((e: Error) => e)) as Error
+    expect(err).toBeInstanceOf(s.RemoteSealedWithOtherKeyError)
+    expect(err.message).toBe('The GitHub copy was sealed with a different key. Pull or remove it first.')
+    expect(store.writeRemoteBlob).not.toHaveBeenCalled()
+    expect(vault.sealForRepo).not.toHaveBeenCalled()
+    expect(vault.openFromRepo).not.toHaveBeenCalled()
+    vault.hasKey = true
+  })
+
+  it('key exists but cannot open the remote blob: rejects, nothing written', async () => {
+    const s = await load()
+    store.readRemoteBlob.mockResolvedValue({ contentBase64: Buffer.from('garbage', 'utf-8').toString('base64'), sha: 'R' })
+    await expect(s.pushSecrets()).rejects.toBeInstanceOf(s.RemoteSealedWithOtherKeyError)
+    expect(store.writeRemoteBlob).not.toHaveBeenCalled()
+    expect(vault.sealForRepo).not.toHaveBeenCalled()
+  })
+
+  it('remote blob opens with the current key: push proceeds with its sha', async () => {
+    const s = await load()
+    store.readRemoteBlob.mockResolvedValue(sealedBlob('R'))
+    store.writeRemoteBlob.mockResolvedValue({ sha: 'n' })
+    await s.pushSecrets()
+    expect(store.writeRemoteBlob).toHaveBeenCalledTimes(1)
+    expect(store.writeRemoteBlob.mock.calls[0][5]).toBe('R')
+  })
+
+  it('no remote blob (first sync) proceeds even without a local key yet', async () => {
+    const s = await load()
+    vault.hasKey = false
+    store.readRemoteBlob.mockResolvedValue(null)
+    store.writeRemoteBlob.mockResolvedValue({ sha: 'n' })
+    await s.pushSecrets()
+    expect(store.writeRemoteBlob).toHaveBeenCalledTimes(1)
+    vault.hasKey = true
+  })
+
+  it('overwriteRemote: true writes over an undecryptable remote blob', async () => {
+    const s = await load()
+    vault.hasKey = false
+    store.readRemoteBlob.mockResolvedValue(sealedBlob('R'))
+    store.writeRemoteBlob.mockResolvedValue({ sha: 'n' })
+    await s.pushSecrets({ overwriteRemote: true })
+    expect(store.writeRemoteBlob).toHaveBeenCalledTimes(1)
+    expect(store.writeRemoteBlob.mock.calls[0][5]).toBe('R')
+    vault.hasKey = true
   })
 })
 

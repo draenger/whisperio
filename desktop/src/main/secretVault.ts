@@ -1,7 +1,7 @@
 import { app, safeStorage } from 'electron'
 import { isEncryptionAvailable } from './secure/keyStore'
-import { readFileSync, writeFileSync, existsSync, renameSync, unlinkSync } from 'fs'
-import { join } from 'path'
+import { readFileSync, writeFileSync, existsSync, renameSync, unlinkSync, copyFileSync, readdirSync } from 'fs'
+import { join, dirname, basename } from 'path'
 import {
   generateDataKey,
   encryptWithKey,
@@ -40,7 +40,23 @@ function userDataPath(name: string): string {
   return join(app.getPath('userData'), name)
 }
 
-/** True when the OS-backed encryption (macOS Keychain) is usable. */
+/**
+ * Thrown when the DEK file exists but cannot be used right now (Keychain locked / prompt denied /
+ * entry rotated, or malformed key material). We NEVER mint a replacement in that case: a new key
+ * would make everything already sealed in the GitHub repo undecryptable.
+ */
+export class VaultLockedError extends Error {
+  readonly code = 'VAULT_LOCKED'
+  constructor(message: string) {
+    super(message)
+    this.name = 'VaultLockedError'
+  }
+}
+
+/**
+ * True when the OS-backed encryption (macOS Keychain) is usable. Delegates to
+ * secure/keyStore.ts, which also treats Linux `basic_text`/`unknown` (no keyring) as unavailable.
+ */
 export function isVaultAvailable(): boolean {
   try {
     return isEncryptionAvailable()
@@ -57,11 +73,41 @@ function requireVault(): void {
   }
 }
 
-/** Atomic write helper mirroring settingsManager/recordingStore. */
+const RENAME_RETRY_CODES = new Set(['EPERM', 'EBUSY', 'EACCES'])
+const RENAME_ATTEMPTS = 5
+
+function sleepSync(ms: number): void {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms)
+}
+
+/** rename with a short bounded retry: on Windows an antivirus/indexer can briefly lock the file. */
+function renameWithRetry(from: string, to: string): void {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      renameSync(from, to)
+      return
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException | undefined)?.code
+      if (attempt >= RENAME_ATTEMPTS || !code || !RENAME_RETRY_CODES.has(code)) throw err
+      sleepSync(Math.min(100, 20 * attempt))
+    }
+  }
+}
+
+/** Atomic write helper mirroring settingsManager/recordingStore. Cleans up the tmp on failure. */
 function atomicWrite(filePath: string, data: string): void {
   const tmp = `${filePath}.${process.pid}.${Date.now()}.tmp`
-  writeFileSync(tmp, data, 'utf-8')
-  renameSync(tmp, filePath)
+  try {
+    writeFileSync(tmp, data, 'utf-8')
+    renameWithRetry(tmp, filePath)
+  } catch (err) {
+    try {
+      if (existsSync(tmp)) unlinkSync(tmp)
+    } catch {
+      /* best effort */
+    }
+    throw err
+  }
 }
 
 /**
@@ -72,15 +118,35 @@ export function getOrCreateDataKey(): Buffer {
   requireVault()
   const path = userDataPath(DEK_FILE)
   if (existsSync(path)) {
+    // The key file exists: it is the ONLY copy of the key that seals the repo payload. Never
+    // overwrite it, whatever goes wrong here.
+    let key: Buffer
     try {
       const wrappedB64 = readFileSync(path, 'utf-8')
       const dek = safeStorage.decryptString(Buffer.from(wrappedB64, 'base64'))
-      const key = Buffer.from(dek, 'base64')
-      if (key.length === 32) return key
-      // Corrupt/truncated key material — fall through to regenerate.
-    } catch {
-      // Unreadable (e.g. Keychain entry rotated). Regenerate below.
+      key = Buffer.from(dek, 'base64')
+    } catch (err) {
+      // Error name only (never the message: it could echo key material or paths).
+      console.warn('[secretVault] key unlock failed:', err instanceof Error ? err.name : typeof err)
+      throw new VaultLockedError(
+        'The secret vault key could not be unlocked (Keychain locked, access denied, or entry changed). ' +
+          'Unlock the Keychain and try again; the existing key was left untouched.'
+      )
     }
+    if (key.length === 32) return key
+    // Decrypted fine but malformed: keep a backup copy for recovery, leave the file in place.
+    try {
+      // One backup is enough: the file is never modified, so don't add a copy per call.
+      const dir = dirname(path)
+      const prefix = `${basename(path)}.malformed-`
+      const hasBackup = readdirSync(dir).some((f) => f.startsWith(prefix) && f.endsWith('.bak'))
+      if (!hasBackup) copyFileSync(path, `${path}.malformed-${Date.now()}.bak`)
+    } catch {
+      /* best effort */
+    }
+    throw new VaultLockedError(
+      'The secret vault key file is malformed. It was backed up and left untouched; not regenerating.'
+    )
   }
   const key = generateDataKey()
   const wrapped = safeStorage.encryptString(key.toString('base64'))
