@@ -12,6 +12,8 @@ vi.mock('electron', () => ({
 
 const mockHandleError = vi.fn()
 vi.mock('../src/main/errorHandler', () => ({
+  // Providers record (no notify) via recordTranscriptionError; the deprecated handle* is kept for old callers.
+  recordTranscriptionError: (...args: unknown[]) => mockHandleError(...args),
   handleTranscriptionError: (...args: unknown[]) => mockHandleError(...args)
 }))
 
