@@ -1,6 +1,6 @@
 import { app } from 'electron'
-import { existsSync, mkdirSync, writeFileSync, readFileSync, unlinkSync, renameSync } from 'fs'
-import { join } from 'path'
+import { existsSync, realpathSync, mkdirSync, writeFileSync, readFileSync, unlinkSync, renameSync, copyFileSync, statSync } from 'fs'
+import { join, resolve, sep, dirname } from 'path'
 import type { SpeakerSegment } from './dictation/conversation'
 
 export interface RecordingEntry {
@@ -62,6 +62,30 @@ interface RecordingIndex {
   recordings: RecordingEntry[]
 }
 
+/**
+ * True only when `filepath` resolves to a location strictly inside the recordings
+ * directory. Guards every read/delete of an audio file against a tampered index
+ * entry (e.g. filepath set to '../x' or an absolute path outside the dir).
+ */
+export function isInsideRecordingsDir(filepath: unknown): boolean {
+  if (typeof filepath !== 'string' || !filepath) return false
+  // Follow symlinks for paths that exist, so a link inside the dir that points
+  // outside it is refused. Non-existent paths fall back to lexical resolution.
+  const real = (p: string): string => {
+    const r = resolve(p)
+    try {
+      return existsSync(r) ? realpathSync(r) : r
+    } catch {
+      return r
+    }
+  }
+  const dir = real(getRecordingsDir())
+  const target = real(filepath)
+  const prefix = dir.endsWith(sep) ? dir : dir + sep
+  const norm = (p: string): string => (process.platform === 'win32' ? p.toLowerCase() : p)
+  return norm(target).startsWith(norm(prefix))
+}
+
 // Bound the on-disk recordings cache. Without a cap the `.webm` files accumulate
 // forever, silently eating gigabytes of the user's disk on a long-lived install
 // (and eventually failing writes once the volume fills). When a new recording
@@ -95,7 +119,7 @@ function evictToQuota(index: RecordingIndex, protectId?: string): void {
     if (total <= target) break
     if (entry.id === protectId) continue
 
-    if (existsSync(entry.filepath)) {
+    if (isInsideRecordingsDir(entry.filepath) && existsSync(entry.filepath)) {
       try {
         unlinkSync(entry.filepath)
       } catch {
@@ -120,17 +144,147 @@ function getIndexPath(): string {
   return join(getRecordingsDir(), 'index.json')
 }
 
+/**
+ * Thrown when index.json exists but can't be used safely right now (persistent
+ * read error such as an AV/backup lock, or a corrupt file we could not back up).
+ * Callers must NOT treat this as "empty history": a following saveIndex() would
+ * overwrite the only copy. IPC handlers surface it as a rejected call.
+ */
+export const INDEX_UNAVAILABLE_CODE = 'INDEX_UNAVAILABLE'
+
+export class IndexUnavailableError extends Error {
+  readonly code = INDEX_UNAVAILABLE_CODE
+  constructor(message: string) {
+    // Electron's ipcMain.handle drops custom error classes/props and only keeps
+    // the message, so the code is embedded as a prefix the renderer can match.
+    super(`[${INDEX_UNAVAILABLE_CODE}] ${message}`)
+    this.name = 'IndexUnavailableError'
+  }
+}
+
+const READ_RETRIES = 5
+// Bounded backoff between index read retries (total 25+50+100+200 = 375 ms).
+const READ_BACKOFF_MS = [25, 50, 100, 200]
+
+let sleepImpl: (ms: number) => void = (ms) => {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms)
+}
+
+/** Blocking sleep (main process, tiny bounded waits only). */
+export function sleepSync(ms: number): void {
+  sleepImpl(ms)
+}
+
+/** Test hook: replace the sleep implementation; call with no arg to restore. */
+export function setSleepSyncForTests(fn?: (ms: number) => void): void {
+  sleepImpl = fn ?? ((ms) => { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms) })
+}
+
+// Signature (mtime+size) of a corrupt index we already COPIED aside (rename
+// failed), so repeated reads don't pile up identical backups.
+let copiedCorruptSignature: string | null = null
+
+function fileSignature(path: string): string | null {
+  try {
+    const st = statSync(path)
+    return `${st.mtimeMs}:${st.size}`
+  } catch {
+    return null
+  }
+}
+
+// Move an unreadable index aside so the next saveIndex() cannot overwrite the
+// only copy of the user's history metadata. Never deletes anything. Returns
+// false when no backup could be made (caller must then refuse, not go empty).
+function quarantineCorruptIndex(indexPath: string): boolean {
+  const name = `index.corrupt-${Date.now()}.json`
+  const backup = join(dirname(indexPath), name)
+  try {
+    renameSync(indexPath, backup)
+    copiedCorruptSignature = null
+    console.warn(`[recordingStore] recordings index unreadable; moved aside to ${name}`)
+    return true
+  } catch {
+    /* fall through to copy */
+  }
+  const sig = fileSignature(indexPath)
+  if (sig !== null && sig === copiedCorruptSignature) return true // already backed up
+  try {
+    copyFileSync(indexPath, backup)
+    copiedCorruptSignature = sig
+    console.warn(`[recordingStore] recordings index unreadable; copied aside to ${name}`)
+    return true
+  } catch {
+    return false
+  }
+}
+
+function readIndexText(indexPath: string): string {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return readFileSync(indexPath, 'utf-8')
+    } catch (err) {
+      // A transient lock (Defender, an indexer, OneDrive) must never be
+      // mistaken for corruption: retry, then refuse rather than go empty.
+      if (attempt < READ_RETRIES - 1 && isTransientRenameError(err)) {
+        sleepSync(READ_BACKOFF_MS[Math.min(attempt, READ_BACKOFF_MS.length - 1)])
+        continue
+      }
+      const code = (err as NodeJS.ErrnoException | null)?.code ?? 'unknown'
+      throw new IndexUnavailableError(`Recordings index could not be read (${code}); history left untouched.`)
+    }
+  }
+}
+
+function quarantineOrThrow(indexPath: string): RecordingIndex {
+  if (quarantineCorruptIndex(indexPath)) return { recordings: [] }
+  throw new IndexUnavailableError('Recordings index is unreadable and could not be backed up; history left untouched.')
+}
+
 export function loadIndex(): RecordingIndex {
   const indexPath = getIndexPath()
   if (!existsSync(indexPath)) {
     return { recordings: [] }
   }
+  const raw = readIndexText(indexPath)
+  let parsed: unknown
   try {
-    const raw = readFileSync(indexPath, 'utf-8')
-    return JSON.parse(raw) as RecordingIndex
+    parsed = JSON.parse(raw)
   } catch {
-    return { recordings: [] }
+    return quarantineOrThrow(indexPath)
   }
+  if (
+    parsed === null ||
+    typeof parsed !== 'object' ||
+    Array.isArray(parsed) ||
+    !Array.isArray((parsed as { recordings?: unknown }).recordings)
+  ) {
+    return quarantineOrThrow(indexPath)
+  }
+  const obj = parsed as RecordingIndex
+  const valid = obj.recordings.filter(
+    (r) => r !== null && typeof r === 'object' && typeof (r as { id?: unknown }).id === 'string'
+  )
+  if (valid.length === obj.recordings.length) return obj
+  backupBeforeFilter(indexPath, obj.recordings.length - valid.length, obj.recordings.length)
+  return { ...obj, recordings: valid }
+}
+
+// Entries without a string id are dropped from the in-memory list; the next
+// saveIndex() would erase them for good. Keep a copy of the original first
+// (never deleted), once per distinct file state. Logs counts only.
+let filteredBackupSignature: string | null = null
+function backupBeforeFilter(indexPath: string, dropped: number, total: number): void {
+  const sig = fileSignature(indexPath)
+  if (sig !== null && sig === filteredBackupSignature) return
+  const name = `index.filtered-${Date.now()}.json`
+  try {
+    copyFileSync(indexPath, join(dirname(indexPath), name))
+  } catch {
+    throw new IndexUnavailableError('Recordings index has invalid entries and could not be backed up; history left untouched.')
+  }
+  filteredBackupSignature = sig
+  console.warn(`[recordingStore] dropped ${dropped} of ${total} invalid index entries; original copied to ${name}`)
 }
 
 // Windows hands out a transient EPERM/EBUSY for a rename when another process
@@ -211,11 +365,31 @@ export function saveRecording(
   const dir = getRecordingsDir()
   const id = generateId()
   const timestamp = Date.now()
-  const filename = `recording-${formatTimestamp(timestamp)}.webm`
-  const filepath = join(dir, filename)
+  // Refuse before touching disk when the index is unusable, so no orphan audio.
+  try {
+    loadIndex()
+  } catch (err) {
+    return Promise.reject(err)
+  }
 
-  // The audio file has a unique name, so writing it outside the lock is safe.
-  writeFileSync(filepath, audioBuffer)
+  // Names have one-second resolution: two saves in the same second (or a clock
+  // stepped back) used to share a path, so the second write overwrote the first
+  // recording's audio and deleting one entry removed the other's file. Create
+  // exclusively ('wx') and add a -2, -3 ... suffix on collision. The exclusive
+  // create also makes writing outside the lock safe.
+  const base = `recording-${formatTimestamp(timestamp)}`
+  let filename = `${base}.webm`
+  let filepath = join(dir, filename)
+  for (let n = 2; ; n++) {
+    try {
+      writeFileSync(filepath, audioBuffer, { flag: 'wx' })
+      break
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException | null)?.code !== 'EEXIST' || n > 1000) throw err
+      filename = `${base}-${n}.webm`
+      filepath = join(dir, filename)
+    }
+  }
 
   const entry: RecordingEntry = {
     id,
@@ -234,11 +408,16 @@ export function saveRecording(
   }
 
   return enqueue(() => {
-    const index = loadIndex()
-    index.recordings.push(entry)
-    evictToQuota(index, entry.id)
-    saveIndex(index)
-    return entry
+    try {
+      const index = loadIndex()
+      index.recordings.push(entry)
+      evictToQuota(index, entry.id)
+      saveIndex(index)
+      return entry
+    } catch (err) {
+      try { unlinkSync(filepath) } catch { /* best-effort: drop the just-written audio */ }
+      throw err
+    }
   })
 }
 
@@ -282,7 +461,7 @@ export function deleteRecording(id: string): Promise<boolean> {
     // tracked size so the freed bytes no longer count against the disk quota.
     // A hard `splice` here could never converge — a stale device would resurrect
     // the row on the next merge (PT-offline-first-lww-sync).
-    if (existsSync(entry.filepath)) {
+    if (isInsideRecordingsDir(entry.filepath) && existsSync(entry.filepath)) {
       try {
         unlinkSync(entry.filepath)
       } catch {
@@ -302,7 +481,7 @@ export function deleteAllRecordings(): Promise<void> {
     const index = loadIndex()
 
     for (const entry of index.recordings) {
-      if (existsSync(entry.filepath)) {
+      if (isInsideRecordingsDir(entry.filepath) && existsSync(entry.filepath)) {
         try {
           unlinkSync(entry.filepath)
         } catch {
@@ -333,7 +512,7 @@ export function deleteRecordingsByDate(dateStr: string): Promise<void> {
     }
 
     for (const entry of toDelete) {
-      if (existsSync(entry.filepath)) {
+      if (isInsideRecordingsDir(entry.filepath) && existsSync(entry.filepath)) {
         try {
           unlinkSync(entry.filepath)
         } catch {
@@ -349,6 +528,7 @@ export function deleteRecordingsByDate(dateStr: string): Promise<void> {
 export function getRecordingAudio(id: string): Buffer | null {
   const entry = getRecording(id)
   if (!entry) return null
+  if (!isInsideRecordingsDir(entry.filepath)) return null
   if (!existsSync(entry.filepath)) return null
   return readFileSync(entry.filepath)
 }

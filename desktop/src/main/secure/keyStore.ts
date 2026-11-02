@@ -64,6 +64,11 @@ export function isEncryptionAvailable(): boolean {
   }
 }
 
+/** Log-safe error label: only the class name, never the message (it may hold key material or paths). */
+export function errName(err: unknown): string {
+  return err instanceof Error ? err.name : typeof err
+}
+
 function atomicWrite(filePath: string, data: string): void {
   const tmp = `${filePath}.${process.pid}.${Date.now()}.tmp`
   writeFileSync(tmp, data, 'utf-8')
@@ -89,7 +94,7 @@ function readStore(): EncryptedStore {
     console.error('[Whisperio] provider-keys store had an unexpected shape; treating as empty.')
     return {}
   } catch (err) {
-    console.error('[Whisperio] provider-keys store is corrupt; treating as empty:', err)
+    console.error('[Whisperio] provider-keys store is corrupt; treating as empty (' + errName(err) + ').')
     return {}
   }
 }
@@ -111,7 +116,7 @@ export function getKey(name: string): string | null {
   try {
     return safeStorage.decryptString(Buffer.from(ciphertext, 'base64'))
   } catch (err) {
-    console.error(`[Whisperio] failed to decrypt provider key "${name}":`, err)
+    console.error(`[Whisperio] failed to decrypt provider key "${name}" (${errName(err)}).`)
     return null
   }
 }
@@ -179,7 +184,7 @@ export function readWeakBackendKeys(): Record<string, string> {
     try {
       out[name] = safeStorage.decryptString(Buffer.from(ciphertext, 'base64'))
     } catch (err) {
-      console.error(`[Whisperio] could not rescue provider key "${name}" from the weak store:`, err)
+      console.error(`[Whisperio] could not rescue provider key "${name}" from the weak store (${errName(err)}).`)
     }
   }
   return out
@@ -196,4 +201,56 @@ export function dropWrappedEntry(name: string): void {
   if (!(name in store)) return
   delete store[name]
   writeStore(store)
+}
+
+/**
+ * Marker for "written under the weak backend": Chromium's os_crypt prefixes
+ * Linux ciphertext with `v10` (hard-coded-password basic_text) or `v11` (real
+ * keyring). The blob therefore carries its own backend marker; no sidecar file
+ * is needed, old files work unchanged, and a re-wrapped entry (now `v11`) is
+ * naturally skipped on the next run. Only meaningful on Linux.
+ */
+function isWeakBlob(ciphertextB64: string): boolean {
+  try {
+    return Buffer.from(ciphertextB64, 'base64').subarray(0, 3).toString('latin1') === 'v10'
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Startup re-wrap (Linux only): entries wrapped while Electron ran on the weak
+ * `basic_text` backend are re-encrypted with the real keyring once one is
+ * available. Per entry: decrypt -> encrypt -> verify the new blob decrypts to
+ * the same value IN MEMORY -> write -> read back through getKey and compare ->
+ * on any mismatch restore the old blob. The old blob is only ever replaced by
+ * a verified one, so no key is lost; failures are logged by error name only.
+ * Idempotent: re-wrapped blobs are no longer weak.
+ */
+export function rewrapWeakEntries(): { rewrapped: number; failed: number } {
+  const result = { rewrapped: 0, failed: 0 }
+  if (process.platform !== 'linux' || !isEncryptionAvailable()) return result
+  const weak = Object.entries(readStore()).filter(([, blob]) => isWeakBlob(blob))
+  for (const [name, oldBlob] of weak) {
+    try {
+      const value = safeStorage.decryptString(Buffer.from(oldBlob, 'base64'))
+      const fresh = safeStorage.encryptString(value)
+      if (safeStorage.decryptString(fresh) !== value) throw new Error('verify')
+      const store = readStore()
+      store[name] = fresh.toString('base64')
+      writeStore(store)
+      if (getKey(name) !== value) {
+        const back = readStore()
+        back[name] = oldBlob
+        writeStore(back)
+        result.failed++
+        continue
+      }
+      result.rewrapped++
+    } catch (err) {
+      console.error(`[Whisperio] could not re-wrap provider key "${name}" (${errName(err)}); keeping the old entry.`)
+      result.failed++
+    }
+  }
+  return result
 }

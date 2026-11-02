@@ -1,6 +1,6 @@
 import { shell } from 'electron'
 import { loadSettings, saveSettings, type AppSettings } from './settingsManager'
-import { saveSettingsWithKeys } from './secure/keyAccessor'
+import { getEffectiveSettings, saveSettingsWithKeys } from './secure/keyAccessor'
 import {
   isVaultAvailable,
   sealForRepo,
@@ -72,6 +72,17 @@ export interface ConnectPrompt {
   expiresIn: number
 }
 
+/** True only for an https URL on github.com (the device-flow verification page). */
+export function isGithubVerificationUri(uri: unknown): boolean {
+  if (typeof uri !== 'string') return false
+  try {
+    const u = new URL(uri)
+    return u.protocol === 'https:' && u.hostname === 'github.com' && !u.username && !u.password && !u.port
+  } catch {
+    return false
+  }
+}
+
 /**
  * Kick off device flow: request a code, open the system browser to the
  * verification page, and hand the user-facing code back to the renderer. The
@@ -88,7 +99,12 @@ export async function beginConnect(): Promise<ConnectPrompt> {
     expiresAt: Date.now() + code.expiresIn * 1000
   }
   // Open the real browser — device flow needs no embedded webview / redirect.
-  await shell.openExternal(code.verificationUri).catch(() => {})
+  // The URI comes from a network response: only ever open https://github.com.
+  if (isGithubVerificationUri(code.verificationUri)) {
+    await shell.openExternal(code.verificationUri).catch(() => {})
+  } else {
+    console.warn('[githubSync] refusing to open unexpected verification URI')
+  }
   return {
     userCode: code.userCode,
     verificationUri: code.verificationUri,
@@ -185,7 +201,10 @@ export interface SyncResult {
  */
 export async function pushSecrets(): Promise<SyncResult> {
   const token = requireToken()
-  const settings = loadSettings()
+  // Effective settings, not loadSettings(): since #19 the provider keys live in the OS
+  // secure store and settings.json holds blanks, so loadSettings() would push empty keys
+  // and overwrite the user's only remote copy.
+  const settings = getEffectiveSettings()
   const repo = settings.githubRepo
   if (!repo) throw new Error('No repository selected')
   const branch = settings.githubBranch || undefined

@@ -1,4 +1,4 @@
-import { loadSettings, saveSettings, type AppSettings } from '../settingsManager'
+import { loadSettings, saveSettings, areSettingsUnavailable, type AppSettings } from '../settingsManager'
 import {
   getKey,
   setKey,
@@ -7,7 +7,9 @@ import {
   isWeakLinuxBackend,
   hasWrappedEntries,
   dropWrappedEntry,
-  readWeakBackendKeys
+  readWeakBackendKeys,
+  rewrapWeakEntries,
+  errName
 } from './keyStore'
 
 /**
@@ -55,7 +57,7 @@ function dropStaleWrapped(field: ProviderKeyField): void {
   try {
     dropWrappedEntry(field)
   } catch (err) {
-    console.error(`[Whisperio] could not drop stale wrapped key "${field}":`, err)
+    console.error(`[Whisperio] could not drop stale wrapped key "${field}" (${errName(err)}).`)
   }
 }
 
@@ -119,7 +121,7 @@ function writeKeyField(field: ProviderKeyField, value: string): boolean {
     try {
       deleteKey(field)
     } catch (err) {
-      console.error(`[Whisperio] failed to delete provider key "${field}" from the key store:`, err)
+      console.error(`[Whisperio] failed to delete provider key "${field}" from the key store (${errName(err)}).`)
     }
     return true
   }
@@ -132,7 +134,7 @@ function writeKeyField(field: ProviderKeyField, value: string): boolean {
     )
     return false
   } catch (err) {
-    console.error(`[Whisperio] failed to write provider key "${field}" to the key store:`, err)
+    console.error(`[Whisperio] failed to write provider key "${field}" to the key store (${errName(err)}).`)
     return false
   }
 }
@@ -152,6 +154,12 @@ function writeKeyField(field: ProviderKeyField, value: string): boolean {
  * place on disk changes.
  */
 export function saveSettingsWithKeys(partial: Partial<AppSettings>): AppSettings {
+  // Refuse BEFORE touching the key store: if settings.json is locked the save below would be
+  // refused, and keys written to the store now would be out of sync with the file.
+  loadSettings()
+  if (areSettingsUnavailable()) {
+    throw new Error('Settings file could not be read; refusing to overwrite it. Try again shortly.')
+  }
   const jsonPatch: Partial<AppSettings> = { ...partial }
   if (isEncryptionAvailable()) {
     let sessionOnly = false
@@ -250,7 +258,14 @@ export function migrateProviderKeysToKeyStore(): void {
     }
   }
   if (migratedCount > 0) {
-    saveSettings(patch)
+    try {
+      saveSettings(patch)
+    } catch (err) {
+      // settings.json locked between reads: the keys are already in the key store; the
+      // plaintext copies are cleared on the next launch's migration. Log the code only.
+      console.warn(`[Whisperio] provider-key migration: could not update settings.json (${(err as NodeJS.ErrnoException | null)?.code ?? 'unavailable'}); will retry next launch.`)
+      return
+    }
     console.log(`[Whisperio] provider-key migration: moved ${migratedCount} key(s) into OS secure storage.`)
   } else {
     console.log('[Whisperio] provider-key migration: nothing to migrate.')
@@ -302,6 +317,20 @@ export function rescueWeakLinuxKeys(): number {
   }
   if (n > 0) console.log(`[Whisperio] kept ${n} provider key(s) in memory for this session (no secure keyring).`)
   return n
+}
+
+/**
+ * Startup (Linux, real keyring now available): re-wrap entries that were
+ * written under the weak basic_text backend. Never throws; never loses a key
+ * (see keyStore.rewrapWeakEntries). Returns the number re-wrapped.
+ */
+export function rewrapWeakLinuxKeys(): number {
+  try {
+    return rewrapWeakEntries().rewrapped
+  } catch (err) {
+    console.error(`[Whisperio] weak-backend re-wrap failed (${errName(err)}).`)
+    return 0
+  }
 }
 
 /**

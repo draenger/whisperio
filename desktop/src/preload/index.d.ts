@@ -1,18 +1,21 @@
 export interface OverlayInfo {
   sourceName: string
   stopHotkey: string
+  /** true when the dictate hotkey runs hold-to-talk (release ends recording) */
+  hold?: boolean
   recordingType: 'input' | 'output'
 }
 
 export interface DictationAPI {
-  onActivate: (callback: () => void) => () => void
-  onActivateOutput: (callback: () => void) => () => void
+  onActivate: (callback: (sessionId?: number) => void) => () => void
+  onActivateOutput: (callback: (sessionId?: number) => void) => () => void
   onDeactivate: (callback: (sessionId: number) => void) => () => void
   onCancel: (callback: () => void) => () => void
   onStateChanged: (callback: (state: string) => void) => () => void
   onOverlayInfo: (callback: (info: OverlayInfo) => void) => () => void
-  sendResult: (text: string, sessionId?: number) => Promise<void>
-  transcribe: (audioData: ArrayBuffer, filename: string) => Promise<string>
+  sendResult: (text: string, sessionId?: number, reason?: 'silent') => Promise<void>
+  transcribe: (audioData: ArrayBuffer, filename: string, wavData?: ArrayBuffer | null) => Promise<string>
+  reportError?: (title: string, body: string) => Promise<void>
 }
 
 export interface ModelInfo {
@@ -94,10 +97,13 @@ export interface AppSettings {
   aiModel: string
   anthropicApiKey: string
   launchAtStartup: boolean
+  allowUrlControl: boolean
+  allowUrlStart: boolean
   checkForUpdates: boolean
   dictationHotkey: string
   dictateAndSendHotkey: string
   commandHotkey: string
+  hotkeyMode: 'toggle' | 'hold'
   theme: 'dark' | 'light'
   /** Internal: last Linux keyring backend the basic_text warning was shown for (no UI control). */
   linuxKeyringWarningShownFor: string
@@ -105,6 +111,11 @@ export interface AppSettings {
   inputDeviceId: string
   outputDeviceId: string
   saveRecordings: boolean
+  silenceGate: boolean
+  silenceGateThresholdDbfs: number
+  trimSilence: boolean
+  restoreClipboard: boolean
+  clipboardRestoreDelayMs: number
   outputRecordingHotkey: string
   fallbackEnabled: boolean
   githubUser: string
