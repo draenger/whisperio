@@ -1,4 +1,4 @@
-import { loadSettings, saveSettings, type AppSettings } from '../settingsManager'
+import { loadSettings, saveSettings, areSettingsUnavailable, type AppSettings } from '../settingsManager'
 import { getKey, setKey, deleteKey, isEncryptionAvailable } from './keyStore'
 
 /**
@@ -134,6 +134,12 @@ function writeKeyField(field: ProviderKeyField, value: string): boolean {
  * place on disk changes.
  */
 export function saveSettingsWithKeys(partial: Partial<AppSettings>): AppSettings {
+  // Refuse BEFORE touching the key store: if settings.json is locked the save below would be
+  // refused, and keys written to the store now would be out of sync with the file.
+  loadSettings()
+  if (areSettingsUnavailable()) {
+    throw new Error('Settings file could not be read; refusing to overwrite it. Try again shortly.')
+  }
   const jsonPatch: Partial<AppSettings> = { ...partial }
   if (isEncryptionAvailable()) {
     let sessionOnly = false
@@ -229,7 +235,14 @@ export function migrateProviderKeysToKeyStore(): void {
     }
   }
   if (migratedCount > 0) {
-    saveSettings(patch)
+    try {
+      saveSettings(patch)
+    } catch (err) {
+      // settings.json locked between reads: the keys are already in the key store; the
+      // plaintext copies are cleared on the next launch's migration. Log the code only.
+      console.warn(`[Whisperio] provider-key migration: could not update settings.json (${(err as NodeJS.ErrnoException | null)?.code ?? 'unavailable'}); will retry next launch.`)
+      return
+    }
     console.log(`[Whisperio] provider-key migration: moved ${migratedCount} key(s) into OS secure storage.`)
   } else {
     console.log('[Whisperio] provider-key migration: nothing to migrate.')

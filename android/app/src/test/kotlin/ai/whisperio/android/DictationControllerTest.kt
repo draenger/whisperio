@@ -188,6 +188,38 @@ class DictationControllerTest {
         assertEquals("hello world", (c.state.value as DictationState.Done).text)
     }
 
+    @Test fun failedRetryNeverDeletesTheOnlyClipEvenWithKeepAudioOff() = runTest {
+        transcriber.failure = IllegalStateException("HTTP 500")
+        val c = controller()
+        c.start(StartOptions(RecordingSource.APP))
+        runCurrent(); advance(500)
+        c.stopAndTranscribe(); advance(200)
+        assertTrue(audioFile("id1").exists())
+
+        settings.settings = settings.settings.copy(keepAudio = false) // changed after the failure
+        c.retry("id1"); runCurrent()
+        assertTrue(c.state.value is DictationState.Error)
+        assertTrue(audioFile("id1").exists())
+        val row = history.rows.value["id1"]!!
+        assertEquals(RecordingStatus.FAILED, row.status)
+        assertNotNull(row.audioPath)
+    }
+
+    @Test fun categorySetDuringTranscriptionSurvivesTheResult() = runTest {
+        transcriber.latencyMs = 1_000
+        val c = controller()
+        c.start(StartOptions(RecordingSource.APP))
+        runCurrent(); advance(500)
+        c.stopAndTranscribe(); advance(200)
+        assertTrue(c.state.value is DictationState.Transcribing)
+        history.setCategory("id1", "work")
+        advance(1_500)
+        val row = history.rows.value["id1"]!!
+        assertEquals(RecordingStatus.DONE, row.status)
+        assertEquals("hello world", row.transcript)
+        assertEquals("work", row.category)
+    }
+
     @Test fun cancelWhileRecordingDiscardsEverything() = runTest {
         val c = controller()
         c.start(StartOptions(RecordingSource.KEYBOARD))

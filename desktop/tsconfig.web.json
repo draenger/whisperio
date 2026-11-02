@@ -17,6 +17,7 @@
     "declarationMap": true
   },
   "include": [
+    "src/shared/**/*.ts",
     "src/renderer/**/*.ts",
     "src/renderer/**/*.tsx",
     "src/preload/index.d.ts"
