@@ -15,8 +15,11 @@ vi.mock('../src/main/settingsManager', () => ({
 }))
 
 const saveSettingsWithKeys = vi.fn()
+// Keys held in the OS secure store (overlaid by getEffectiveSettings); null = no overlay.
+let secureKeys: Record<string, string> | null = null
 vi.mock('../src/main/secure/keyAccessor', () => ({
-  saveSettingsWithKeys: (p: unknown) => saveSettingsWithKeys(p)
+  saveSettingsWithKeys: (p: unknown) => saveSettingsWithKeys(p),
+  getEffectiveSettings: () => (secureKeys ? { ...settings, ...secureKeys } : settings)
 }))
 
 let storedToken = ''
@@ -244,6 +247,21 @@ describe('pushSecrets', () => {
     settings.githubRepo = ''
     await expect(s.pushSecrets()).rejects.toThrow('No repository selected')
     expect(store.readRemoteBlob).not.toHaveBeenCalled()
+  })
+
+  it('after the key migration (settings.json blank, keys in the secure store) the push carries the real keys', async () => {
+    const s = await load()
+    settings = { ...settings, openaiApiKey: '', elevenlabsApiKey: '' }
+    secureKeys = { openaiApiKey: 'sk-secure', elevenlabsApiKey: 'el-secure' }
+    try {
+      store.readRemoteBlob.mockResolvedValue({ sha: 'old', content: '' })
+      store.writeRemoteBlob.mockResolvedValue({ sha: 'n' })
+      await s.pushSecrets()
+      const inner = JSON.parse(vault.sealForRepo.mock.calls[0][0])
+      expect(inner.secrets).toEqual({ openaiApiKey: 'sk-secure', elevenlabsApiKey: 'el-secure' })
+    } finally {
+      secureKeys = null
+    }
   })
 
   it('first sync (404 -> null): writes without sha; only the sealed envelope reaches the repo', async () => {
