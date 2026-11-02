@@ -5,7 +5,8 @@ import {
   macKeyCode,
   watchKeyRelease,
   createKeyStateReader,
-  _resetKeyHoldWarnings
+  _resetKeyHoldWarnings,
+  _setKeyHoldDeps
 } from '../src/main/dictation/keyHold'
 
 describe('parseAccelerator', () => {
@@ -275,4 +276,124 @@ describe('keyHold gap coverage', () => {
       expect(reader).toBeNull()
     }
   })
+})
+
+describe('Windows mapping is the static Electron-compatible table', () => {
+  it('keeps OEM punctuation on Electron fixed VK codes regardless of layout', () => {
+    expect(winVirtualKey(';')).toBe(0xba)
+    expect(winVirtualKey('-')).toBe(0xbd)
+    expect(winVirtualKey('Z')).toBe(0x5a)
+  })
+})
+
+describe('macOS Input Monitoring detection', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+    _resetKeyHoldWarnings()
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+    vi.restoreAllMocks()
+  })
+  const run = (down: boolean): ReturnType<typeof vi.fn> => {
+    const onRelease = vi.fn()
+    watchKeyRelease('Ctrl+Space', onRelease, { platform: 'darwin', isKeyDown: () => down })
+    vi.advanceTimersByTime(100)
+    return onRelease
+  }
+
+  it('first-poll-up 3 times in a row -> no release, onFallback, one notification, then toggle fallback', () => {
+    const notify = vi.fn()
+    const onFallback = vi.fn()
+    _setKeyHoldDeps({ notify, checkInputMonitoring: () => 2 })
+    const go = (): ReturnType<typeof vi.fn> => {
+      const onRelease = vi.fn()
+      watchKeyRelease('Ctrl+Space', onRelease, { platform: 'darwin', isKeyDown: () => false, onFallback })
+      vi.advanceTimersByTime(100)
+      return onRelease
+    }
+    expect(go()).toHaveBeenCalledTimes(1)
+    expect(go()).toHaveBeenCalledTimes(1)
+    expect(notify).not.toHaveBeenCalled()
+    expect(go()).not.toHaveBeenCalled() // 3rd: assume broken, stay recording
+    expect(onFallback).toHaveBeenCalledTimes(1)
+    expect(notify).toHaveBeenCalledTimes(1)
+    expect(notify.mock.calls[0][1]).toContain('Input Monitoring')
+    expect(createKeyStateReader('SPACE', 'darwin')).toBeNull()
+    expect(watchKeyRelease('Ctrl+Space', vi.fn(), { platform: 'darwin' })).toBeNull()
+    expect(notify).toHaveBeenCalledTimes(1)
+  })
+  it('fallback keeps the safety timer: onRelease fires at max duration', () => {
+    _setKeyHoldDeps({ notify: vi.fn(), checkInputMonitoring: () => 2 })
+    run(false)
+    run(false)
+    const onRelease = vi.fn()
+    watchKeyRelease('Ctrl+Space', onRelease, { platform: 'darwin', isKeyDown: () => false, maxDurationMs: 5000 })
+    vi.advanceTimersByTime(100)
+    expect(onRelease).not.toHaveBeenCalled()
+    vi.advanceTimersByTime(5000)
+    expect(onRelease).toHaveBeenCalledTimes(1)
+  })
+  it('Input Monitoring granted: heuristic falls back silently (no misleading warning)', () => {
+    const notify = vi.fn()
+    const onFallback = vi.fn()
+    _setKeyHoldDeps({ notify, checkInputMonitoring: () => 0 })
+    for (let i = 0; i < 3; i++) {
+      watchKeyRelease('Ctrl+Space', vi.fn(), { platform: 'darwin', isKeyDown: () => false, onFallback })
+      vi.advanceTimersByTime(100)
+    }
+    expect(onFallback).toHaveBeenCalledTimes(1)
+    expect(notify).not.toHaveBeenCalled()
+  })
+  it('a session that reads key down on first poll resets the streak', () => {
+    const notify = vi.fn()
+    _setKeyHoldDeps({ notify })
+    run(false)
+    run(false)
+    let down = true
+    const onRelease = vi.fn()
+    watchKeyRelease('Ctrl+Space', onRelease, { platform: 'darwin', isKeyDown: () => down })
+    vi.advanceTimersByTime(30)
+    down = false
+    vi.advanceTimersByTime(30)
+    expect(onRelease).toHaveBeenCalledTimes(1)
+    expect(run(false)).toHaveBeenCalledTimes(1)
+    expect(notify).not.toHaveBeenCalled()
+  })
+  it('IOHIDCheckAccess denied -> toggle fallback and one notification', () => {
+    const notify = vi.fn()
+    _setKeyHoldDeps({ notify, checkInputMonitoring: () => 1 })
+    expect(createKeyStateReader('SPACE', 'darwin')).toBeNull()
+    expect(createKeyStateReader('SPACE', 'darwin')).toBeNull()
+    expect(notify).toHaveBeenCalledTimes(1)
+  })
+  it('granted / unknown / unavailable do not notify or block', () => {
+    const notify = vi.fn()
+    for (const v of [0, 2, null] as const) {
+      _setKeyHoldDeps({ notify, checkInputMonitoring: () => v })
+      // backend load is real koffi on a non-mac host -> may be null; only assert no notification
+      createKeyStateReader('SPACE', 'darwin')
+    }
+    expect(notify).not.toHaveBeenCalled()
+  })
+  it('first-poll heuristic is not applied off macOS (Windows)', () => {
+    const notify = vi.fn()
+    _setKeyHoldDeps({ notify })
+    expect(run2('win32')).toHaveBeenCalledTimes(1)
+    expect(run2('win32')).toHaveBeenCalledTimes(1)
+    expect(notify).not.toHaveBeenCalled()
+  })
+  it('linux unchanged: null, no notification', () => {
+    const notify = vi.fn()
+    _setKeyHoldDeps({ notify })
+    expect(watchKeyRelease('Ctrl+Space', vi.fn(), { platform: 'linux' })).toBeNull()
+    expect(notify).not.toHaveBeenCalled()
+  })
+  function run2(platform: NodeJS.Platform): ReturnType<typeof vi.fn> {
+    const onRelease = vi.fn()
+    watchKeyRelease('Ctrl+Space', onRelease, { platform, isKeyDown: () => false })
+    vi.advanceTimersByTime(100)
+    return onRelease
+  }
 })

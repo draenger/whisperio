@@ -6,11 +6,13 @@ import { AppSettings, getActiveVocabulary, type ProviderId, type CleanupMode } f
 // when OS secure storage is available. See secure/keyAccessor.ts.
 import { getEffectiveSettings } from './secure/keyAccessor'
 import { recordTranscriptionError, describeTranscriptionError, notifyTranscriptionFailure, type WhisperioError } from './errorHandler'
+import { noteTranscriptionActivity } from './dictation/watchdog'
 import { guardRedirects, GUARDED_REDIRECT } from './llm/redirectGuard'
 import { OpenAICompatibleProvider, AnthropicProvider, ReplicateProvider, selectProvider, isLocalHost, type LLMProvider } from './llm/provider'
 import { cleanupTranscription, cleanupTranscriptionDetailed, formatTranscription, rewriteSelection, type CleanupResult } from './postprocess'
 import { getServerStatus, ensureManagedServerForUrl } from './localServer'
 import { recordSTT, estimateAudioSeconds } from './usageTracker'
+import { resolveProviderAudio, LOCAL_MODEL_NEEDS_WAV_MESSAGE, type AudioPayload } from './audioFormat'
 import { getRecording, updateRecording } from './recordingStore'
 // Context-aware tone (v1.5 Work Item B). resolveToneProfile is the only
 // piece of context.ts's logic this file needs — the actual `active-win` call
@@ -32,6 +34,7 @@ import { groqTranscribe } from './llm/groq'
 import { deepgramTranscribe, deepgramTranscribeDiarized } from './llm/deepgram'
 import { assemblyAITranscribe, assemblyAITranscribeDiarized } from './llm/assembly'
 import { mistralTranscribe } from './llm/mistral'
+import { audioMimeFromFilename } from './llm/audioMime'
 // Conversation mode (group/multi-speaker transcription) — ported from
 // mobile/WhisperioKit/Sources/WhisperioKit/Conversation.swift. Pure segment
 // logic lives in dictation/conversation.ts; this file only picks the
@@ -478,9 +481,17 @@ export async function transcribeAudio(
   // recording's ORIGINALLY-captured context for reprocessRecording(). This
   // module never calls getActiveContext() itself; see the import comment
   // above for why that split matters for reprocessing correctness.
-  context: DictationContext | null = null
+  context: DictationContext | null = null,
+  // Optional WAV rendition of the same audio (live dictation only; the
+  // renderer makes it when `selfhosted` is in the chain). whisper.cpp gets
+  // this; every other provider gets `audioBuffer` (WebM/Opus) untouched.
+  wavAudio: AudioPayload | null = null,
+  // Only the live dictation flow has a hotkey watchdog to feed; Reprocess and
+  // other callers must not extend it.
+  options: { fromDictation?: boolean } = {}
 ): Promise<string> {
   const settings = getEffectiveSettings()
+  const noteActivity = options.fromDictation ? noteTranscriptionActivity : undefined
 
   // Build effective chain: use providerChain if set, otherwise legacy sttProvider + fallback
   let chain: ProviderId[]
@@ -510,8 +521,15 @@ export async function transcribeAudio(
   let text: string | null = null
   for (let i = 0; i < configuredChain.length; i++) {
     const provider = configuredChain[i]
+    noteActivity?.()
+    const audio = resolveProviderAudio(provider, { buffer: audioBuffer, filename }, wavAudio)
+    if (!audio) {
+      // selfhosted but we only hold WebM (e.g. Reprocess): skip, fall through.
+      if (!firstError) firstError = new Error(LOCAL_MODEL_NEEDS_WAV_MESSAGE)
+      continue
+    }
     try {
-      text = await transcribeWithProvider(settings, provider, audioBuffer, filename)
+      text = await transcribeWithProvider(settings, provider, audio.buffer, audio.filename, noteActivity)
       // PACZKA METERING (v1.6): report usage after every successful STT call,
       // including local/self-hosted (isLocal forces cost to 0 there, but the
       // request/audio-seconds counters still stay complete). recordSTT()
@@ -519,7 +537,11 @@ export async function transcribeAudio(
       // transcription.
       recordSTT({
         provider,
-        audioSeconds: estimateAudioSeconds(audioBuffer, filename),
+        // Exact duration from the WAV when we have one (as before this
+        // change), else the WebM byte-rate estimate.
+        audioSeconds: wavAudio
+          ? estimateAudioSeconds(wavAudio.buffer, wavAudio.filename)
+          : estimateAudioSeconds(audio.buffer, audio.filename),
         isLocal: provider === 'selfhosted'
       })
       if (firstError) {
@@ -544,6 +566,7 @@ export async function transcribeAudio(
 
   // Cleanup runs AFTER the STT chain and is fail-soft: a cleanup problem must
   // never discard a good transcript or re-bill the next STT provider.
+  noteActivity?.() // cleanup starting
   try {
     return await applyCleanup(settings, text, context)
   } catch (err) {
@@ -592,7 +615,8 @@ async function transcribeWithProvider(
   settings: AppSettings,
   provider: ProviderId,
   audioBuffer: Buffer,
-  filename: string
+  filename: string,
+  onActivity?: () => void
 ): Promise<string> {
   if (provider === 'elevenlabs') {
     const apiKey = settings.elevenlabsApiKey
@@ -700,7 +724,7 @@ async function transcribeWithProvider(
     }
     const model = settings.sttAssemblyaiModel?.trim() || ''
     const lang = settings.transcriptionLanguage?.trim() || 'auto'
-    return assemblyAITranscribe(apiKey, audioBuffer, model, lang)
+    return assemblyAITranscribe(apiKey, audioBuffer, model, lang, onActivity)
   }
 
   if (provider === 'mistral') {
@@ -748,7 +772,7 @@ function whisperTranscribe(apiKey: string, audioBuffer: Buffer, filename: string
   const safeLanguage = sanitizeMultipartField(language)
 
   parts.push(Buffer.from(
-    `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="${safeFilename}"\r\nContent-Type: audio/webm\r\n\r\n`
+    `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="${safeFilename}"\r\nContent-Type: ${audioMimeFromFilename(filename, audioBuffer)}\r\n\r\n`
   ))
   parts.push(audioBuffer)
   parts.push(Buffer.from('\r\n'))
@@ -889,7 +913,7 @@ function elevenLabsTranscribe(apiKey: string, audioBuffer: Buffer, filename: str
   const safeLanguage = sanitizeMultipartField(language)
 
   parts.push(Buffer.from(
-    `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="${safeFilename}"\r\nContent-Type: audio/webm\r\n\r\n`
+    `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="${safeFilename}"\r\nContent-Type: ${audioMimeFromFilename(filename, audioBuffer)}\r\n\r\n`
   ))
   parts.push(audioBuffer)
   parts.push(Buffer.from('\r\n'))
@@ -1041,7 +1065,7 @@ function elevenLabsTranscribeDiarized(
   const safeLanguage = sanitizeMultipartField(language)
 
   parts.push(Buffer.from(
-    `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="${safeFilename}"\r\nContent-Type: audio/webm\r\n\r\n`
+    `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="${safeFilename}"\r\nContent-Type: ${audioMimeFromFilename(filename, audioBuffer)}\r\n\r\n`
   ))
   parts.push(audioBuffer)
   parts.push(Buffer.from('\r\n'))
@@ -1183,7 +1207,7 @@ function openAITranscribeDiarized(
   const safeLanguage = sanitizeMultipartField(language)
 
   parts.push(Buffer.from(
-    `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="${safeFilename}"\r\nContent-Type: audio/webm\r\n\r\n`
+    `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="${safeFilename}"\r\nContent-Type: ${audioMimeFromFilename(filename, audioBuffer)}\r\n\r\n`
   ))
   parts.push(audioBuffer)
   parts.push(Buffer.from('\r\n'))
@@ -1402,7 +1426,7 @@ async function replicateTranscribe(
   prompt: string,
   language: string
 ): Promise<string> {
-  const dataUri = `data:audio/webm;base64,${audioBuffer.toString('base64')}`
+  const dataUri = `data:${audioMimeFromFilename('', audioBuffer)};base64,${audioBuffer.toString('base64')}`
   const input: Record<string, unknown> = {
     audio: dataUri,
     // Forces the official openai/whisper model's output.transcription to be a

@@ -77,6 +77,8 @@ const DEFAULT_SETTINGS = {
   aiModel: '',
   anthropicApiKey: '',
   launchAtStartup: true,
+  allowUrlControl: false,
+  allowUrlStart: false,
   checkForUpdates: true,
   dictationHotkey: '',
   dictateAndSendHotkey: '',
@@ -87,6 +89,11 @@ const DEFAULT_SETTINGS = {
   inputDeviceId: '',
   outputDeviceId: '',
   saveRecordings: true,
+  silenceGate: false,
+  silenceGateThresholdDbfs: -50,
+  trimSilence: false,
+  restoreClipboard: false,
+  clipboardRestoreDelayMs: 700,
   outputRecordingHotkey: '',
   fallbackEnabled: false,
   githubUser: '',
@@ -614,5 +621,46 @@ describe('settingsManager', () => {
 
       expect(seededTwice.toneMap).toEqual(seededOnce.toneMap)
     })
+  })
+})
+
+describe('allowUrlControl / allowUrlStart defaults (fail closed)', () => {
+  it('both default to false when absent from the file', () => {
+    mockExistsSync.mockReturnValue(true)
+    mockReadFileSync.mockReturnValue(JSON.stringify({ openaiApiKey: 'sk-x' }))
+    const r = loadSettings()
+    expect(r.allowUrlControl).toBe(false)
+    expect(r.allowUrlStart).toBe(false)
+  })
+  it('keeps an explicit true', () => {
+    mockExistsSync.mockReturnValue(true)
+    mockReadFileSync.mockReturnValue(JSON.stringify({ allowUrlControl: true, allowUrlStart: true }))
+    const r = loadSettings()
+    expect(r.allowUrlControl).toBe(true)
+    expect(r.allowUrlStart).toBe(true)
+  })
+})
+
+describe('silenceGate defaults and threshold clamp', () => {
+  function loadWith(obj: unknown): AppSettings {
+    mockExistsSync.mockReturnValue(true)
+    mockReadFileSync.mockReturnValue(JSON.stringify(obj))
+    return loadSettings()
+  }
+  it('is opt-in (false) with threshold -50 when absent', () => {
+    const r = loadWith({ openaiApiKey: 'sk-x' })
+    expect(r.silenceGate).toBe(false)
+    expect(r.silenceGateThresholdDbfs).toBe(-50)
+  })
+  it('keeps an in-range threshold and an explicit true gate', () => {
+    const r = loadWith({ silenceGate: true, silenceGateThresholdDbfs: -60 })
+    expect(r.silenceGate).toBe(true)
+    expect(r.silenceGateThresholdDbfs).toBe(-60)
+  })
+  it('clamps to -70..-30 and replaces junk with the default', () => {
+    expect(loadWith({ silenceGateThresholdDbfs: -120 }).silenceGateThresholdDbfs).toBe(-70)
+    expect(loadWith({ silenceGateThresholdDbfs: 0 }).silenceGateThresholdDbfs).toBe(-30)
+    expect(loadWith({ silenceGateThresholdDbfs: 'loud' }).silenceGateThresholdDbfs).toBe(-50)
+    expect(loadWith({ silenceGateThresholdDbfs: null }).silenceGateThresholdDbfs).toBe(-50)
   })
 })

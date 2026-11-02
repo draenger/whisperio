@@ -80,7 +80,8 @@ async function assemblyAIRun(
   audioBuffer: Buffer,
   model: string,
   language: string,
-  speakerLabels: boolean
+  speakerLabels: boolean,
+  onActivity?: () => void
 ): Promise<JobResponse> {
   const apiModel = model?.trim() || DEFAULT_ASSEMBLYAI_MODEL
 
@@ -133,6 +134,7 @@ async function assemblyAIRun(
       { method: 'GET', headers: { authorization: apiKey } },
       'status'
     )) as JobResponse
+    onActivity?.() // poll answered: job is genuinely in progress
     if (state.status === 'completed') {
       if (typeof state.text !== 'string') {
         const err = new Error('AssemblyAI returned no transcript.')
@@ -158,9 +160,10 @@ export async function assemblyAITranscribe(
   apiKey: string,
   audioBuffer: Buffer,
   model: string,
-  language = 'auto'
+  language = 'auto',
+  onActivity?: () => void
 ): Promise<string> {
-  const state = await assemblyAIRun(apiKey, audioBuffer, model, language, false)
+  const state = await assemblyAIRun(apiKey, audioBuffer, model, language, false, onActivity)
   return state.text as string
 }
 

@@ -1,4 +1,5 @@
 import { app } from 'electron'
+import { clampRestoreDelay } from './dictation/clipboardRestore'
 import { readFileSync, writeFileSync, existsSync, renameSync, openSync, fsyncSync, closeSync, unlinkSync } from 'fs'
 import { join } from 'path'
 // Type-only — no runtime dependency on the LLM prompt-building module (same
@@ -128,6 +129,10 @@ export interface AppSettings {
   aiModel: string
   anthropicApiKey: string
   launchAtStartup: boolean
+  // Allow whisperio://toggle|start|stop|cancel|send links to drive dictation (default OFF, fail closed).
+  allowUrlControl: boolean
+  // By URL, toggle/start (begin recording) additionally need this. `send` is never allowed by URL.
+  allowUrlStart: boolean
   // Periodic GitHub release check (privacy policy section 6). Off => no network request to GitHub.
   checkForUpdates: boolean
   dictationHotkey: string
@@ -153,6 +158,18 @@ export interface AppSettings {
   inputDeviceId: string
   outputDeviceId: string
   saveRecordings: boolean
+  /** Skip uploading recordings that contain no speech (RMS energy gate). */
+  silenceGate: boolean
+  /** Voiced-frame threshold in dBFS, clamped to -70..-30 (lower = more sensitive). */
+  silenceGateThresholdDbfs: number
+  trimSilence: boolean
+  // Opt-in: after auto-paste, put the user's previous clipboard back (only if
+  // the clipboard still holds the dictated text). See dictation/clipboardRestore.ts.
+  restoreClipboard: boolean
+  // Minimum wait (ms, clamped 300..3000) after the paste keystroke before the
+  // previous clipboard is restored. Restore is a heuristic: there is no OS
+  // "paste happened" event. Ignored while restoreClipboard is off (default).
+  clipboardRestoreDelayMs: number
   outputRecordingHotkey: string
   fallbackEnabled: boolean
   // GitHub secret-store selection (NON-SECRET metadata only). The access token
@@ -300,6 +317,8 @@ const DEFAULT_SETTINGS: AppSettings = {
   aiModel: '',
   anthropicApiKey: '',
   launchAtStartup: true,
+  allowUrlControl: false,
+  allowUrlStart: false,
   checkForUpdates: true,
   dictationHotkey: '',
   dictateAndSendHotkey: '',
@@ -310,6 +329,11 @@ const DEFAULT_SETTINGS: AppSettings = {
   inputDeviceId: '',
   outputDeviceId: '',
   saveRecordings: true,
+  silenceGate: false,
+  silenceGateThresholdDbfs: -50,
+  trimSilence: false,
+  restoreClipboard: false,
+  clipboardRestoreDelayMs: 700,
   outputRecordingHotkey: '',
   fallbackEnabled: false,
   githubUser: '',
@@ -485,6 +509,12 @@ function quarantineCorrupt(filePath: string): boolean {
   return false
 }
 
+export function clampSilenceGateThreshold(v: unknown): number {
+  const n = typeof v === 'number' ? v : Number.NaN
+  if (!Number.isFinite(n)) return -50
+  return Math.min(-30, Math.max(-70, n))
+}
+
 export function loadSettings(): AppSettings {
   const filePath = getSettingsPath()
   if (!existsSync(filePath)) {
@@ -515,7 +545,9 @@ export function loadSettings(): AppSettings {
   settingsUnavailable = false
   const migrated = migrateToneMap(migrateLegacyTheme(migrateCleanupSettings(migrateVocabulary(parsed as Partial<AppSettings>))))
   const merged = { ...DEFAULT_SETTINGS, ...migrated }
+  merged.clipboardRestoreDelayMs = clampRestoreDelay(merged.clipboardRestoreDelayMs)
   if (merged.hotkeyMode !== 'toggle' && merged.hotkeyMode !== 'hold') merged.hotkeyMode = 'toggle'
+  merged.silenceGateThresholdDbfs = clampSilenceGateThreshold(merged.silenceGateThresholdDbfs)
   return merged
 }
 
