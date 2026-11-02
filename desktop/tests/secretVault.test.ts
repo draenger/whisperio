@@ -26,7 +26,10 @@ vi.mock('electron', () => ({
 const fsState = vi.hoisted(() => ({
   disk: {} as Record<string, string>,
   calls: [] as Array<{ op: string; path: string; to?: string }>,
-  failRename: false
+  failRename: false,
+  // Next N renames throw an errno-coded error (code), then succeed.
+  renameErrors: 0,
+  renameErrorCode: 'EPERM'
 }))
 
 vi.mock('fs', () => ({
@@ -41,14 +44,26 @@ vi.mock('fs', () => ({
   },
   renameSync: (from: string, to: string) => {
     fsState.calls.push({ op: 'rename', path: from, to })
+    if (fsState.renameErrors > 0) {
+      fsState.renameErrors--
+      throw Object.assign(new Error(`${fsState.renameErrorCode}: rename locked`), { code: fsState.renameErrorCode })
+    }
     if (fsState.failRename) throw new Error('EPERM rename')
     fsState.disk[to] = fsState.disk[from]
     delete fsState.disk[from]
   },
+  copyFileSync: (from: string, to: string) => {
+    fsState.calls.push({ op: 'copy', path: from, to })
+    fsState.disk[to] = fsState.disk[from]
+  },
   unlinkSync: (p: string) => {
     fsState.calls.push({ op: 'unlink', path: p })
     delete fsState.disk[p]
-  }
+  },
+  readdirSync: (dir: string) =>
+    Object.keys(fsState.disk)
+      .filter((p) => p.startsWith(dir) && !p.slice(dir.length + 1).match(/[\\/]/))
+      .map((p) => p.slice(dir.length + 1))
 }))
 
 import {
@@ -60,7 +75,8 @@ import {
   saveGithubToken,
   loadGithubToken,
   hasGithubToken,
-  clearGithubToken
+  clearGithubToken,
+  VaultLockedError
 } from '../src/main/secretVault'
 
 const SECRET = 'ghp_SUPERSECRETTOKEN1234567890'
@@ -78,6 +94,8 @@ beforeEach(() => {
   fsState.disk = {}
   fsState.calls = []
   fsState.failRename = false
+  fsState.renameErrors = 0
+  fsState.renameErrorCode = 'EPERM'
   safeStorageMock.isEncryptionAvailable.mockReset().mockReturnValue(true)
   safeStorageMock.encryptString.mockClear()
   safeStorageMock.decryptString.mockClear()
@@ -140,15 +158,35 @@ describe('fail closed when encryption is unavailable', () => {
 
 })
 
-describe('Linux basic_text backend (known gap, fixed in fix/secret-vault-key-loss)', () => {
-  // Electron on Linux can report isEncryptionAvailable() === true while the selected backend is
-  // basic_text (hardcoded password, i.e. effectively plaintext). The vault must fail closed there.
-  // secretVault currently never consults getSelectedStorageBackend(), so this documents the gap.
-  it.fails('refuses to store when encryption is "available" but backend is basic_text', () => {
+describe('Linux weak backend (basic_text / unknown) fails closed', () => {
+  const realPlatform = process.platform
+  afterEach(() => {
+    Object.defineProperty(process, 'platform', { value: realPlatform })
+  })
+  function setPlatform(p: string): void {
+    Object.defineProperty(process, 'platform', { value: p })
+  }
+
+  it.each(['basic_text', 'unknown'])('linux + %s: unavailable, nothing stored', (backend) => {
+    setPlatform('linux')
     safeStorageMock.isEncryptionAvailable.mockReturnValue(true)
-    safeStorageMock.getSelectedStorageBackend.mockReturnValue('basic_text')
+    safeStorageMock.getSelectedStorageBackend.mockReturnValue(backend)
+    expect(isVaultAvailable()).toBe(false)
     expect(() => saveGithubToken(SECRET)).toThrow(/unavailable/)
+    expect(() => sealForRepo('x')).toThrow(/unavailable/)
     expect(fsState.disk).toEqual({})
+  })
+
+  it('linux + gnome_libsecret: available', () => {
+    setPlatform('linux')
+    safeStorageMock.getSelectedStorageBackend.mockReturnValue('gnome_libsecret')
+    expect(isVaultAvailable()).toBe(true)
+  })
+
+  it('non-linux ignores the backend value', () => {
+    setPlatform('darwin')
+    safeStorageMock.getSelectedStorageBackend.mockReturnValue('basic_text')
+    expect(isVaultAvailable()).toBe(true)
   })
 })
 
@@ -214,6 +252,43 @@ describe('GitHub token storage', () => {
   })
 })
 
+describe('atomicWrite cleanup', () => {
+  it('removes the tmp file when rename fails', () => {
+    fsState.failRename = true
+    expect(() => saveGithubToken(SECRET)).toThrow(/EPERM/)
+    expect(Object.keys(fsState.disk).filter((k) => k.endsWith('.tmp'))).toEqual([])
+    expect(fsState.calls.some((c) => c.op === 'unlink' && c.path.endsWith('.tmp'))).toBe(true)
+  })
+})
+
+describe('atomicWrite rename retry (Windows EPERM/EBUSY)', () => {
+  const renames = (): number => fsState.calls.filter((c) => c.op === 'rename').length
+
+  it.each(['EPERM', 'EBUSY', 'EACCES'])('two %s failures then success: write succeeds', (code) => {
+    fsState.renameErrorCode = code
+    fsState.renameErrors = 2
+    saveGithubToken(SECRET)
+    expect(renames()).toBe(3)
+    expect(loadGithubToken()).toBe(SECRET)
+    expect(Object.keys(fsState.disk).filter((k) => k.endsWith('.tmp'))).toEqual([])
+  })
+
+  it('persistent EPERM: bounded attempts, original error rethrown, tmp removed', () => {
+    fsState.renameErrors = 1000
+    expect(() => saveGithubToken(SECRET)).toThrow(/EPERM/)
+    expect(renames()).toBe(5)
+    expect(Object.keys(fsState.disk).filter((k) => k.endsWith('.tmp'))).toEqual([])
+    expect(fsState.calls.some((c) => c.op === 'unlink' && c.path.endsWith('.tmp'))).toBe(true)
+  })
+
+  it('a non-retryable error code (ENOSPC) fails immediately without retrying', () => {
+    fsState.renameErrorCode = 'ENOSPC'
+    fsState.renameErrors = 3
+    expect(() => saveGithubToken(SECRET)).toThrow(/ENOSPC/)
+    expect(renames()).toBe(1)
+  })
+})
+
 describe('data-encryption key lifecycle', () => {
   it('generates a 32-byte key, persists it wrapped, and never writes it raw', () => {
     expect(hasDataKey()).toBe(false)
@@ -240,20 +315,52 @@ describe('data-encryption key lifecycle', () => {
     expect(fsState.calls[0].path).not.toBe(DEK_PATH)
   })
 
-  it('regenerates a new key when the stored blob is undecryptable', () => {
-    fsState.disk[DEK_PATH] = Buffer.from('corrupt').toString('base64')
+  it('locked/undecryptable key blob: throws VaultLockedError and leaves the key file byte-identical', () => {
+    const blob = Buffer.from('corrupt').toString('base64')
+    fsState.disk[DEK_PATH] = blob
+    expect(() => getOrCreateDataKey()).toThrow(VaultLockedError)
+    expect(fsState.disk[DEK_PATH]).toBe(blob)
+    expect(fsState.calls.filter((c) => c.op !== 'read')).toEqual([])
+    expect(safeStorageMock.encryptString).not.toHaveBeenCalled()
+  })
+
+  it('transient Keychain failure on a valid key: throws, then the SAME key is returned once unlocked', () => {
     const key = getOrCreateDataKey()
-    expect(key).toHaveLength(32)
-    // The corrupt file was replaced by a valid wrapped key.
+    const stored = fsState.disk[DEK_PATH]
+    fsState.calls = []
+    safeStorageMock.decryptString.mockImplementationOnce(() => {
+      throw new Error('User denied Keychain access')
+    })
+    expect(() => getOrCreateDataKey()).toThrow(VaultLockedError)
+    expect(fsState.calls).toEqual([])
+    expect(fsState.disk[DEK_PATH]).toBe(stored)
     expect(getOrCreateDataKey().equals(key)).toBe(true)
   })
 
-  it('regenerates when the decrypted key has the wrong length', () => {
+  it('wrong-length decrypted key: throws, backs the file up, never overwrites it', () => {
     const shortB64 = Buffer.from('short').toString('base64')
-    fsState.disk[DEK_PATH] = Buffer.from(`ENC(${shortB64})`).toString('base64')
-    const key = getOrCreateDataKey()
-    expect(key).toHaveLength(32)
-    expect(key.toString('base64')).not.toBe(shortB64)
+    const blob = Buffer.from(`ENC(${shortB64})`).toString('base64')
+    fsState.disk[DEK_PATH] = blob
+    expect(() => getOrCreateDataKey()).toThrow(VaultLockedError)
+    expect(fsState.disk[DEK_PATH]).toBe(blob)
+    const backups = Object.keys(fsState.disk).filter((k) => k.includes('.malformed-'))
+    expect(backups).toHaveLength(1)
+    expect(fsState.disk[backups[0]]).toBe(blob)
+    // A second attempt must not pile up another backup copy.
+    expect(() => getOrCreateDataKey()).toThrow(VaultLockedError)
+    expect(Object.keys(fsState.disk).filter((k) => k.includes('.malformed-'))).toHaveLength(1)
+  })
+
+  it('sealForRepo / openFromRepo propagate the lock (nothing sealed under a new key)', () => {
+    fsState.disk[DEK_PATH] = Buffer.from('corrupt').toString('base64')
+    expect(() => sealForRepo(SECRET)).toThrow(VaultLockedError)
+    expect(() => openFromRepo('{}')).toThrow(VaultLockedError)
+  })
+
+  it('missing key file: creates and persists a fresh 32-byte key', () => {
+    expect(fsState.disk[DEK_PATH]).toBeUndefined()
+    expect(getOrCreateDataKey()).toHaveLength(32)
+    expect(fsState.disk[DEK_PATH]).toBeDefined()
   })
 
   it('generates distinct keys on distinct machines (fresh disks)', () => {
@@ -328,7 +435,7 @@ describe('secrets never leak into logs or error messages', () => {
   it('does not log the DEK', () => {
     const key = getOrCreateDataKey()
     fsState.disk[DEK_PATH] = 'corrupt'
-    getOrCreateDataKey()
+    expect(() => getOrCreateDataKey()).toThrow(VaultLockedError)
     expect(allLogged()).not.toContain(key.toString('base64'))
     expect(allLogged()).not.toContain(key.toString('hex'))
   })
