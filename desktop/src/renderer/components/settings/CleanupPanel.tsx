@@ -3,6 +3,7 @@ import type { Theme } from '../../theme'
 import { ToggleRow, Segmented, SectionHeader } from './SettingsForm'
 import { ModelPicker } from './ModelPicker'
 import { KeyStorageHint } from './KeyStorageHint'
+import { KeyInput } from './KeyInput'
 
 /*
  * AI Cleanup panel (desktop v1.4 cleanup line).
@@ -306,13 +307,7 @@ export function CleanupPanel({
             {aiProvider === 'anthropic' && (
               <>
                 <label style={{ ...s.label, marginTop: '8px' }}>Anthropic API Key</label>
-                <input
-                  type="password"
-                  value={anthropicApiKey}
-                  onChange={(e) => setAnthropicApiKey(e.target.value)}
-                  placeholder="sk-ant-..."
-                  style={s.input}
-                />
+                <KeyInput field="anthropicApiKey" value={anthropicApiKey} onChange={setAnthropicApiKey} placeholder="sk-ant-..." s={s} theme={theme} />
                 <KeyStorageHint s={s} />
               </>
             )}
@@ -320,13 +315,7 @@ export function CleanupPanel({
             {aiProvider === 'replicate' && (
               <>
                 <label style={{ ...s.label, marginTop: '8px' }}>Replicate API Key</label>
-                <input
-                  type="password"
-                  value={replicateApiKey}
-                  onChange={(e) => setReplicateApiKey(e.target.value)}
-                  placeholder="r8_..."
-                  style={s.input}
-                />
+                <KeyInput field="replicateApiKey" value={replicateApiKey} onChange={setReplicateApiKey} placeholder="r8_..." s={s} theme={theme} />
                 <span style={s.hint}>
                   Shared with the Replicate speech-to-text provider (Providers tab) — one key, both uses.
                 </span>

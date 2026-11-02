@@ -11,6 +11,7 @@ import {
   rewrapWeakEntries
 } from './keyStore'
 import { errName } from './errName'
+import { redactKeys, sanitizeRendererSave, type KeyStatus } from '../../shared/keyMask'
 
 /**
  * The AppSettings fields that hold provider API keys — the ONLY fields this
@@ -101,6 +102,26 @@ export function getEffectiveSettings(): AppSettings {
   }
   // Session keys (a write the key store refused) are newer than anything stored.
   return { ...settings, ...overlay, ...sessionOverlay }
+}
+
+/**
+ * `settings:load` payload: effective settings with every provider key blanked
+ * and an additive `keyStatus` (set flag + masked hint). The renderer never
+ * receives a raw key.
+ */
+export function getRendererSettings(): AppSettings & { keyStatus: KeyStatus } {
+  return redactKeys(getEffectiveSettings(), PROVIDER_KEY_FIELDS)
+}
+
+/**
+ * `settings:save` from the renderer. The renderer always holds '' for keys, so
+ * an empty key field means "unchanged" (dropped) unless named in
+ * `payload.clearKeys` (explicit clear). Non-empty values replace as usual.
+ * Main-process callers (e.g. githubSync) keep using saveSettingsWithKeys,
+ * where '' still clears.
+ */
+export function saveSettingsFromRenderer(payload: Partial<AppSettings> & { clearKeys?: string[] }): AppSettings {
+  return saveSettingsWithKeys(sanitizeRendererSave(payload as Record<string, unknown>, PROVIDER_KEY_FIELDS) as Partial<AppSettings>)
 }
 
 /**
