@@ -17,6 +17,7 @@ import {
   isLinuxKeyringIssue,
   LINUX_KEYRING_WARNING
 } from './secure/keyAccessor'
+import { errName } from './secure/errName'
 import { isEncryptionAvailable as isKeyStoreAvailable } from './secure/keyStore'
 import {
   transcribeAudio,
@@ -345,7 +346,7 @@ app.whenReady().then(() => {
       if (Notification.isSupported()) new Notification({ title: 'Whisperio', body: message }).show()
     })
   } catch (err) {
-    console.error('[Whisperio] Linux keyring rescue/warning failed:', err)
+    console.error(`[Whisperio] Linux keyring rescue/warning failed (${errName(err)}).`)
   }
 
   // Apply auto-launch setting (uses Windows Registry HKCU\...\Run)
