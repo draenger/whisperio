@@ -24,6 +24,8 @@ vi.mock('../src/main/secure/keyStore', () => ({
 
 import {
   getEffectiveSettings,
+  getRendererSettings,
+  saveSettingsFromRenderer,
   saveSettingsWithKeys,
   migrateProviderKeysToKeyStore,
   PROVIDER_KEY_FIELDS,
@@ -407,6 +409,50 @@ describe('keyAccessor', () => {
       expect(mockSetKey).not.toHaveBeenCalled()
       expect(mockDeleteKey).not.toHaveBeenCalled()
       expect(mockSaveSettings).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('renderer boundary (L2): no raw keys to the renderer', () => {
+    beforeEach(() => {
+      mockIsEncryptionAvailable.mockReturnValue(true)
+      mockLoadSettings.mockReturnValue({ ...BASE_SETTINGS })
+    })
+
+    it('getRendererSettings blanks every key field and adds keyStatus with a mask', () => {
+      mockGetKey.mockImplementation((f: string) => (f === 'openaiApiKey' ? 'sk-abcdefgh1234' : null))
+      const r = getRendererSettings()
+      for (const f of PROVIDER_KEY_FIELDS) expect((r as Record<string, unknown>)[f]).toBe('')
+      expect(r.keyStatus.openaiApiKey).toEqual({ set: true, hint: 'sk-…1234' })
+      expect(r.keyStatus.groqApiKey).toEqual({ set: false, hint: '' })
+      expect(JSON.stringify(r)).not.toContain('abcdefgh')
+    })
+
+    it("save with '' keeps the stored key (neither delete nor write)", () => {
+      saveSettingsFromRenderer({ openaiApiKey: '', checkForUpdates: false })
+      expect(mockDeleteKey).not.toHaveBeenCalled()
+      expect(mockSetKey).not.toHaveBeenCalled()
+      const patch = mockSaveSettings.mock.calls[0][0] as Record<string, unknown>
+      expect(patch).not.toHaveProperty('openaiApiKey')
+      expect(patch).not.toHaveProperty('clearKeys')
+      expect(patch.checkForUpdates).toBe(false)
+    })
+
+    it('explicit clearKeys deletes the key', () => {
+      saveSettingsFromRenderer({ clearKeys: ['openaiApiKey'] })
+      expect(mockDeleteKey).toHaveBeenCalledWith('openaiApiKey')
+      expect(mockSaveSettings).toHaveBeenCalledWith({ openaiApiKey: '' })
+    })
+
+    it('a new non-empty value replaces the stored key', () => {
+      mockGetKey.mockReturnValue('sk-new-value-123')
+      saveSettingsFromRenderer({ openaiApiKey: 'sk-new-value-123' })
+      expect(mockSetKey).toHaveBeenCalledWith('openaiApiKey', 'sk-new-value-123')
+      expect(mockDeleteKey).not.toHaveBeenCalled()
+    })
+
+    it('saveSettingsWithKeys (main-process callers) still treats empty as clear', () => {
+      saveSettingsWithKeys({ openaiApiKey: '' })
+      expect(mockDeleteKey).toHaveBeenCalledWith('openaiApiKey')
     })
   })
 })
