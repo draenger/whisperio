@@ -24,10 +24,10 @@ export type SetResult =
   | { ok: true }
   | { ok: false; reason: 'unavailable' | 'weak-backend' | 'locked' }
 
-export const LOCKED_MESSAGE = "History is encrypted and can't be unlocked on this device."
+export const LOCKED_MESSAGE = "History is encrypted and can't be unlocked on this device. New dictations can't be saved until it is unlocked or reset."
 
 export const LOCKED_TRANSIENT_MESSAGE =
-  "History is encrypted but the key couldn't be unlocked right now. Your operating system's secure storage (Keychain, keyring) may be locked or busy. Unlock it and try again before resetting."
+  "History is encrypted but the key couldn't be unlocked right now. Your operating system's secure storage (Keychain, keyring) may be locked or busy. Unlock it and try again before resetting. New dictations can't be saved until it is unlocked."
 
 export const INDEX_UNAVAILABLE_MESSAGE =
   'History file is locked by another program or damaged — nothing was deleted. Close backup/antivirus tools and try again.'
