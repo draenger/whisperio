@@ -7,14 +7,15 @@ export interface OverlayInfo {
 }
 
 export interface DictationAPI {
-  onActivate: (callback: () => void) => () => void
-  onActivateOutput: (callback: () => void) => () => void
+  onActivate: (callback: (sessionId?: number) => void) => () => void
+  onActivateOutput: (callback: (sessionId?: number) => void) => () => void
   onDeactivate: (callback: (sessionId: number) => void) => () => void
   onCancel: (callback: () => void) => () => void
   onStateChanged: (callback: (state: string) => void) => () => void
   onOverlayInfo: (callback: (info: OverlayInfo) => void) => () => void
   sendResult: (text: string, sessionId?: number, reason?: 'silent') => Promise<void>
   transcribe: (audioData: ArrayBuffer, filename: string, wavData?: ArrayBuffer | null) => Promise<string>
+  reportError?: (title: string, body: string) => Promise<void>
 }
 
 export interface ModelInfo {

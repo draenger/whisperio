@@ -110,6 +110,8 @@ export interface AppSettings {
   // doc comment. Empty string = disabled.
   commandHotkey: string
   hotkeyMode: 'toggle' | 'hold'
+  restoreClipboard: boolean
+  clipboardRestoreDelayMs: number
   theme: 'dark' | 'light'
   accentColor: 'graphite' | 'blue' | 'teal' | 'emerald' | 'amber'
   inputDeviceId: string

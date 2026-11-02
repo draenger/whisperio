@@ -604,6 +604,7 @@ export function SettingsForm(): ReactElement {
   const [silenceGateThresholdDbfs, setSilenceGateThresholdDbfs] = useState(-50)
   const [trimSilence, setTrimSilence] = useState(false)
   const [restoreClipboard, setRestoreClipboard] = useState(false)
+  const [clipboardRestoreDelayMs, setClipboardRestoreDelayMs] = useState(700)
   const [inputDevices, setInputDevices] = useState<MediaDeviceOption[]>([])
   const [outputDevices, setOutputDevices] = useState<MediaDeviceOption[]>([])
 
@@ -654,6 +655,7 @@ export function SettingsForm(): ReactElement {
       setSilenceGateThresholdDbfs(settings.silenceGateThresholdDbfs ?? -50)
       setTrimSilence(settings.trimSilence ?? false)
       setRestoreClipboard(settings.restoreClipboard ?? false)
+      setClipboardRestoreDelayMs(settings.clipboardRestoreDelayMs ?? 700)
       setOutputRecordingHotkey(settings.outputRecordingHotkey ?? '')
       setCleanupEnabled(settings.cleanupEnabled ?? false)
       setCleanupMode(settings.cleanupMode ?? 'light')
@@ -749,6 +751,7 @@ export function SettingsForm(): ReactElement {
       silenceGateThresholdDbfs,
       trimSilence,
       restoreClipboard,
+      clipboardRestoreDelayMs,
       outputRecordingHotkey,
       fallbackEnabled: providerChain.length > 1,
       cleanupEnabled,
@@ -788,7 +791,7 @@ export function SettingsForm(): ReactElement {
     groqApiKey, deepgramApiKey, assemblyaiApiKey, mistralApiKey,
     sttApiKey, transcriptionLanguage, prompt,
     vocabulary, removedDefaultVocabulary, aiPostProcessing, launchAtStartup, allowUrlControl, allowUrlStart, checkForUpdates, dictationHotkey,
-    dictateAndSendHotkey, commandHotkey, hotkeyMode, inputDeviceId, outputDeviceId, saveRecordings, silenceGate, trimSilence, silenceGateThresholdDbfs, restoreClipboard,
+    dictateAndSendHotkey, commandHotkey, hotkeyMode, inputDeviceId, outputDeviceId, saveRecordings, silenceGate, trimSilence, silenceGateThresholdDbfs, restoreClipboard, clipboardRestoreDelayMs,
     outputRecordingHotkey, cleanupEnabled, cleanupMode, cleanupAuto, cleanupTemplates,
     aiProvider, aiBaseUrl, aiModel, anthropicApiKey,
     contextAwareTone, toneMap, windowTitlePermissionEnabled
@@ -947,6 +950,8 @@ export function SettingsForm(): ReactElement {
                       setCheckForUpdates={setCheckForUpdates}
                       restoreClipboard={restoreClipboard}
                       setRestoreClipboard={setRestoreClipboard}
+                      clipboardRestoreDelayMs={clipboardRestoreDelayMs}
+                      setClipboardRestoreDelayMs={setClipboardRestoreDelayMs}
                       allowUrlControl={allowUrlControl}
                       setAllowUrlControl={setAllowUrlControl}
                       allowUrlStart={allowUrlStart}
@@ -1168,6 +1173,8 @@ function GeneralTab({
   setCheckForUpdates,
   restoreClipboard,
   setRestoreClipboard,
+  clipboardRestoreDelayMs,
+  setClipboardRestoreDelayMs,
   allowUrlControl,
   setAllowUrlControl,
   allowUrlStart,
@@ -1181,6 +1188,8 @@ function GeneralTab({
   setCheckForUpdates: (v: boolean) => void
   restoreClipboard: boolean
   setRestoreClipboard: (v: boolean) => void
+  clipboardRestoreDelayMs: number
+  setClipboardRestoreDelayMs: (v: number) => void
   allowUrlControl: boolean
   setAllowUrlControl: (v: boolean) => void
   allowUrlStart: boolean
@@ -1237,6 +1246,28 @@ function GeneralTab({
           onChange={setRestoreClipboard}
           theme={theme}
         />
+        {restoreClipboard && (
+          <div style={{ padding: '4px 0 8px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <input
+                type="range"
+                min={300}
+                max={3000}
+                step={100}
+                value={clipboardRestoreDelayMs}
+                onChange={(e) => setClipboardRestoreDelayMs(Math.min(3000, Math.max(300, Number(e.target.value))))}
+                aria-label="Clipboard restore delay (ms)"
+                style={{ flex: 1 }}
+              />
+              <span style={{ fontSize: '12px', color: theme.textMuted, minWidth: '64px', textAlign: 'right' }}>
+                {clipboardRestoreDelayMs} ms
+              </span>
+            </div>
+            <div style={{ fontSize: '12px', color: theme.textMuted, marginTop: '2px' }}>
+              Wait before restoring. Raise it if a slow app pastes your previous clipboard instead of the dictation.
+            </div>
+          </div>
+        )}
       </div>
 
       <div style={s.card}>
