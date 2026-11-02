@@ -283,6 +283,34 @@ describe('recordingStore - erase = crypto-shred, locked reset, progress (D3)', (
     expect(existsSync(s2)).toBe(false)
   })
 
+  it('erase leaves unrelated files alone while removing sealed corrupt backups', async () => {
+    await seed()
+    await setHistoryEncryption(true)
+    const sealed = join(RECORDINGS_DIR, 'index.json.corrupt-7.sealed.json')
+    const keep = ['notes.txt', 'index.json.bak', 'my.index.json.corrupt-7.sealed.json', 'index.json.corrupt-x.sealed.json']
+    writeFileSync(sealed, '{"sealed":true}')
+    for (const k of keep) writeFileSync(join(RECORDINGS_DIR, k), 'user file')
+    const rep = await deleteAllRecordings()
+    expect(rep.undeleted).toBe(0)
+    expect(existsSync(sealed)).toBe(false)
+    for (const k of keep) expect(existsSync(join(RECORDINGS_DIR, k))).toBe(true)
+  })
+
+  it('a sealed corrupt backup that cannot be unlinked does not fail the shred (listed as orphan)', async () => {
+    await seed()
+    await setHistoryEncryption(true)
+    const name = 'index.json.corrupt-8.sealed.json'
+    writeFileSync(join(RECORDINGS_DIR, name), '{"sealed":true}')
+    h.stuck = name
+    const rep = await deleteAllRecordings()
+    expect(rep.undeleted).toBe(1)
+    expect(existsSync(join(testDir, 'data-vault.key'))).toBe(false)
+    expect(existsSync(join(RECORDINGS_DIR, name))).toBe(true)
+    h.stuck = null
+    expect(sweepShreddedOrphans()).toEqual({ undeleted: 0 })
+    expect(existsSync(join(RECORDINGS_DIR, name))).toBe(false)
+  })
+
   it('non-erase paths keep index.json.corrupt-* (save, delete one, encryption toggle)', async () => {
     await seed()
     const b = join(RECORDINGS_DIR, 'index.json.corrupt-9')
