@@ -268,7 +268,7 @@ class EncryptStringsEnTest {
     companion object {
         val STRINGS = intArrayOf(
             R.string.settings_encrypt_hint, R.string.settings_encrypt_status_on, R.string.settings_encrypt_locked,
-            R.string.history_unreadable,
+            R.string.history_unreadable, R.string.home_encrypt_locked_banner, R.string.home_encrypt_locked_fix,
         )
     }
 }

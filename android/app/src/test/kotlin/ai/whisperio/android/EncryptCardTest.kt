@@ -7,6 +7,7 @@ import ai.whisperio.android.settings.SettingsRepository
 import ai.whisperio.android.ui.settings.EncryptNotice
 import ai.whisperio.android.ui.settings.EncryptSwitch
 import ai.whisperio.android.ui.settings.shouldOfferEncryptCard
+import ai.whisperio.android.ui.settings.shouldShowEncryptLockedBanner
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import java.io.File
 import kotlinx.coroutines.CompletableDeferred
@@ -136,4 +137,14 @@ class EncryptCardTest {
         sw.request(false)
         assertNull(sw.notice.value)
     }
+}
+
+/** M2: the Home "encryption is locked" banner shows only for encryption ON + locked. */
+class EncryptLockedBannerTest {
+    private val on = ai.whisperio.android.settings.AppSettings(encryptHistory = true)
+    private val off = ai.whisperio.android.settings.AppSettings(encryptHistory = false)
+
+    @Test fun lockedAndOnShowsBanner() = assertTrue(shouldShowEncryptLockedBanner(on, locked = true))
+    @Test fun offHidesBanner() = assertFalse(shouldShowEncryptLockedBanner(off, locked = true))
+    @Test fun unlockedOrTransientHidesBanner() = assertFalse(shouldShowEncryptLockedBanner(on, locked = false))
 }

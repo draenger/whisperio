@@ -82,6 +82,8 @@ data class HomeState(
     val encryptBusy: Boolean? = null,
     /** Result of the last run that needs the user's attention. */
     val encryptNotice: EncryptNotice? = null,
+    /** Encryption is ON but locked (sealed data, key unusable): new dictations are saved unencrypted. Not dismissible. */
+    val encryptLockedBanner: Boolean = false,
 )
 
 interface HomeActions {
@@ -96,6 +98,8 @@ interface HomeActions {
     fun onEncryptCardTurnOn() {}
     fun onEncryptCardDismiss() {}
     fun onEncryptNoticeDismiss() {}
+    /** The locked banner's "Fix": open Settings, Privacy and storage. */
+    fun onEncryptLockedFix() {}
 }
 
 @Composable
@@ -157,6 +161,9 @@ fun HomeScreen(state: HomeState, actions: HomeActions, modifier: Modifier = Modi
                     }
                 }
             }
+        }
+        if (state.encryptLockedBanner) {
+            item { EncryptLockedBanner(actions) }
         }
         if (state.encryptCard || state.encryptBusy != null) {
             item { EncryptCard(state.encryptBusy, actions) }
@@ -232,6 +239,30 @@ private fun EncryptCard(busy: Boolean?, actions: HomeActions) {
         )
     }
 }
+
+/** Persistent, non-dismissible warning while encryption is locked (new dictations are stored unencrypted). */
+@Composable
+private fun EncryptLockedBanner(actions: HomeActions) {
+    Card(
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
+        modifier = Modifier.fillMaxWidth().padding(top = 8.dp).testTag(ENCRYPT_LOCKED_BANNER_TAG),
+    ) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(
+                stringResource(R.string.home_encrypt_locked_banner),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onErrorContainer,
+                modifier = Modifier.liveStatus(),
+            )
+            TextButton(onClick = actions::onEncryptLockedFix, modifier = Modifier.heightIn(min = 48.dp)) {
+                Text(stringResource(R.string.home_encrypt_locked_fix), color = MaterialTheme.colorScheme.onErrorContainer)
+            }
+        }
+    }
+}
+
+/** Test tag of the encrypt-locked banner. */
+const val ENCRYPT_LOCKED_BANNER_TAG = "encrypt_locked_banner"
 
 /** Test tag of the one-time encrypt card. */
 const val ENCRYPT_CARD_TAG = "encrypt_card"

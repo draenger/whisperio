@@ -57,6 +57,7 @@ import ai.whisperio.android.ui.recap.RecapShare
 import ai.whisperio.android.ui.recap.toRecapItems
 import ai.whisperio.android.ui.settings.KeyDialogState
 import ai.whisperio.android.ui.settings.shouldOfferEncryptCard
+import ai.whisperio.android.ui.settings.shouldShowEncryptLockedBanner
 import ai.whisperio.android.ui.settings.SettingsActions
 import ai.whisperio.android.ui.settings.SettingsScreen
 import ai.whisperio.android.ui.settings.SettingsUiState
@@ -387,6 +388,7 @@ private fun HomeRoute(g: AppGraph, nav: NavHostController) {
     }
     val encryptBusy by g.encryptSwitch.busy.collectAsState()
     val encryptNotice by g.encryptSwitch.notice.collectAsState()
+    val encryptLocked by g.encryptSwitch.locked.collectAsState()
     // True only for a run started by the card's "Turn on": progress and the notice then show here, not for Settings runs.
     var cardRun by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(encryptBusy) { if (encryptBusy == null && cardRun && encryptNotice == null) cardRun = false }
@@ -403,6 +405,7 @@ private fun HomeRoute(g: AppGraph, nav: NavHostController) {
                 encryptCard = shouldOfferEncryptCard(settings),
                 encryptBusy = encryptBusy.takeIf { cardRun },
                 encryptNotice = encryptNotice.takeIf { cardRun },
+                encryptLockedBanner = shouldShowEncryptLockedBanner(settings, encryptLocked),
             ),
             actions = object : HomeActions {
                 override fun onDictate() {
@@ -427,6 +430,13 @@ private fun HomeRoute(g: AppGraph, nav: NavHostController) {
                 override fun onEncryptNoticeDismiss() {
                     g.encryptSwitch.dismissNotice()
                     cardRun = false
+                }
+                override fun onEncryptLockedFix() {
+                    nav.navigate(Routes.SETTINGS) {
+                        popUpTo(Routes.HOME) { saveState = true }
+                        launchSingleTop = true
+                        restoreState = true
+                    }
                 }
                 override fun onOpenSetup() {
                     if (!mic && setup.hasKey && setup.consent) {

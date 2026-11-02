@@ -149,6 +149,11 @@ open class HomeSnapshotTest {
     }
 
     @Test @Config(qualifiers = PHONE)
+    fun encryptLocked() = rule.snapshot("home_encrypt_locked") {
+        HomeScreen(HomeState(recent = Fx.all, providerLabel = "OpenAI - whisper-1", encryptLockedBanner = true), noop)
+    }
+
+    @Test @Config(qualifiers = PHONE)
     fun setupNeeded() = rule.snapshot("home_setup_needed") {
         HomeScreen(HomeState(setupNeeded = true), noop)
     }

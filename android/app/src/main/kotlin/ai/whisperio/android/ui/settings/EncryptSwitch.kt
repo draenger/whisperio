@@ -53,3 +53,9 @@ class EncryptSwitch(
  * only until the user has answered it (Turn on or Not now).
  */
 fun shouldOfferEncryptCard(s: AppSettings): Boolean = s.onboardingDone && !s.encryptHistory && !s.encryptCardHandled
+
+/**
+ * Home shows the persistent "encryption is locked" banner only when encryption is ON and the store is locked (sealed
+ * data exists but its key is missing). OFF, unlocked and transient Keystore errors (which never set locked) hide it.
+ */
+fun shouldShowEncryptLockedBanner(s: AppSettings, locked: Boolean): Boolean = s.encryptHistory && locked
