@@ -36,7 +36,7 @@ export function redactKeys<T extends object>(
   settings: T,
   fields: readonly string[]
 ): T & { keyStatus: KeyStatus } {
-  const copy: Record<string, unknown> = { ...settings }
+  const copy = { ...settings } as Record<string, unknown>
   const keyStatus = buildKeyStatus(copy, fields)
   for (const f of fields) copy[f] = ''
   return { ...(copy as T), keyStatus }
