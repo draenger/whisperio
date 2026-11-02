@@ -26,7 +26,10 @@ vi.mock('electron', () => ({
 const fsState = vi.hoisted(() => ({
   disk: {} as Record<string, string>,
   calls: [] as Array<{ op: string; path: string; to?: string }>,
-  failRename: false
+  failRename: false,
+  // Next N renames throw an errno-coded error (code), then succeed.
+  renameErrors: 0,
+  renameErrorCode: 'EPERM'
 }))
 
 vi.mock('fs', () => ({
@@ -41,6 +44,10 @@ vi.mock('fs', () => ({
   },
   renameSync: (from: string, to: string) => {
     fsState.calls.push({ op: 'rename', path: from, to })
+    if (fsState.renameErrors > 0) {
+      fsState.renameErrors--
+      throw Object.assign(new Error(`${fsState.renameErrorCode}: rename locked`), { code: fsState.renameErrorCode })
+    }
     if (fsState.failRename) throw new Error('EPERM rename')
     fsState.disk[to] = fsState.disk[from]
     delete fsState.disk[from]
@@ -87,6 +94,8 @@ beforeEach(() => {
   fsState.disk = {}
   fsState.calls = []
   fsState.failRename = false
+  fsState.renameErrors = 0
+  fsState.renameErrorCode = 'EPERM'
   safeStorageMock.isEncryptionAvailable.mockReset().mockReturnValue(true)
   safeStorageMock.encryptString.mockClear()
   safeStorageMock.decryptString.mockClear()
@@ -249,6 +258,34 @@ describe('atomicWrite cleanup', () => {
     expect(() => saveGithubToken(SECRET)).toThrow(/EPERM/)
     expect(Object.keys(fsState.disk).filter((k) => k.endsWith('.tmp'))).toEqual([])
     expect(fsState.calls.some((c) => c.op === 'unlink' && c.path.endsWith('.tmp'))).toBe(true)
+  })
+})
+
+describe('atomicWrite rename retry (Windows EPERM/EBUSY)', () => {
+  const renames = (): number => fsState.calls.filter((c) => c.op === 'rename').length
+
+  it.each(['EPERM', 'EBUSY', 'EACCES'])('two %s failures then success: write succeeds', (code) => {
+    fsState.renameErrorCode = code
+    fsState.renameErrors = 2
+    saveGithubToken(SECRET)
+    expect(renames()).toBe(3)
+    expect(loadGithubToken()).toBe(SECRET)
+    expect(Object.keys(fsState.disk).filter((k) => k.endsWith('.tmp'))).toEqual([])
+  })
+
+  it('persistent EPERM: bounded attempts, original error rethrown, tmp removed', () => {
+    fsState.renameErrors = 1000
+    expect(() => saveGithubToken(SECRET)).toThrow(/EPERM/)
+    expect(renames()).toBe(5)
+    expect(Object.keys(fsState.disk).filter((k) => k.endsWith('.tmp'))).toEqual([])
+    expect(fsState.calls.some((c) => c.op === 'unlink' && c.path.endsWith('.tmp'))).toBe(true)
+  })
+
+  it('a non-retryable error code (ENOSPC) fails immediately without retrying', () => {
+    fsState.renameErrorCode = 'ENOSPC'
+    fsState.renameErrors = 3
+    expect(() => saveGithubToken(SECRET)).toThrow(/ENOSPC/)
+    expect(renames()).toBe(1)
   })
 })
 

@@ -73,12 +73,33 @@ function requireVault(): void {
   }
 }
 
+const RENAME_RETRY_CODES = new Set(['EPERM', 'EBUSY', 'EACCES'])
+const RENAME_ATTEMPTS = 5
+
+function sleepSync(ms: number): void {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms)
+}
+
+/** rename with a short bounded retry: on Windows an antivirus/indexer can briefly lock the file. */
+function renameWithRetry(from: string, to: string): void {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      renameSync(from, to)
+      return
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException | undefined)?.code
+      if (attempt >= RENAME_ATTEMPTS || !code || !RENAME_RETRY_CODES.has(code)) throw err
+      sleepSync(Math.min(100, 20 * attempt))
+    }
+  }
+}
+
 /** Atomic write helper mirroring settingsManager/recordingStore. Cleans up the tmp on failure. */
 function atomicWrite(filePath: string, data: string): void {
   const tmp = `${filePath}.${process.pid}.${Date.now()}.tmp`
   try {
     writeFileSync(tmp, data, 'utf-8')
-    renameSync(tmp, filePath)
+    renameWithRetry(tmp, filePath)
   } catch (err) {
     try {
       if (existsSync(tmp)) unlinkSync(tmp)
