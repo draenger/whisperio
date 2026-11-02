@@ -8,9 +8,9 @@ import {
   hasWrappedEntries,
   dropWrappedEntry,
   readWeakBackendKeys,
-  rewrapWeakEntries,
-  errName
+  rewrapWeakEntries
 } from './keyStore'
+import { errName } from './errName'
 
 /**
  * The AppSettings fields that hold provider API keys — the ONLY fields this

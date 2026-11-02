@@ -248,7 +248,7 @@ describe('re-wrap of weak-backend (v10) blobs once a real keyring appears', () =
     let calls = 0
     vi.mocked(safeStorage.decryptString).mockImplementation((b: Buffer) => (++calls === 3 ? 'WRONG' : real(b)))
     expect(rewrapWeakLinuxKeys()).toBe(0)
-    expect(disk[STORE]).toBe(before)
+    expect(JSON.parse(disk[STORE])).toEqual(JSON.parse(before)) // old blob restored; the restore write may reformat the file
   })
 
   it('failure (encrypt throws) loses no key and logs only the error name', async () => {

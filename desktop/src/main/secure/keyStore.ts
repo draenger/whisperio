@@ -1,6 +1,7 @@
 import { app, safeStorage } from 'electron'
 import { readFileSync, writeFileSync, existsSync, renameSync } from 'fs'
 import { join } from 'path'
+import { errName } from './errName'
 
 /**
  * Encrypted provider-API-key store, built on Electron's `safeStorage` (macOS
@@ -65,9 +66,7 @@ export function isEncryptionAvailable(): boolean {
 }
 
 /** Log-safe error label: only the class name, never the message (it may hold key material or paths). */
-export function errName(err: unknown): string {
-  return err instanceof Error ? err.name : typeof err
-}
+export { errName } from './errName'
 
 function atomicWrite(filePath: string, data: string): void {
   const tmp = `${filePath}.${process.pid}.${Date.now()}.tmp`
