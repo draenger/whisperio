@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef, Fragment, type CSSProperties, type ReactElement } from 'react'
+import { isIndexUnavailable, HISTORY_UNREADABLE_MESSAGE } from '../../recordings/historyError'
 import { useTheme } from '../../ThemeContext'
 import { TitleBar } from '../common/TitleBar'
 import { TranscriptSearch } from './TranscriptSearch'
@@ -91,6 +92,7 @@ export function RecordingsView(): ReactElement {
   const { theme } = useTheme()
   const [recordings, setRecordings] = useState<RecordingEntry[]>([])
   const [loading, setLoading] = useState(true)
+  const [historyUnreadable, setHistoryUnreadable] = useState(false)
   const [hoveredId, setHoveredId] = useState<string | null>(null)
   const [deleteAllConfirm, setDeleteAllConfirm] = useState(false)
   // Per-day "Delete this day" confirm state (recordings:deleteByDate) — keyed
@@ -171,8 +173,10 @@ export function RecordingsView(): ReactElement {
     try {
       const list = await window.api.recordings.list()
       setRecordings(list.sort((a, b) => b.timestamp - a.timestamp))
-    } catch {
+      setHistoryUnreadable(false)
+    } catch (err) {
       setRecordings([])
+      setHistoryUnreadable(isIndexUnavailable(err))
     } finally {
       setLoading(false)
     }
@@ -603,7 +607,31 @@ export function RecordingsView(): ReactElement {
             query={searchQuery}
             onQueryChange={setSearchQuery}
           />
-          {searchActive ? null : recordings.length === 0 ? (
+          {historyUnreadable && (
+            <div
+              data-testid="recordings-history-unreadable"
+              role="alert"
+              style={{
+                margin: '14px 14px 0',
+                padding: '8px 12px',
+                borderRadius: 8,
+                fontSize: 12,
+                color: theme.danger,
+                background: 'rgba(239, 68, 68, 0.1)',
+                border: `1px solid ${theme.danger}`,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 12,
+                justifyContent: 'space-between'
+              }}
+            >
+              <span>{HISTORY_UNREADABLE_MESSAGE}</span>
+              <button onClick={loadRecordings} style={s.toolbarButton}>
+                Retry
+              </button>
+            </div>
+          )}
+          {searchActive ? null : recordings.length === 0 && !historyUnreadable ? (
             <div style={s.emptyState}>
               <div style={{
                 width: '56px',
@@ -724,7 +752,7 @@ export function RecordingsView(): ReactElement {
                     <div style={s.recordingText}>
                       {rec.status === 'completed' && rec.transcription
                         ? truncateText(rec.transcription)
-                        : rec.status === 'failed' && rec.error
+                        : (rec.status === 'failed' || (rec.status === 'completed' && !rec.transcription)) && rec.error
                           ? rec.error
                           : rec.status === 'pending'
                             ? 'Processing...'
@@ -1173,8 +1201,8 @@ function RecordingDetail({
       {!failed && rec.segments && rec.segments.length > 0 ? (
         <ConversationSegments theme={theme} rec={rec} />
       ) : (
-        <div style={{ fontSize: 14.5, color: failed ? theme.danger : theme.text, lineHeight: 1.75, whiteSpace: 'pre-wrap' }}>
-          {failed ? rec.error || 'Transcription failed.' : rec.transcription || 'No transcription available.'}
+        <div style={{ fontSize: 14.5, color: failed ? theme.danger : !rec.transcription && rec.error ? theme.textMuted : theme.text, lineHeight: 1.75, whiteSpace: 'pre-wrap' }}>
+          {failed ? rec.error || 'Transcription failed.' : rec.transcription || rec.error || 'No transcription available.'}
         </div>
       )}
 

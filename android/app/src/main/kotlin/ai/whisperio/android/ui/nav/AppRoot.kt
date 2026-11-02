@@ -16,7 +16,9 @@ import ai.whisperio.android.settings.CustomCategories
 import ai.whisperio.android.settings.KeyEnrollment
 import ai.whisperio.android.settings.KeyUi
 import ai.whisperio.android.ui.about.AboutScreen
+import ai.whisperio.android.ui.common.KeepScreenOn
 import ai.whisperio.android.ui.common.confirmHaptic
+import ai.whisperio.android.ui.common.needsScreenOn
 import ai.whisperio.android.ui.common.copyPlainText
 import ai.whisperio.android.ui.common.label
 import ai.whisperio.android.ui.common.rememberCategoryOptions
@@ -189,11 +191,12 @@ private fun OnboardingRoute(g: AppGraph, current: AppSettings, tryIt: TryItSessi
         }
         startAfterMic = false
     }
+    KeepScreenOn(needsScreenOn(dictation))
     LifecycleEventEffect(Lifecycle.Event.ON_STOP) {
-        // Same rule as Home: leaving the app ends a try-it recording; a rotation does not.
+        // Same rule as Home: leaving the app (or the screen turning off) stops and transcribes a try-it recording; a rotation does not.
         val s = g.dictation.state.value
         val changing = (ctx as? Activity)?.isChangingConfigurations == true
-        if (!changing && s is DictationState.Recording && s.source == RecordingSource.APP) g.dictation.cancel()
+        if (!changing && s is DictationState.Recording && s.source == RecordingSource.APP) g.dictation.stopAndTranscribe()
     }
     // Leaves nothing behind when the step is left or onboarding ends.
     fun clearTry() {
@@ -378,11 +381,12 @@ private fun HomeRoute(g: AppGraph, nav: NavHostController) {
         if (granted) g.dictation.start(StartOptions(RecordingSource.APP))
     }
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { mic = g.micGranted() }
+    KeepScreenOn(needsScreenOn(dictation))
     LifecycleEventEffect(Lifecycle.Event.ON_STOP) {
-        // Leaving the app stops the recording (no foreground service); a rotation does not.
+        // Leaving the app (or the screen turning off) stops the recording and transcribes it, never discards it; a rotation does not.
         val s = g.dictation.state.value
         val changing = (ctx as? Activity)?.isChangingConfigurations == true
-        if (!changing && s is DictationState.Recording && s.source == RecordingSource.APP) g.dictation.cancel()
+        if (!changing && s is DictationState.Recording && s.source == RecordingSource.APP) g.dictation.stopAndTranscribe()
     }
     val setup = computeSetupStatus(settings, keys, mic)
     val primary = settings.primaryProvider(keys)
@@ -668,7 +672,7 @@ private fun SettingsRoute(g: AppGraph, nav: NavHostController) {
         override fun onAutoDelete(days: Int?) { scope.launch { g.settings.setAutoDeleteDays(days) } }
         override fun onSensitive(value: Boolean) { scope.launch { g.settings.setSensitive(value) } }
         override fun onConsent(value: Boolean) { scope.launch { g.settings.setConsent(value) } }
-        override fun onDeleteAllAudio() { scope.launch { g.history.deleteAllAudio() } }
+        override fun onDeleteAllAudio() { scope.launch { g.history.deleteAllAudio(g.dictation.activeId(), g.dictation.activeFile()) } }
         override fun onEraseAll() { scope.launch { g.eraseAllData() } }
         override fun onCategories() { nav.navigate(Routes.CATEGORIES) }
         override fun onAbout() { nav.navigate(Routes.ABOUT) }
