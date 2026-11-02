@@ -15,10 +15,14 @@ vi.mock('../src/main/settingsManager', () => ({
   loadSettings: vi.fn(() => ({ githubRepo: 'me/repo', githubBranch: 'main' })),
   saveSettings: vi.fn()
 }))
-vi.mock('../src/main/secure/keyAccessor', () => ({ saveSettingsWithKeys: vi.fn() }))
+vi.mock('../src/main/secure/keyAccessor', () => ({
+  saveSettingsWithKeys: vi.fn(),
+  getEffectiveSettings: vi.fn(() => ({ githubRepo: 'me/repo', githubBranch: 'main' }))
+}))
 vi.mock('../src/main/secretVault', () => ({
   VaultLockedError: h.VaultLockedError,
   isVaultAvailable: vi.fn(() => true),
+  hasDataKey: vi.fn(() => true), // key file present but locked
   sealForRepo: vi.fn(() => {
     throw new h.VaultLockedError('vault locked')
   }),
