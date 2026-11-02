@@ -6,7 +6,7 @@ vi.mock('electron', () => ({
   net: { request: vi.fn() }
 }))
 
-import { parakeetTranscribe, shutdownParakeet, deps } from '../src/main/stt/parakeet'
+import { parakeetTranscribe, shutdownParakeet, deps, ParakeetClipTooLongError } from '../src/main/stt/parakeet'
 
 class FakeWorker extends EventEmitter {
   posted: unknown[] = []
@@ -58,6 +58,23 @@ afterEach(async () => {
 })
 
 describe('parakeet worker lifecycle', () => {
+  it('allows a caller-reported 299-second clip to reach the worker', async () => {
+    const p = parakeetTranscribe(wav(1600), { durationSeconds: 299 })
+    fw.emit('message', { type: 'ready' })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(fw.posted).toHaveLength(1)
+    const { id } = fw.posted[0] as { id: number }
+    fw.emit('message', { type: 'result', id, text: 'ok' })
+    await expect(p).resolves.toBe('ok')
+  })
+
+  it('refuses a 301-second WAV from its data chunk before starting a worker', async () => {
+    const createWorker = vi.spyOn(deps, 'createWorker')
+    await expect(parakeetTranscribe(wav(16000 * 301))).rejects.toThrow(ParakeetClipTooLongError)
+    expect(fw.posted).toHaveLength(0)
+    expect(createWorker).not.toHaveBeenCalled()
+    createWorker.mockRestore()
+  })
   it('waits for ready before posting, then resolves the result', async () => {
     const p = parakeetTranscribe(wav(1600))
     await Promise.resolve()

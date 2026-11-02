@@ -29,16 +29,19 @@ vi.mock('electron', () => ({
 
 const mockParakeet = vi.fn()
 let runtimeInstalled = true
-vi.mock('../src/main/stt/parakeet', () => ({
+vi.mock('../src/main/stt/parakeet', async (orig) => ({
+  ...await orig<typeof import('../src/main/stt/parakeet')>(),
   parakeetTranscribe: (...a: unknown[]) => mockParakeet(...a),
   isParakeetRuntimeInstalled: () => runtimeInstalled
 }))
 let modelReady = true
 vi.mock('../src/main/stt/parakeetModel', () => ({
-  isParakeetModelReady: () => modelReady
+  isParakeetModelReady: () => modelReady,
+  getParakeetModelPaths: () => null // needed by the real parakeet.ts pulled in via importOriginal
 }))
 
 import { transcribeAudio } from '../src/main/transcribe'
+import { ParakeetClipTooLongError, ParakeetLanguageUnsupportedError } from '../src/main/stt/parakeet'
 
 const base = {
   sttProvider: 'parakeet',
@@ -124,6 +127,30 @@ describe('parakeet provider (experimental)', () => {
     mockParakeet.mockResolvedValue('witaj swiecie')
     await expect(transcribeAudio(WAV, 'a.wav')).resolves.toBe('witaj swiecie')
     expect(mockRecordSTT).toHaveBeenCalledWith(expect.objectContaining({ provider: 'parakeet', isLocal: true }))
+  })
+
+  it('passes the selected language to Parakeet', async () => {
+    mockLoadSettings.mockReturnValue({ ...base, experimentalParakeet: true, transcriptionLanguage: 'pl' })
+    mockParakeet.mockResolvedValue('witaj')
+    await expect(transcribeAudio(WAV, 'a.wav')).resolves.toBe('witaj')
+    expect(mockParakeet).toHaveBeenCalledWith(WAV, { language: 'pl' })
+  })
+
+  it.each([
+    ['clip too long', 'pl', () => new ParakeetClipTooLongError()],
+    ['unsupported language', 'ja', () => new ParakeetLanguageUnsupportedError('ja')]
+  ])('falls through after a typed %s error', async (_name, language, error) => {
+    mockLoadSettings.mockReturnValue({
+      ...base,
+      experimentalParakeet: true,
+      transcriptionLanguage: language,
+      providerChain: ['parakeet', 'openai'],
+      openaiApiKey: 'sk-test'
+    })
+    mockParakeet.mockRejectedValue(error())
+    mockNet.mockReturnValueOnce(okNet('cloud'))
+    await expect(transcribeAudio(WAV, 'a.wav')).resolves.toBe('cloud')
+    expect(mockRecordSTT).toHaveBeenCalledWith(expect.objectContaining({ provider: 'openai', isLocal: false }))
   })
 
   it('flag on + runtime missing: clear error when it is the only provider', async () => {

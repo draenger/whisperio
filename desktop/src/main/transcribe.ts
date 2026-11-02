@@ -646,7 +646,7 @@ async function transcribeWithProvider(
       throw new Error('On-device Parakeet is experimental and disabled. Enable it in Settings > Experimental.')
     }
     // Any runtime/model error propagates as a provider error so the chain falls through.
-    return parakeetTranscribe(audioBuffer)
+    return parakeetTranscribe(audioBuffer, { language: settings.transcriptionLanguage })
   }
 
   if (provider === 'selfhosted') {

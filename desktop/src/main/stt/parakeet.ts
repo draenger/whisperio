@@ -14,8 +14,24 @@ import { Worker } from 'worker_threads'
 import { getParakeetModelPaths } from './parakeetModel'
 
 export const TARGET_SAMPLE_RATE = 16000
+export const PARAKEET_MAX_AUDIO_SECONDS = 300
 export const SHERPA_PACKAGE = 'sherpa-onnx-node'
 const IDLE_TTL_MS = 15 * 60 * 1000
+const SUPPORTED_LANGUAGES = new Set('bg hr cs da nl en et fi fr de el hu it lv lt mt pl pt ro sk sl es sv ru uk'.split(' '))
+
+export class ParakeetClipTooLongError extends Error {
+  constructor() {
+    super('Clip too long for the local model (max 5 min)')
+    this.name = 'ParakeetClipTooLongError'
+  }
+}
+
+export class ParakeetLanguageUnsupportedError extends Error {
+  constructor(language: string) {
+    super(`Language ${language} is not supported by the local model.`)
+    this.name = 'ParakeetLanguageUnsupportedError'
+  }
+}
 
 export class ParakeetRuntimeMissingError extends Error {
   constructor(detail?: string) {
@@ -288,8 +304,34 @@ function ensureHost(): Host {
   return h
 }
 
+/** Clip length from the WAV header (data size / fmt byteRate) without decoding; null if not a WAV. */
+function wavDurationSeconds(audio: Buffer): number | null {
+  if (audio.length < 12 || audio.toString('ascii', 0, 4) !== 'RIFF' || audio.toString('ascii', 8, 12) !== 'WAVE') return null
+  let off = 12
+  let byteRate = TARGET_SAMPLE_RATE * 2 // PCM16 mono 16 kHz unless the fmt chunk says otherwise
+  while (off + 8 <= audio.length) {
+    const size = audio.readUInt32LE(off + 4)
+    const id = audio.toString('ascii', off, off + 4)
+    if (id === 'fmt ' && off + 16 <= audio.length) byteRate = audio.readUInt32LE(off + 16) || byteRate
+    if (id === 'data') return size / byteRate
+    off += 8 + size + (size % 2)
+  }
+  return null
+}
+
 /** Transcribe a WAV clip on-device. Rejects (never hangs) on any runtime/model error. */
-export async function parakeetTranscribe(audio: Buffer): Promise<string> {
+export async function parakeetTranscribe(
+  audio: Buffer,
+  options: { durationSeconds?: number; language?: string } = {}
+): Promise<string> {
+  const language = options.language?.trim().toLowerCase()
+  if (language && language !== 'auto' && !SUPPORTED_LANGUAGES.has(language)) {
+    throw new ParakeetLanguageUnsupportedError(language)
+  }
+  const durationSeconds = options.durationSeconds ?? wavDurationSeconds(audio)
+  if (durationSeconds !== null && durationSeconds > PARAKEET_MAX_AUDIO_SECONDS) {
+    throw new ParakeetClipTooLongError()
+  }
   const samples = wavToPcm16k(audio)
   if (samples.length === 0) return ''
   const h = ensureHost()

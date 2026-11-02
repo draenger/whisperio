@@ -12,7 +12,10 @@ import {
   loadSherpa,
   isParakeetRuntimeInstalled,
   parakeetTranscribe,
-  ParakeetRuntimeMissingError
+  ParakeetRuntimeMissingError,
+  ParakeetClipTooLongError,
+  ParakeetLanguageUnsupportedError,
+  PARAKEET_MAX_AUDIO_SECONDS
 } from '../src/main/stt/parakeet'
 
 function makeWav(samples: number[], rate = 16000, channels = 1): Buffer {
@@ -86,5 +89,25 @@ describe('runtime missing (sherpa-onnx-node is not a dependency yet)', () => {
   })
   it('parakeetTranscribe rejects (does not hang) on a valid clip', async () => {
     await expect(parakeetTranscribe(makeWav([1, 2, 3, 4]))).rejects.toThrow(/not installed|incomplete/)
+  })
+})
+
+describe('Parakeet input guards', () => {
+  it('exports a five-minute limit and accepts 299 seconds supplied by the caller', async () => {
+    expect(PARAKEET_MAX_AUDIO_SECONDS).toBe(300)
+    await expect(parakeetTranscribe(makeWav([1]), { durationSeconds: 299 })).rejects.toThrow(ParakeetRuntimeMissingError)
+  })
+
+  it('rejects 301 seconds before loading the runtime', async () => {
+    await expect(parakeetTranscribe(makeWav([1]), { durationSeconds: 301 })).rejects.toThrow(ParakeetClipTooLongError)
+    await expect(parakeetTranscribe(makeWav([1]), { durationSeconds: 301 })).rejects.toThrow(
+      'Clip too long for the local model (max 5 min)'
+    )
+  })
+
+  it('rejects an unsupported language and accepts auto and pl', async () => {
+    await expect(parakeetTranscribe(makeWav([1]), { language: 'ja' })).rejects.toThrow(ParakeetLanguageUnsupportedError)
+    await expect(parakeetTranscribe(makeWav([1]), { language: 'auto' })).rejects.toThrow(ParakeetRuntimeMissingError)
+    await expect(parakeetTranscribe(makeWav([1]), { language: 'pl' })).rejects.toThrow(ParakeetRuntimeMissingError)
   })
 })
