@@ -759,7 +759,9 @@ export function migrateAudio(direction: 'encrypt' | 'decrypt'): Promise<AudioMig
           const cur = readIndexState()
           if (cur.locked) return 'skipped'
           const entry = cur.index.recordings.find((e) => e.id === id && !e.deletedAt)
-          if (!entry || !existsSync(entry.filepath)) return 'skipped'
+          // Same containment as playback/delete: a tampered index must never make the migration
+          // rewrite (and then wipe) a file outside the recordings dir.
+          if (!entry || !isInsideRecordingsDir(entry.filepath) || !existsSync(entry.filepath)) return 'skipped'
           // Re-check intent inside the slot: a toggle flipped mid-run is handled by the chained run.
           const flagOn = encryptHistoryReader()
           if (direction === 'encrypt' && !flagOn) return 'skipped'

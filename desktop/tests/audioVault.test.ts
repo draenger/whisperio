@@ -307,6 +307,20 @@ describe('recordingStore audio vault integration', () => {
     vi.restoreAllMocks()
   })
 
+  it('migration never rewrites a file outside the recordings dir (tampered index)', async () => {
+    const rec = await saveRecording(marker, meta)
+    const outside = join(testDir, 'outside.webm')
+    writeFileSync(outside, marker)
+    const idxPath = join(REC, 'index.json')
+    const idx = JSON.parse(readFileSync(idxPath, 'utf-8'))
+    idx.recordings.find((e: { id: string }) => e.id === rec.id).filepath = outside
+    writeFileSync(idxPath, JSON.stringify(idx))
+    flag = true
+    const r = await migrateAudio('encrypt')
+    expect(r.converted).toBe(0)
+    expect(readFileSync(outside).equals(marker)).toBe(true)
+  })
+
   it('sweeps leaked save/migration tmp files at launch', async () => {
     const rec = await saveRecording(marker, meta)
     writeFileSync(rec.filepath + '.tmp', 'x')
