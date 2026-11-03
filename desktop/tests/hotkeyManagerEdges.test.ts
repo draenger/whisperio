@@ -115,6 +115,20 @@ vi.mock('../src/main/dictation/keyHold', () => ({
   setKeyHoldNotifier: vi.fn()
 }))
 
+// --- Transcription watchdog mock ---
+const mockWatchdogStart = vi.fn()
+const mockWatchdogStop = vi.fn()
+const mockWatchdogTouch = vi.fn()
+
+vi.mock('../src/main/dictation/watchdog', () => ({
+  createWatchdog: vi.fn(() => ({
+    start: mockWatchdogStart,
+    stop: mockWatchdogStop,
+    touch: mockWatchdogTouch
+  })),
+  onTranscriptionActivity: vi.fn()
+}))
+
 // --- Fresh module per test (resets module-level state) ---
 type HotkeyModule = typeof import('../src/main/dictation/hotkeyManager')
 
@@ -125,7 +139,7 @@ const mockOverlayWin = {
 }
 
 // Edge / fail-soft branches of hotkeyManager.ts not reached by
-// hotkeyManager.test.ts: watchdog firing after a catch-block reset, hold-mode
+// hotkeyManager.test.ts: catch-block watchdog cleanup, hold-mode
 // fallback guards, "hotkey" placeholder when the accelerator never registered,
 // output/command hotkeys pressed while another mode is in progress, command
 // mode overlay/exception recovery, silent-recording notice, non-Error command
@@ -171,22 +185,23 @@ describe('hotkeyManager edge branches', () => {
     vi.restoreAllMocks()
   })
 
-  it('a watchdog left armed by a catch-block reset fires harmlessly (no notice, stays idle)', async () => {
-    vi.useFakeTimers()
+  it('a catch-block reset stops the watchdog and broadcasts idle', async () => {
     mod.registerHotkey()
     const activate = registered('Ctrl+Shift+Space')
     await activate() // -> recording
-    // The deactivate send throws AFTER setState('transcribing') armed the
-    // watchdog; the catch resets `state` directly without stopping it.
+    mockBroadcastToOverlays.mockClear()
+    mockWatchdogStart.mockClear()
+    mockWatchdogStop.mockClear()
+    // The deactivate send throws after setState('transcribing') arms the
+    // watchdog, so the catch must reset through setState('idle').
     mockSendToPrimaryOverlay.mockImplementation((ch: string) => {
       if (ch === 'dictation:deactivate') throw new Error('overlay gone')
     })
     await activate()
     expect(mod.getState()).toBe('idle')
-
-    await vi.advanceTimersByTimeAsync(60_000)
-    expect(mockNotifyInfo).not.toHaveBeenCalled()
-    expect(mod.getState()).toBe('idle')
+    expect(mockWatchdogStart).toHaveBeenCalledOnce()
+    expect(mockWatchdogStop).toHaveBeenCalledTimes(2)
+    expect(mockBroadcastToOverlays).toHaveBeenCalledWith('dictation:state-changed', 'idle')
   })
 
   describe('hold-mode fallback', () => {
