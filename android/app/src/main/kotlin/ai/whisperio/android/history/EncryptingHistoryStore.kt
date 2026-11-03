@@ -55,8 +55,9 @@ class EncryptingHistoryStore(
     override suspend fun deleteOlderThan(cutoffEpochMs: Long): Int =
         inner.deleteOlderThan(cutoffEpochMs).also { cipher.recheckLocked() }
 
-    override suspend fun deleteAllAudio() {
-        inner.deleteAllAudio()
+    override suspend fun deleteAllAudio(keepId: String?, keepFile: File?) {
+        // Pass the in-progress recording through (main #59): it must survive "delete all audio".
+        inner.deleteAllAudio(keepId, keepFile)
         cipher.recheckLocked()
     }
 
