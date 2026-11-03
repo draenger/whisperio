@@ -1,5 +1,16 @@
-import { loadSettings, saveSettings, type AppSettings } from '../settingsManager'
-import { getKey, setKey, deleteKey, isEncryptionAvailable } from './keyStore'
+import { loadSettings, saveSettings, areSettingsUnavailable, type AppSettings } from '../settingsManager'
+import {
+  getKey,
+  setKey,
+  deleteKey,
+  isEncryptionAvailable,
+  isWeakLinuxBackend,
+  hasWrappedEntries,
+  dropWrappedEntry,
+  readWeakBackendKeys,
+  rewrapWeakEntries
+} from './keyStore'
+import { errName } from './errName'
 
 /**
  * The AppSettings fields that hold provider API keys — the ONLY fields this
@@ -24,12 +35,31 @@ export type ProviderKeyField = (typeof PROVIDER_KEY_FIELDS)[number]
 export const SECURE_STORAGE_UNAVAILABLE_MESSAGE =
   'Secure storage unavailable on this system; the key is kept for this session only.'
 
+/** Appended on Linux, where the usual cause is a missing or locked keyring. */
+export const SECURE_STORAGE_LINUX_HINT =
+  'To save keys permanently, install and start a keyring (gnome-keyring or KWallet), unlock it, and restart Whisperio.'
+
+function unavailableMessage(): string {
+  return process.platform === 'linux'
+    ? `${SECURE_STORAGE_UNAVAILABLE_MESSAGE} ${SECURE_STORAGE_LINUX_HINT}`
+    : SECURE_STORAGE_UNAVAILABLE_MESSAGE
+}
+
 /**
  * Fail-closed session store: when OS secure storage is unavailable, newly
  * entered provider keys are NEVER written to disk. They live here (process
  * memory) until the app quits.
  */
 const sessionKeys = new Map<ProviderKeyField, string>()
+
+/** Delete a superseded wrapped store entry (ciphertext only; never writes plaintext). */
+function dropStaleWrapped(field: ProviderKeyField): void {
+  try {
+    dropWrappedEntry(field)
+  } catch (err) {
+    console.error(`[Whisperio] could not drop stale wrapped key "${field}" (${errName(err)}).`)
+  }
+}
 
 let secureStorageWarningListener: ((message: string) => void) | null = null
 
@@ -57,11 +87,10 @@ export function _resetSessionKeysForTests(): void {
  */
 export function getEffectiveSettings(): AppSettings {
   const settings = loadSettings()
+  const sessionOverlay: Partial<AppSettings> = {}
+  for (const [field, value] of sessionKeys) sessionOverlay[field] = value
   if (!isEncryptionAvailable()) {
-    if (sessionKeys.size === 0) return settings
-    const sessionOverlay: Partial<AppSettings> = {}
-    for (const [field, value] of sessionKeys) sessionOverlay[field] = value
-    return { ...settings, ...sessionOverlay }
+    return sessionKeys.size === 0 ? settings : { ...settings, ...sessionOverlay }
   }
   const overlay: Partial<AppSettings> = {}
   for (const field of PROVIDER_KEY_FIELDS) {
@@ -70,7 +99,8 @@ export function getEffectiveSettings(): AppSettings {
       overlay[field] = stored
     }
   }
-  return { ...settings, ...overlay }
+  // Session keys (a write the key store refused) are newer than anything stored.
+  return { ...settings, ...overlay, ...sessionOverlay }
 }
 
 /**
@@ -91,7 +121,7 @@ function writeKeyField(field: ProviderKeyField, value: string): boolean {
     try {
       deleteKey(field)
     } catch (err) {
-      console.error(`[Whisperio] failed to delete provider key "${field}" from the key store:`, err)
+      console.error(`[Whisperio] failed to delete provider key "${field}" from the key store (${errName(err)}).`)
     }
     return true
   }
@@ -100,11 +130,11 @@ function writeKeyField(field: ProviderKeyField, value: string): boolean {
     const readBack = getKey(field)
     if (readBack === value) return true
     console.error(
-      `[Whisperio] round-trip verification failed for provider key "${field}" — keeping the plaintext copy in settings.json.`
+      `[Whisperio] round-trip verification failed for provider key "${field}" — not stored in the key store.`
     )
     return false
   } catch (err) {
-    console.error(`[Whisperio] failed to write provider key "${field}" to the key store:`, err)
+    console.error(`[Whisperio] failed to write provider key "${field}" to the key store (${errName(err)}).`)
     return false
   }
 }
@@ -124,55 +154,81 @@ function writeKeyField(field: ProviderKeyField, value: string): boolean {
  * place on disk changes.
  */
 export function saveSettingsWithKeys(partial: Partial<AppSettings>): AppSettings {
+  // Refuse BEFORE touching the key store: if settings.json is locked the save below would be
+  // refused, and keys written to the store now would be out of sync with the file.
+  loadSettings()
+  if (areSettingsUnavailable()) {
+    throw new Error('Settings file could not be read; refusing to overwrite it. Try again shortly.')
+  }
   const jsonPatch: Partial<AppSettings> = { ...partial }
   if (isEncryptionAvailable()) {
-    sessionKeys.clear()
-    for (const field of PROVIDER_KEY_FIELDS) {
-      if (!(field in partial)) continue
-      const value = (partial[field] as string | undefined) ?? ''
-      if (writeKeyField(field, value)) {
-        // Routed to (or cleared from) the key store — don't also keep the
-        // secret sitting in settings.json.
-        ;(jsonPatch as Record<string, unknown>)[field] = ''
-      }
-      // If routing failed, fall through and let the plaintext value save to
-      // settings.json as it always has.
-    }
-  }
-  if (!isEncryptionAvailable()) {
-    // FAIL CLOSED: never persist a new secret in plaintext. Keep it in
-    // memory for this session, tell the renderer, and log a warning.
-    const onDisk = loadSettings()
     let sessionOnly = false
+    let onDisk: AppSettings | null = null
     for (const field of PROVIDER_KEY_FIELDS) {
       if (!(field in partial)) continue
       const value = (partial[field] as string | undefined) ?? ''
-      if (value === '') {
-        sessionKeys.delete(field)
-        continue // clearing is always safe to persist
-      }
-      if (value === (onDisk[field] ?? '')) {
-        delete (jsonPatch as Record<string, unknown>)[field] // unchanged legacy value, nothing new to write
-        continue
-      }
-      if (sessionKeys.get(field) !== value) {
+      sessionKeys.delete(field)
+      if (!writeKeyField(field, value)) {
+        onDisk ??= loadSettings()
+        if (value === (onDisk[field] ?? '')) {
+          // Unchanged legacy plaintext copy (its migration failed too): leave it where it is
+          // and retry on the next launch. Blanking it here would lose the only persisted copy.
+          delete (jsonPatch as Record<string, unknown>)[field]
+          continue
+        }
+        // FAIL CLOSED: the key store refused the write (or the read-back did
+        // not match). Never fall back to plaintext on disk; keep the key in
+        // memory for this session and tell the renderer.
         sessionKeys.set(field, value)
         sessionOnly = true
       }
-      // Never persist the new secret; also clear any legacy plaintext copy it replaces.
+      // Routed to (or cleared from) the key store, or held in memory only:
+      // either way settings.json must not keep the secret.
       ;(jsonPatch as Record<string, unknown>)[field] = ''
-
     }
     if (sessionOnly) {
       console.warn(
-        '[Whisperio] OS secure storage unavailable — provider key(s) kept in memory for this session only, not persisted.'
+        '[Whisperio] OS secure storage write failed — provider key(s) kept in memory for this session only, not persisted.'
       )
-      secureStorageWarningListener?.(SECURE_STORAGE_UNAVAILABLE_MESSAGE)
+      secureStorageWarningListener?.(unavailableMessage())
     }
     const saved = saveSettings(jsonPatch)
     return sessionKeys.size === 0 ? saved : { ...saved, ...Object.fromEntries(sessionKeys) }
   }
-  return saveSettings(jsonPatch)
+  // Storage unavailable. FAIL CLOSED: never persist a new secret in plaintext. Keep it in
+  // memory for this session, tell the renderer, and log a warning.
+  const onDisk = loadSettings()
+  let sessionOnly = false
+  for (const field of PROVIDER_KEY_FIELDS) {
+    if (!(field in partial)) continue
+    const value = (partial[field] as string | undefined) ?? ''
+    if (value === '') {
+      // Only a key that was present this session counts as an explicit clear; an empty
+      // field for a key that failed to decrypt must not delete the recoverable entry.
+      if (sessionKeys.delete(field)) dropStaleWrapped(field)
+      continue // clearing is always safe to persist
+    }
+    if (value === (onDisk[field] ?? '')) {
+      delete (jsonPatch as Record<string, unknown>)[field] // unchanged legacy value, nothing new to write
+      continue
+    }
+    if (sessionKeys.get(field) !== value) {
+      sessionKeys.set(field, value)
+      sessionOnly = true
+      dropStaleWrapped(field) // replaced: the old wrapped copy must not come back
+    }
+    // Never persist the new secret; also clear any legacy plaintext copy it replaces.
+    ;(jsonPatch as Record<string, unknown>)[field] = ''
+
+  }
+  if (sessionOnly) {
+    console.warn(
+      '[Whisperio] OS secure storage unavailable — provider key(s) kept in memory for this session only, not persisted.'
+    )
+    secureStorageWarningListener?.(unavailableMessage())
+  }
+  const saved = saveSettings(jsonPatch)
+  return sessionKeys.size === 0 ? saved : { ...saved, ...Object.fromEntries(sessionKeys) }
 }
 
 /**
@@ -202,9 +258,89 @@ export function migrateProviderKeysToKeyStore(): void {
     }
   }
   if (migratedCount > 0) {
-    saveSettings(patch)
+    try {
+      saveSettings(patch)
+    } catch (err) {
+      // settings.json locked between reads: the keys are already in the key store; the
+      // plaintext copies are cleared on the next launch's migration. Log the code only.
+      console.warn(`[Whisperio] provider-key migration: could not update settings.json (${(err as NodeJS.ErrnoException | null)?.code ?? 'unavailable'}); will retry next launch.`)
+      return
+    }
     console.log(`[Whisperio] provider-key migration: moved ${migratedCount} key(s) into OS secure storage.`)
   } else {
     console.log('[Whisperio] provider-key migration: nothing to migrate.')
   }
+}
+
+export const LINUX_KEYRING_WARNING =
+  "No secure keyring found (GNOME Keyring/KWallet). Your API keys can't be stored securely; install/unlock a keyring, or re-enter keys each session."
+
+function legacyPlaintextPresent(): boolean {
+  const settings = loadSettings()
+  return PROVIDER_KEY_FIELDS.some((f) => !!settings[f])
+}
+
+/**
+ * Linux without a real keyring AND the user has keys that can no longer be
+ * stored securely: a store entry wrapped earlier (1.5.x basic_text) or legacy
+ * plaintext still in settings.json. Always false on Windows/macOS and whenever
+ * a real keyring backend is in use.
+ */
+export function isLinuxKeyringIssue(): boolean {
+  if (process.platform !== 'linux') return false
+  try {
+    if (!isWeakLinuxBackend()) return false
+    return hasWrappedEntries() || legacyPlaintextPresent()
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Session rescue (startup, Linux weak backend only): keys wrapped by an earlier
+ * version are decrypted into the in-memory session map so dictation keeps
+ * working this session. Never persisted: the wrapped store file and any legacy
+ * plaintext copy in settings.json are left untouched (retry once a real keyring
+ * exists). Legacy plaintext needs no rescue - getEffectiveSettings passes it
+ * through. Returns the number of keys rescued from the wrapped store.
+ */
+export function rescueWeakLinuxKeys(): number {
+  if (!isLinuxKeyringIssue()) return 0
+  const settings = loadSettings()
+  const wrapped = readWeakBackendKeys()
+  let n = 0
+  for (const field of PROVIDER_KEY_FIELDS) {
+    const value = wrapped[field]
+    if (!value || settings[field] || sessionKeys.has(field)) continue
+    sessionKeys.set(field, value)
+    n++
+  }
+  if (n > 0) console.log(`[Whisperio] kept ${n} provider key(s) in memory for this session (no secure keyring).`)
+  return n
+}
+
+/**
+ * Startup (Linux, real keyring now available): re-wrap entries that were
+ * written under the weak basic_text backend. Never throws; never loses a key
+ * (see keyStore.rewrapWeakEntries). Returns the number re-wrapped.
+ */
+export function rewrapWeakLinuxKeys(): number {
+  try {
+    return rewrapWeakEntries().rewrapped
+  } catch (err) {
+    console.error(`[Whisperio] weak-backend re-wrap failed (${errName(err)}).`)
+    return 0
+  }
+}
+
+/**
+ * Show the keyring warning at most once per app version. `notify` shows the
+ * OS notification. Returns true when it fired.
+ */
+export function maybeWarnLinuxKeyring(version: string, notify: (message: string) => void): boolean {
+  if (!isLinuxKeyringIssue()) return false
+  if (loadSettings().linuxKeyringWarningShownFor === version) return false
+  notify(LINUX_KEYRING_WARNING)
+  saveSettings({ linuxKeyringWarningShownFor: version })
+  return true
 }
