@@ -373,6 +373,27 @@ describe('recordingStore - erase = crypto-shred, locked reset, progress (D3)', (
     }
   })
 
+  it('isValidOrphanName also accepts current-format corrupt/filtered backups and their sealed copies', () => {
+    for (const ok of ['index.corrupt-123.json', 'index.corrupt-123.json.sealed.json', 'index.filtered-9.json', 'index.filtered-9.json.sealed.json']) {
+      expect(isValidOrphanName(ok)).toBe(true)
+    }
+    for (const bad of ['index.corrupt-.json', 'index.corrupt-1', 'index.filtered-x.json', 'index.corrupt-1.json.sealed.json.tmp.x', 'index.other-1.json']) {
+      expect(isValidOrphanName(bad)).toBe(false)
+    }
+  })
+
+  it('erase removes current-format plaintext and sealed index backups, never look-alikes', async () => {
+    await seed()
+    await setHistoryEncryption(true)
+    const backups = ['index.corrupt-5.json', 'index.corrupt-6.json.sealed.json', 'index.filtered-7.json', 'index.filtered-8.json.sealed.json']
+    for (const n of backups) writeFileSync(join(RECORDINGS_DIR, n), 'x')
+    writeFileSync(join(RECORDINGS_DIR, 'index.other-1.json'), 'keep')
+    await deleteAllRecordings()
+    const left = readdirSync(RECORDINGS_DIR)
+    for (const n of backups) expect(left).not.toContain(n)
+    expect(left).toContain('index.other-1.json')
+  })
+
   it('startup sweep deletes a stuck index.json.corrupt-* backup listed as orphan', () => {
     mkdirSync(RECORDINGS_DIR, { recursive: true })
     const names = ['index.json.corrupt-111', 'index.json.corrupt-222.sealed.json']
