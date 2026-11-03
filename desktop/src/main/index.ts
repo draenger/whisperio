@@ -1,4 +1,4 @@
-import { app, BrowserWindow, desktopCapturer, dialog, ipcMain, powerMonitor, session, shell, type IpcMainInvokeEvent, type IpcMainEvent } from 'electron'
+import { app, BrowserWindow, desktopCapturer, dialog, ipcMain, Notification, powerMonitor, session, shell, type IpcMainInvokeEvent, type IpcMainEvent } from 'electron'
 import path from 'path'
 import { assertTrustedSender, isTrustedAppUrl, sanitizeRecordingUpdate } from './ipcValidation'
 import { initDictation, cleanupDictation, reRegisterHotkeys, pauseHotkeys, resumeHotkeys, cliToggle, cliSend, cliStart, cliStop, cliCancel } from './dictation'
@@ -10,8 +10,14 @@ import {
   getEffectiveSettings,
   saveSettingsWithKeys,
   setSecureStorageWarningListener,
-  migrateProviderKeysToKeyStore
+  migrateProviderKeysToKeyStore,
+  rescueWeakLinuxKeys,
+  rewrapWeakLinuxKeys,
+  maybeWarnLinuxKeyring,
+  isLinuxKeyringIssue,
+  LINUX_KEYRING_WARNING
 } from './secure/keyAccessor'
+import { errName } from './secure/errName'
 import { isEncryptionAvailable as isKeyStoreAvailable } from './secure/keyStore'
 import {
   transcribeAudio,
@@ -33,8 +39,15 @@ import {
   deleteAllRecordings,
   deleteRecordingsByDate,
   getRecordingAudio,
-  updateRecording
+  resumeAudioMigration,
+  updateRecording,
+  getHistoryEncryptionStatus,
+  setHistoryEncryption,
+  getEncryptionProgress,
+  resetLockedHistory,
+  sweepShreddedOrphans
 } from './recordingStore'
+import { isDataVaultAvailable } from './dataVault'
 import { searchTranscripts } from './searchService'
 import {
   getAvailableModels,
@@ -178,7 +191,15 @@ async function reprocessRecording(id: string) {
   const entry = getRecording(id)
   if (!entry) return null
 
-  const audioBuffer = getRecordingAudio(id)
+  let audioBuffer: Buffer | null
+  try {
+    audioBuffer = getRecordingAudio(id)
+  } catch (err) {
+    return updateRecording(id, {
+      status: 'failed',
+      error: err instanceof Error ? err.message : 'Audio could not be decrypted'
+    })
+  }
   if (!audioBuffer) return null
 
   try {
@@ -338,6 +359,17 @@ app.whenReady().then(() => {
   } catch (err) {
     console.error('[Whisperio] provider-key migration failed (' + ((err as NodeJS.ErrnoException | null)?.code ?? 'unknown') + '); continuing startup.')
   }
+  // Linux without a keyring: keep earlier-wrapped keys usable in memory and
+  // warn once per app version (no-op on Windows/macOS).
+  try {
+    rescueWeakLinuxKeys()
+    rewrapWeakLinuxKeys()
+    maybeWarnLinuxKeyring(app.getVersion(), (message) => {
+      if (Notification.isSupported()) new Notification({ title: 'Whisperio', body: message }).show()
+    })
+  } catch (err) {
+    console.error(`[Whisperio] Linux keyring rescue/warning failed (${errName(err)}).`)
+  }
 
   // Apply auto-launch setting (uses Windows Registry HKCU\...\Run)
   // Skip in dev mode — process.execPath points to bare electron.exe which
@@ -358,7 +390,11 @@ app.whenReady().then(() => {
     }
   })
   ipcMain.handle('settings:load', guard(() => getEffectiveSettings()))
-  ipcMain.handle('settings:save', guard((_event, newSettings: Parameters<typeof saveSettingsWithKeys>[0]) => {
+  ipcMain.handle('settings:save', guard((_event, incoming) => {
+    // encryptHistory is owned by history:encryption:set (which proves the key works and rewrites the
+    // index). The generic setter must never flip it, so drop it from whatever the renderer sent.
+    const newSettings = { ...(incoming as Parameters<typeof saveSettingsWithKeys>[0]) }
+    delete newSettings.encryptHistory
     const prevChecks = loadSettings().checkForUpdates !== false
     const saved = saveSettingsWithKeys(newSettings)
     if ('allowUrlControl' in newSettings || 'allowUrlStart' in newSettings) {
@@ -391,6 +427,7 @@ app.whenReady().then(() => {
   // "...unavailable, new keys are kept for this session only"). Never gates
   // any functionality — keys entered while storage is unavailable still work
   // for the session, they are just not persisted (fail closed).
+  ipcMain.handle('settings:linuxKeyringWarning', guard(() => (isLinuxKeyringIssue() ? LINUX_KEYRING_WARNING : null)))
   ipcMain.handle('settings:keyStorageAvailable', guard(() => isKeyStoreAvailable()))
 
   // Pause/resume hotkeys during shortcut recording in settings
@@ -459,6 +496,24 @@ app.whenReady().then(() => {
 
   // Recording store IPC handlers
   ipcMain.on('recordings:openWindow', guardOn(() => openRecordingsWindow()))
+  ipcMain.handle('history:encryption:get', guard(() => ({
+    ...getHistoryEncryptionStatus(),
+    vault: isDataVaultAvailable()
+  })))
+  ipcMain.handle('history:encryption:set', guard(async (_e, enabled: unknown) => {
+    const res = await setHistoryEncryption(enabled === true)
+    // Convert existing audio in the background (idempotent, resumable); never blocks the toggle.
+    if (res.ok) void resumeAudioMigration()
+    return res
+  }))
+  ipcMain.handle('history:encryption:status', guard(() => getEncryptionProgress()))
+  // Locked-history recovery: crypto-shred + start fresh. Refuses unless history is really locked.
+  ipcMain.handle('history:reset', guard((_e, opts?: { confirmDestroy?: boolean }) =>
+    resetLockedHistory(opts?.confirmDestroy === true)
+  ))
+  // Resume an interrupted audio migration (quit/crash mid-job) once at startup.
+  try { sweepShreddedOrphans() } catch { /* best-effort */ }
+  void resumeAudioMigration()
   ipcMain.handle('recordings:list', guard(() => getRecordings()))
   ipcMain.handle('recordings:get', guard((_e, id: string) => getRecording(id)))
   ipcMain.handle('recordings:save', guard(async (_e, audioBuffer: Buffer, metadata: { duration: number; provider: string }) => {
@@ -487,7 +542,14 @@ app.whenReady().then(() => {
   ipcMain.handle('recordings:delete', guard((_e, id: string) => deleteRecording(id)))
   ipcMain.handle('recordings:deleteAll', guard(() => deleteAllRecordings()))
   ipcMain.handle('recordings:deleteByDate', guard((_e, date: string) => deleteRecordingsByDate(date)))
-  ipcMain.handle('recordings:getAudio', guard((_e, id: string) => getRecordingAudio(id)))
+  ipcMain.handle('recordings:getAudio', guard((_e, id: string) => {
+    try {
+      return getRecordingAudio(id)
+    } catch (err) {
+      console.error('[Whisperio] recordings:getAudio failed:', err instanceof Error ? err.message : err)
+      return null
+    }
+  }))
   ipcMain.handle('recordings:reprocess', guard((_e, id: string) => reprocessRecording(id)))
   ipcMain.handle('recordings:cleanup', guard((_e, id: string, options: OnDemandCleanupRequest) =>
     handleRecordingsCleanup(id, options)

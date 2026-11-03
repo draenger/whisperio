@@ -81,6 +81,7 @@ const DEFAULT_SETTINGS = {
   allowUrlControl: false,
   allowUrlStart: false,
   checkForUpdates: true,
+  linuxKeyringWarningShownFor: '',
   dictationHotkey: '',
   dictateAndSendHotkey: '',
   commandHotkey: 'Ctrl+Shift+C',
@@ -97,6 +98,7 @@ const DEFAULT_SETTINGS = {
   clipboardRestoreDelayMs: 700,
   outputRecordingHotkey: '',
   fallbackEnabled: false,
+  encryptHistory: false,
   githubUser: '',
   githubRepo: '',
   githubBranch: ''
