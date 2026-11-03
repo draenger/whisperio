@@ -1,6 +1,6 @@
 import { shell } from 'electron'
 import { loadSettings, saveSettings, type AppSettings } from './settingsManager'
-import { saveSettingsWithKeys } from './secure/keyAccessor'
+import { getEffectiveSettings, saveSettingsWithKeys } from './secure/keyAccessor'
 import {
   isVaultAvailable,
   sealForRepo,
@@ -8,7 +8,9 @@ import {
   saveGithubToken,
   loadGithubToken,
   hasGithubToken,
-  clearGithubToken
+  clearGithubToken,
+  hasDataKey,
+  VaultLockedError
 } from './secretVault'
 import {
   isClientConfigured,
@@ -72,6 +74,17 @@ export interface ConnectPrompt {
   expiresIn: number
 }
 
+/** True only for an https URL on github.com (the device-flow verification page). */
+export function isGithubVerificationUri(uri: unknown): boolean {
+  if (typeof uri !== 'string') return false
+  try {
+    const u = new URL(uri)
+    return u.protocol === 'https:' && u.hostname === 'github.com' && !u.username && !u.password && !u.port
+  } catch {
+    return false
+  }
+}
+
 /**
  * Kick off device flow: request a code, open the system browser to the
  * verification page, and hand the user-facing code back to the renderer. The
@@ -88,7 +101,12 @@ export async function beginConnect(): Promise<ConnectPrompt> {
     expiresAt: Date.now() + code.expiresIn * 1000
   }
   // Open the real browser — device flow needs no embedded webview / redirect.
-  await shell.openExternal(code.verificationUri).catch(() => {})
+  // The URI comes from a network response: only ever open https://github.com.
+  if (isGithubVerificationUri(code.verificationUri)) {
+    await shell.openExternal(code.verificationUri).catch(() => {})
+  } else {
+    console.warn('[githubSync] refusing to open unexpected verification URI')
+  }
   return {
     userCode: code.userCode,
     verificationUri: code.verificationUri,
@@ -173,6 +191,24 @@ function collectSecrets(settings: AppSettings): Record<SecretKey, string> {
   return out
 }
 
+/**
+ * Thrown by pushSecrets when the repo already holds a sealed blob that the current local key
+ * cannot open (or no local key exists at all). Overwriting would destroy the only copy that the
+ * old key can still decrypt, so the push is refused unless the caller opts in via overwriteRemote.
+ */
+export class RemoteSealedWithOtherKeyError extends Error {
+  readonly code = 'REMOTE_SEALED_WITH_OTHER_KEY'
+  constructor() {
+    super('The GitHub copy was sealed with a different key. Pull or remove it first.')
+    this.name = 'RemoteSealedWithOtherKeyError'
+  }
+}
+
+export interface PushOptions {
+  /** Explicitly allow replacing a remote blob this device's key cannot open. Not wired to the UI. */
+  overwriteRemote?: boolean
+}
+
 export interface SyncResult {
   ok: true
   path: string
@@ -183,9 +219,12 @@ export interface SyncResult {
  * Encrypt the local secrets client-side and commit ONLY the ciphertext envelope
  * to the chosen repo. Never writes plaintext.
  */
-export async function pushSecrets(): Promise<SyncResult> {
+export async function pushSecrets(opts: PushOptions = {}): Promise<SyncResult> {
   const token = requireToken()
-  const settings = loadSettings()
+  // Effective settings, not loadSettings(): since #19 the provider keys live in the OS
+  // secure store and settings.json holds blanks, so loadSettings() would push empty keys
+  // and overwrite the user's only remote copy.
+  const settings = getEffectiveSettings()
   const repo = settings.githubRepo
   if (!repo) throw new Error('No repository selected')
   const branch = settings.githubBranch || undefined
@@ -195,12 +234,28 @@ export async function pushSecrets(): Promise<SyncResult> {
     updatedAt: new Date().toISOString(),
     secrets: collectSecrets(settings)
   }
+  // Read the remote first: whether it can be opened decides if sealing (which would mint a key
+  // when none exists) is safe at all.
+  const existing = await readRemoteBlob(token, repo, SECRET_PATH, branch)
+  if (existing && !opts.overwriteRemote) {
+    // No local key file: sealing would mint a new key and orphan the remote copy. Never mint to probe.
+    if (!hasDataKey()) throw new RemoteSealedWithOtherKeyError()
+    try {
+      openFromRepo(Buffer.from(existing.contentBase64 ?? '', 'base64').toString('utf-8'))
+    } catch (err) {
+      // A locked vault is a different, retryable problem; anything else means "not our key".
+      if (err instanceof VaultLockedError) throw err
+      // Vault unavailable (no OS keychain) is not a key mismatch either: report it as it is.
+      if (!isVaultAvailable()) throw err
+      throw new RemoteSealedWithOtherKeyError()
+    }
+  }
+
   // Seal (AES-256-GCM under the local Keychain-held key), then base64 for the
   // Contents API. The repo only ever sees the sealed envelope.
   const sealed = sealForRepo(JSON.stringify(payload))
   const contentBase64 = Buffer.from(sealed, 'utf-8').toString('base64')
 
-  const existing = await readRemoteBlob(token, repo, SECRET_PATH, branch)
   await writeRemoteBlob(
     token,
     repo,
