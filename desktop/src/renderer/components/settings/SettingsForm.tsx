@@ -6,6 +6,7 @@ import { ACCENTS, ACCENT_ORDER, ACCENT_LABELS } from '../../theme'
 import { RecordingsView } from '../recordings/RecordingsPanel'
 import { CleanupPanel, type CleanupMode, type AiProvider, type CleanupTemplate } from './CleanupPanel'
 import { ContextTonePanel, type ToneProfileId } from './ContextTonePanel'
+import { SnippetsPanel, type SnippetEntry } from './SnippetsPanel'
 import { UsagePanel } from './UsagePanel'
 import { KeyStorageHint } from './KeyStorageHint'
 
@@ -595,6 +596,8 @@ export function SettingsForm(): ReactElement {
   const [contextAwareTone, setContextAwareTone] = useState(false)
   const [toneMap, setToneMap] = useState<Record<string, ToneProfileId>>({})
   const [windowTitlePermissionEnabled, setWindowTitlePermissionEnabled] = useState(false)
+  // Snippets (Wispr-Flow parity)
+  const [snippets, setSnippets] = useState<SnippetEntry[]>([])
 
   // Audio
   const [inputDeviceId, setInputDeviceId] = useState('')
@@ -668,6 +671,7 @@ export function SettingsForm(): ReactElement {
       setContextAwareTone(settings.contextAwareTone ?? false)
       setToneMap(settings.toneMap ?? {})
       setWindowTitlePermissionEnabled(settings.windowTitlePermissionEnabled ?? false)
+      setSnippets(Array.isArray(settings.snippets) ? settings.snippets : [])
       setLoading(false)
     }).catch((err) => {
       // Fail soft: without this, a rejection here left the window stuck on
@@ -764,7 +768,8 @@ export function SettingsForm(): ReactElement {
       anthropicApiKey,
       contextAwareTone,
       toneMap,
-      windowTitlePermissionEnabled
+      windowTitlePermissionEnabled,
+      snippets
     }
     // Main refuses to write while settings.json is locked/unreadable: surface it
     // (inline footer error) instead of an unhandled rejection + false "Saved".
@@ -794,7 +799,7 @@ export function SettingsForm(): ReactElement {
     dictateAndSendHotkey, commandHotkey, hotkeyMode, inputDeviceId, outputDeviceId, saveRecordings, silenceGate, trimSilence, silenceGateThresholdDbfs, restoreClipboard, clipboardRestoreDelayMs,
     outputRecordingHotkey, cleanupEnabled, cleanupMode, cleanupAuto, cleanupTemplates,
     aiProvider, aiBaseUrl, aiModel, anthropicApiKey,
-    contextAwareTone, toneMap, windowTitlePermissionEnabled
+    contextAwareTone, toneMap, windowTitlePermissionEnabled, snippets
   ])
 
   // Auto-save: persist whenever any setting changes (debounced). Skips the initial
@@ -1017,6 +1022,8 @@ export function SettingsForm(): ReactElement {
                       setToneMap={setToneMap}
                       windowTitlePermissionEnabled={windowTitlePermissionEnabled}
                       setWindowTitlePermissionEnabled={setWindowTitlePermissionEnabled}
+                      snippets={snippets}
+                      setSnippets={setSnippets}
                       s={s}
                       theme={theme}
                     />
@@ -1652,6 +1659,7 @@ function ProvidersTab({
   contextAwareTone, setContextAwareTone,
   toneMap, setToneMap,
   windowTitlePermissionEnabled, setWindowTitlePermissionEnabled,
+  snippets, setSnippets,
   s, theme
 }: {
   providerChain: string[]
@@ -1710,6 +1718,8 @@ function ProvidersTab({
   setToneMap: (v: Record<string, ToneProfileId>) => void
   windowTitlePermissionEnabled: boolean
   setWindowTitlePermissionEnabled: (v: boolean) => void
+  snippets: SnippetEntry[]
+  setSnippets: (v: SnippetEntry[]) => void
   s: ReturnType<typeof makeStyles>
   theme: Theme
 }): ReactElement {
@@ -1980,6 +1990,8 @@ function ProvidersTab({
         s={s}
         theme={theme}
       />
+
+      <SnippetsPanel snippets={snippets} setSnippets={setSnippets} s={s} theme={theme} />
 
       <div style={s.card}>
         <SectionHeader title="Language" s={s} theme={theme} />

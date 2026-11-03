@@ -226,3 +226,49 @@ describe('SettingsForm — settings.load() failure handling', () => {
     expect(screen.queryByText('Failed to load settings.')).toBeNull()
   })
 })
+
+describe('SettingsForm — Snippets section wiring (load -> edit -> auto-save)', () => {
+  it('loads saved snippets, and an added snippet is persisted via settings.save', async () => {
+    const save = vi.fn().mockResolvedValue({})
+    const load = vi.fn().mockResolvedValue({ snippets: [{ trigger: 'my address', text: '221B Baker St' }] })
+    // @ts-expect-error minimal test double — only what the Providers tab touches.
+    window.api = {
+      settings: { load, save, pauseHotkeys: vi.fn(), resumeHotkeys: vi.fn(), onSetTab: vi.fn().mockReturnValue(() => {}) },
+      window: { getVersion: vi.fn().mockResolvedValue('1.5.0'), minimize: vi.fn(), maximize: vi.fn(), close: vi.fn() },
+      updater: {
+        getStatus: vi.fn().mockResolvedValue({ status: 'idle', currentVersion: '1.5.0' }),
+        check: vi.fn(),
+        install: vi.fn(),
+        onStatus: vi.fn().mockReturnValue(() => {})
+      },
+      models: {
+        available: vi.fn().mockResolvedValue([]),
+        local: vi.fn().mockResolvedValue([]),
+        onDownloadProgress: vi.fn().mockReturnValue(() => {})
+      }
+    }
+    render(createElement(SettingsForm))
+    await waitFor(() => expect(screen.queryByText('Loading...')).toBeNull())
+    fireEvent.click(screen.getByText('Providers'))
+
+    await waitFor(() => expect(screen.getByText('Snippets')).toBeTruthy())
+    expect((screen.getAllByLabelText('Snippet trigger phrase')[0] as HTMLInputElement).value).toBe('my address')
+
+    fireEvent.change(screen.getByLabelText('New snippet trigger phrase'), { target: { value: 'sig' } })
+    fireEvent.change(screen.getByLabelText('New snippet text'), { target: { value: 'Best, Ana' } })
+    fireEvent.click(screen.getByText('+ Add'))
+
+    await waitFor(
+      () =>
+        expect(save).toHaveBeenCalledWith(
+          expect.objectContaining({
+            snippets: [
+              { trigger: 'my address', text: '221B Baker St' },
+              { trigger: 'sig', text: 'Best, Ana' }
+            ]
+          })
+        ),
+      { timeout: 3000 }
+    )
+  })
+})
