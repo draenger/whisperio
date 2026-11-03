@@ -1,10 +1,10 @@
 import { useState, useEffect, useCallback, useRef, Fragment, type CSSProperties, type ReactElement } from 'react'
-import { isIndexUnavailable, HISTORY_UNREADABLE_MESSAGE } from '../../recordings/historyError'
+import { isIndexUnavailable as isIndexUnavailableError, HISTORY_UNREADABLE_MESSAGE } from '../../recordings/historyError'
 import { useTheme } from '../../ThemeContext'
 import { TitleBar } from '../common/TitleBar'
 import { TranscriptSearch } from './TranscriptSearch'
 import type { Theme } from '../../theme'
-import { INDEX_UNAVAILABLE_MESSAGE, isIndexUnavailable, LOCKED_MESSAGE, LOCKED_TRANSIENT_MESSAGE, RESET_TRANSIENT_CONFIRM, TRY_AGAIN_STILL_LOCKED, isTransientLock, RESET_CONFIRM, RESET_FAILED_MESSAGE, shouldShowLockedNotice, undeletedMessage } from '../settings/privacyState'
+import { INDEX_UNAVAILABLE_MESSAGE, isIndexUnavailable as isIndexUnavailableStatus, LOCKED_MESSAGE, LOCKED_TRANSIENT_MESSAGE, RESET_TRANSIENT_CONFIRM, TRY_AGAIN_STILL_LOCKED, isTransientLock, RESET_CONFIRM, RESET_FAILED_MESSAGE, shouldShowLockedNotice, undeletedMessage } from '../settings/privacyState'
 
 // Group-conversation mode (multi-speaker transcription) — mirrors
 // src/main/dictation/conversation.ts's SpeakerSegment exactly. See that
@@ -126,7 +126,7 @@ export function RecordingsView(): ReactElement {
       const locked = shouldShowLockedNotice(st)
       setHistoryLocked(locked)
       setHistoryTransient(!!st && isTransientLock(st))
-      setHistoryUnavailable(!!st && isIndexUnavailable(st))
+      setHistoryUnavailable(!!st && isIndexUnavailableStatus(st))
       return locked
     } catch {
       setHistoryLocked(false)
@@ -198,7 +198,7 @@ export function RecordingsView(): ReactElement {
       setHistoryUnreadable(false)
     } catch (err) {
       setRecordings([])
-      setHistoryUnreadable(isIndexUnavailable(err))
+      setHistoryUnreadable(isIndexUnavailableError(err))
     } finally {
       setLoading(false)
     }
