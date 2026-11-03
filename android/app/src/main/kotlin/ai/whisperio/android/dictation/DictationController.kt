@@ -79,6 +79,8 @@ data class DictationResult(
     val text: String,
     val source: RecordingSource,
     val session: Any?,
+    /** Milliseconds between the end of recording and this result (upload + cleanup); late results must not hijack the clipboard. */
+    val transcribeMs: Long = 0,
 )
 
 /**
@@ -148,12 +150,17 @@ class DictationController(
             val id = currentId
             currentFile?.delete()
             if (id != null && currentPersist) history.delete(id)
+            currentFile = null
+            currentId = null
             _state.value = DictationState.Idle
         }
     }
 
     /** The audio file of the active session, if any (maintenance sweeps must not touch it). */
     fun activeFile(): File? = currentFile
+
+    /** Whether the active session saves to history (false for incognito keyboard fields). */
+    fun activePersists(): Boolean = currentPersist
 
     /** Id of the history row of the active recording/transcription, null when idle (or no-history mode). */
     fun activeId(): String? = if (busy && currentPersist) currentId else null
@@ -214,7 +221,7 @@ class DictationController(
                         _state.value = DictationState.Error(DictationError.NO_AUDIO, recordingId = recordingId)
                         return@launch
                     }
-                    transcribe(row, upload, row.durationMs, s, RecordingSource.APP, retained = file.takeIf { encrypted })
+                    transcribe(row, upload, row.durationMs, s, RecordingSource.APP, retained = file.takeIf { encrypted }, retry = true)
                 } finally {
                     if (encrypted) upload.delete()
                 }
@@ -295,7 +302,7 @@ class DictationController(
                 _state.value = DictationState.Idle
                 return
             }
-            history.upsert(
+            history.updateOutcome(
                 fresh.copy(status = RecordingStatus.DONE, provider = res.provider.wire, model = res.model, transcript = text, error = null),
             )
             _state.value = DictationState.Idle
@@ -360,7 +367,14 @@ class DictationController(
         if (options.saveToHistory) history.upsert(row)
         _state.value = DictationState.Recording(0f, 0, false, options.source)
 
-        session = scope.launch { recordLoop(row, s, options) }
+        session = scope.launch {
+            try {
+                recordLoop(row, s, options)
+            } finally {
+                // The session is over: the file is deleted or owned by its row, so sweeps/delete-all no longer need to skip it.
+                if (currentFile === file) currentFile = null
+            }
+        }
     }
 
     private fun onFocusLost() {
@@ -419,8 +433,11 @@ class DictationController(
         src: RecordingSource = row.source,
         /** The stored `.wea` clip when [file] is only its temporary plaintext copy (retry). */
         retained: File? = null,
+        /** History retry: a failure must never delete the only clip (see [failTranscription]). */
+        retry: Boolean = false,
     ) {
         val persist = currentPersist
+        val transcribeStart = nowMs()
         _state.value = DictationState.Transcribing(src)
         if (persist) writeBack(row) { it.copy(status = RecordingStatus.TRANSCRIBING, durationMs = durationMs, error = null) }
         val rid = if (persist) row.id else null
@@ -429,7 +446,7 @@ class DictationController(
             val res = transcriber.transcribe(TranscriptionRequest(file, s.language, s.vocabulary), chain)
             var text = res.text.trim()
             if (s.cleanupEnabled && text.isNotEmpty()) text = tidy.tidy(text).trim()
-            if (text.isEmpty()) return failTranscription(row, durationMs, DictationError.NO_SPEECH, null, persist, file, retained)
+            if (text.isEmpty()) return failTranscription(row, durationMs, DictationError.NO_SPEECH, null, persist, file, retained, retry)
             val keep = persist && s.keepAudio
             val keptPath = settleAudio(row.id, file, retained, keep)
             if (persist) {
@@ -446,14 +463,14 @@ class DictationController(
                 }
             }
             _state.value = DictationState.Done(text, rid, src)
-            _results.emit(DictationResult(rid, text, src, currentSessionTag))
+            _results.emit(DictationResult(rid, text, src, currentSessionTag, nowMs() - transcribeStart))
         } catch (e: CancellationException) {
             throw e
         } catch (_: UploadTooLargeException) {
             // The size limit is enforced by :core; the port maps it so the UI keeps its dedicated message.
-            failTranscription(row, durationMs, DictationError.TOO_LARGE, null, persist, file, retained)
+            failTranscription(row, durationMs, DictationError.TOO_LARGE, null, persist, file, retained, retry)
         } catch (t: Throwable) {
-            failTranscription(row, durationMs, DictationError.PROVIDER, t.message?.let { ProviderError.redactSecrets(it) }?.take(MAX_ERROR_CHARS), persist, file, retained)
+            failTranscription(row, durationMs, DictationError.PROVIDER, t.message?.let { ProviderError.redactSecrets(it) }?.take(MAX_ERROR_CHARS), persist, file, retained, retry)
         }
     }
 
@@ -465,8 +482,10 @@ class DictationController(
         persist: Boolean,
         file: File,
         retained: File? = null,
+        retry: Boolean = false,
     ) {
-        val keepFile = persist && settings.current().keepAudio
+        // A failed history retry must never delete the only clip, whatever "Keep audio" says now.
+        val keepFile = persist && (retry || settings.current().keepAudio)
         val keptPath = if (retained != null) {
             file.delete()
             if (keepFile && retained.exists()) retained.path else { retained.delete(); null }
@@ -531,7 +550,8 @@ class DictationController(
     /** Applies [change] to the CURRENT stored row; a row deleted meanwhile is never resurrected. */
     private suspend fun writeBack(row: Recording, change: (Recording) -> Recording) {
         val fresh = history.get(row.id) ?: return
-        history.upsert(change(fresh))
+        // Targeted UPDATE of transcript/status/error/...: a category or inserted flag set while we transcribed survives.
+        history.updateOutcome(change(fresh))
     }
 
     private fun fail(error: DictationError) {

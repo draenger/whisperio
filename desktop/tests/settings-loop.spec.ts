@@ -88,6 +88,9 @@ const CONSUMER_ALLOWLIST: Record<string, string> = {
 }
 
 const CONTROL_ALLOWLIST: Record<string, string> = {
+  linuxKeyringWarningShownFor:
+    'Internal one-shot marker (main process only): records which Linux keyring backend the ' +
+    'basic_text warning was already shown for, so it is not repeated. Not user-configurable.',
   githubUser:
     "Controlled via the GitHub tab's connect/select-repo OAuth-device-flow buttons in " +
     'SettingsForm.tsx (window.api.github.connect/poll/selectRepo, ~line 2221+), but the ' +
