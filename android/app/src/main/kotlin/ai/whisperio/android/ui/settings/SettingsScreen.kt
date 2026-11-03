@@ -1,6 +1,7 @@
 package ai.whisperio.android.ui.settings
 
 import ai.whisperio.android.R
+import ai.whisperio.android.di.EncryptHistoryResult
 import ai.whisperio.android.settings.AppSettings
 import ai.whisperio.android.settings.KeyUi
 import ai.whisperio.android.ui.common.KeyEntry
@@ -75,7 +76,27 @@ data class SettingsUiState(
     val keyChecks: Map<ProviderId, KeyUi> = emptyMap(),
     /** F7: number of apps with a saved keyboard language. */
     val appLanguageCount: Int = 0,
+    /** Non-null while the "Encrypt history" switch is migrating rows: the target value (true = encrypting). */
+    val encryptBusy: Boolean? = null,
+    /** Result of the last switch that needs the user's attention; null = nothing to show. */
+    val encryptNotice: EncryptNotice? = null,
 )
+
+/** What the "Encrypt history" switch reports back after a run. */
+sealed interface EncryptNotice {
+    /** The Keystore could not create or use the key: nothing changed (fail closed). */
+    data object Unavailable : EncryptNotice
+
+    /** Done, but [count] rows could not be read and were left as they were. */
+    data class Unreadable(val count: Int) : EncryptNotice
+}
+
+/** Maps a finished switch to what the user must be told; a clean run shows nothing. */
+fun encryptNoticeFor(result: EncryptHistoryResult): EncryptNotice? = when (result) {
+    EncryptHistoryResult.KeystoreUnavailable -> EncryptNotice.Unavailable
+    is EncryptHistoryResult.Done ->
+        (result.report.unreadable + result.report.audioUnreadable).takeIf { it > 0 }?.let { EncryptNotice.Unreadable(it) }
+}
 
 interface SettingsActions {
     fun onMove(id: ProviderId, delta: Int) {}
@@ -97,6 +118,9 @@ interface SettingsActions {
     fun onKeepAudio(value: Boolean) {}
     fun onAutoDelete(days: Int?) {}
     fun onSensitive(value: Boolean) {}
+    /** Called after the user confirmed the dialog. */
+    fun onEncryptHistory(value: Boolean) {}
+    fun onEncryptNoticeDismiss() {}
     fun onConsent(value: Boolean) {}
     fun onDeleteAllAudio() {}
     fun onEraseAll() {}
@@ -110,6 +134,8 @@ fun SettingsScreen(state: SettingsUiState, actions: SettingsActions, modifier: M
     val s = state.settings
     var confirmErase by rememberSaveable { mutableStateOf(false) }
     var confirmAudio by rememberSaveable { mutableStateOf(false) }
+    /** Target value of the "Encrypt history" switch waiting for confirmation; null = no dialog. */
+    var confirmEncrypt by rememberSaveable { mutableStateOf<Boolean?>(null) }
     var vocabulary by rememberSaveable { mutableStateOf(s.vocabulary) }
 
     Column(modifier.fillMaxSize()) {
@@ -221,6 +247,22 @@ fun SettingsScreen(state: SettingsUiState, actions: SettingsActions, modifier: M
                 }
             }
             SwitchRow(stringResource(R.string.settings_sensitive), stringResource(R.string.settings_sensitive_hint), s.transcriptsSensitive, actions::onSensitive)
+            SwitchRow(
+                stringResource(R.string.settings_encrypt),
+                stringResource(R.string.settings_encrypt_hint),
+                // While migrating, show where the switch is going so it does not flick back and forth.
+                state.encryptBusy ?: s.encryptHistory,
+                { confirmEncrypt = it },
+                enabled = state.encryptBusy == null,
+            )
+            state.encryptBusy?.let { target ->
+                Text(
+                    stringResource(if (target) R.string.settings_encrypt_busy_on else R.string.settings_encrypt_busy_off),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.liveStatus(),
+                )
+            }
             OutlinedButton(onClick = { confirmAudio = true }, modifier = Modifier.fillMaxWidth().padding(top = 8.dp).heightIn(min = 48.dp)) {
                 Text(stringResource(R.string.settings_delete_audio))
             }
@@ -278,6 +320,41 @@ fun SettingsScreen(state: SettingsUiState, actions: SettingsActions, modifier: M
                 TextButton(onClick = { confirmAudio = false; actions.onDeleteAllAudio() }) { Text(stringResource(R.string.action_delete)) }
             },
             dismissButton = { TextButton(onClick = { confirmAudio = false }) { Text(stringResource(R.string.action_cancel)) } },
+        )
+    }
+    confirmEncrypt?.let { target ->
+        AlertDialog(
+            onDismissRequest = { confirmEncrypt = null },
+            title = { Text(stringResource(if (target) R.string.settings_encrypt_on_title else R.string.settings_encrypt_off_title)) },
+            text = { Text(stringResource(if (target) R.string.settings_encrypt_on_body else R.string.settings_encrypt_off_body)) },
+            confirmButton = {
+                TextButton(onClick = { confirmEncrypt = null; actions.onEncryptHistory(target) }) {
+                    Text(stringResource(if (target) R.string.settings_encrypt_on_confirm else R.string.settings_encrypt_off_confirm))
+                }
+            },
+            dismissButton = { TextButton(onClick = { confirmEncrypt = null }) { Text(stringResource(R.string.action_cancel)) } },
+        )
+    }
+    state.encryptNotice?.let { notice ->
+        AlertDialog(
+            onDismissRequest = actions::onEncryptNoticeDismiss,
+            title = {
+                Text(
+                    stringResource(
+                        if (notice is EncryptNotice.Unavailable) R.string.settings_encrypt_unavailable_title else R.string.settings_encrypt,
+                    ),
+                )
+            },
+            text = {
+                Text(
+                    when (notice) {
+                        EncryptNotice.Unavailable -> stringResource(R.string.settings_encrypt_unavailable_body)
+                        is EncryptNotice.Unreadable ->
+                            pluralStringResource(R.plurals.settings_encrypt_unreadable, notice.count, notice.count)
+                    },
+                )
+            },
+            confirmButton = { TextButton(onClick = actions::onEncryptNoticeDismiss) { Text(stringResource(R.string.action_close)) } },
         )
     }
     if (confirmErase) {
@@ -390,19 +467,19 @@ private fun ProviderCard(
 }
 
 @Composable
-private fun SwitchRow(title: String, hint: String, checked: Boolean, onChange: (Boolean) -> Unit) {
+private fun SwitchRow(title: String, hint: String, checked: Boolean, onChange: (Boolean) -> Unit, enabled: Boolean = true) {
     Row(
         Modifier
             .fillMaxWidth()
             .heightIn(min = 56.dp)
             .padding(top = 8.dp)
-            .toggleable(value = checked, role = Role.Switch, onValueChange = onChange),
+            .toggleable(value = checked, enabled = enabled, role = Role.Switch, onValueChange = onChange),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f).padding(end = 12.dp)) {
             Text(title, style = MaterialTheme.typography.bodyLarge)
             Text(hint, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        Switch(checked = checked, onCheckedChange = null)
+        Switch(checked = checked, onCheckedChange = null, enabled = enabled)
     }
 }

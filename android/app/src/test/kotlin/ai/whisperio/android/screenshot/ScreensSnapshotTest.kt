@@ -323,6 +323,14 @@ open class SettingsSnapshotTest {
         }
     }
 
+    @Test @Config(qualifiers = PHONE)
+    fun encryptOn() = rule.snapshot("settings_encrypt_on") {
+        SettingsScreen(state().let { it.copy(settings = it.settings.copy(encryptHistory = true)) }, noop)
+    }
+
+    @Test @Config(qualifiers = PHONE)
+    fun encryptBusy() = rule.snapshot("settings_encrypt_busy") { SettingsScreen(state().copy(encryptBusy = true), noop) }
+
     @Test @Config(qualifiers = ScreenshotConfig.TABLET)
     fun tablet() = rule.snapshot("settings_tablet") { SettingsScreen(state(), noop) }
 

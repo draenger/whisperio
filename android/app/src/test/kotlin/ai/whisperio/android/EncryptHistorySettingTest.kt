@@ -13,6 +13,10 @@ import ai.whisperio.android.security.DataCipher
 import ai.whisperio.android.security.DataStoreWrappedKeyStore
 import ai.whisperio.android.security.InMemorySecretStore
 import ai.whisperio.android.security.SecretCipher
+import ai.whisperio.android.security.WrappedKeyStore
+import ai.whisperio.android.ui.settings.EncryptNotice
+import ai.whisperio.android.ui.settings.encryptNoticeFor
+import ai.whisperio.android.settings.AppLanguageStore
 import ai.whisperio.android.settings.SettingsRepository
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.room.Room
@@ -83,7 +87,12 @@ class EncryptHistorySettingTest {
             settings = FakeSettings(), history = FakeHistory(), tidy = TextTidy { it }, recordingsDir = recordingsDir,
             micGranted = { true }, nowMs = { 0L }, wallClockMs = { 1_000_000L }, newId = { "x" },
         )
-        return AppGraph(AppGraph.Overrides(appScope, db, InMemorySecretStore(), settings, recordingsDir, dictation, dataCipher = cipher))
+        return AppGraph(
+            AppGraph.Overrides(
+                appScope, db, InMemorySecretStore(), settings, recordingsDir, dictation,
+                appLanguages = AppLanguageStore(store("app_languages")), dataCipher = cipher,
+            ),
+        )
     }
 
     private fun row(id: String, text: String?) = Recording(
@@ -260,6 +269,48 @@ class EncryptHistorySettingTest {
 
         assertFalse(plain.exists())
         assertTrue(File(plain.path + ".wea").exists())
+    }
+
+    @Test fun eraseShredsTheDataKeyBeforeDeletingRows() = runBlocking {
+        var rowsWhenShredded = -1
+        val spy = object : WrappedKeyStore {
+            override suspend fun read() = keys.read()
+            override suspend fun write(wrapped: ByteArray) = keys.write(wrapped)
+            override suspend fun delete() {
+                rowsWhenShredded = db.recordings().observeAll().first().size
+                keys.delete()
+            }
+        }
+        val g = graph(DataCipher(TestCipher(), spy))
+        g.history.upsert(row("a", "one")); g.history.upsert(row("b", "two"))
+        g.setEncryptHistory(true)
+        assertTrue(keys.read() != null)
+
+        g.eraseAllData()
+
+        assertEquals("key destroyed while the rows still existed", 2, rowsWhenShredded)
+        assertNull(keys.read())
+        assertTrue(db.recordings().observeAll().first().isEmpty())
+        assertFalse(settings.current().encryptHistory)
+    }
+
+    @Test fun eraseWithEncryptionOffStillLeavesNoKey() = runBlocking {
+        val g = graph()
+        g.history.upsert(row("a", "one"))
+        g.eraseAllData()
+        assertNull(keys.read())
+        assertTrue(db.recordings().observeAll().first().isEmpty())
+    }
+
+    @Test fun noticeOnlyForProblems() {
+        assertEquals(EncryptNotice.Unavailable, encryptNoticeFor(EncryptHistoryResult.KeystoreUnavailable))
+        assertNull(encryptNoticeFor(EncryptHistoryResult.Done(MigrationReport(converted = 3, unreadable = 0))))
+        assertEquals(EncryptNotice.Unreadable(2), encryptNoticeFor(EncryptHistoryResult.Done(MigrationReport(converted = 1, unreadable = 2))))
+        assertEquals(
+            "clips that could not be converted count too",
+            EncryptNotice.Unreadable(3),
+            encryptNoticeFor(EncryptHistoryResult.Done(MigrationReport(converted = 0, unreadable = 1, audioUnreadable = 2))),
+        )
     }
 
     private suspend fun awaitAll(done: suspend () -> Boolean) {

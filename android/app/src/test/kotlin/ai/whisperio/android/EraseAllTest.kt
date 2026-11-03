@@ -10,7 +10,9 @@ import ai.whisperio.android.history.Recording
 import ai.whisperio.android.history.RecordingSource
 import ai.whisperio.android.history.RecordingStatus
 import ai.whisperio.android.history.RoomHistoryStore
+import ai.whisperio.android.security.DataCipher
 import ai.whisperio.android.security.KeystoreSecretStore
+import ai.whisperio.android.security.WrappedKeyStore
 import ai.whisperio.android.settings.AppLanguageStore
 import ai.whisperio.android.settings.SettingsRepository
 import ai.whisperio.core.ProviderId
@@ -193,5 +195,55 @@ class EraseAllTest {
         assertTrue(history.observeAll().first().isEmpty())
         assertEquals(emptyList<File>(), recordingsDir.listFiles().orEmpty().toList())
         assertTrue(secrets.configured.first().isEmpty())
+    }
+
+    /** Wrapped-key store whose first [failDeletes] delete calls throw (a transient DataStore failure). */
+    private class FlakyKeys(var failDeletes: Int) : WrappedKeyStore {
+        var blob: ByteArray? = null
+        var deleteCalls = 0
+        override suspend fun read() = blob
+        override suspend fun write(wrapped: ByteArray) { blob = wrapped }
+        override suspend fun delete() {
+            deleteCalls++
+            if (failDeletes-- > 0) throw java.io.IOException("datastore write failed")
+            blob = null
+        }
+    }
+
+    private fun cipherGraph(scope: CoroutineScope, dictation: DictationController, cipher: DataCipher) = AppGraph(
+        AppGraph.Overrides(scope, db, secrets, settings, recordingsDir, dictation, appLanguages, dataCipher = cipher),
+    )
+
+    @Test fun eraseRetriesAWrappedKeyDeleteThatFailedOnce() = runTest {
+        val scope = appScope()
+        val dictation = controller(scope)
+        seedEverything()
+        val keys = FlakyKeys(failDeletes = 1)
+        val cipher = DataCipher(TestCipher(), keys)
+        cipher.sealText("mint the wrapped key")
+        assertTrue(keys.blob != null)
+
+        cipherGraph(scope, dictation, cipher).eraseAllData()
+
+        assertNull("no dead wrapped key left behind", keys.blob)
+        assertEquals(2, keys.deleteCalls)
+        assertTrue(history.observeAll().first().isEmpty())
+        assertTrue(secrets.configured.first().isEmpty())
+    }
+
+    @Test fun eraseStillClearsRowsWhenTheShredKeepsFailing() = runTest {
+        val scope = appScope()
+        val dictation = controller(scope)
+        seedEverything()
+        val keys = FlakyKeys(failDeletes = Int.MAX_VALUE)
+        val cipher = DataCipher(TestCipher(), keys)
+        cipher.sealText("mint the wrapped key")
+
+        cipherGraph(scope, dictation, cipher).eraseAllData()
+
+        assertTrue(history.observeAll().first().isEmpty())
+        assertEquals(emptyList<File>(), recordingsDir.listFiles().orEmpty().toList())
+        assertTrue(secrets.configured.first().isEmpty())
+        assertEquals(0, appLanguages.count.first())
     }
 }
