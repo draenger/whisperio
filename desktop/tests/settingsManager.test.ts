@@ -97,6 +97,7 @@ const DEFAULT_SETTINGS = {
   clipboardRestoreDelayMs: 700,
   outputRecordingHotkey: '',
   fallbackEnabled: false,
+  encryptHistory: false,
   githubUser: '',
   githubRepo: '',
   githubBranch: ''

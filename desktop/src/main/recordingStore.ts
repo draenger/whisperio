@@ -1,7 +1,19 @@
 import { app } from 'electron'
-import { existsSync, realpathSync, mkdirSync, writeFileSync, readFileSync, unlinkSync, renameSync, copyFileSync, statSync } from 'fs'
+import { existsSync, realpathSync, mkdirSync, writeFileSync, readFileSync, unlinkSync, renameSync, copyFileSync, statSync, readdirSync } from 'fs'
 import { join, resolve, sep, dirname } from 'path'
 import type { SpeakerSegment } from './dictation/conversation'
+import { loadSettings, saveSettings } from './settingsManager'
+import {
+  isDataVaultAvailable,
+  getDataKeyForEncrypt,
+  getDataKeyForDecrypt
+} from './dataVault'
+import {
+  encryptWithKeyAad,
+  decryptWithKeyAad,
+  serializeEnvelope,
+  type SecretEnvelope
+} from './secretCrypto'
 
 export interface RecordingEntry {
   id: string
@@ -144,6 +156,76 @@ function getIndexPath(): string {
   return join(getRecordingsDir(), 'index.json')
 }
 
+/** AAD binding a sealed index envelope to its purpose (design doc 1.2/3.2). */
+const INDEX_AAD_V1 = 'whisperio/index/v1'
+const INDEX_AAD_VERSION = 2
+/** v2 AAD binds the format tag AND the key id, so kid cannot be swapped without failing the GCM tag. */
+function indexAadV2(kid: string): string {
+  return `whisperio/index/v2|kid=${kid}`
+}
+/** Seal an index payload (v2: kid bound into AAD). */
+function sealIndexPayload(key: Buffer, plaintext: string): SecretEnvelope {
+  const env = encryptWithKeyAad(key, plaintext, indexAadV2(INDEX_KID), INDEX_KID)
+  env.av = INDEX_AAD_VERSION
+  return env
+}
+/** Open v2 (kid from envelope bound into AAD) or legacy v1 (no av; written by the unreleased D1 draft). */
+function openIndexPayload(key: Buffer, env: SecretEnvelope): string {
+  if (env.av === undefined) return decryptWithKeyAad(key, env, INDEX_AAD_V1)
+  if (env.av !== INDEX_AAD_VERSION || typeof env.kid !== 'string') {
+    throw new Error('Unsupported index envelope format')
+  }
+  return decryptWithKeyAad(key, env, indexAadV2(env.kid))
+}
+const INDEX_KID = 'hist-1'
+
+/**
+ * Thrown by every write path when index.json is sealed but cannot be opened (key missing, wrong or
+ * the ciphertext was tampered with). Refusing is what keeps the next save from replacing the
+ * user's sealed history with an empty index.
+ */
+export class HistoryLockedError extends Error {
+  readonly code = 'HISTORY_LOCKED'
+  constructor() {
+    super('History is locked: the encrypted index cannot be opened. Refusing to overwrite it.')
+    this.name = 'HistoryLockedError'
+  }
+}
+
+export interface HistoryEncryptionStatus {
+  enabled: boolean
+  sealedOnDisk: boolean
+  locked: boolean
+}
+
+// Reads the encryptHistory flag. Injectable so tests can drive it; defaults to the settings file.
+const defaultEncryptHistoryReader = (): boolean => loadSettings().encryptHistory === true
+let encryptHistoryReader: () => boolean = defaultEncryptHistoryReader
+
+/** Test seam: override how the encryptHistory flag is read (pass null to restore the default). */
+export function setEncryptHistoryReader(fn: (() => boolean) | null): void {
+  encryptHistoryReader = fn ?? defaultEncryptHistoryReader
+}
+
+function looksSealed(v: unknown): v is SecretEnvelope {
+  if (!v || typeof v !== 'object') return false
+  const o = v as Record<string, unknown>
+  return (
+    'v' in o &&
+    'alg' in o &&
+    typeof o.iv === 'string' &&
+    typeof o.ct === 'string' &&
+    typeof o.tag === 'string' &&
+    !('recordings' in o)
+  )
+}
+
+interface IndexState {
+  index: RecordingIndex
+  sealedOnDisk: boolean
+  locked: boolean
+}
+
 /**
  * Thrown when index.json exists but can't be used safely right now (persistent
  * read error such as an AV/backup lock, or a corrupt file we could not back up).
@@ -236,22 +318,41 @@ function readIndexText(indexPath: string): string {
   }
 }
 
-function quarantineOrThrow(indexPath: string): RecordingIndex {
-  if (quarantineCorruptIndex(indexPath)) return { recordings: [] }
+function quarantineOrThrow(indexPath: string): IndexState {
+  if (quarantineCorruptIndex(indexPath)) {
+    return { index: { recordings: [] }, sealedOnDisk: false, locked: false }
+  }
   throw new IndexUnavailableError('Recordings index is unreadable and could not be backed up; history left untouched.')
 }
 
-export function loadIndex(): RecordingIndex {
+// Self-describing read: a parsed object with `recordings` is plain, one with v/alg/iv/ct/tag is a
+// sealed envelope. Read errors (locks) refuse via IndexUnavailableError; only a JSON SyntaxError or
+// a wrong shape is quarantined (moved/copied aside, never deleted).
+function readIndexState(): IndexState {
   const indexPath = getIndexPath()
   if (!existsSync(indexPath)) {
-    return { recordings: [] }
+    return { index: { recordings: [] }, sealedOnDisk: false, locked: false }
   }
   const raw = readIndexText(indexPath)
   let parsed: unknown
   try {
     parsed = JSON.parse(raw)
-  } catch {
+  } catch (err) {
+    // Log only the error name: JSON.parse messages can embed a fragment of transcript text.
+    console.error(`[Whisperio] recordings index is not valid JSON (${err instanceof Error ? err.name : 'Error'})`)
     return quarantineOrThrow(indexPath)
+  }
+  if (looksSealed(parsed)) {
+    const lockedState: IndexState = { index: { recordings: [] }, sealedOnDisk: true, locked: true }
+    try {
+      const key = getDataKeyForDecrypt()
+      if (!key) return lockedState
+      const plain = JSON.parse(openIndexPayload(key, parsed)) as RecordingIndex
+      if (!plain || !Array.isArray(plain.recordings)) return lockedState
+      return { index: plain, sealedOnDisk: true, locked: false }
+    } catch {
+      return lockedState
+    }
   }
   if (
     parsed === null ||
@@ -265,9 +366,42 @@ export function loadIndex(): RecordingIndex {
   const valid = obj.recordings.filter(
     (r) => r !== null && typeof r === 'object' && typeof (r as { id?: unknown }).id === 'string'
   )
-  if (valid.length === obj.recordings.length) return obj
+  if (valid.length === obj.recordings.length) return { index: obj, sealedOnDisk: false, locked: false }
   backupBeforeFilter(indexPath, obj.recordings.length - valid.length, obj.recordings.length)
-  return { ...obj, recordings: valid }
+  return { index: { ...obj, recordings: valid }, sealedOnDisk: false, locked: false }
+}
+
+export function loadIndex(): RecordingIndex {
+  return readIndexState().index
+}
+
+/** Index for a read-modify-write: throws HistoryLockedError instead of a fake-empty index. */
+function loadIndexForWrite(): RecordingIndex {
+  const st = readIndexState()
+  if (st.locked) throw new HistoryLockedError()
+  return st.index
+}
+
+export function getHistoryEncryptionStatus(): HistoryEncryptionStatus {
+  let st: IndexState
+  try {
+    st = readIndexState()
+  } catch {
+    st = { index: { recordings: [] }, sealedOnDisk: false, locked: true }
+  }
+  let enabled = false
+  try {
+    enabled = encryptHistoryReader()
+  } catch {
+    enabled = false
+  }
+  return { enabled, sealedOnDisk: st.sealedOnDisk, locked: st.locked }
+}
+
+function serializeIndex(index: RecordingIndex, seal: boolean): string {
+  if (!seal) return JSON.stringify(index, null, 2)
+  const key = getDataKeyForEncrypt() // throws when the vault is unavailable: fail closed, never plain
+  return serializeEnvelope(sealIndexPayload(key, JSON.stringify(index)))
 }
 
 // Entries without a string id are dropped from the in-memory list; the next
@@ -300,12 +434,21 @@ function isTransientRenameError(err: unknown): boolean {
 }
 
 export function saveIndex(index: RecordingIndex): void {
+  // Never overwrite a sealed index we cannot open (would destroy the user's history).
+  const st = readIndexState()
+  if (st.locked) throw new HistoryLockedError()
+  // Sealing is sticky: a sealed index stays sealed even if the flag reads OFF (e.g. settings.json
+  // was reset to defaults after corruption). Only setHistoryEncryption(false) writes plain over it.
+  writeIndexFile(index, st.sealedOnDisk || encryptHistoryReader())
+}
+
+function writeIndexFile(index: RecordingIndex, seal: boolean): void {
   // Atomic write: serialize to a temp file then rename over the real index.
   // A crash mid-write leaves the previous index intact instead of a truncated
   // (corrupt) file.
   const indexPath = getIndexPath()
   const tmpPath = `${indexPath}.${process.pid}.${Date.now()}.tmp`
-  writeFileSync(tmpPath, JSON.stringify(index, null, 2), 'utf-8')
+  writeFileSync(tmpPath, serializeIndex(index, seal), 'utf-8')
 
   // The rename can fail (transient Windows lock, disk full, read-only dir).
   // Whatever the reason, the temp file must not be left behind: saveIndex runs
@@ -362,6 +505,12 @@ export async function saveRecording(
     status?: 'completed' | 'failed' | 'pending'
   }
 ): Promise<RecordingEntry> {
+  // Refuse before touching disk when history is locked (no orphan audio file, no overwrite).
+  try {
+    if (readIndexState().locked) return Promise.reject(new HistoryLockedError())
+  } catch (err) {
+    return Promise.reject(err) // IndexUnavailableError: refuse, keep the file untouched
+  }
   const dir = getRecordingsDir()
   const id = generateId()
   const timestamp = Date.now()
@@ -409,7 +558,7 @@ export async function saveRecording(
 
   return enqueue(() => {
     try {
-      const index = loadIndex()
+      const index = loadIndexForWrite()
       index.recordings.push(entry)
       evictToQuota(index, entry.id)
       saveIndex(index)
@@ -423,7 +572,7 @@ export async function saveRecording(
 
 export function updateRecording(id: string, updates: Partial<RecordingEntry>): Promise<RecordingEntry | null> {
   return enqueue(() => {
-    const index = loadIndex()
+    const index = loadIndexForWrite()
     const idx = index.recordings.findIndex((r) => r.id === id && !r.deletedAt)
     if (idx === -1) return null
 
@@ -450,7 +599,7 @@ export function getRecording(id: string): RecordingEntry | null {
 
 export function deleteRecording(id: string): Promise<boolean> {
   return enqueue(() => {
-    const index = loadIndex()
+    const index = loadIndexForWrite()
     const idx = index.recordings.findIndex((r) => r.id === id && !r.deletedAt)
     if (idx === -1) return false
 
@@ -478,7 +627,7 @@ export function deleteRecording(id: string): Promise<boolean> {
 
 export function deleteAllRecordings(): Promise<void> {
   return enqueue(() => {
-    const index = loadIndex()
+    const index = loadIndexForWrite()
 
     for (const entry of index.recordings) {
       if (isInsideRecordingsDir(entry.filepath) && existsSync(entry.filepath)) {
@@ -496,7 +645,7 @@ export function deleteAllRecordings(): Promise<void> {
 
 export function deleteRecordingsByDate(dateStr: string): Promise<void> {
   return enqueue(() => {
-    const index = loadIndex()
+    const index = loadIndexForWrite()
     const toDelete: RecordingEntry[] = []
     const toKeep: RecordingEntry[] = []
 
@@ -531,4 +680,111 @@ export function getRecordingAudio(id: string): Buffer | null {
   if (!isInsideRecordingsDir(entry.filepath)) return null
   if (!existsSync(entry.filepath)) return null
   return readFileSync(entry.filepath)
+}
+
+/**
+ * Names of PLAINTEXT index backups: quarantined corrupt copies (`index.corrupt-<ts>.json`, legacy
+ * `index.json.corrupt-<ts>`) and the copy kept before invalid entries are filtered out
+ * (`index.filtered-<ts>.json`). Exact names only, never `.sealed*` or `.tmp` leftovers.
+ */
+export const PLAIN_INDEX_BACKUP_RE = /^index(\.json\.corrupt-[0-9]+(\.json)?|\.(corrupt|filtered)-[0-9]+\.json)$/
+
+/**
+ * Plaintext index backups (PLAIN_INDEX_BACKUP_RE) hold PLAINTEXT history. When encryption is turned ON they are
+ * sealed in place via the same envelope (av=2) and renamed to <name>.sealed.json, then the
+ * plaintext copy is removed. A backup that cannot be sealed is left and counted (never silent).
+ * There is no read path for recovering a sealed backup yet: the data is preserved, not browsable.
+ */
+/** Leftover of an interrupted atomic index write (see writeIndex: `${indexPath}.${pid}.${ts}.tmp`). */
+const INDEX_WRITE_TMP_RE = /^index\.json\.[0-9]+\.[0-9]+\.tmp$/
+
+function sealCorruptBackups(): { sealed: number; left: number } {
+  let sealed = 0
+  let left = 0
+  let names: string[] = []
+  try {
+    names = readdirSync(getRecordingsDir()).filter((n) => PLAIN_INDEX_BACKUP_RE.test(n))
+  } catch {
+    return { sealed, left }
+  }
+  // A crash mid index write leaves `index.json.<pid>.<ts>.tmp`, a plaintext copy of the history. The
+  // rename never happened, so index.json is the canonical copy: the leftover is removed, not sealed.
+  try {
+    for (const n of readdirSync(getRecordingsDir()).filter((x) => INDEX_WRITE_TMP_RE.test(x))) {
+      try { unlinkSync(join(getRecordingsDir(), n)) } catch { left++ }
+    }
+  } catch { /* dir unreadable: handled above */ }
+  for (const n of names) {
+    const p = join(getRecordingsDir(), n)
+    try {
+      const key = getDataKeyForEncrypt()
+      const out = `${p}.sealed.json`
+      const tmp = `${out}.tmp`
+      writeFileSync(tmp, serializeEnvelope(sealIndexPayload(key, readFileSync(p, 'utf-8'))), 'utf-8')
+      renameSync(tmp, out)
+      unlinkSync(p) // only after the sealed copy is in place
+      sealed++
+    } catch {
+      left++
+      console.error(`[Whisperio] could not seal plaintext index backup ${n}`)
+    }
+  }
+  return { sealed, left }
+}
+
+export type SetHistoryEncryptionResult =
+  | { ok: true; sealedBackups?: number; plainBackupsLeft?: number }
+  | { ok: false; reason: 'unavailable' | 'weak-backend' | 'locked' }
+
+/**
+ * Turn history encryption on/off. Runs in the same mutation queue as every other write.
+ *
+ * ORDER: the flag is persisted FIRST, then the index is rewritten. Reads are self-describing, so
+ * every intermediate state is readable: a crash in between leaves flag=ON/index=plain (the next
+ * save seals it) or flag=OFF/index=sealed-but-readable (the next save writes plain) - both
+ * converge to the user's intent and neither loses data. If the index rewrite itself fails the
+ * previous flag value is restored. The index is one atomically-written file, so there is no
+ * half-migrated state.
+ */
+export function setHistoryEncryption(enabled: boolean): Promise<SetHistoryEncryptionResult> {
+  return enqueue((): SetHistoryEncryptionResult => {
+    const st = readIndexState()
+    if (st.locked) return { ok: false, reason: 'locked' }
+
+    if (enabled) {
+      const avail = isDataVaultAvailable()
+      if (!avail.ok) return { ok: false, reason: avail.reason }
+      try {
+        // Prove the key works (create/unwrap + seal + open a probe) before committing anything.
+        const key = getDataKeyForEncrypt()
+        const probe = 'probe'
+        const sealed = sealIndexPayload(key, probe)
+        if (openIndexPayload(key, sealed) !== probe) {
+          return { ok: false, reason: 'unavailable' }
+        }
+      } catch {
+        // A key file exists that cannot be unwrapped (never replaced) or sealing failed.
+        return { ok: false, reason: 'locked' }
+      }
+    }
+
+    let prevFlag = false
+    try {
+      prevFlag = encryptHistoryReader()
+    } catch {
+      prevFlag = false
+    }
+    saveSettings({ encryptHistory: enabled })
+    try {
+      writeIndexFile(st.index, enabled)
+    } catch (err) {
+      try { saveSettings({ encryptHistory: prevFlag }) } catch { /* best-effort rollback */ }
+      throw err
+    }
+    if (enabled) {
+      const r = sealCorruptBackups()
+      if (r.sealed || r.left) return { ok: true, sealedBackups: r.sealed, plainBackupsLeft: r.left }
+    }
+    return { ok: true }
+  })
 }

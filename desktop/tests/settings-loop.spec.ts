@@ -88,6 +88,10 @@ const CONSUMER_ALLOWLIST: Record<string, string> = {
 }
 
 const CONTROL_ALLOWLIST: Record<string, string> = {
+  encryptHistory:
+    'Opt-in history encryption (PR #24, D1). Deliberately NOT settable via settings:save (stripped in ' +
+    'index.ts); switched only through history:encryption:set, whose UI lands in D3 with the confirm ' +
+    'dialog and the locked-history reset path.',
   linuxKeyringWarningShownFor:
     'Internal one-shot marker (main process only): records which Linux keyring backend the ' +
     'basic_text warning was already shown for, so it is not repeated. Not user-configurable.',
