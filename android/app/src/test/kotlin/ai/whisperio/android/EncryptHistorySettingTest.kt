@@ -275,7 +275,8 @@ class EncryptHistorySettingTest {
         g.history.upsert(row("a", "one").copy(audioPath = plain.path))
 
         g.runMaintenance()
-        awaitAll { db.recordings().get("a")!!.audioPath == plain.path + ".wea" }
+        // The migration swaps the row path first and deletes the plaintext right after: wait for both.
+        awaitAll { db.recordings().get("a")!!.audioPath == plain.path + ".wea" && !plain.exists() }
 
         assertFalse(plain.exists())
         assertTrue(File(plain.path + ".wea").exists())
