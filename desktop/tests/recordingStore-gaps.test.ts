@@ -430,16 +430,20 @@ describe('resumeAudioMigration', () => {
     await setHistoryEncryption(true)
     setEncryptHistoryReader(() => false)
     expect(await resumeAudioMigration()).toBeNull()
+    expect(getHistoryEncryptionStatus()).toMatchObject({ sealedOnDisk: true })
   })
 
-  it('flag ON encrypts, flag OFF + plain index decrypts', async () => {
-    await seed('r', 2)
+  it('resumes an interrupted enable by sealing the plaintext index before encrypting audio', async () => {
+    await seed('startup-secret', 2)
     setEncryptHistoryReader(() => true)
     expect(await resumeAudioMigration()).toEqual({ converted: 2, skipped: 0, failed: 0 })
+    const sealedIndex = readFileSync(INDEX, 'utf-8')
+    expect(getHistoryEncryptionStatus()).toMatchObject({ enabled: true, sealedOnDisk: true, locked: false })
+    expect(sealedIndex).not.toContain('startup-secret-0')
+    // A flag that reads OFF while the index is sealed (settings reset) must not decrypt: sticky.
     setEncryptHistoryReader(() => false)
-    // the index was never rewritten sealed (reader seam only), so flag OFF restores plaintext
-    expect(await resumeAudioMigration()).toEqual({ converted: 2, skipped: 0, failed: 0 })
-    expect(readRecordingAudio(getRecordings()[0].id)!.toString()).toMatch(/^audio-r-/)
+    expect(await resumeAudioMigration()).toBeNull()
+    expect(readFileSync(INDEX, 'utf-8')).not.toContain('startup-secret-0')
   })
 
   it('never throws: a reader that blows up yields null', async () => {
