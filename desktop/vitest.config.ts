@@ -15,8 +15,8 @@ export default defineConfig({
       // Measure coverage across the whole source tree...
       include: ['src/**/*.{ts,tsx}'],
       // ...but exclude code that can't be meaningfully unit-tested without a live
-      // Electron main/renderer runtime (window/tray/IPC wiring, the preload bridge,
-      // native auto-paste) or a full DOM + preload bridge (the React UI components).
+      // Electron main/renderer runtime (window/tray/IPC wiring, the preload bridge)
+      // or a full DOM + preload bridge (the React UI components).
       // These are exercised by manual/smoke testing, not unit tests, so counting them
       // would only produce noise. Everything with real, isolatable logic stays in.
       exclude: [
@@ -26,7 +26,6 @@ export default defineConfig({
         'src/main/recordingsWindow.ts',
         'src/main/dictation/index.ts',
         'src/main/dictation/overlayWindow.ts',
-        'src/main/dictation/autoPaste.ts',
         // Electron-runtime-only: safeStorage/Keychain, net, shell — exercised via
         // manual/smoke testing. The pure crypto core (secretCrypto.ts) IS tested.
         'src/main/secretVault.ts',
