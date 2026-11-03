@@ -1,5 +1,6 @@
 package ai.whisperio.android.security
 
+import com.google.crypto.tink.subtle.Hkdf
 import java.security.GeneralSecurityException
 import java.security.SecureRandom
 import java.util.Base64
@@ -122,6 +123,17 @@ class DataCipher(
         }
     }
 
+    /**
+     * A 32-byte purpose key: HKDF-SHA256(DEK, salt = empty, info = [info]). The DEK itself never leaves this class,
+     * so a feature (audio files) gets its own key and cannot be used to open the text envelope or vice versa.
+     * [create] = true follows the [seal] rule (mints the DEK if there is none, throws if an existing key cannot be
+     * unwrapped); false follows the [open] rule (null when there is no key or it is unusable).
+     */
+    suspend fun subkey(info: String, create: Boolean): ByteArray? {
+        val dek = if (create) dekForEncrypt() else dekForDecrypt() ?: return null
+        return Hkdf.computeHkdf("HMACSHA256", dek, EMPTY, info.toByteArray(Charsets.UTF_8), SUBKEY_BYTES)
+    }
+
     /** Crypto-shred: destroy the wrapped key first; everything sealed with it is gone for good. */
     suspend fun shred() {
         keyLock.withLock {
@@ -155,6 +167,7 @@ class DataCipher(
         private val MAGIC = byteArrayOf(0x57, 0x45, 0x01)
         private val EMPTY = ByteArray(0)
         private const val DEK_BYTES = 32
+        private const val SUBKEY_BYTES = 32
         private const val NONCE_BYTES = 12
         private const val TAG_BITS = 128
         private const val TRANSFORMATION = "AES/GCM/NoPadding"

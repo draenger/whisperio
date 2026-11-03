@@ -227,6 +227,41 @@ class EncryptHistorySettingTest {
         assertArrayEquals(ByteArray(0), corrupt.read())
     }
 
+    @Test fun switchEncryptsKeptClipsOnAndRestoresThemOff() = runBlocking {
+        val g = graph()
+        val plain = File(recordingsDir, "a.m4a").also { f -> f.writeBytes(ByteArray(200_000) { i -> (i * 31).toByte() }) }
+        val bytes = plain.readBytes()
+        g.history.upsert(row("a", "one").copy(audioPath = plain.path))
+        val enc = File(plain.path + ".wea")
+
+        val on = g.setEncryptHistory(true)
+
+        assertEquals(EncryptHistoryResult.Done(MigrationReport(converted = 1, unreadable = 0, audioConverted = 1)), on)
+        assertEquals(enc.path, db.recordings().get("a")!!.audioPath)
+        assertTrue(enc.exists())
+        assertFalse("no plaintext clip may remain", plain.exists())
+
+        val off = g.setEncryptHistory(false)
+
+        assertEquals(EncryptHistoryResult.Done(MigrationReport(converted = 1, unreadable = 0, audioConverted = 1)), off)
+        assertEquals(plain.path, db.recordings().get("a")!!.audioPath)
+        assertArrayEquals(bytes, plain.readBytes())
+        assertFalse(enc.exists())
+    }
+
+    @Test fun maintenanceEncryptsClipsLeftPlainWhileEncryptionIsOn() = runBlocking {
+        val g = graph()
+        settings.setEncryptHistory(true) // ON, but a clip was kept plain (Keystore failed at the time)
+        val plain = File(recordingsDir, "a.m4a").also { it.writeBytes(ByteArray(1000) { 5 }) }
+        g.history.upsert(row("a", "one").copy(audioPath = plain.path))
+
+        g.runMaintenance()
+        awaitAll { db.recordings().get("a")!!.audioPath == plain.path + ".wea" }
+
+        assertFalse(plain.exists())
+        assertTrue(File(plain.path + ".wea").exists())
+    }
+
     private suspend fun awaitAll(done: suspend () -> Boolean) {
         repeat(200) {
             if (done()) return
