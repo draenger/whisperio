@@ -47,7 +47,15 @@ object Snippets {
         return innerSpace.replace(nfc.substring(start, end), " ").lowercase(Locale.ROOT)
     }
 
-    private fun isEdgeJunk(cp: Int): Boolean = !Character.isLetterOrDigit(cp)
+    // Combining marks (e.g. Devanagari vowel signs) are part of the word: stripping them would make
+    // different triggers such as 'का' and 'की' collide.
+    private fun isEdgeJunk(cp: Int): Boolean {
+        if (Character.isLetterOrDigit(cp)) return false
+        return when (Character.getType(cp).toByte()) {
+            Character.NON_SPACING_MARK, Character.COMBINING_SPACING_MARK, Character.ENCLOSING_MARK -> false
+            else -> true
+        }
+    }
 
     /**
      * Returns the replacement of the first snippet whose trigger matches the whole [text], or [text] unchanged.

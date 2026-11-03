@@ -109,4 +109,13 @@ class SnippetsTest {
             |{"id":"2","trigger":"","replacement":"x"},{"id":"3","trigger":"c"},5,{"id":"4","trigger":"d","replacement":"D","extra":1}]""".trimMargin()
         assertEquals(listOf(Snippet("1", "a", "A"), Snippet("4", "d", "D")), Snippets.decode(raw))
     }
+
+    @Test fun combiningMarksKeepDifferentTriggersApart() {
+        // 'का' and 'की' differ only by a vowel sign (a combining mark): they must stay distinct.
+        val ka = Snippet("10", "का", "KA")
+        val ki = Snippet("11", "की", "KI")
+        assertEquals("KI", Snippets.apply("की", listOf(ka, ki)))
+        assertEquals("KA", Snippets.apply("का", listOf(ka, ki)))
+        assertEquals("KI", Snippets.apply("की.", listOf(ka, ki))) // edge punctuation still stripped
+    }
 }
