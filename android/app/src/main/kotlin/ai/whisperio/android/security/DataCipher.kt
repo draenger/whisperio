@@ -7,6 +7,10 @@ import java.util.Base64
 import javax.crypto.Cipher
 import javax.crypto.spec.GCMParameterSpec
 import javax.crypto.spec.SecretKeySpec
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
@@ -28,6 +32,18 @@ sealed interface Decrypted<out T> {
 }
 
 /**
+ * The wrapped data key is gone but data sealed with it still exists. Minting a new key would orphan that data for
+ * good, so [DataCipher] refuses and reports [DataCipher.locked] instead.
+ */
+class DataKeyMissingException : GeneralSecurityException("data key missing while sealed data exists")
+
+/**
+ * The sealed-data probe itself failed (e.g. a transient database error), so it is unknown whether a new key may be
+ * minted. Fail closed (nothing is sealed), but this is NOT "key missing": [DataCipher.locked] is left alone.
+ */
+class DataKeyCheckException(cause: Throwable) : GeneralSecurityException("could not check for sealed data", cause)
+
+/**
  * Field/file encryption for the opt-in "Encrypt history and recordings" setting (docs/design/opt-in-encryption.md).
  *
  * A random 256-bit data key (DEK) is wrapped with the Keystore-backed [SecretCipher] and persisted through
@@ -39,8 +55,18 @@ class DataCipher(
     private val wrapper: SecretCipher,
     private val keys: WrappedKeyStore,
     private val random: SecureRandom = SecureRandom(),
+    /**
+     * True when any row or clip carries the sealed marker. Asked before a NEW key is minted (mirrors the desktop
+     * `registerSealedDataProbe` guard); a throwing probe counts as "yes" (fail closed).
+     */
+    private val sealedDataExists: suspend () -> Boolean = { false },
 ) {
     @Volatile private var cachedDek: ByteArray? = null
+
+    private val _locked = MutableStateFlow(false)
+
+    /** True while sealed data exists but its data key is missing: nothing can be sealed or opened until reset. */
+    val locked: StateFlow<Boolean> = _locked.asStateFlow()
 
     /** Serializes key acquisition and shred so two first seals cannot each mint a DEK. */
     private val keyLock = Mutex()
@@ -53,12 +79,62 @@ class DataCipher(
             val existing = keys.read()
             if (existing != null) {
                 // An existing but unwrappable key must NOT be silently replaced: that would orphan all data.
-                return@withLock wrapper.decrypt(existing).also { cachedDek = it }
+                return@withLock wrapper.decrypt(existing).also { cachedDek = it; _locked.value = false }
+            }
+            if (probeSealedData()) {
+                _locked.value = true
+                logLocked()
+                throw DataKeyMissingException()
             }
             val fresh = ByteArray(DEK_BYTES).also(random::nextBytes)
             keys.write(wrapper.encrypt(fresh))
             cachedDek = fresh
+            _locked.value = false
             fresh
+        }
+    }
+
+    private suspend fun probeSealedData(): Boolean = try {
+        sealedDataExists()
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        logProbeFailed()
+        throw DataKeyCheckException(e)
+    }
+
+    private fun logProbeFailed() {
+        try {
+            android.util.Log.w("DataCipher", "sealed-data probe failed; not sealing now (transient, not locked)")
+        } catch (t: Throwable) {
+            // plain JVM test without android.jar stubs
+        }
+    }
+
+    /**
+     * Re-evaluates [locked] after unreadable items were deleted: no sealed data left (or a key is back) means
+     * nothing is orphaned any more, so the flag is cleared without waiting for the next seal or a restart.
+     * Cheap when not locked. A failing probe leaves the flag as it is.
+     */
+    suspend fun recheckLocked() {
+        if (!_locked.value) return
+        keyLock.withLock {
+            if (!_locked.value) return@withLock
+            try {
+                if (keys.read() != null || !sealedDataExists()) _locked.value = false
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                logProbeFailed()
+            }
+        }
+    }
+
+    private fun logLocked() {
+        try {
+            android.util.Log.w("DataCipher", "data key missing while sealed data exists; refusing to mint a new key")
+        } catch (t: Throwable) {
+            // plain JVM test without android.jar stubs
         }
     }
 
@@ -92,7 +168,14 @@ class DataCipher(
     suspend fun open(blob: ByteArray, aad: ByteArray = EMPTY): Decrypted<ByteArray> {
         if (blob.size < MAGIC.size + NONCE_BYTES + TAG_BITS / 8) return Decrypted.Unreadable
         if (!blob.copyOfRange(0, MAGIC.size).contentEquals(MAGIC)) return Decrypted.Unreadable
-        val dek = dekForDecrypt() ?: return Decrypted.Unreadable
+        val dek = dekForDecrypt() ?: run {
+            // A well-formed sealed blob with no key: the data exists but its key does not.
+            if (!hasKey()) {
+                _locked.value = true
+                logLocked()
+            }
+            return Decrypted.Unreadable
+        }
         return try {
             val cipher = Cipher.getInstance(TRANSFORMATION)
             cipher.init(
@@ -140,6 +223,7 @@ class DataCipher(
             cachedDek?.fill(0)
             cachedDek = null
             keys.delete()
+            _locked.value = false
         }
     }
 

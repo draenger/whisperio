@@ -49,6 +49,16 @@ interface RecordingDao {
     @Query("SELECT * FROM recording WHERE id = :id")
     suspend fun get(id: String): Recording?
 
+    /**
+     * Cheap prefilter for the sealed-data probe: rows whose transcript/error start with the sealed prefix or whose
+     * clip is `.wea`. A superset of the strict check, so callers still apply [hasSealedData] to what comes back.
+     */
+    @Query(
+        "SELECT * FROM recording WHERE substr(transcript, 1, 4) = 'WE1:' OR substr(error, 1, 4) = 'WE1:' " +
+            "OR audio_path LIKE '%.m4a.wea'",
+    )
+    suspend fun sealedCandidates(): List<Recording>
+
     @Upsert
     suspend fun upsert(recording: Recording)
 

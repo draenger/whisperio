@@ -16,6 +16,10 @@ import kotlinx.coroutines.launch
 class EncryptSwitch(
     private val scope: CoroutineScope,
     private val run: suspend (Boolean) -> EncryptHistoryResult,
+    /** Items still stored in plaintext while the switch is ON (written while the Keystore failed). */
+    val pending: StateFlow<Int> = MutableStateFlow(0),
+    /** True when sealed data exists but its data key is missing (no new key is minted over it). */
+    val locked: StateFlow<Boolean> = MutableStateFlow(false),
 ) {
     private val _busy = MutableStateFlow<Boolean?>(null)
     private val _notice = MutableStateFlow<EncryptNotice?>(null)
@@ -49,3 +53,9 @@ class EncryptSwitch(
  * only until the user has answered it (Turn on or Not now).
  */
 fun shouldOfferEncryptCard(s: AppSettings): Boolean = s.onboardingDone && !s.encryptHistory && !s.encryptCardHandled
+
+/**
+ * Home shows the persistent "encryption is locked" banner only when encryption is ON and the store is locked (sealed
+ * data exists but its key is missing). OFF, unlocked and transient Keystore errors (which never set locked) hide it.
+ */
+fun shouldShowEncryptLockedBanner(s: AppSettings, locked: Boolean): Boolean = s.encryptHistory && locked

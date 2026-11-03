@@ -7,6 +7,7 @@ import ai.whisperio.android.settings.SettingsRepository
 import ai.whisperio.android.ui.settings.EncryptNotice
 import ai.whisperio.android.ui.settings.EncryptSwitch
 import ai.whisperio.android.ui.settings.shouldOfferEncryptCard
+import ai.whisperio.android.ui.settings.shouldShowEncryptLockedBanner
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import java.io.File
 import kotlinx.coroutines.CompletableDeferred
@@ -65,10 +66,10 @@ class EncryptCardTest {
         r.setOnboardingDone(true)
         // Home's "Turn on": the card is marked answered, then the same switch as in Settings runs.
         r.setEncryptCardHandled(true)
-        val sw = EncryptSwitch(CoroutineScope(Dispatchers.Unconfined)) {
+        val sw = EncryptSwitch(CoroutineScope(Dispatchers.Unconfined), run = {
             r.setEncryptHistory(true)
             EncryptHistoryResult.Done(MigrationReport(converted = 1, unreadable = 0))
-        }
+        })
         sw.request(true)
         sw.busy.first { it == null } // the run has finished
         assertTrue(r.current().encryptHistory)
@@ -104,7 +105,7 @@ class EncryptCardTest {
     @Test fun switchHoldsBusyUntilTheRunEndsAndIgnoresASecondRequest() = runBlocking {
         val gate = CompletableDeferred<EncryptHistoryResult>()
         var runs = 0
-        val sw = EncryptSwitch(CoroutineScope(Dispatchers.Unconfined)) { runs++; gate.await() }
+        val sw = EncryptSwitch(CoroutineScope(Dispatchers.Unconfined), run = { runs++; gate.await() })
         assertNull(sw.busy.value)
 
         sw.request(true)
@@ -119,7 +120,7 @@ class EncryptCardTest {
     }
 
     @Test fun switchKeepsTheNoticeUntilDismissed() = runBlocking {
-        val sw = EncryptSwitch(CoroutineScope(Dispatchers.Unconfined)) { EncryptHistoryResult.KeystoreUnavailable }
+        val sw = EncryptSwitch(CoroutineScope(Dispatchers.Unconfined), run = { EncryptHistoryResult.KeystoreUnavailable })
         sw.request(true)
         assertNull(sw.busy.value)
         assertEquals(EncryptNotice.Unavailable, sw.notice.value)
@@ -129,11 +130,21 @@ class EncryptCardTest {
 
     @Test fun switchClearsOldNoticeOnTheNextRun() = runBlocking {
         var next: EncryptHistoryResult = EncryptHistoryResult.Done(MigrationReport(converted = 0, unreadable = 3))
-        val sw = EncryptSwitch(CoroutineScope(Dispatchers.Unconfined)) { next }
+        val sw = EncryptSwitch(CoroutineScope(Dispatchers.Unconfined), run = { next })
         sw.request(true)
         assertEquals(EncryptNotice.Unreadable(3), sw.notice.value)
         next = EncryptHistoryResult.Done(MigrationReport(converted = 3, unreadable = 0))
         sw.request(false)
         assertNull(sw.notice.value)
     }
+}
+
+/** M2: the Home "encryption is locked" banner shows only for encryption ON + locked. */
+class EncryptLockedBannerTest {
+    private val on = ai.whisperio.android.settings.AppSettings(order = emptyList(), encryptHistory = true)
+    private val off = ai.whisperio.android.settings.AppSettings(order = emptyList(), encryptHistory = false)
+
+    @Test fun lockedAndOnShowsBanner() = assertTrue(shouldShowEncryptLockedBanner(on, locked = true))
+    @Test fun offHidesBanner() = assertFalse(shouldShowEncryptLockedBanner(off, locked = true))
+    @Test fun unlockedOrTransientHidesBanner() = assertFalse(shouldShowEncryptLockedBanner(on, locked = false))
 }

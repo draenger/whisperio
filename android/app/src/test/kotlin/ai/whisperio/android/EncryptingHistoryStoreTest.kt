@@ -97,6 +97,21 @@ class EncryptingHistoryStoreTest {
         assertEquals("work", r.category)
     }
 
+    @Test fun updateOutcomeIsSealedToo() = runBlocking {
+        // The dictation result path uses updateOutcome (main #59): with the switch ON it must never store plaintext.
+        on = true
+        store.upsert(row("a", null))
+        store.updateOutcome(row("a", "tajny wynik", "provider boom"))
+        val r = raw("a")
+        assertTrue(r.transcript!!.startsWith("WE1:") && !r.transcript!!.contains("tajny"))
+        assertTrue(r.error!!.startsWith("WE1:") && !r.error!!.contains("boom"))
+        assertEquals("tajny wynik", store.get("a")!!.transcript)
+        on = false
+        store.upsert(row("b", null))
+        store.updateOutcome(row("b", "jawny"))
+        assertEquals("jawny", raw("b").transcript)
+    }
+
     @Test fun migrateBothWaysKeepsMetadata() = runBlocking {
         store.upsert(row("a", "one"))
         store.upsert(row("b", null))

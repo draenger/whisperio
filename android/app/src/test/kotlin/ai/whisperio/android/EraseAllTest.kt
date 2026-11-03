@@ -20,9 +20,11 @@ import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import java.io.File
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.first
@@ -76,7 +78,13 @@ class EraseAllTest {
         )
     }
 
-    @After fun tearDown() { db.close(); ioScope.cancel() }
+    @After fun tearDown() {
+        // AppGraph launches runMaintenance on the app scope; stop it before the DB closes, or its late Room read
+        // fails and kotlinx-coroutines-test reports it as UncaughtExceptionsBeforeTest in the NEXT test.
+        closing = true
+        appJobs.forEach { it.cancel() }
+        db.close(); ioScope.cancel()
+    }
 
     private fun row(id: String, audio: File?) = Recording(
         id = id, createdAt = 1000L + id.hashCode(), durationMs = 1000, status = RecordingStatus.DONE,
@@ -95,7 +103,13 @@ class EraseAllTest {
         settings.setPerAppLanguage(true); appLanguages.remember("com.example.app", "pl")
     }
 
-    private fun TestScope.appScope() = CoroutineScope(StandardTestDispatcher(testScheduler))
+    private val appJobs = mutableListOf<Job>()
+    @Volatile private var closing = false
+
+    private fun TestScope.appScope() = CoroutineScope(
+        StandardTestDispatcher(testScheduler) + Job().also { appJobs += it } +
+            CoroutineExceptionHandler { _, e -> if (!closing) throw e },
+    )
 
     private lateinit var lastController: DictationController
 

@@ -59,8 +59,11 @@ import ai.whisperio.android.ui.recap.RecapShare
 import ai.whisperio.android.ui.recap.toRecapItems
 import ai.whisperio.android.ui.settings.KeyDialogState
 import ai.whisperio.android.ui.settings.shouldOfferEncryptCard
+import ai.whisperio.android.ui.settings.shouldShowEncryptLockedBanner
 import ai.whisperio.android.ui.settings.SettingsActions
 import ai.whisperio.android.ui.settings.SettingsScreen
+import ai.whisperio.android.ui.settings.SettingsScrollTarget
+import ai.whisperio.android.ui.settings.SettingsSection
 import ai.whisperio.android.ui.settings.SettingsUiState
 import ai.whisperio.core.ExportFormat
 import ai.whisperio.core.Recap
@@ -310,6 +313,8 @@ private fun MainShell(g: AppGraph) {
     val backStack by nav.currentBackStackEntryAsState()
     val route = backStack?.destination?.route
     val snackbar = remember { SnackbarHostState() }
+    // One-shot "scroll Settings to Privacy" request from the Home locked banner's Fix; outlives tab switches.
+    val settingsScroll = remember { SettingsScrollTarget() }
     // F9: a finished transcription ticks while this window is on screen (confirmHaptic ignores a detached view).
     val shellView = LocalView.current
     LaunchedEffect(Unit) { g.dictation.results.collect { r ->
@@ -347,10 +352,10 @@ private fun MainShell(g: AppGraph) {
         },
     ) { padding ->
         NavHost(nav, startDestination = Routes.HOME, modifier = Modifier.padding(padding)) {
-            composable(Routes.HOME) { HomeRoute(g, nav) }
+            composable(Routes.HOME) { HomeRoute(g, nav, settingsScroll) }
             composable(Routes.HISTORY) { HistoryRoute(g, nav, snackbar) }
             composable(Routes.DETAIL) { entry -> DetailRoute(g, nav, entry.arguments?.getString("id").orEmpty(), snackbar) }
-            composable(Routes.SETTINGS) { SettingsRoute(g, nav) }
+            composable(Routes.SETTINGS) { SettingsRoute(g, nav, settingsScroll) }
             composable(Routes.CATEGORIES) { CategoriesRoute(g, nav) }
             composable(Routes.RECAP) { RecapRoute(g, nav, snackbar) }
             composable(Routes.ABOUT) {
@@ -367,7 +372,7 @@ private fun MainShell(g: AppGraph) {
 }
 
 @Composable
-private fun HomeRoute(g: AppGraph, nav: NavHostController) {
+private fun HomeRoute(g: AppGraph, nav: NavHostController, settingsScroll: SettingsScrollTarget) {
     val ctx = LocalContext.current
     val view = LocalView.current
     val scope = rememberCoroutineScope()
@@ -391,6 +396,7 @@ private fun HomeRoute(g: AppGraph, nav: NavHostController) {
     }
     val encryptBusy by g.encryptSwitch.busy.collectAsState()
     val encryptNotice by g.encryptSwitch.notice.collectAsState()
+    val encryptLocked by g.encryptSwitch.locked.collectAsState()
     // True only for a run started by the card's "Turn on": progress and the notice then show here, not for Settings runs.
     var cardRun by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(encryptBusy) { if (encryptBusy == null && cardRun && encryptNotice == null) cardRun = false }
@@ -407,6 +413,7 @@ private fun HomeRoute(g: AppGraph, nav: NavHostController) {
                 encryptCard = shouldOfferEncryptCard(settings),
                 encryptBusy = encryptBusy.takeIf { cardRun },
                 encryptNotice = encryptNotice.takeIf { cardRun },
+                encryptLockedBanner = shouldShowEncryptLockedBanner(settings, encryptLocked),
             ),
             actions = object : HomeActions {
                 override fun onDictate() {
@@ -431,6 +438,14 @@ private fun HomeRoute(g: AppGraph, nav: NavHostController) {
                 override fun onEncryptNoticeDismiss() {
                     g.encryptSwitch.dismissNotice()
                     cardRun = false
+                }
+                override fun onEncryptLockedFix() {
+                    settingsScroll.request(SettingsSection.PRIVACY)
+                    nav.navigate(Routes.SETTINGS) {
+                        popUpTo(Routes.HOME) { saveState = true }
+                        launchSingleTop = true
+                        restoreState = true
+                    }
                 }
                 override fun onOpenSetup() {
                     if (!mic && setup.hasKey && setup.consent) {
@@ -635,7 +650,8 @@ private fun CategoriesRoute(g: AppGraph, nav: NavHostController) {
 }
 
 @Composable
-private fun SettingsRoute(g: AppGraph, nav: NavHostController) {
+private fun SettingsRoute(g: AppGraph, nav: NavHostController, settingsScroll: SettingsScrollTarget) {
+    val scrollTarget by settingsScroll.pending.collectAsState()
     val scope = rememberCoroutineScope()
     val settings by g.settings.flow.collectAsState(initial = AppSettings(order = g.settings.defaultOrder()))
     val configured by g.secrets.configured.collectAsState(initial = emptySet())
@@ -645,6 +661,8 @@ private fun SettingsRoute(g: AppGraph, nav: NavHostController) {
     var keyChecks by remember { mutableStateOf<Map<ProviderId, KeyUi>>(emptyMap()) }
     val encryptBusy by g.encryptSwitch.busy.collectAsState()
     val encryptNotice by g.encryptSwitch.notice.collectAsState()
+    val encryptPending by g.encryptSwitch.pending.collectAsState()
+    val encryptLocked by g.encryptSwitch.locked.collectAsState()
     val enrollment = remember { KeyEnrollment(g.keyChecker, g.secrets, g.settings) }
     val models = remember { ProviderId.entries.associateWith { g.catalog.models(it) } }
     val openAiUrl = settings.baseUrls[ProviderId.OPENAI]
@@ -707,6 +725,8 @@ private fun SettingsRoute(g: AppGraph, nav: NavHostController) {
     }
     run {
         SettingsScreen(
+            scrollTo = scrollTarget,
+            onScrollConsumed = settingsScroll::consume,
             state = SettingsUiState(
                 settings = settings,
                 configured = configured,
@@ -718,6 +738,8 @@ private fun SettingsRoute(g: AppGraph, nav: NavHostController) {
                 appLanguageCount = appLanguageCount,
                 encryptBusy = encryptBusy,
                 encryptNotice = encryptNotice,
+                encryptPending = encryptPending,
+                encryptLocked = encryptLocked,
             ),
             actions = actions,
         )

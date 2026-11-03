@@ -24,12 +24,19 @@ class AudioMigration(private val dao: RecordingDao, private val cipher: AudioCip
             if (row.id == skipId) continue
             val path = row.audioPath ?: continue
             val src = File(path)
+            if (!src.exists()) {
+                // Repair a crash between sealing a finished clip and its row update (DictationController.sealClip):
+                // the row still names `<id>.m4a`, but only `<id>.m4a.wea` survived. Point the row at the surviving copy;
+                // a later run converts it if the switch is OFF.
+                val survivor = if (path.endsWith(".m4a")) AudioCipher.encryptedFor(src) else null
+                if (survivor != null && survivor.exists() && dao.swapAudioPath(row.id, path, survivor.path) == 1) converted++
+                continue
+            }
             val dest = when {
                 encrypt && path.endsWith(".m4a") -> AudioCipher.encryptedFor(src)
                 !encrypt && AudioCipher.isEncrypted(path) -> AudioCipher.plainFor(src)
                 else -> continue // already in the target form (or not one of ours)
             }
-            if (!src.exists()) continue
             try {
                 if (encrypt) cipher.encryptFile(src, dest, row.id) else cipher.decryptToFile(src, dest, row.id)
             } catch (e: CancellationException) {

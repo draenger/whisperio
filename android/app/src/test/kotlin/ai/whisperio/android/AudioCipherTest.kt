@@ -58,6 +58,7 @@ class AudioCipherTest {
         assertEquals("/x/r1.m4a", AudioCipher.plainFor(File("/x/r1.m4a.wea")).path.replace('\\', '/'))
     }
 
+    // Guard for Tink `subtle` (StreamingAead) API bumps: the pinned Tink version in libs.versions.toml must keep this green.
     @Test fun roundTripOfAMultiSegmentFile() = runBlocking {
         val plain = plainFile()
         val enc = encrypted(plain)

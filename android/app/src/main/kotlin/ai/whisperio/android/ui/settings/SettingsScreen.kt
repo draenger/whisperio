@@ -40,7 +40,11 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInParent
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -81,6 +85,10 @@ data class SettingsUiState(
     val encryptBusy: Boolean? = null,
     /** Result of the last switch that needs the user's attention; null = nothing to show. */
     val encryptNotice: EncryptNotice? = null,
+    /** Items still stored in plaintext while encryption is ON, waiting for the next pass to seal them. */
+    val encryptPending: Int = 0,
+    /** Encrypted data exists but its key is missing: new items cannot be encrypted and old ones cannot be read. */
+    val encryptLocked: Boolean = false,
 )
 
 /** What the "Encrypt history" switch reports back after a run. */
@@ -131,8 +139,24 @@ interface SettingsActions {
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun SettingsScreen(state: SettingsUiState, actions: SettingsActions, modifier: Modifier = Modifier) {
+fun SettingsScreen(
+    state: SettingsUiState,
+    actions: SettingsActions,
+    modifier: Modifier = Modifier,
+    scrollTo: SettingsSection? = null,
+    onScrollConsumed: (SettingsSection) -> Unit = {},
+) {
     val s = state.settings
+    val scrollState = rememberScrollState()
+    var privacyTop by remember { mutableStateOf<Int?>(null) }
+    // Waits for the Privacy title to be laid out, scrolls it to the top of the viewport, then consumes the request.
+    LaunchedEffect(scrollTo, privacyTop) {
+        val top = privacyTop
+        if (scrollTo == SettingsSection.PRIVACY && top != null) {
+            scrollState.animateScrollTo(top)
+            onScrollConsumed(SettingsSection.PRIVACY)
+        }
+    }
     var confirmErase by rememberSaveable { mutableStateOf(false) }
     var confirmAudio by rememberSaveable { mutableStateOf(false) }
     /** Target value of the "Encrypt history" switch waiting for confirmation; null = no dialog. */
@@ -144,7 +168,7 @@ fun SettingsScreen(state: SettingsUiState, actions: SettingsActions, modifier: M
         Column(
             Modifier
                 .widthIn(max = 640.dp)
-                .verticalScroll(rememberScrollState())
+                .verticalScroll(scrollState)
                 .padding(horizontal = 20.dp, vertical = 8.dp),
         ) {
             SectionTitle(stringResource(R.string.settings_providers))
@@ -226,7 +250,7 @@ fun SettingsScreen(state: SettingsUiState, actions: SettingsActions, modifier: M
                 modifier = Modifier.heightIn(min = 48.dp),
             )
 
-            SectionTitle(stringResource(R.string.settings_privacy_storage), Modifier.testTag(PRIVACY_SECTION_TAG))
+            SectionTitle(stringResource(R.string.settings_privacy_storage), Modifier.onGloballyPositioned { privacyTop = it.positionInParent().y.toInt() }.testTag(PRIVACY_SECTION_TAG))
             SwitchRow(
                 stringResource(R.string.settings_consent),
                 stringResource(R.string.settings_consent_hint),
@@ -256,6 +280,30 @@ fun SettingsScreen(state: SettingsUiState, actions: SettingsActions, modifier: M
                 { confirmEncrypt = it },
                 enabled = state.encryptBusy == null,
             )
+            if (state.encryptBusy == null) {
+                val status = when {
+                    state.encryptLocked -> stringResource(R.string.settings_encrypt_locked)
+                    s.encryptHistory && state.encryptPending > 0 ->
+                        pluralStringResource(R.plurals.settings_encrypt_pending, state.encryptPending, state.encryptPending)
+                    s.encryptHistory && state.encryptPending == 0 -> stringResource(R.string.settings_encrypt_status_on)
+                    else -> null
+                }
+                status?.let {
+                    Text(
+                        it,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (state.encryptLocked) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.liveStatus(),
+                    )
+                }
+                if (state.encryptLocked) {
+                    // Recovery: opens the same confirmation as the Erase all button below.
+                    OutlinedButton(
+                        onClick = { confirmErase = true },
+                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp).heightIn(min = 48.dp),
+                    ) { Text(stringResource(R.string.settings_encrypt_locked_action), color = MaterialTheme.colorScheme.error) }
+                }
+            }
             state.encryptBusy?.let { target ->
                 Text(
                     stringResource(if (target) R.string.settings_encrypt_busy_on else R.string.settings_encrypt_busy_off),

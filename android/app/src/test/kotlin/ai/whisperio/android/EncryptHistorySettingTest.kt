@@ -23,6 +23,9 @@ import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import java.io.File
 import java.security.KeyStoreException
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -59,7 +62,12 @@ private class BrokenKeystore : SecretCipher {
 class EncryptHistorySettingTest {
     @get:Rule val tmp = TemporaryFolder()
     private val ioScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default.limitedParallelism(1))
+    // A late refreshPending/maintenance read on a closed DB must not leak as UncaughtExceptionsBeforeTest into the
+    // NEXT test (seen in the Roborazzi run): teardown cancels+joins this scope before closing the DB.
+    @Volatile private var closing = false
+    private val appScope = CoroutineScope(
+        SupervisorJob() + Dispatchers.Default.limitedParallelism(1) + CoroutineExceptionHandler { _, e -> if (!closing) throw e },
+    )
     private lateinit var db: AppDatabase
     private lateinit var recordingsDir: File
     private lateinit var settings: SettingsRepository
@@ -75,7 +83,9 @@ class EncryptHistorySettingTest {
     }
 
     @After fun tearDown() {
-        db.close(); appScope.cancel(); ioScope.cancel()
+        closing = true
+        runBlocking { appScope.coroutineContext[Job]!!.cancelAndJoin() }
+        db.close(); ioScope.cancel()
     }
 
     private fun store(name: String) =
@@ -265,7 +275,8 @@ class EncryptHistorySettingTest {
         g.history.upsert(row("a", "one").copy(audioPath = plain.path))
 
         g.runMaintenance()
-        awaitAll { db.recordings().get("a")!!.audioPath == plain.path + ".wea" }
+        // The migration swaps the row path first and deletes the plaintext right after: wait for both.
+        awaitAll { db.recordings().get("a")!!.audioPath == plain.path + ".wea" && !plain.exists() }
 
         assertFalse(plain.exists())
         assertTrue(File(plain.path + ".wea").exists())
