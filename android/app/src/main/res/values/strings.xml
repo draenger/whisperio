@@ -265,4 +265,26 @@
         <item quantity="one">Delete %1$d recording from yesterday that matches the current search and filters? Audio is deleted too.</item>
         <item quantity="other">Delete %1$d recordings from yesterday that match the current search and filters? Audio is deleted too.</item>
     </plurals>
+    <!-- Snippets: spoken trigger phrase -> replacement text -->
+    <string name="settings_snippets">Snippets</string>
+    <string name="settings_snippets_hint">Say a short phrase to insert longer text, like an address or a signature.</string>
+    <plurals name="settings_snippets_count">
+        <item quantity="one">%1$d snippet</item>
+        <item quantity="other">%1$d snippets</item>
+    </plurals>
+    <string name="snippets_explainer">When a whole dictation is exactly a trigger phrase (any capitalisation, punctuation at the ends ignored), the replacement text is inserted instead.</string>
+    <string name="snippets_empty">No snippets yet.</string>
+    <string name="snippets_add">Add snippet</string>
+    <string name="snippets_edit_title">Edit snippet</string>
+    <string name="snippets_save">Save</string>
+    <string name="snippets_trigger_label">Trigger phrase</string>
+    <string name="snippets_trigger_hint">What you will say, e.g. \"my address\"</string>
+    <string name="snippets_replacement_label">Replacement text</string>
+    <string name="snippets_err_trigger_long">Use at most 80 characters.</string>
+    <string name="snippets_err_replacement_long">Use at most 2000 characters.</string>
+    <string name="snippets_err_duplicate">A snippet with this trigger already exists.</string>
+    <string name="snippets_edit_cd">Edit snippet %1$s</string>
+    <string name="snippets_delete_cd">Delete snippet %1$s</string>
+    <string name="snippets_delete_title">Delete this snippet?</string>
+    <string name="snippets_delete_body">Saying \"%1$s\" will no longer insert its text.</string>
 </resources>

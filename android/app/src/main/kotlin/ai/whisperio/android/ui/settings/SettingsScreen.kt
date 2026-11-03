@@ -101,6 +101,7 @@ interface SettingsActions {
     fun onDeleteAllAudio() {}
     fun onEraseAll() {}
     fun onCategories() {}
+    fun onSnippets() {}
     fun onAbout() {}
 }
 
@@ -235,6 +236,24 @@ fun SettingsScreen(state: SettingsUiState, actions: SettingsActions, modifier: M
                 onClick = actions::onCategories,
                 modifier = Modifier.fillMaxWidth().padding(top = 8.dp).heightIn(min = 48.dp),
             ) { Text(stringResource(R.string.settings_categories)) }
+
+            SectionTitle(stringResource(R.string.settings_snippets))
+            Text(
+                stringResource(R.string.settings_snippets_hint),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            if (s.snippets.isNotEmpty()) {
+                Text(
+                    pluralStringResource(R.plurals.settings_snippets_count, s.snippets.size, s.snippets.size),
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.padding(top = 4.dp),
+                )
+            }
+            OutlinedButton(
+                onClick = actions::onSnippets,
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp).heightIn(min = 48.dp),
+            ) { Text(stringResource(R.string.settings_snippets)) }
 
             OutlinedButton(
                 onClick = { confirmErase = true },

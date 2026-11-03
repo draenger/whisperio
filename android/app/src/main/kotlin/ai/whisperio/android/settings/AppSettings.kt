@@ -3,6 +3,7 @@ package ai.whisperio.android.settings
 import ai.whisperio.core.ChainSettings
 import ai.whisperio.core.ProviderConfig
 import ai.whisperio.core.ProviderId
+import ai.whisperio.core.Snippet
 
 /** One position in the provider order with its chosen model (iOS `modelOrder`). */
 data class ProviderSlot(val id: ProviderId, val model: String)
@@ -26,6 +27,8 @@ data class AppSettings(
     val onboardingDone: Boolean = false,
     /** F7: keyboard remembers a language per app (off by default; the map itself lives in AppLanguageStore). */
     val perAppLanguage: Boolean = false,
+    /** Snippets: spoken trigger -> replacement, applied after cleanup. Empty (the default) = off. */
+    val snippets: List<Snippet> = emptyList(),
 ) {
     companion object {
         const val LANGUAGE_AUTO = "auto"
