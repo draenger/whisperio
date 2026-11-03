@@ -6,7 +6,8 @@ import { loadSettings, saveSettings } from './settingsManager'
 import {
   isDataVaultAvailable,
   getDataKeyForEncrypt,
-  getDataKeyForDecrypt
+  getDataKeyForDecrypt,
+  registerSealedDataProbe
 } from './dataVault'
 import {
   encryptWithKeyAad,
@@ -14,6 +15,16 @@ import {
   serializeEnvelope,
   type SecretEnvelope
 } from './secretCrypto'
+import {
+  encryptAudio,
+  decryptAudio,
+  isEncryptedAudio,
+  atomicWriteFileSync,
+  renameWithRetry,
+  isTransientRenameError,
+  peekIsEncryptedAudio,
+  AudioVaultError
+} from './audioVault'
 
 export interface RecordingEntry {
   id: string
@@ -426,12 +437,7 @@ function backupBeforeFilter(indexPath: string, dropped: number, total: number): 
 // file open. That window is short, so a couple of immediate retries turn a
 // spurious "failed to save recordings" into a normal save.
 const RENAME_RETRIES = 5
-const TRANSIENT_RENAME_CODES = new Set(['EPERM', 'EBUSY', 'EACCES'])
-
-function isTransientRenameError(err: unknown): boolean {
-  const code = (err as NodeJS.ErrnoException | null)?.code
-  return typeof code === 'string' && TRANSIENT_RENAME_CODES.has(code)
-}
+// isTransientRenameError (EPERM/EBUSY/EACCES) is imported from audioVault.
 
 export function saveIndex(index: RecordingIndex): void {
   // Never overwrite a sealed index we cannot open (would destroy the user's history).
@@ -454,15 +460,11 @@ function writeIndexFile(index: RecordingIndex, seal: boolean): void {
   // Whatever the reason, the temp file must not be left behind: saveIndex runs
   // on EVERY mutation, so a leaked `.tmp` per failure slowly fills the
   // recordings directory with junk that nothing ever collects.
-  for (let attempt = 0; ; attempt++) {
-    try {
-      renameSync(tmpPath, indexPath)
-      return
-    } catch (err) {
-      if (attempt < RENAME_RETRIES - 1 && isTransientRenameError(err)) continue
-      try { unlinkSync(tmpPath) } catch { /* best-effort cleanup */ }
-      throw err
-    }
+  try {
+    renameWithRetry(tmpPath, indexPath)
+  } catch (err) {
+    try { unlinkSync(tmpPath) } catch { /* best-effort cleanup */ }
+    throw err
   }
 }
 
@@ -505,58 +507,60 @@ export async function saveRecording(
     status?: 'completed' | 'failed' | 'pending'
   }
 ): Promise<RecordingEntry> {
-  // Refuse before touching disk when history is locked (no orphan audio file, no overwrite).
-  try {
-    if (readIndexState().locked) return Promise.reject(new HistoryLockedError())
-  } catch (err) {
-    return Promise.reject(err) // IndexUnavailableError: refuse, keep the file untouched
-  }
-  const dir = getRecordingsDir()
   const id = generateId()
   const timestamp = Date.now()
-  // Refuse before touching disk when the index is unusable, so no orphan audio.
-  try {
-    loadIndex()
-  } catch (err) {
-    return Promise.reject(err)
-  }
-
-  // Names have one-second resolution: two saves in the same second (or a clock
-  // stepped back) used to share a path, so the second write overwrote the first
-  // recording's audio and deleting one entry removed the other's file. Create
-  // exclusively ('wx') and add a -2, -3 ... suffix on collision. The exclusive
-  // create also makes writing outside the lock safe.
   const base = `recording-${formatTimestamp(timestamp)}`
-  let filename = `${base}.webm`
-  let filepath = join(dir, filename)
-  for (let n = 2; ; n++) {
-    try {
-      writeFileSync(filepath, audioBuffer, { flag: 'wx' })
-      break
-    } catch (err) {
-      if ((err as NodeJS.ErrnoException | null)?.code !== 'EEXIST' || n > 1000) throw err
-      filename = `${base}-${n}.webm`
-      filepath = join(dir, filename)
-    }
-  }
 
-  const entry: RecordingEntry = {
-    id,
-    filename,
-    filepath,
-    timestamp,
-    duration: metadata.duration,
-    status: metadata.status ?? 'pending',
-    provider: metadata.provider,
-    size: audioBuffer.length,
-    updatedAt: timestamp,
-    recordedProcessName: metadata.recordedProcessName,
-    recordedWindowTitle: metadata.recordedWindowTitle,
-    segments: metadata.segments,
-    transcription: metadata.transcription
-  }
-
+  // The seal decision AND the file write happen inside the mutation queue, i.e. serialized with
+  // setHistoryEncryption and every migration slot: a save overlapping an ON toggle can never write
+  // plaintext that a migration snapshot already passed over. When history encryption is ON (or the
+  // index is already sealed) the audio is sealed BEFORE it touches disk; an unavailable vault
+  // rejects the save (fail closed). Locked history refuses before any file is written.
   return enqueue(() => {
+    const st = readIndexState()
+    if (st.locked) throw new HistoryLockedError()
+    const dir = getRecordingsDir()
+    const seal = st.sealedOnDisk || encryptHistoryReader()
+    const data = seal ? encryptAudio(getDataKeyForEncrypt(), audioBuffer, id) : audioBuffer
+    // One-second name resolution: a same-second save (or a stepped-back clock) must not reuse an
+    // existing file. Create exclusively ('wx') and add a -2, -3 ... suffix on collision (main #43).
+    // Sealed audio reserves the name with an empty placeholder and then replaces it atomically, so
+    // plaintext never touches disk.
+    let filename = `${base}.webm`
+    let filepath = join(dir, filename)
+    for (let n = 2; ; n++) {
+      try {
+        writeFileSync(filepath, seal ? Buffer.alloc(0) : data, { flag: 'wx' })
+        break
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException | null)?.code !== 'EEXIST' || n > 1000) throw err
+        filename = `${base}-${n}.webm`
+        filepath = join(dir, filename)
+      }
+    }
+    if (seal) {
+      try {
+        atomicWriteFileSync(filepath, `${filepath}.tmp`, data)
+      } catch (err) {
+        try { unlinkSync(filepath) } catch { /* best-effort: drop the placeholder */ }
+        throw err
+      }
+    }
+    const entry: RecordingEntry = {
+      id,
+      filename,
+      filepath,
+      timestamp,
+      duration: metadata.duration,
+      status: metadata.status ?? 'pending',
+      provider: metadata.provider,
+      size: audioBuffer.length,
+      updatedAt: timestamp,
+      recordedProcessName: metadata.recordedProcessName,
+      recordedWindowTitle: metadata.recordedWindowTitle,
+      segments: metadata.segments,
+      transcription: metadata.transcription
+    }
     try {
       const index = loadIndexForWrite()
       index.recordings.push(entry)
@@ -674,12 +678,142 @@ export function deleteRecordingsByDate(dateStr: string): Promise<void> {
   })
 }
 
-export function getRecordingAudio(id: string): Buffer | null {
+/**
+ * Single read path for kept audio (re-transcribe, playback IPC, export). Dispatches on the header
+ * magic: legacy plaintext passes through, sealed audio is authenticated + decrypted IN MEMORY (never
+ * written to disk). Returns null when the recording/file does not exist. Throws AudioVaultError
+ * (clear message) when the file is sealed but cannot be opened.
+ */
+export function readRecordingAudio(id: string): Buffer | null {
   const entry = getRecording(id)
   if (!entry) return null
   if (!isInsideRecordingsDir(entry.filepath)) return null
   if (!existsSync(entry.filepath)) return null
-  return readFileSync(entry.filepath)
+  const raw = readFileSync(entry.filepath)
+  if (!isEncryptedAudio(raw)) return raw
+  const key = getDataKeyForDecrypt()
+  if (!key) throw new AudioVaultError('Recording is encrypted and the history key is unavailable')
+  return decryptAudio(key, raw, entry.id)
+}
+
+/** Back-compat name used by the IPC layer; same single read path. */
+export const getRecordingAudio = readRecordingAudio
+
+export interface AudioMigrationResult {
+  converted: number
+  skipped: number
+  failed: number
+}
+
+let migrationRunning: { direction: 'encrypt' | 'decrypt'; promise: Promise<AudioMigrationResult> } | null = null
+
+function sweepLeakedAudioTmp(): void {
+  try {
+    const dir = getRecordingsDir()
+    for (const f of readdirSync(dir)) {
+      if (f.endsWith('.webm.mig.tmp') || f.endsWith('.webm.tmp')) {
+        try { unlinkSync(join(dir, f)) } catch { /* best-effort */ }
+      }
+    }
+  } catch { /* best-effort */ }
+}
+
+/**
+ * Background audio migration: seal existing plaintext audio ('encrypt') or restore it ('decrypt').
+ * Idempotent per file, resumable (leaked tmp files are swept), and mixed state is always valid
+ * because reads dispatch on the header. Per file: convert in memory, write `<file>.mig.tmp` + fsync,
+ * atomic rename over the same path (index unchanged, readable at every instant). One file per queue
+ * slot so saves/deletes interleave.
+ *
+ * DIRECTION: the desired direction is re-read inside every slot (flag + sealed-index state). If the
+ * user flips the toggle mid-run the running job finishes its current file, skips the rest, and a
+ * call for the opposite direction is chained to run right after it ends - so the last intent wins
+ * and every file ends in the final state.
+ */
+export function migrateAudio(direction: 'encrypt' | 'decrypt'): Promise<AudioMigrationResult> {
+  if (migrationRunning) {
+    // Always chain (even same direction): an ON -> OFF -> ON flip within one sweep would otherwise
+    // leave files skipped during the OFF window as plaintext until next launch. A redundant pass
+    // costs only 8-byte header peeks. entry.promise clears migrationRunning before it settles.
+    return migrationRunning.promise.then(() => migrateAudio(direction))
+  }
+  const job = (async (): Promise<AudioMigrationResult> => {
+    const result: AudioMigrationResult = { converted: 0, skipped: 0, failed: 0 }
+    const st = readIndexState()
+    if (st.locked) return result
+    sweepLeakedAudioTmp()
+    let key: Buffer | null
+    try {
+      key = direction === 'encrypt' ? getDataKeyForEncrypt() : getDataKeyForDecrypt()
+    } catch {
+      key = null
+    }
+    if (!key) {
+      result.failed = st.index.recordings.filter((r) => !r.deletedAt).length
+      return result
+    }
+    const ids = st.index.recordings.filter((r) => !r.deletedAt).map((r) => r.id)
+    for (const id of ids) {
+      const r = await enqueue((): 'converted' | 'skipped' | 'failed' => {
+        try {
+          const cur = readIndexState()
+          if (cur.locked) return 'skipped'
+          const entry = cur.index.recordings.find((e) => e.id === id && !e.deletedAt)
+          // Same containment as playback/delete: a tampered index must never make the migration
+          // rewrite (and then wipe) a file outside the recordings dir.
+          if (!entry || !isInsideRecordingsDir(entry.filepath) || !existsSync(entry.filepath)) return 'skipped'
+          // Re-check intent inside the slot: a toggle flipped mid-run is handled by the chained run.
+          const flagOn = encryptHistoryReader()
+          if (direction === 'encrypt' && !flagOn) return 'skipped'
+          if (direction === 'decrypt' && (flagOn || cur.sealedOnDisk)) return 'skipped'
+          const sealed = peekIsEncryptedAudio(entry.filepath)
+          if (direction === 'decrypt' && !sealed) return 'skipped'
+          const raw = readFileSync(entry.filepath)
+          if (direction === 'encrypt' && sealed) {
+            // Already sealed: it must open with the CURRENT key, else report it instead of hiding it.
+            decryptAudio(key!, raw, entry.id)
+            return 'skipped'
+          }
+          const out =
+            direction === 'encrypt' ? encryptAudio(key!, raw, entry.id) : decryptAudio(key!, raw, entry.id)
+          atomicWriteFileSync(entry.filepath, `${entry.filepath}.mig.tmp`, out)
+          return 'converted'
+        } catch (err) {
+          console.error(
+            `[Whisperio] audio migration (${direction}) failed for ${id}:`,
+            err instanceof Error ? err.message : err
+          )
+          return 'failed'
+        }
+      })
+      result[r]++
+      await new Promise<void>((resolve) => setImmediate(resolve))
+    }
+    return result
+  })()
+  const entry = {
+    direction,
+    promise: job.finally(() => {
+      if (migrationRunning === entry) migrationRunning = null
+    })
+  }
+  migrationRunning = entry
+  return entry.promise
+}
+
+/** Startup/after-toggle hook: converge audio to the current setting. Never throws. */
+export async function resumeAudioMigration(): Promise<AudioMigrationResult | null> {
+  try {
+    const st = readIndexState()
+    if (st.locked) return null
+    if (encryptHistoryReader()) return await migrateAudio('encrypt')
+    // OFF: only decrypt once the index itself is plain (setHistoryEncryption(false) completed).
+    if (!st.sealedOnDisk) return await migrateAudio('decrypt')
+    return null
+  } catch (err) {
+    console.error('[Whisperio] audio migration aborted:', err instanceof Error ? err.message : err)
+    return null
+  }
 }
 
 /**
@@ -788,3 +922,28 @@ export function setHistoryEncryption(enabled: boolean): Promise<SetHistoryEncryp
     return { ok: true }
   })
 }
+
+/**
+ * True when sealed user data exists on disk (sealed index.json or any WHSPAUD audio file). Used by
+ * dataVault to refuse minting a replacement DEK that would permanently orphan that data.
+ */
+export function sealedDataExists(): boolean {
+  try {
+    const dir = getRecordingsDir()
+    const indexPath = join(dir, 'index.json')
+    if (existsSync(indexPath)) {
+      const txt = readFileSync(indexPath, 'utf-8')
+      try {
+        if (looksSealed(JSON.parse(txt))) return true
+      } catch {
+        if (/"ct"\s*:/.test(txt) && /"alg"\s*:/.test(txt)) return true
+      }
+    }
+    for (const f of readdirSync(dir)) {
+      if (f.endsWith('.tmp') || f === 'index.json') continue
+      if (peekIsEncryptedAudio(join(dir, f))) return true
+    }
+  } catch { /* unreadable dir: nothing provably sealed */ }
+  return false
+}
+registerSealedDataProbe(sealedDataExists)
