@@ -9,16 +9,12 @@ const WHISPER_CPP_RELEASE = 'v1.8.4'
 const WHISPER_BIN_URL = `https://github.com/ggml-org/whisper.cpp/releases/download/${WHISPER_CPP_RELEASE}/whisper-bin-x64.zip`
 const SERVER_PORT = 8178
 
-// SHA-256 of whisper-bin-x64.zip for WHISPER_CPP_RELEASE. NOT pinned yet: the
-// hash is not known in-repo and may not be fetched from here.
-// TODO: pin from the v1.8.4 release (`sha256sum whisper-bin-x64.zip`) and fill this in.
-// While null we use TOFU: the zip hash and the hash of every extracted file are
-// persisted on first install; a later download must match, and every launch
-// re-hashes the installed binary against the record. HONEST LIMIT: the record is
-// in userData, so this only catches accidental/partial corruption and post-install
-// swaps by something that cannot also rewrite the record; defeating a real attacker
-// needs the pin above.
-const WHISPER_BIN_SHA256: string | null = null
+// SHA-256 of whisper-bin-x64.zip for WHISPER_CPP_RELEASE, pinned 2026-11-03 from
+// the GitHub release asset digest and re-checked with sha256sum on a fresh
+// download. A download that does not match is discarded. The hashes of the
+// extracted files are still recorded on install and re-checked on every launch.
+// Bump this together with WHISPER_CPP_RELEASE.
+const WHISPER_BIN_SHA256: string | null = '74f973345cb52ef5ba3ec9e7e7af8e48cc8c71722d1528603b80588a11f82e3e'
 const ZIP_INTEGRITY_KEY = `whisper-bin-x64.zip@${WHISPER_CPP_RELEASE}`
 const INSTALLED_FILES = ['whisper-server.exe', 'whisper.dll', 'ggml.dll', 'ggml-base.dll', 'ggml-cpu.dll']
 const SERVER_HINT = 'Reinstall the local server from Settings.'

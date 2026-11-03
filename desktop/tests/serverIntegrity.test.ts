@@ -70,8 +70,20 @@ describe('download integrity (pin / TOFU)', () => {
     expect(() => checkDigest('k', 'x', sha(body), 'f'.repeat(64))).toThrow(/mismatch/i)
   })
 
+  it('every built-in model is pinned to a SHA-256 and to one Hugging Face revision', () => {
+    for (const m of getAvailableModels()) {
+      expect(m.sha256, m.id).toMatch(/^[0-9a-f]{64}$/)
+      expect(m.url, m.id).toMatch(/^https:\/\/huggingface\.co\/ggerganov\/whisper\.cpp\/resolve\/[0-9a-f]{40}\//)
+      expect(m.url.endsWith(`/${m.filename}`), m.id).toBe(true)
+    }
+  })
+
   it('model: TOFU records hash on first download, later different body is rejected and removed', async () => {
     vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const tinyEntry = getAvailableModels().find((m) => m.id === 'tiny')!
+    const pin = tinyEntry.sha256
+    tinyEntry.sha256 = null // TOFU path: only custom models are unpinned in the real catalog
+    try {
     const good = Buffer.alloc(100, 1)
     const a = start(() => downloadModel('tiny'))
     const r1 = await feed(a.req, a.p, good, { 'content-length': '100' })
@@ -91,11 +103,15 @@ describe('download integrity (pin / TOFU)', () => {
 
     expect(deleteModel('tiny')).toBe(true)
     expect(getStoredHash('model:ggml-tiny.bin')).toBeNull()
+    } finally {
+      tinyEntry.sha256 = pin
+    }
   })
 
   it('model with pinned sha256 in catalog: mismatch -> file removed + error; match -> ok', async () => {
     const body = Buffer.alloc(64, 7)
     const tiny = getAvailableModels().find((m) => m.id === 'tiny')!
+    const pin = tiny.sha256
     tiny.sha256 = 'a'.repeat(64)
     try {
       const a = start(() => downloadModel('tiny'))
@@ -108,7 +124,7 @@ describe('download integrity (pin / TOFU)', () => {
       const b = start(() => downloadModel('tiny'))
       expect(await feed(b.req, b.p, body, { 'content-length': '64' })).toContain('ggml-tiny.bin')
     } finally {
-      tiny.sha256 = null
+      tiny.sha256 = pin
     }
   })
 
