@@ -1,8 +1,11 @@
 package ai.whisperio.android.di
 
+import ai.whisperio.android.R
 import ai.whisperio.android.audio.MediaRecorderAudioRecorder
+import ai.whisperio.android.dictate.DictateActivity
 import ai.whisperio.android.audio.SystemAudioFocusGate
 import ai.whisperio.android.dictation.DictationController
+import ai.whisperio.android.dictation.DictationResult
 import ai.whisperio.android.dictation.SetupStatus
 import ai.whisperio.android.dictation.computeSetupStatus
 import ai.whisperio.android.history.AppDatabase
@@ -22,17 +25,27 @@ import ai.whisperio.android.security.KeystoreSecretStore
 import ai.whisperio.android.security.SecretStore
 import ai.whisperio.android.settings.AppLanguageStore
 import ai.whisperio.android.settings.SettingsRepository
+import ai.whisperio.android.ui.common.copyPlainText
 import ai.whisperio.android.ui.history.PendingDeleteController
 import android.Manifest
 import android.app.Application
 import android.content.Context
 import android.content.pm.PackageManager
+import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.os.SystemClock
+import android.util.Log
+import android.widget.Toast
 import androidx.core.content.ContextCompat
+import androidx.datastore.core.handlers.ReplaceFileCorruptionHandler
+import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.preferencesDataStore
 import androidx.room.Room
 import java.io.File
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -42,11 +55,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-
-private val Context.settingsDataStore by preferencesDataStore(name = "settings")
-private val Context.secretsDataStore by preferencesDataStore(name = "secrets")
-private val Context.appLanguagesDataStore by preferencesDataStore(name = "app_languages")
-private val Context.dataKeyDataStore by preferencesDataStore(name = "data_key")
+import kotlinx.coroutines.withContext
 
 /** Outcome of [AppGraph.setEncryptHistory]. */
 sealed interface EncryptHistoryResult {
@@ -55,6 +64,74 @@ sealed interface EncryptHistoryResult {
 
     /** Turning ON was refused because the data key could not be created or used (fail closed, flag stays OFF). */
     data object KeystoreUnavailable : EncryptHistoryResult
+}
+
+private val Context.settingsDataStore by preferencesDataStore(
+    name = "settings",
+    corruptionHandler = corruptionHandlerFor("settings"),
+)
+private val Context.secretsDataStore by preferencesDataStore(
+    name = "secrets",
+    corruptionHandler = corruptionHandlerFor("secrets"),
+)
+private val Context.appLanguagesDataStore by preferencesDataStore(
+    name = "app_languages",
+    corruptionHandler = corruptionHandlerFor("app_languages"),
+)
+// No corruption handler on purpose: silently replacing the wrapped data key with defaults would orphan encrypted
+// history (see DataCipher: never a silent new DEK).
+private val Context.dataKeyDataStore by preferencesDataStore(name = "data_key")
+
+/**
+ * A corrupt preferences file must not crash every start (and the keyboard with it): log and fall back to defaults. The
+ * DataStore API hands the handler no file path, so a copy of the corrupt bytes cannot be kept here.
+ */
+internal fun corruptionHandlerFor(name: String): ReplaceFileCorruptionHandler<Preferences> =
+    ReplaceFileCorruptionHandler { ex ->
+        Log.e(LOG_TAG, "DataStore '$name' is corrupt, falling back to defaults", ex)
+        emptyPreferences()
+    }
+
+private const val LOG_TAG = "AppGraph"
+
+/** Copies every result tagged for [DictateActivity] via [copy], whether or not that screen is still alive. Never returns normally. */
+internal suspend fun copyDictateResults(
+    results: Flow<DictationResult>,
+    sensitive: suspend () -> Boolean,
+    copy: suspend (text: String, sensitive: Boolean) -> Unit,
+) {
+    results.collect { r ->
+        // A result that took very long must not overwrite something the user copied meanwhile.
+        if (r.session == DictateActivity.SESSION_TAG && r.transcribeMs <= MAX_CLIPBOARD_DELAY_MS) {
+            runCatching { copy(r.text, sensitive()) }
+        }
+    }
+}
+
+internal const val MAX_CLIPBOARD_DELAY_MS = 2 * 60_000L
+
+/** OOM / VM errors / linkage errors: the process is not trustworthy any more, so they must not be swallowed. */
+internal fun isFatal(t: Throwable): Boolean = t is OutOfMemoryError || t is VirtualMachineError || t is LinkageError
+
+private fun rethrowOnMain(t: Throwable) {
+    Handler(Looper.getMainLooper()).post { throw t }
+}
+
+/**
+ * Logs anything an app-scope coroutine throws, so one failure cannot kill the process (keyboard included), and calls
+ * [recover] (reset dictation so a failed write cannot leave it stuck in Recording/Transcribing). Fatal errors are
+ * rethrown via [rethrowFatal] (production: on the main thread) instead of being swallowed.
+ */
+internal fun appScopeExceptionHandler(
+    recover: () -> Unit = {},
+    rethrowFatal: (Throwable) -> Unit = ::rethrowOnMain,
+) = CoroutineExceptionHandler { _, t ->
+    Log.e(LOG_TAG, "Uncaught exception in appScope", t)
+    if (isFatal(t)) {
+        rethrowFatal(t)
+    } else {
+        runCatching { recover() }
+    }
 }
 
 /** Manual DI (no Hilt, CONTRACT 3). One instance on [ai.whisperio.android.WhisperioApp]. */
@@ -84,7 +161,12 @@ class AppGraph private constructor(private val appOrNull: Application?, private 
 
     /** Single-threaded so DictationController state changes are serialised; never cancelled. */
     val appScope: CoroutineScope =
-        o?.appScope ?: CoroutineScope(SupervisorJob() + Dispatchers.Default.limitedParallelism(1))
+        o?.appScope ?: CoroutineScope(SupervisorJob() + Dispatchers.Default.limitedParallelism(1) + appScopeExceptionHandler(recover = ::resetDictation))
+
+    private fun resetDictation() {
+        // Launched on the same scope so the abort is serialised with every other state change.
+        appScope.launch { dictation.abortAll() }
+    }
 
     val recordingsDir: File by lazy { o?.recordingsDir ?: File(app.filesDir, "recordings") }
 
@@ -216,6 +298,27 @@ class AppGraph private constructor(private val appOrNull: Application?, private 
             throw e
         } catch (e: Exception) {
             false
+        }
+    }
+
+    /**
+     * Tile / shortcut / widget dictations (DictateActivity) copy their result to the clipboard from here, in [appScope],
+     * so the text still reaches the clipboard when the user left the screen while it was transcribing. Call once.
+     */
+    fun installDictateClipboard(context: Context) {
+        val appContext = context.applicationContext
+        appScope.launch {
+            copyDictateResults(
+                results = dictation.results,
+                sensitive = { settings.current().transcriptsSensitive },
+                copy = { text, sensitive ->
+                    withContext(Dispatchers.Main) {
+                        copyPlainText(appContext, text, sensitive)
+                        // Android 13+ shows its own "copied" confirmation; older versions need ours.
+                        if (Build.VERSION.SDK_INT < 33) Toast.makeText(appContext, R.string.copied_toast, Toast.LENGTH_SHORT).show()
+                    }
+                },
+            )
         }
     }
 
