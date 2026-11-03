@@ -21,7 +21,7 @@ export interface EncryptionProgress {
 }
 
 export type SetResult =
-  | { ok: true }
+  | { ok: true; sealedBackups?: number; plainBackupsLeft?: number }
   | { ok: false; reason: 'unavailable' | 'weak-backend' | 'locked' }
 
 export const LOCKED_MESSAGE = "History is encrypted and can't be unlocked on this device. New dictations can't be saved until it is unlocked or reset."
@@ -141,8 +141,11 @@ export function vaultReasonText(reason: 'unavailable' | 'weak-backend'): string 
     : "The operating system's secure storage is unavailable, so encryption cannot be turned on."
 }
 
+export const PLAIN_BACKUPS_LEFT_MESSAGE = (n: number): string =>
+  `History is encrypted, but ${n} old backup ${n === 1 ? 'copy' : 'copies'} of it could not be encrypted and ${n === 1 ? 'is' : 'are'} still readable on disk. Try turning encryption off and on again, or use Erase all history.`
+
 export function setResultMessage(res: SetResult): string | null {
-  if (res.ok) return null
+  if (res.ok) return res.plainBackupsLeft && res.plainBackupsLeft > 0 ? PLAIN_BACKUPS_LEFT_MESSAGE(res.plainBackupsLeft) : null
   if (res.reason === 'locked') return LOCKED_MESSAGE
   return vaultReasonText(res.reason)
 }

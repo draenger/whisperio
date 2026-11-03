@@ -87,6 +87,9 @@ describe('dialogs and messages edges', () => {
 
   it('setResultMessage: ok is silent, locked and both vault reasons are distinct messages', () => {
     expect(setResultMessage({ ok: true })).toBeNull()
+    expect(setResultMessage({ ok: true, sealedBackups: 2, plainBackupsLeft: 0 })).toBeNull()
+    expect(setResultMessage({ ok: true, plainBackupsLeft: 1 })).toMatch(/1 old backup copy .* still readable/)
+    expect(setResultMessage({ ok: true, plainBackupsLeft: 3 })).toMatch(/3 old backup copies .* are still readable/)
     expect(setResultMessage({ ok: false, reason: 'locked' })).toBe(LOCKED_MESSAGE)
     expect(setResultMessage({ ok: false, reason: 'weak-backend' })).toBe(vaultReasonText('weak-backend'))
     expect(setResultMessage({ ok: false, reason: 'unavailable' })).toBe(vaultReasonText('unavailable'))
