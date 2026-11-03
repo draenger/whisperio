@@ -47,7 +47,9 @@ export function secureDeleteFile(path: string): SecureDeleteResult {
       let off = 0
       while (off < st.size) {
         const n = Math.min(zeros.length, st.size - off)
-        off += writeSync(fd, zeros, 0, n, off)
+        const w = writeSync(fd, zeros, 0, n, off)
+        if (w <= 0) throw new Error('short write') // never spin; falls back to a plain unlink
+        off += w
       }
       fsyncSync(fd)
       wiped = true
