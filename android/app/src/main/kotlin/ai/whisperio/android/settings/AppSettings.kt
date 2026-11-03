@@ -26,6 +26,8 @@ data class AppSettings(
     val onboardingDone: Boolean = false,
     /** F7: keyboard remembers a language per app (off by default; the map itself lives in AppLanguageStore). */
     val perAppLanguage: Boolean = false,
+    /** Opt-in field encryption of transcripts (docs/design/opt-in-encryption.md); default OFF. Change it via AppGraph.setEncryptHistory. */
+    val encryptHistory: Boolean = false,
 ) {
     companion object {
         const val LANGUAGE_AUTO = "auto"

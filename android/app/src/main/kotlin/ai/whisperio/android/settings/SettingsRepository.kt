@@ -41,6 +41,7 @@ class SettingsRepository(
         val sensitive = booleanPreferencesKey("transcripts_sensitive")
         val onboarding = booleanPreferencesKey("onboarding_done")
         val perAppLanguage = booleanPreferencesKey("per_app_language")
+        val encryptHistory = booleanPreferencesKey("encrypt_history")
         val customCategories = stringPreferencesKey("custom_categories") // JSON list, CONTRACT-1.2 F3
         fun baseUrl(id: ProviderId) = stringPreferencesKey("base_url_${id.wire}")
     }
@@ -110,6 +111,7 @@ class SettingsRepository(
             transcriptsSensitive = p[K.sensitive] ?: false,
             onboardingDone = p[K.onboarding] ?: false,
             perAppLanguage = p[K.perAppLanguage] ?: false,
+            encryptHistory = p[K.encryptHistory] ?: false,
         )
     }
 
@@ -146,6 +148,9 @@ class SettingsRepository(
     suspend fun setSensitive(v: Boolean) = store.edit { it[K.sensitive] = v }
     suspend fun setOnboardingDone(v: Boolean) = store.edit { it[K.onboarding] = v }
     suspend fun setPerAppLanguage(v: Boolean) = store.edit { it[K.perAppLanguage] = v }
+
+    /** Only [ai.whisperio.android.di.AppGraph.setEncryptHistory] calls this: the flag and the row migration go together. */
+    suspend fun setEncryptHistory(v: Boolean) = store.edit { it[K.encryptHistory] = v }
 
     /** Part of "Erase all data": resets every setting to its default. */
     suspend fun clear() {
