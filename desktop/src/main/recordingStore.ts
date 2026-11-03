@@ -437,12 +437,7 @@ function backupBeforeFilter(indexPath: string, dropped: number, total: number): 
 // file open. That window is short, so a couple of immediate retries turn a
 // spurious "failed to save recordings" into a normal save.
 const RENAME_RETRIES = 5
-const TRANSIENT_RENAME_CODES = new Set(['EPERM', 'EBUSY', 'EACCES'])
-
-function isTransientRenameError(err: unknown): boolean {
-  const code = (err as NodeJS.ErrnoException | null)?.code
-  return typeof code === 'string' && TRANSIENT_RENAME_CODES.has(code)
-}
+// isTransientRenameError (EPERM/EBUSY/EACCES) is imported from audioVault.
 
 export function saveIndex(index: RecordingIndex): void {
   // Never overwrite a sealed index we cannot open (would destroy the user's history).
