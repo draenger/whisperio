@@ -19,6 +19,7 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.test.core.app.ApplicationProvider
 import java.io.File
+import java.util.concurrent.Executor
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.CoroutineExceptionHandler
@@ -76,11 +77,19 @@ class DbCompactionTest {
     private lateinit var settings: SettingsRepository
     private lateinit var keys: DataStoreWrappedKeyStore
     private var files = 0
+    @Volatile private var watchFirstTextConversion = false
+    @Volatile private var needsCompactionAtFirstTextConversion: Boolean? = null
 
     @Before fun setUp() {
         // File-backed WAL, so the checkpoint path is exercised too.
         db = Room.databaseBuilder(ApplicationProvider.getApplicationContext(), AppDatabase::class.java, File(tmp.root, "t.db").path)
             .setJournalMode(RoomDatabase.JournalMode.WRITE_AHEAD_LOGGING)
+            .setQueryCallback({ sql, _ ->
+                if (watchFirstTextConversion && needsCompactionAtFirstTextConversion == null &&
+                    sql.startsWith("UPDATE recording SET transcript")) {
+                    needsCompactionAtFirstTextConversion = runBlocking { settings.needsCompaction() }
+                }
+            }, Executor { it.run() })
             .allowMainThreadQueries().build()
         settings = SettingsRepository(store("settings"), InMemorySecretStore(), FakeCatalog())
         keys = DataStoreWrappedKeyStore(store("data_key"))
@@ -152,6 +161,16 @@ class DbCompactionTest {
         assertEquals(1, spy.compactCalls)
         assertEquals(1, spy.enableCalls)
         assertFalse(settings.needsCompaction())
+    }
+
+    @Test fun turningOnMarksCompactionBeforeTheFirstTextConversion() = runBlocking {
+        val g = graph(SpyCompactor(db))
+        g.history.upsert(row("a", "one"))
+
+        watchFirstTextConversion = true
+        g.setEncryptHistory(true)
+
+        assertEquals(true, needsCompactionAtFirstTextConversion)
     }
 
     @Test fun turningOffNeverWritesSecureDeleteOffAndDoesNotCompact() = runBlocking {
