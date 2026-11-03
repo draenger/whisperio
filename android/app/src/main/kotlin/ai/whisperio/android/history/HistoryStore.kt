@@ -12,6 +12,12 @@ interface HistoryStore {
     suspend fun upsert(recording: Recording)
     suspend fun setInserted(id: String, inserted: Boolean)
 
+    /**
+     * Writes only the pipeline-owned columns of [r] (status, duration, provider, model, transcript, error, audio path) to the
+     * existing row [r].id. Category, inserted flag and the rest are left as stored; a missing row is not recreated.
+     */
+    suspend fun updateOutcome(r: Recording)
+
     /** CONTRACT-1.2 F3: sets (or with null clears) one row's category without touching any other column. */
     suspend fun setCategory(id: String, category: String?)
 
@@ -33,8 +39,11 @@ interface HistoryStore {
      */
     suspend fun sweepOrphanAudio(exclude: File?): Int
 
-    /** Deletes every audio file but keeps the transcripts. */
-    suspend fun deleteAllAudio()
+    /**
+     * Deletes every audio file but keeps the transcripts. The row [keepId] and its file (the recording in progress) are left
+     * untouched; [keepFile] is the no-history active file, which has no row.
+     */
+    suspend fun deleteAllAudio(keepId: String? = null, keepFile: File? = null)
 
     /** Deletes every row and every audio file. */
     suspend fun clear()
@@ -54,6 +63,9 @@ class RoomHistoryStore(
     override suspend fun get(id: String) = dao.get(id)
     override suspend fun upsert(recording: Recording) = dao.upsert(recording)
     override suspend fun setInserted(id: String, inserted: Boolean) = dao.setInserted(id, inserted)
+    override suspend fun updateOutcome(r: Recording) {
+        dao.updateOutcome(r.id, r.status, r.durationMs, r.provider, r.model, r.transcript, r.error, r.audioPath)
+    }
     override suspend fun setCategory(id: String, category: String?) = dao.setCategory(id, category)
     override suspend fun clearCategory(categoryId: String) { dao.clearCategory(categoryId) }
 
@@ -76,18 +88,28 @@ class RoomHistoryStore(
 
     override suspend fun sweepOrphanAudio(exclude: File?): Int {
         val referenced = dao.withAudio().mapNotNull { it.audioPath }.map { File(it).absoluteFile }.toSet()
+        // A crash between sealing a finished clip (`<id>.m4a` -> `<id>.m4a.wea`, plaintext deleted) and the row update
+        // leaves the row pointing at the missing `.m4a`: its `.wea` is the only copy, never an orphan. AudioMigration
+        // re-points the row to it.
+        val sealedOnlyCopy = referenced.filter { !it.exists() }.map { File(it.path + ".wea").absoluteFile }.toSet()
         val skip = exclude?.absoluteFile
         var n = 0
+        // Everything unreferenced goes, which includes the leftovers of an interrupted encrypt/decrypt (`*.tmp`) and of
+        // an interrupted retry upload (`<id>.retry.m4a`). The active recording's own files are spared by name prefix:
+        // its `<id>.m4a` may be getting encrypted to `<id>.m4a.wea(.tmp)` right now.
         recordingsDir.listFiles()?.forEach { f ->
-            if (f.isFile && f.absoluteFile !in referenced && f.absoluteFile != skip && f.delete()) n++
+            val active = skip != null && (f.absoluteFile == skip || f.name.startsWith(skip.name + "."))
+            if (f.isFile && f.absoluteFile !in referenced && f.absoluteFile !in sealedOnlyCopy && !active && f.delete()) n++
         }
         return n
     }
 
-    override suspend fun deleteAllAudio() {
-        dao.withAudio().forEach { File(it.audioPath!!).delete() }
-        dao.clearAudioPaths()
-        recordingsDir.listFiles()?.forEach { it.delete() }
+    override suspend fun deleteAllAudio(keepId: String?, keepFile: File?) {
+        val keep = keepFile?.absoluteFile
+        dao.withAudio().filter { it.id != keepId }.forEach { File(it.audioPath!!).delete() }
+        if (keepId == null) dao.clearAudioPaths() else dao.clearAudioPathsExcept(keepId)
+        val keepRow = keepId?.let { dao.get(it)?.audioPath }?.let { File(it).absoluteFile }
+        recordingsDir.listFiles()?.forEach { if (it.absoluteFile != keep && it.absoluteFile != keepRow) it.delete() }
     }
 
     override suspend fun clear() {

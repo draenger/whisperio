@@ -206,6 +206,10 @@ describe('keyStore', () => {
 
       expect(getKey('openaiApiKey')).toBeNull()
       expect(errSpy).toHaveBeenCalled()
+      // L3: only the error name is logged, never the message
+      const logged = errSpy.mock.calls.flat().join(' ')
+      expect(logged).toContain('Error')
+      expect(logged).not.toContain('Keychain entry rotated')
 
       errSpy.mockRestore()
     })

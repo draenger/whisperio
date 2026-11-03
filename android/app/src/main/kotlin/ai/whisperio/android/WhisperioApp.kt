@@ -11,6 +11,7 @@ class WhisperioApp : Application() {
         super.onCreate()
         graph = AppGraph(this)
         graph.runMaintenance()
+        graph.installDictateClipboard(this)
     }
 }
 

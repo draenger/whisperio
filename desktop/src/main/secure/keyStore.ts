@@ -1,6 +1,7 @@
 import { app, safeStorage } from 'electron'
 import { readFileSync, writeFileSync, existsSync, renameSync } from 'fs'
 import { join } from 'path'
+import { errName } from './errName'
 
 /**
  * Encrypted provider-API-key store, built on Electron's `safeStorage` (macOS
@@ -35,8 +36,16 @@ function storePath(): string {
  * (`basic_text`, or `unknown` before a backend was picked): that is obfuscation,
  * not encryption, so it must count as unavailable.
  */
-function isWeakLinuxBackend(): boolean {
+export function isWeakLinuxBackend(): boolean {
   if (process.platform !== 'linux') return false
+  // Selecting the backend is lazy: before the first availability check Electron reports
+  // 'unknown'. Trigger that check here so the verdict never depends on call order
+  // (callers must still run after app 'ready'; main does).
+  try {
+    safeStorage.isEncryptionAvailable()
+  } catch {
+    /* fall through to the backend query */
+  }
   const getBackend = (safeStorage as { getSelectedStorageBackend?: () => string }).getSelectedStorageBackend
   if (typeof getBackend !== 'function') return false
   const backend = getBackend.call(safeStorage)
@@ -55,6 +64,9 @@ export function isEncryptionAvailable(): boolean {
     return false
   }
 }
+
+/** Log-safe error label: only the class name, never the message (it may hold key material or paths). */
+export { errName } from './errName'
 
 function atomicWrite(filePath: string, data: string): void {
   const tmp = `${filePath}.${process.pid}.${Date.now()}.tmp`
@@ -81,7 +93,7 @@ function readStore(): EncryptedStore {
     console.error('[Whisperio] provider-keys store had an unexpected shape; treating as empty.')
     return {}
   } catch (err) {
-    console.error('[Whisperio] provider-keys store is corrupt; treating as empty:', err)
+    console.error('[Whisperio] provider-keys store is corrupt; treating as empty (' + errName(err) + ').')
     return {}
   }
 }
@@ -103,7 +115,7 @@ export function getKey(name: string): string | null {
   try {
     return safeStorage.decryptString(Buffer.from(ciphertext, 'base64'))
   } catch (err) {
-    console.error(`[Whisperio] failed to decrypt provider key "${name}":`, err)
+    console.error(`[Whisperio] failed to decrypt provider key "${name}" (${errName(err)}).`)
     return null
   }
 }
@@ -142,4 +154,102 @@ export function deleteKey(name: string): void {
 export function listKeys(): string[] {
   if (!isEncryptionAvailable()) return []
   return Object.keys(readStore())
+}
+
+/**
+ * True when at least one entry was wrapped into the store earlier (e.g. by 1.5.x
+ * with the `basic_text` backend). Works regardless of availability: it only reads
+ * the file, never decrypts.
+ */
+export function hasWrappedEntries(): boolean {
+  return Object.keys(readStore()).length > 0
+}
+
+/**
+ * Linux weak-backend rescue read: decrypt every entry of the store with the
+ * `basic_text` backend (Electron's hard-coded password), so keys wrapped by
+ * 1.5.x stay usable in memory. Returns {} unless this is Linux with a weak
+ * backend (elsewhere getKey is the only path). Never writes anything.
+ */
+export function readWeakBackendKeys(): Record<string, string> {
+  if (!isWeakLinuxBackend()) return {}
+  const out: Record<string, string> = {}
+  try {
+    if (!safeStorage.isEncryptionAvailable()) return out
+  } catch {
+    return out
+  }
+  for (const [name, ciphertext] of Object.entries(readStore())) {
+    try {
+      out[name] = safeStorage.decryptString(Buffer.from(ciphertext, 'base64'))
+    } catch (err) {
+      console.error(`[Whisperio] could not rescue provider key "${name}" from the weak store (${errName(err)}).`)
+    }
+  }
+  return out
+}
+
+/**
+ * Remove one wrapped entry from the store file even when secure storage is
+ * unavailable. Deleting ciphertext writes no plaintext, so the fail-closed rule
+ * holds. Used when the user clears/replaces a key that would otherwise be
+ * resurrected by the session rescue on the next launch. Atomic write.
+ */
+export function dropWrappedEntry(name: string): void {
+  const store = readStore()
+  if (!(name in store)) return
+  delete store[name]
+  writeStore(store)
+}
+
+/**
+ * Marker for "written under the weak backend": Chromium's os_crypt prefixes
+ * Linux ciphertext with `v10` (hard-coded-password basic_text) or `v11` (real
+ * keyring). The blob therefore carries its own backend marker; no sidecar file
+ * is needed, old files work unchanged, and a re-wrapped entry (now `v11`) is
+ * naturally skipped on the next run. Only meaningful on Linux.
+ */
+function isWeakBlob(ciphertextB64: string): boolean {
+  try {
+    return Buffer.from(ciphertextB64, 'base64').subarray(0, 3).toString('latin1') === 'v10'
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Startup re-wrap (Linux only): entries wrapped while Electron ran on the weak
+ * `basic_text` backend are re-encrypted with the real keyring once one is
+ * available. Per entry: decrypt -> encrypt -> verify the new blob decrypts to
+ * the same value IN MEMORY -> write -> read back through getKey and compare ->
+ * on any mismatch restore the old blob. The old blob is only ever replaced by
+ * a verified one, so no key is lost; failures are logged by error name only.
+ * Idempotent: re-wrapped blobs are no longer weak.
+ */
+export function rewrapWeakEntries(): { rewrapped: number; failed: number } {
+  const result = { rewrapped: 0, failed: 0 }
+  if (process.platform !== 'linux' || !isEncryptionAvailable()) return result
+  const weak = Object.entries(readStore()).filter(([, blob]) => isWeakBlob(blob))
+  for (const [name, oldBlob] of weak) {
+    try {
+      const value = safeStorage.decryptString(Buffer.from(oldBlob, 'base64'))
+      const fresh = safeStorage.encryptString(value)
+      if (safeStorage.decryptString(fresh) !== value) throw new Error('verify')
+      const store = readStore()
+      store[name] = fresh.toString('base64')
+      writeStore(store)
+      if (getKey(name) !== value) {
+        const back = readStore()
+        back[name] = oldBlob
+        writeStore(back)
+        result.failed++
+        continue
+      }
+      result.rewrapped++
+    } catch (err) {
+      console.error(`[Whisperio] could not re-wrap provider key "${name}" (${errName(err)}); keeping the old entry.`)
+      result.failed++
+    }
+  }
+  return result
 }

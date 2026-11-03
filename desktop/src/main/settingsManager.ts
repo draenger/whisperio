@@ -135,6 +135,8 @@ export interface AppSettings {
   allowUrlStart: boolean
   // Periodic GitHub release check (privacy policy section 6). Off => no network request to GitHub.
   checkForUpdates: boolean
+  /** App version for which the Linux "no secure keyring" warning was already shown ('' = never). */
+  linuxKeyringWarningShownFor: string
   dictationHotkey: string
   dictateAndSendHotkey: string
   // COMMAND mode (v1.7): a dedicated hotkey that, instead of inserting the
@@ -172,6 +174,10 @@ export interface AppSettings {
   clipboardRestoreDelayMs: number
   outputRecordingHotkey: string
   fallbackEnabled: boolean
+  // Opt-in history encryption (recordingStore seals index.json when true). Default OFF. Changed ONLY
+  // through setHistoryEncryption (IPC history:encryption:set); settings:save strips this key so the
+  // renderer cannot flip it via the generic setter.
+  encryptHistory: boolean
   // GitHub secret-store selection (NON-SECRET metadata only). The access token
   // and the encryption key are never stored here — they live Keychain-wrapped
   // via secretVault.ts. Secrets themselves are only ever committed to the repo
@@ -320,6 +326,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   allowUrlControl: false,
   allowUrlStart: false,
   checkForUpdates: true,
+  linuxKeyringWarningShownFor: '',
   dictationHotkey: '',
   dictateAndSendHotkey: '',
   commandHotkey: 'Ctrl+Shift+C',
@@ -336,6 +343,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   clipboardRestoreDelayMs: 700,
   outputRecordingHotkey: '',
   fallbackEnabled: false,
+  encryptHistory: false,
   githubUser: '',
   githubRepo: '',
   githubBranch: ''

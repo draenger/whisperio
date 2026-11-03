@@ -28,6 +28,14 @@ class PrivacyGateTest {
         assertTrue("banned SDK references: $hits", hits.isEmpty())
     }
 
+    @Test fun tinkIsTheOnlyCryptoLibraryInTheBuildFile() {
+        val build = File(moduleDir, "build.gradle.kts").readText()
+        assertTrue(build.contains("implementation(libs.tink.android)"))
+        val otherCrypto = listOf("bouncycastle", "spongycastle", "conscrypt", "sqlcipher", "androidx.security", "security.crypto", "sodium", "libs.tink.")
+            .filter { it in build.lowercase() }
+        assertEquals(listOf("libs.tink."), otherCrypto) // only the tink-android alias, nothing else crypto-like
+    }
+
     @Test fun manifestDeclaresOnlyRecordAudioAndInternet() {
         val manifest = File(moduleDir, "src/main/AndroidManifest.xml").readText()
         val perms = Regex("<uses-permission[^>]*android:name=\"([^\"]+)\"").findAll(manifest).map { it.groupValues[1] }.toSet()

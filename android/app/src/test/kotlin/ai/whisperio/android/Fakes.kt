@@ -90,6 +90,14 @@ class FakeHistory(private val recordingsDir: File? = null) : HistoryStore {
     override suspend fun setInserted(id: String, inserted: Boolean) {
         rows.value[id]?.let { upsert(it.copy(inserted = inserted)) }
     }
+    override suspend fun updateOutcome(r: Recording) {
+        rows.value[r.id]?.let {
+            rows.value = rows.value + (it.id to it.copy(
+                status = r.status, durationMs = r.durationMs, provider = r.provider, model = r.model,
+                transcript = r.transcript, error = r.error, audioPath = r.audioPath,
+            ))
+        }
+    }
     override suspend fun setCategory(id: String, category: String?) {
         rows.value[id]?.let { rows.value = rows.value + (id to it.copy(category = category)) }
     }
@@ -123,8 +131,8 @@ class FakeHistory(private val recordingsDir: File? = null) : HistoryStore {
         }
         return n
     }
-    override suspend fun deleteAllAudio() {
-        rows.value.values.forEach { r -> r.audioPath?.let { File(it).delete() }; upsert(r.copy(audioPath = null)) }
+    override suspend fun deleteAllAudio(keepId: String?, keepFile: File?) {
+        rows.value.values.filter { it.id != keepId }.forEach { r -> r.audioPath?.let { File(it).delete() }; upsert(r.copy(audioPath = null)) }
     }
     override suspend fun clear() { rows.value.keys.toList().forEach { delete(it) } }
 }

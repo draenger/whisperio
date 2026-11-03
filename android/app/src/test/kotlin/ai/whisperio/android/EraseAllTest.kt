@@ -10,7 +10,9 @@ import ai.whisperio.android.history.Recording
 import ai.whisperio.android.history.RecordingSource
 import ai.whisperio.android.history.RecordingStatus
 import ai.whisperio.android.history.RoomHistoryStore
+import ai.whisperio.android.security.DataCipher
 import ai.whisperio.android.security.KeystoreSecretStore
+import ai.whisperio.android.security.WrappedKeyStore
 import ai.whisperio.android.settings.AppLanguageStore
 import ai.whisperio.android.settings.SettingsRepository
 import ai.whisperio.core.ProviderId
@@ -18,9 +20,11 @@ import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import java.io.File
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.first
@@ -74,7 +78,13 @@ class EraseAllTest {
         )
     }
 
-    @After fun tearDown() { db.close(); ioScope.cancel() }
+    @After fun tearDown() {
+        // AppGraph launches runMaintenance on the app scope; stop it before the DB closes, or its late Room read
+        // fails and kotlinx-coroutines-test reports it as UncaughtExceptionsBeforeTest in the NEXT test.
+        closing = true
+        appJobs.forEach { it.cancel() }
+        db.close(); ioScope.cancel()
+    }
 
     private fun row(id: String, audio: File?) = Recording(
         id = id, createdAt = 1000L + id.hashCode(), durationMs = 1000, status = RecordingStatus.DONE,
@@ -93,7 +103,13 @@ class EraseAllTest {
         settings.setPerAppLanguage(true); appLanguages.remember("com.example.app", "pl")
     }
 
-    private fun TestScope.appScope() = CoroutineScope(StandardTestDispatcher(testScheduler))
+    private val appJobs = mutableListOf<Job>()
+    @Volatile private var closing = false
+
+    private fun TestScope.appScope() = CoroutineScope(
+        StandardTestDispatcher(testScheduler) + Job().also { appJobs += it } +
+            CoroutineExceptionHandler { _, e -> if (!closing) throw e },
+    )
 
     private lateinit var lastController: DictationController
 
@@ -193,5 +209,55 @@ class EraseAllTest {
         assertTrue(history.observeAll().first().isEmpty())
         assertEquals(emptyList<File>(), recordingsDir.listFiles().orEmpty().toList())
         assertTrue(secrets.configured.first().isEmpty())
+    }
+
+    /** Wrapped-key store whose first [failDeletes] delete calls throw (a transient DataStore failure). */
+    private class FlakyKeys(var failDeletes: Int) : WrappedKeyStore {
+        var blob: ByteArray? = null
+        var deleteCalls = 0
+        override suspend fun read() = blob
+        override suspend fun write(wrapped: ByteArray) { blob = wrapped }
+        override suspend fun delete() {
+            deleteCalls++
+            if (failDeletes-- > 0) throw java.io.IOException("datastore write failed")
+            blob = null
+        }
+    }
+
+    private fun cipherGraph(scope: CoroutineScope, dictation: DictationController, cipher: DataCipher) = AppGraph(
+        AppGraph.Overrides(scope, db, secrets, settings, recordingsDir, dictation, appLanguages, dataCipher = cipher),
+    )
+
+    @Test fun eraseRetriesAWrappedKeyDeleteThatFailedOnce() = runTest {
+        val scope = appScope()
+        val dictation = controller(scope)
+        seedEverything()
+        val keys = FlakyKeys(failDeletes = 1)
+        val cipher = DataCipher(TestCipher(), keys)
+        cipher.sealText("mint the wrapped key")
+        assertTrue(keys.blob != null)
+
+        cipherGraph(scope, dictation, cipher).eraseAllData()
+
+        assertNull("no dead wrapped key left behind", keys.blob)
+        assertEquals(2, keys.deleteCalls)
+        assertTrue(history.observeAll().first().isEmpty())
+        assertTrue(secrets.configured.first().isEmpty())
+    }
+
+    @Test fun eraseStillClearsRowsWhenTheShredKeepsFailing() = runTest {
+        val scope = appScope()
+        val dictation = controller(scope)
+        seedEverything()
+        val keys = FlakyKeys(failDeletes = Int.MAX_VALUE)
+        val cipher = DataCipher(TestCipher(), keys)
+        cipher.sealText("mint the wrapped key")
+
+        cipherGraph(scope, dictation, cipher).eraseAllData()
+
+        assertTrue(history.observeAll().first().isEmpty())
+        assertEquals(emptyList<File>(), recordingsDir.listFiles().orEmpty().toList())
+        assertTrue(secrets.configured.first().isEmpty())
+        assertEquals(0, appLanguages.count.first())
     }
 }
