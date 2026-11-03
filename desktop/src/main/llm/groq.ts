@@ -7,7 +7,8 @@
 // Groq's own model catalog. Mirrors mobile/WhisperioApp/Sources/WhisperioApp/Engine/GroqProvider.swift.
 import { net, app } from 'electron'
 import { guardRedirects, GUARDED_REDIRECT } from './redirectGuard'
-import { handleTranscriptionError } from '../errorHandler'
+import { audioMimeFromFilename } from './audioMime'
+import { recordTranscriptionError } from '../errorHandler'
 
 const GROQ_STT_URL = 'https://api.groq.com/openai/v1/audio/transcriptions'
 export const DEFAULT_GROQ_MODEL = 'whisper-large-v3-turbo'
@@ -57,7 +58,7 @@ export function groqTranscribe(
   const parts: Buffer[] = []
 
   parts.push(Buffer.from(
-    `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="${safeFilename}"\r\nContent-Type: audio/webm\r\n\r\n`
+    `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="${safeFilename}"\r\nContent-Type: ${audioMimeFromFilename(filename, audioBuffer)}\r\n\r\n`
   ))
   parts.push(audioBuffer)
   parts.push(Buffer.from('\r\n'))
@@ -86,7 +87,7 @@ export function groqTranscribe(
         settled = true
         request.abort()
         const err = new Error('Groq transcription request timed out after 45s')
-        handleTranscriptionError(err, 'groq')
+        recordTranscriptionError(err, 'groq')
         reject(err)
       }
     }, 45_000)
@@ -114,7 +115,7 @@ export function groqTranscribe(
         if (response.statusCode !== 200) {
           if (isDev()) console.error(`[Whisperio] Groq API error body: ${responseBody}`)
           const err = new Error(`Groq API error ${response.statusCode}`)
-          handleTranscriptionError(err, 'groq')
+          recordTranscriptionError(err, 'groq')
           settle(reject)(err)
           return
         }
@@ -123,22 +124,22 @@ export function groqTranscribe(
           settle(resolve)(data.text)
         } catch {
           const err = new Error(`Failed to parse transcription response (HTTP ${response.statusCode})`)
-          handleTranscriptionError(err, 'groq')
+          recordTranscriptionError(err, 'groq')
           settle(reject)(err)
         }
       })
       response.on('error', (err: Error) => {
-        handleTranscriptionError(err, 'groq')
+        recordTranscriptionError(err, 'groq')
         settle(reject)(err)
       })
     })
 
     guardRedirects(request, GROQ_STT_URL, (err) => {
-      handleTranscriptionError(err, 'groq')
+      recordTranscriptionError(err, 'groq')
       settle(reject)(err)
     })
     request.on('error', (err: Error) => {
-      handleTranscriptionError(err, 'groq')
+      recordTranscriptionError(err, 'groq')
       settle(reject)(err)
     })
     request.write(body)
