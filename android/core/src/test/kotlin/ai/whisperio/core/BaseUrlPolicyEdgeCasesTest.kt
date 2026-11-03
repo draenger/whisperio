@@ -115,13 +115,10 @@ class BaseUrlPolicyEdgeCasesTest {
         assertFalse(BaseUrlPolicy.isOfficialHost(ProviderId.GROQ, u("https://api.openai.com/v1")))
     }
 
-    // ---- Known gaps (see PR "Bugs found"). Ignored so the suite stays green; remove @Ignore once fixed.
-
     /**
-     * A dotless all-digit host is treated as an intranet name, but the JVM resolver parses it as a
-     * 32-bit IPv4 literal: 134744072 == 8.8.8.8, so plain http to a public IP is allowed.
+     * The JVM resolver parses dotless all-digit hosts as 32-bit IPv4 literals:
+     * 134744072 == 8.8.8.8, so they must not be treated as intranet names.
      */
-    @Ignore("BUG: BaseUrlPolicy.kt isLocalHost dotless rule accepts integer IPv4 literals of public hosts")
     @Test fun integerIpv4LiteralOfPublicHostIsRejected() {
         assertEquals("8.8.8.8", InetAddress.getByName("134744072").hostAddress)
         assertIs<BaseUrlError.InsecureHttp>(rejected("http://134744072/v1"))
@@ -134,8 +131,8 @@ class BaseUrlPolicyEdgeCasesTest {
         assertFalse(BaseUrlPolicy.isLocalHost("fd::1"))
     }
 
-    /** Characterisation of the current (buggy) behaviour so a fix is noticed. */
+    /** Dotless numeric IPv4 literals are not intranet host names. */
     @Test fun currentBehaviourForIntegerIpv4Literal() {
-        assertTrue(BaseUrlPolicy.isLocalHost("134744072"))
+        assertFalse(BaseUrlPolicy.isLocalHost("134744072"))
     }
 }
