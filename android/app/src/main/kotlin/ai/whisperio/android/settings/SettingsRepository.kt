@@ -13,6 +13,7 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
+import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import java.util.UUID
 import kotlinx.coroutines.flow.Flow
@@ -44,6 +45,10 @@ class SettingsRepository(
         val sensitive = booleanPreferencesKey("transcripts_sensitive")
         val onboarding = booleanPreferencesKey("onboarding_done")
         val perAppLanguage = booleanPreferencesKey("per_app_language")
+        val encryptHistory = booleanPreferencesKey("encrypt_history")
+        val encryptCardHandled = booleanPreferencesKey("encrypt_card_handled")
+        val needsCompaction = booleanPreferencesKey("needs_compaction")
+        val compactionFailedAt = longPreferencesKey("compaction_failed_at")
         val customCategories = stringPreferencesKey("custom_categories") // JSON list, CONTRACT-1.2 F3
         val snippets = stringPreferencesKey("snippets") // JSON list of {id, trigger, replacement}; absent = none
         fun baseUrl(id: ProviderId) = stringPreferencesKey("base_url_${id.wire}")
@@ -148,6 +153,8 @@ class SettingsRepository(
             onboardingDone = p[K.onboarding] ?: false,
             perAppLanguage = p[K.perAppLanguage] ?: false,
             snippets = Snippets.decode(p[K.snippets]),
+            encryptHistory = p[K.encryptHistory] ?: false,
+            encryptCardHandled = p[K.encryptCardHandled] ?: false,
         )
     }
 
@@ -184,6 +191,22 @@ class SettingsRepository(
     suspend fun setSensitive(v: Boolean) = store.edit { it[K.sensitive] = v }
     suspend fun setOnboardingDone(v: Boolean) = store.edit { it[K.onboarding] = v }
     suspend fun setPerAppLanguage(v: Boolean) = store.edit { it[K.perAppLanguage] = v }
+
+    /** Only [ai.whisperio.android.di.AppGraph.setEncryptHistory] calls this: the flag and the row migration go together. */
+    suspend fun setEncryptHistory(v: Boolean) = store.edit { it[K.encryptHistory] = v }
+
+    /** Set when the user answers the one-time card on Home (either button). */
+    suspend fun setEncryptCardHandled(v: Boolean) = store.edit { it[K.encryptCardHandled] = v }
+
+    /** True while the history database still needs a WAL checkpoint + VACUUM (an earlier one failed or was cut short). */
+    suspend fun needsCompaction(): Boolean = store.data.first()[K.needsCompaction] ?: false
+
+    suspend fun setNeedsCompaction(v: Boolean) = store.edit { it[K.needsCompaction] = v }
+
+    /** Wall-clock ms of the last failed compaction (0 = none); the start-up retry waits a day after it. */
+    suspend fun compactionFailedAt(): Long = store.data.first()[K.compactionFailedAt] ?: 0L
+
+    suspend fun setCompactionFailedAt(ms: Long) = store.edit { it[K.compactionFailedAt] = ms }
 
     /** Part of "Erase all data": resets every setting to its default. */
     suspend fun clear() {

@@ -29,6 +29,10 @@ data class AppSettings(
     val perAppLanguage: Boolean = false,
     /** Snippets: spoken trigger -> replacement, applied after cleanup. Empty (the default) = off. */
     val snippets: List<Snippet> = emptyList(),
+    /** Opt-in field encryption of transcripts (docs/design/opt-in-encryption.md); default OFF. Change it via AppGraph.setEncryptHistory. */
+    val encryptHistory: Boolean = false,
+    /** The one-time "Encrypt history" card on Home was answered (Turn on or Not now); never shown again. Erase all resets it. */
+    val encryptCardHandled: Boolean = false,
 ) {
     companion object {
         const val LANGUAGE_AUTO = "auto"
