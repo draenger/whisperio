@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## v1.6.0 — 2026-11-03
+
+Opt-in encryption of history and recordings (default OFF), hold-to-talk (Windows),
+CLI control, silence gate/trim, clipboard restore, and reliability + security fixes.
+Release notes: docs/release-notes-v1.6.0.md (EN), docs/release-notes-v1.6.0.pl.md (PL).
+Platforms: Windows + Linux (macOS separately).
+
 ### GitHub sync vault key (PR #37)
 - The key that seals secrets in your GitHub sync repo is never silently replaced any more.
   If the OS keychain is locked or access is denied, push/pull stop with a clear message
