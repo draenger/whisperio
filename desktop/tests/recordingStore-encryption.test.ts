@@ -218,7 +218,7 @@ describe('recordingStore - sealed index', () => {
     const err = vi.spyOn(console, 'error').mockImplementation(() => {})
     try {
       expect(getRecordings()).toEqual([])
-      const backups = readdirSync(RECORDINGS_DIR).filter((f) => f.startsWith('index.json.corrupt-'))
+      const backups = readdirSync(RECORDINGS_DIR).filter((f) => f.startsWith('index.corrupt-'))
       expect(backups).toHaveLength(1)
       expect(readFileSync(join(RECORDINGS_DIR, backups[0]), 'utf-8')).toBe('{"v":1,"alg":"aes-256-gcm","iv":"tru')
       await seed()

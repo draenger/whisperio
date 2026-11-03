@@ -110,6 +110,18 @@ class HistoryDaoTest {
         assertEquals("text x", r.transcript)
     }
 
+    @Test fun deleteAllAudioSkipsTheActiveRecording() = runBlocking {
+        val old = audio("old")
+        val live = audio("live")
+        store.upsert(row("old", 1, audio = old))
+        store.upsert(row("live", 2, RecordingStatus.RECORDING, audio = live))
+        store.deleteAllAudio(keepId = "live", keepFile = live)
+        assertFalse(old.exists())
+        assertTrue(live.exists())
+        assertNull(store.get("old")!!.audioPath)
+        assertEquals(live.path, store.get("live")!!.audioPath)
+    }
+
     @Test fun setInsertedTracksKeyboardCommits() = runBlocking {
         store.upsert(row("k", 1).copy(source = RecordingSource.KEYBOARD, inserted = false))
         store.setInserted("k", true)
@@ -122,6 +134,22 @@ class HistoryDaoTest {
         store.clear()
         assertTrue(store.observeAll().first().isEmpty())
         assertFalse(f.exists())
+    }
+
+    @Test fun updateOutcomeKeepsCategoryAndInsertedAndDoesNotResurrectDeletedRows() = runBlocking {
+        store.upsert(row("a", 1, RecordingStatus.TRANSCRIBING).copy(inserted = false))
+        store.setCategory("a", "work") // set by the user while the upload was running
+        store.updateOutcome(row("a", 1, RecordingStatus.DONE).copy(transcript = "final", provider = "groq"))
+        val a = store.get("a")!!
+        assertEquals(RecordingStatus.DONE, a.status)
+        assertEquals("final", a.transcript)
+        assertEquals("groq", a.provider)
+        assertEquals("work", a.category)
+        assertEquals(false, a.inserted)
+
+        store.delete("a")
+        store.updateOutcome(row("a", 1, RecordingStatus.DONE))
+        assertNull(store.get("a"))
     }
 
     @Test fun interruptedConstantMatchesContract() {

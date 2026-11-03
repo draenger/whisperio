@@ -1,20 +1,18 @@
 package ai.whisperio.android.dictate
 
 import ai.whisperio.android.MainActivity
-import ai.whisperio.android.R
 import ai.whisperio.android.dictation.DictationError
 import ai.whisperio.android.dictation.DictationState
 import ai.whisperio.android.dictation.StartOptions
 import ai.whisperio.android.graph
 import ai.whisperio.android.history.RecordingSource
+import ai.whisperio.android.ui.common.KeepScreenOn
 import ai.whisperio.android.ui.common.confirmHaptic
-import ai.whisperio.android.ui.common.copyPlainText
+import ai.whisperio.android.ui.common.needsScreenOn
 import ai.whisperio.android.ui.theme.WhisperioTheme
 import android.Manifest
 import android.content.Intent
-import android.os.Build
 import android.os.Bundle
-import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -48,6 +46,7 @@ class DictateActivity : ComponentActivity() {
         setContent {
             WhisperioTheme {
                 val state by controller.state.collectAsState()
+                KeepScreenOn(needsScreenOn(state))
                 DictateScreen(
                     state = state,
                     onStop = controller::stopAndTranscribe,
@@ -67,10 +66,9 @@ class DictateActivity : ComponentActivity() {
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
                 controller.results.collect { r ->
-                    if (r.session == SESSION_TAG) {
-                        copyToClipboard(r.text)
-                        window.decorView.confirmHaptic()
-                    }
+                    // The clipboard copy itself is done app-scoped (AppGraph.installDictateClipboard), so it also
+                    // happens when this screen is already gone; the haptic only makes sense while we are visible.
+                    if (r.session == SESSION_TAG) window.decorView.confirmHaptic()
                 }
             }
         }
@@ -88,9 +86,10 @@ class DictateActivity : ComponentActivity() {
 
     override fun onStop() {
         super.onStop()
-        // Leaving the screen ends the recording (no foreground service, CONTRACT 6); a rotation does not.
+        // Leaving the screen (or the screen turning off) stops the recording and transcribes it; the audio is never discarded
+        // (no foreground service, CONTRACT 6). Only the explicit Cancel button discards. A rotation does neither.
         val s = graph.dictation.state.value
-        if (!isChangingConfigurations && s is DictationState.Recording && s.source == source) graph.dictation.cancel()
+        if (!isChangingConfigurations && s is DictationState.Recording && s.source == source) graph.dictation.stopAndTranscribe()
     }
 
     private fun begin() {
@@ -99,15 +98,6 @@ class DictateActivity : ComponentActivity() {
 
     private fun startDictation() {
         graph.dictation.start(StartOptions(source = source, saveToHistory = true, session = SESSION_TAG))
-    }
-
-    private fun copyToClipboard(text: String) {
-        lifecycleScope.launch {
-            val sensitive = graph.settings.current().transcriptsSensitive
-            copyPlainText(this@DictateActivity, text, sensitive)
-            // Android 13+ shows its own "copied" confirmation; older versions need ours.
-            if (Build.VERSION.SDK_INT < 33) Toast.makeText(this@DictateActivity, R.string.copied_toast, Toast.LENGTH_SHORT).show()
-        }
     }
 
     companion object {

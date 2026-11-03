@@ -85,7 +85,7 @@ describe('recordingStore index recovery', () => {
     vi.spyOn(console, 'error').mockImplementation(() => {})
     vi.spyOn(console, 'warn').mockImplementation(() => {})
     expect(getRecordings()).toEqual([])
-    const b = readdirSync(DIR).filter((f) => f.startsWith('index.json.corrupt-'))
+    const b = readdirSync(DIR).filter((f) => f.startsWith('index.corrupt-'))
     expect(b).toHaveLength(1)
     expect(readFileSync(join(DIR, b[0]), 'utf-8')).toBe('{"recordings": [ {"id": "a"')
   })
@@ -94,7 +94,7 @@ describe('recordingStore index recovery', () => {
     writeFileSync(INDEX, '{"recordings": "nope"}')
     vi.spyOn(console, 'warn').mockImplementation(() => {})
     expect(getRecordings()).toEqual([])
-    expect(readdirSync(DIR).filter((f) => f.startsWith('index.json.corrupt-'))).toHaveLength(1)
+    expect(readdirSync(DIR).filter((f) => f.startsWith('index.corrupt-'))).toHaveLength(1)
   })
 
   it('does not log the JSON.parse message (may contain transcript text)', () => {
@@ -106,6 +106,24 @@ describe('recordingStore index recovery', () => {
     const all = JSON.stringify([...err.mock.calls, ...warn.mock.calls, ...log.mock.calls])
     expect(all).not.toContain(SECRET)
     expect(all).not.toMatch(/Unexpected|position|JSON at/)
+  })
+
+  it('turning encryption ON also seals current-format corrupt and filtered backups', async () => {
+    writeFileSync(INDEX, plainIndex)
+    writeFileSync(join(DIR, 'index.corrupt-222.json'), `{"recordings":[{"transcription":"${SECRET}"`)
+    writeFileSync(join(DIR, 'index.filtered-333.json'), `{"recordings":[{"transcription":"${SECRET}"}]}`)
+    writeFileSync(join(DIR, 'index.corrupt-444.json.tmp'), 'leftover')
+    const res = await setHistoryEncryption(true)
+    expect(res).toEqual({ ok: true, sealedBackups: 2, plainBackupsLeft: 0 })
+    const files = readdirSync(DIR)
+    expect(files).toContain('index.corrupt-222.json.sealed.json')
+    expect(files).toContain('index.filtered-333.json.sealed.json')
+    expect(files).not.toContain('index.corrupt-222.json')
+    expect(files).not.toContain('index.filtered-333.json')
+    expect(files).not.toContain('index.corrupt-444.json.tmp.sealed.json')
+    for (const f of ['index.corrupt-222.json.sealed.json', 'index.filtered-333.json.sealed.json']) {
+      expect(readFileSync(join(DIR, f), 'utf-8')).not.toContain(SECRET)
+    }
   })
 
   it('turning encryption ON seals plaintext .corrupt-* backups and removes the plaintext', async () => {

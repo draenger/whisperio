@@ -1,6 +1,6 @@
 import { app } from 'electron'
-import { existsSync, mkdirSync, writeFileSync, readFileSync, unlinkSync, renameSync, copyFileSync, statSync, readdirSync } from 'fs'
-import { join, dirname } from 'path'
+import { existsSync, realpathSync, mkdirSync, writeFileSync, readFileSync, unlinkSync, renameSync, copyFileSync, statSync, readdirSync } from 'fs'
+import { join, resolve, sep, dirname } from 'path'
 import type { SpeakerSegment } from './dictation/conversation'
 import { loadSettings, saveSettings } from './settingsManager'
 import {
@@ -85,6 +85,30 @@ interface RecordingIndex {
   recordings: RecordingEntry[]
 }
 
+/**
+ * True only when `filepath` resolves to a location strictly inside the recordings
+ * directory. Guards every read/delete of an audio file against a tampered index
+ * entry (e.g. filepath set to '../x' or an absolute path outside the dir).
+ */
+export function isInsideRecordingsDir(filepath: unknown): boolean {
+  if (typeof filepath !== 'string' || !filepath) return false
+  // Follow symlinks for paths that exist, so a link inside the dir that points
+  // outside it is refused. Non-existent paths fall back to lexical resolution.
+  const real = (p: string): string => {
+    const r = resolve(p)
+    try {
+      return existsSync(r) ? realpathSync(r) : r
+    } catch {
+      return r
+    }
+  }
+  const dir = real(getRecordingsDir())
+  const target = real(filepath)
+  const prefix = dir.endsWith(sep) ? dir : dir + sep
+  const norm = (p: string): string => (process.platform === 'win32' ? p.toLowerCase() : p)
+  return norm(target).startsWith(norm(prefix))
+}
+
 // Bound the on-disk recordings cache. Without a cap the `.webm` files accumulate
 // forever, silently eating gigabytes of the user's disk on a long-lived install
 // (and eventually failing writes once the volume fills). When a new recording
@@ -118,7 +142,7 @@ function evictToQuota(index: RecordingIndex, protectId?: string): void {
     if (total <= target) break
     if (entry.id === protectId) continue
 
-    if (existsSync(entry.filepath)) {
+    if (isInsideRecordingsDir(entry.filepath) && existsSync(entry.filepath)) {
       try {
         unlinkSync(entry.filepath)
       } catch {
@@ -214,26 +238,43 @@ interface IndexState {
 }
 
 /**
- * Thrown when index.json exists but cannot be used safely right now (persistent read error such
- * as an AV/backup lock, or a corrupt file we could not back up). Callers must NOT treat this as
- * "empty history": a following saveIndex() would overwrite the only copy. Same contract as the
- * fix/corrupt-index-json change (PR #34) so the two merge mechanically.
+ * Thrown when index.json exists but can't be used safely right now (persistent
+ * read error such as an AV/backup lock, or a corrupt file we could not back up).
+ * Callers must NOT treat this as "empty history": a following saveIndex() would
+ * overwrite the only copy. IPC handlers surface it as a rejected call.
  */
 export const INDEX_UNAVAILABLE_CODE = 'INDEX_UNAVAILABLE'
 
 export class IndexUnavailableError extends Error {
   readonly code = INDEX_UNAVAILABLE_CODE
   constructor(message: string) {
-    // ipcMain.handle keeps only the message, so the code is embedded as a matchable prefix.
+    // Electron's ipcMain.handle drops custom error classes/props and only keeps
+    // the message, so the code is embedded as a prefix the renderer can match.
     super(`[${INDEX_UNAVAILABLE_CODE}] ${message}`)
     this.name = 'IndexUnavailableError'
   }
 }
 
 const READ_RETRIES = 5
+// Bounded backoff between index read retries (total 25+50+100+200 = 375 ms).
+const READ_BACKOFF_MS = [25, 50, 100, 200]
 
-// Signature (mtime+size) of a corrupt index already COPIED aside (rename failed), so repeated
-// reads do not pile up identical backups.
+let sleepImpl: (ms: number) => void = (ms) => {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms)
+}
+
+/** Blocking sleep (main process, tiny bounded waits only). */
+export function sleepSync(ms: number): void {
+  sleepImpl(ms)
+}
+
+/** Test hook: replace the sleep implementation; call with no arg to restore. */
+export function setSleepSyncForTests(fn?: (ms: number) => void): void {
+  sleepImpl = fn ?? ((ms) => { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms) })
+}
+
+// Signature (mtime+size) of a corrupt index we already COPIED aside (rename
+// failed), so repeated reads don't pile up identical backups.
 let copiedCorruptSignature: string | null = null
 
 function fileSignature(path: string): string | null {
@@ -245,10 +286,11 @@ function fileSignature(path: string): string | null {
   }
 }
 
-// Move an unreadable index aside so the next save cannot overwrite the only copy. Never deletes.
-// Returns false when no backup could be made (caller must then refuse, not go empty).
+// Move an unreadable index aside so the next saveIndex() cannot overwrite the
+// only copy of the user's history metadata. Never deletes anything. Returns
+// false when no backup could be made (caller must then refuse, not go empty).
 function quarantineCorruptIndex(indexPath: string): boolean {
-  const name = `index.json.corrupt-${Date.now()}`
+  const name = `index.corrupt-${Date.now()}.json`
   const backup = join(dirname(indexPath), name)
   try {
     renameSync(indexPath, backup)
@@ -275,9 +317,12 @@ function readIndexText(indexPath: string): string {
     try {
       return readFileSync(indexPath, 'utf-8')
     } catch (err) {
-      // A transient lock (Defender, an indexer, OneDrive) must never be mistaken for corruption:
-      // retry, then refuse rather than go empty. Only the error code is logged/reported.
-      if (attempt < READ_RETRIES - 1 && isTransientRenameError(err)) continue
+      // A transient lock (Defender, an indexer, OneDrive) must never be
+      // mistaken for corruption: retry, then refuse rather than go empty.
+      if (attempt < READ_RETRIES - 1 && isTransientRenameError(err)) {
+        sleepSync(READ_BACKOFF_MS[Math.min(attempt, READ_BACKOFF_MS.length - 1)])
+        continue
+      }
       const code = (err as NodeJS.ErrnoException | null)?.code ?? 'unknown'
       throw new IndexUnavailableError(`Recordings index could not be read (${code}); history left untouched.`)
     }
@@ -328,7 +373,13 @@ function readIndexState(): IndexState {
   ) {
     return quarantineOrThrow(indexPath)
   }
-  return { index: parsed as RecordingIndex, sealedOnDisk: false, locked: false }
+  const obj = parsed as RecordingIndex
+  const valid = obj.recordings.filter(
+    (r) => r !== null && typeof r === 'object' && typeof (r as { id?: unknown }).id === 'string'
+  )
+  if (valid.length === obj.recordings.length) return { index: obj, sealedOnDisk: false, locked: false }
+  backupBeforeFilter(indexPath, obj.recordings.length - valid.length, obj.recordings.length)
+  return { index: { ...obj, recordings: valid }, sealedOnDisk: false, locked: false }
 }
 
 export function loadIndex(): RecordingIndex {
@@ -362,6 +413,35 @@ function serializeIndex(index: RecordingIndex, seal: boolean): string {
   if (!seal) return JSON.stringify(index, null, 2)
   const key = getDataKeyForEncrypt() // throws when the vault is unavailable: fail closed, never plain
   return serializeEnvelope(sealIndexPayload(key, JSON.stringify(index)))
+}
+
+// Entries without a string id are dropped from the in-memory list; the next
+// saveIndex() would erase them for good. Keep a copy of the original first
+// (never deleted), once per distinct file state. Logs counts only.
+let filteredBackupSignature: string | null = null
+function backupBeforeFilter(indexPath: string, dropped: number, total: number): void {
+  const sig = fileSignature(indexPath)
+  if (sig !== null && sig === filteredBackupSignature) return
+  const name = `index.filtered-${Date.now()}.json`
+  try {
+    copyFileSync(indexPath, join(dirname(indexPath), name))
+  } catch {
+    throw new IndexUnavailableError('Recordings index has invalid entries and could not be backed up; history left untouched.')
+  }
+  filteredBackupSignature = sig
+  console.warn(`[recordingStore] dropped ${dropped} of ${total} invalid index entries; original copied to ${name}`)
+}
+
+// Windows hands out a transient EPERM/EBUSY for a rename when another process
+// (Defender/an indexer/a backup agent) still holds the freshly-written temp
+// file open. That window is short, so a couple of immediate retries turn a
+// spurious "failed to save recordings" into a normal save.
+const RENAME_RETRIES = 5
+const TRANSIENT_RENAME_CODES = new Set(['EPERM', 'EBUSY', 'EACCES'])
+
+function isTransientRenameError(err: unknown): boolean {
+  const code = (err as NodeJS.ErrnoException | null)?.code
+  return typeof code === 'string' && TRANSIENT_RENAME_CODES.has(code)
 }
 
 export function saveIndex(index: RecordingIndex): void {
@@ -417,7 +497,7 @@ function formatTimestamp(ts: number): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`
 }
 
-export function saveRecording(
+export async function saveRecording(
   audioBuffer: Buffer,
   metadata: {
     duration: number
@@ -444,19 +524,32 @@ export function saveRecording(
   return enqueue(() => {
     const st = readIndexState()
     if (st.locked) throw new HistoryLockedError()
+    const dir = getRecordingsDir()
+    const seal = st.sealedOnDisk || encryptHistoryReader()
+    const data = seal ? encryptAudio(getDataKeyForEncrypt(), audioBuffer, id) : audioBuffer
     // One-second name resolution: a same-second save (or a stepped-back clock) must not reuse an
-    // existing file — tmp+rename would silently overwrite the other recording's audio. Safe check:
-    // every audio write runs inside this queue. Same fix as main #43 (exclusive create there).
+    // existing file. Create exclusively ('wx') and add a -2, -3 ... suffix on collision (main #43).
+    // Sealed audio reserves the name with an empty placeholder and then replaces it atomically, so
+    // plaintext never touches disk.
     let filename = `${base}.webm`
-    for (let n = 2; existsSync(join(getRecordingsDir(), filename)) || existsSync(join(getRecordingsDir(), `${filename}.tmp`)); n++) {
-      filename = `${base}-${n}.webm`
+    let filepath = join(dir, filename)
+    for (let n = 2; ; n++) {
+      try {
+        writeFileSync(filepath, seal ? Buffer.alloc(0) : data, { flag: 'wx' })
+        break
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException | null)?.code !== 'EEXIST' || n > 1000) throw err
+        filename = `${base}-${n}.webm`
+        filepath = join(dir, filename)
+      }
     }
-    const filepath = join(getRecordingsDir(), filename)
-    if (st.sealedOnDisk || encryptHistoryReader()) {
-      const sealed = encryptAudio(getDataKeyForEncrypt(), audioBuffer, id)
-      atomicWriteFileSync(filepath, `${filepath}.tmp`, sealed)
-    } else {
-      writeFileSync(filepath, audioBuffer)
+    if (seal) {
+      try {
+        atomicWriteFileSync(filepath, `${filepath}.tmp`, data)
+      } catch (err) {
+        try { unlinkSync(filepath) } catch { /* best-effort: drop the placeholder */ }
+        throw err
+      }
     }
     const entry: RecordingEntry = {
       id,
@@ -526,7 +619,7 @@ export function deleteRecording(id: string): Promise<boolean> {
     // tracked size so the freed bytes no longer count against the disk quota.
     // A hard `splice` here could never converge — a stale device would resurrect
     // the row on the next merge (PT-offline-first-lww-sync).
-    if (existsSync(entry.filepath)) {
+    if (isInsideRecordingsDir(entry.filepath) && existsSync(entry.filepath)) {
       try {
         unlinkSync(entry.filepath)
       } catch {
@@ -546,7 +639,7 @@ export function deleteAllRecordings(): Promise<void> {
     const index = loadIndexForWrite()
 
     for (const entry of index.recordings) {
-      if (existsSync(entry.filepath)) {
+      if (isInsideRecordingsDir(entry.filepath) && existsSync(entry.filepath)) {
         try {
           unlinkSync(entry.filepath)
         } catch {
@@ -577,7 +670,7 @@ export function deleteRecordingsByDate(dateStr: string): Promise<void> {
     }
 
     for (const entry of toDelete) {
-      if (existsSync(entry.filepath)) {
+      if (isInsideRecordingsDir(entry.filepath) && existsSync(entry.filepath)) {
         try {
           unlinkSync(entry.filepath)
         } catch {
@@ -599,6 +692,7 @@ export function deleteRecordingsByDate(dateStr: string): Promise<void> {
 export function readRecordingAudio(id: string): Buffer | null {
   const entry = getRecording(id)
   if (!entry) return null
+  if (!isInsideRecordingsDir(entry.filepath)) return null
   if (!existsSync(entry.filepath)) return null
   const raw = readFileSync(entry.filepath)
   if (!isEncryptedAudio(raw)) return raw
@@ -726,7 +820,14 @@ export async function resumeAudioMigration(): Promise<AudioMigrationResult | nul
 }
 
 /**
- * index.json.corrupt-* backups hold PLAINTEXT history. When encryption is turned ON they are
+ * Names of PLAINTEXT index backups: quarantined corrupt copies (`index.corrupt-<ts>.json`, legacy
+ * `index.json.corrupt-<ts>`) and the copy kept before invalid entries are filtered out
+ * (`index.filtered-<ts>.json`). Exact names only, never `.sealed*` or `.tmp` leftovers.
+ */
+export const PLAIN_INDEX_BACKUP_RE = /^index(\.json\.corrupt-[0-9]+(\.json)?|\.(corrupt|filtered)-[0-9]+\.json)$/
+
+/**
+ * Plaintext index backups (PLAIN_INDEX_BACKUP_RE) hold PLAINTEXT history. When encryption is turned ON they are
  * sealed in place via the same envelope (av=2) and renamed to <name>.sealed.json, then the
  * plaintext copy is removed. A backup that cannot be sealed is left and counted (never silent).
  * There is no read path for recovering a sealed backup yet: the data is preserved, not browsable.
@@ -736,9 +837,7 @@ function sealCorruptBackups(): { sealed: number; left: number } {
   let left = 0
   let names: string[] = []
   try {
-    names = readdirSync(getRecordingsDir()).filter(
-      (n) => n.startsWith('index.json.corrupt-') && !n.endsWith('.sealed.json')
-    )
+    names = readdirSync(getRecordingsDir()).filter((n) => PLAIN_INDEX_BACKUP_RE.test(n))
   } catch {
     return { sealed, left }
   }

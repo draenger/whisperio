@@ -50,7 +50,7 @@ function fakeAudioStream(): MediaStream {
   } as unknown as MediaStream
 }
 
-function mockApi(overrides: { saveRecordings: boolean; inputDeviceId?: string }): {
+function mockApi(overrides: { saveRecordings: boolean; inputDeviceId?: string; silenceGate?: boolean }): {
   save: ReturnType<typeof vi.fn>
   update: ReturnType<typeof vi.fn>
   transcribe: ReturnType<typeof vi.fn>
@@ -69,6 +69,7 @@ function mockApi(overrides: { saveRecordings: boolean; inputDeviceId?: string })
     settings: {
       load: vi.fn().mockResolvedValue({
         saveRecordings: overrides.saveRecordings,
+        silenceGate: overrides.silenceGate,
         sttProvider: 'openai',
         providerChain: [],
         inputDeviceId: overrides.inputDeviceId ?? ''
@@ -169,5 +170,141 @@ describe('useDictation — inputDeviceId constraint', () => {
 
     const [{ audio }] = getUserMedia.mock.calls[0]
     expect(audio).not.toHaveProperty('deviceId')
+  })
+})
+
+/** Silence gate: silent recordings are not uploaded; decode failure fails open. */
+describe('useDictation — silenceGate', () => {
+  function fakeAudioContext(samples: Float32Array | Error): void {
+    class FakeCtx {
+      decodeAudioData(): Promise<unknown> {
+        if (samples instanceof Error) return Promise.reject(samples)
+        return Promise.resolve({
+          numberOfChannels: 1,
+          sampleRate: 16000,
+          getChannelData: () => samples
+        })
+      }
+      close(): Promise<void> {
+        return Promise.resolve()
+      }
+    }
+    // @ts-expect-error test double
+    global.AudioContext = FakeCtx
+  }
+
+  afterEach(() => {
+    // @ts-expect-error cleanup of test double
+    delete global.AudioContext
+  })
+
+  it('skips transcribe and sends an empty "silent" result for silent audio', async () => {
+    fakeAudioContext(new Float32Array(16000))
+    const { transcribe, sendResult } = mockApi({ saveRecordings: true, silenceGate: true })
+    const { result } = renderHook(() => useDictation())
+    await act(async () => { await result.current.startRecording() })
+    await act(async () => { await result.current.stopAndTranscribe(3) })
+    expect(transcribe).not.toHaveBeenCalled()
+    expect(sendResult).toHaveBeenCalledWith('', 3, 'silent')
+  })
+
+  it('still saves the recording before gating a silent clip', async () => {
+    fakeAudioContext(new Float32Array(16000))
+    const { save, update, transcribe } = mockApi({ saveRecordings: true, silenceGate: true })
+    const { result } = renderHook(() => useDictation())
+    await act(async () => { await result.current.startRecording() })
+    await act(async () => { await result.current.stopAndTranscribe(6) })
+    expect(save).toHaveBeenCalledTimes(1)
+    expect(transcribe).not.toHaveBeenCalled()
+    expect(update).toHaveBeenCalledWith('rec-1', expect.objectContaining({ status: 'completed', transcription: '', error: 'Silent — not transcribed' }))
+  })
+
+  it('fails open (still transcribes) when decoding throws', async () => {
+    fakeAudioContext(new Error('decode failed'))
+    const { transcribe, sendResult } = mockApi({ saveRecordings: true, silenceGate: true })
+    const { result } = renderHook(() => useDictation())
+    await act(async () => { await result.current.startRecording() })
+    await act(async () => { await result.current.stopAndTranscribe(4) })
+    expect(transcribe).toHaveBeenCalled()
+    expect(sendResult).toHaveBeenCalledWith('hello world', 4)
+  })
+
+  it('does not gate (sends anyway) when recordings are not saved', async () => {
+    fakeAudioContext(new Float32Array(16000))
+    const { transcribe } = mockApi({ saveRecordings: false, silenceGate: true })
+    const { result } = renderHook(() => useDictation())
+    await act(async () => { await result.current.startRecording() })
+    await act(async () => { await result.current.stopAndTranscribe(7) })
+    expect(transcribe).toHaveBeenCalled()
+  })
+
+  it('does not gate when silenceGate is off', async () => {
+    fakeAudioContext(new Float32Array(16000))
+    const { transcribe } = mockApi({ saveRecordings: false, silenceGate: false })
+    const { result } = renderHook(() => useDictation())
+    await act(async () => { await result.current.startRecording() })
+    await act(async () => { await result.current.stopAndTranscribe(5) })
+    expect(transcribe).toHaveBeenCalled()
+  })
+})
+
+describe('useDictation — start race and device fallback', () => {
+  it('releases the stream when stop arrives while getUserMedia is pending', async () => {
+    const { sendResult } = mockApi({ saveRecordings: false })
+    const stream = fakeAudioStream()
+    let resolveGum!: (s: MediaStream) => void
+    ;(navigator.mediaDevices.getUserMedia as ReturnType<typeof vi.fn>).mockReturnValue(
+      new Promise<MediaStream>((r) => { resolveGum = r })
+    )
+    const { result } = renderHook(() => useDictation())
+    let startP!: Promise<void>
+    await act(async () => { startP = result.current.startRecording() })
+    await act(async () => { await result.current.stopAndTranscribe(3) })
+    expect(sendResult).toHaveBeenCalledWith('', 3)
+    await act(async () => { resolveGum(stream); await startP })
+    expect(stream.getTracks()[0].stop).toHaveBeenCalled()
+    expect(result.current.isRecording).toBe(false)
+  })
+
+  it('falls back to the default device when the selected one is gone', async () => {
+    mockApi({ saveRecordings: false, inputDeviceId: 'gone' })
+    const gum = navigator.mediaDevices.getUserMedia as ReturnType<typeof vi.fn>
+    gum.mockRejectedValueOnce(Object.assign(new Error('x'), { name: 'OverconstrainedError' }))
+    const { result } = renderHook(() => useDictation())
+    await act(async () => { await result.current.startRecording() })
+    expect(gum).toHaveBeenCalledTimes(2)
+    expect(gum.mock.calls[1][0].audio.deviceId).toBeUndefined()
+    expect(result.current.isRecording).toBe(true)
+  })
+
+  it('reports an error and resets main when no mic can be opened', async () => {
+    const { sendResult } = mockApi({ saveRecordings: false })
+    const reportError = vi.fn().mockResolvedValue(undefined)
+    ;(window.api.dictation as unknown as Record<string, unknown>).reportError = reportError
+    ;(navigator.mediaDevices.getUserMedia as ReturnType<typeof vi.fn>).mockRejectedValue(
+      Object.assign(new Error('denied'), { name: 'NotAllowedError' })
+    )
+    const { result } = renderHook(() => useDictation())
+    await act(async () => { await result.current.startRecording(9) })
+    expect(reportError).toHaveBeenCalled()
+    expect(sendResult).toHaveBeenCalledWith('', 9)
+    expect(sendResult.mock.invocationCallOrder[0]).toBeLessThan(reportError.mock.invocationCallOrder[0])
+  })
+
+  it('releases the system-audio stream when stop arrives while getDisplayMedia is pending', async () => {
+    mockApi({ saveRecordings: false })
+    const stream = fakeAudioStream()
+    let resolveGdm!: (s: MediaStream) => void
+    Object.defineProperty(navigator.mediaDevices, 'getDisplayMedia', {
+      value: vi.fn().mockReturnValue(new Promise<MediaStream>((r) => { resolveGdm = r })),
+      configurable: true
+    })
+    const { result } = renderHook(() => useDictation())
+    let startP!: Promise<void>
+    await act(async () => { startP = result.current.startOutputRecording(4) })
+    await act(async () => { result.current.cancelRecording() })
+    await act(async () => { resolveGdm(stream); await startP })
+    expect(stream.getTracks()[0].stop).toHaveBeenCalled()
+    expect(result.current.isRecording).toBe(false)
   })
 })
