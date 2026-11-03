@@ -38,6 +38,7 @@ import {
   peekIsEncryptedAudio,
   AudioVaultError
 } from './audioVault'
+import { secureDeleteFile, pinForWipe, releasePin, sweepPendingWipes } from './secureDelete'
 
 export interface RecordingEntry {
   id: string
@@ -408,16 +409,25 @@ export function saveIndex(index: RecordingIndex): void {
   if (st.locked) throw new HistoryLockedError()
   // Sealing is sticky: a sealed index stays sealed even if the flag reads OFF (e.g. settings.json
   // was reset to defaults after corruption). Only setHistoryEncryption(false) writes plain over it.
-  writeIndexFile(index, st.sealedOnDisk || encryptHistoryReader())
+  const seal = st.sealedOnDisk || encryptHistoryReader()
+  // Flag ON but index still plain (crash between flag and rewrite): this save seals it, so the
+  // plaintext it replaces is wiped (L4).
+  writeIndexFile(index, seal, seal && !st.sealedOnDisk)
 }
 
-function writeIndexFile(index: RecordingIndex, seal: boolean): void {
+/**
+ * wipePrevious: the index being replaced is PLAINTEXT and the new one is sealed (encryption
+ * migration). The old inode is pinned with a hard link before the rename and overwritten with
+ * zeros after it (best-effort, never fails the write - see secureDelete.ts for the limits).
+ */
+function writeIndexFile(index: RecordingIndex, seal: boolean, wipePrevious = false): void {
   // Atomic write: serialize to a temp file then rename over the real index.
   // A crash mid-write leaves the previous index intact instead of a truncated
   // (corrupt) file.
   const indexPath = getIndexPath()
   const tmpPath = `${indexPath}.${process.pid}.${Date.now()}.tmp`
   writeFileSync(tmpPath, serializeIndex(index, seal), 'utf-8')
+  const pin = wipePrevious && existsSync(indexPath) ? pinForWipe(indexPath) : null
 
   // The rename can fail (transient Windows lock, disk full, read-only dir).
   // Whatever the reason, the temp file must not be left behind: saveIndex runs
@@ -427,8 +437,10 @@ function writeIndexFile(index: RecordingIndex, seal: boolean): void {
     renameWithRetry(tmpPath, indexPath)
   } catch (err) {
     try { unlinkSync(tmpPath) } catch { /* best-effort cleanup */ }
+    releasePin(pin) // still a second name of the live index: unlinked, never overwritten
     throw err
   }
+  releasePin(pin) // now the only name of the replaced plaintext index: zeroed, then unlinked
   forgetOrphan('index.json') // a freshly written index is live data, not an orphan
 }
 
@@ -650,6 +662,7 @@ function wipeAfterShred(): ShredReport {
   const dir = getRecordingsDir()
   const stuck: string[] = []
   let names: string[] = []
+  sweepPendingWipes(dir) // leftover plaintext pins (crash mid-migration): overwrite, not just unlink
   try { names = readdirSync(dir) } catch { /* nothing to wipe */ }
   for (const f of names) {
     // index.json.corrupt-* backups may hold plaintext history: erase/reset removes them too
@@ -894,6 +907,7 @@ let migrationRunning: { direction: 'encrypt' | 'decrypt'; promise: Promise<Audio
 function sweepLeakedAudioTmp(): void {
   try {
     const dir = getRecordingsDir()
+    sweepPendingWipes(dir) // plaintext pins left by a crash mid-migration (L4)
     for (const f of readdirSync(dir)) {
       if (f.endsWith('.webm.mig.tmp') || f.endsWith('.webm.tmp')) {
         try { unlinkSync(join(dir, f)) } catch { /* best-effort */ }
@@ -959,7 +973,14 @@ export function migrateAudio(direction: 'encrypt' | 'decrypt'): Promise<AudioMig
           }
           const out =
             direction === 'encrypt' ? encryptAudio(key!, raw, entry.id) : decryptAudio(key!, raw, entry.id)
-          atomicWriteFileSync(entry.filepath, `${entry.filepath}.mig.tmp`, out)
+          // Encrypt: pin the plaintext inode so it can be overwritten once the sealed copy has
+          // replaced it (L4, best-effort; a pin failure never blocks the migration).
+          const pin = direction === 'encrypt' ? pinForWipe(entry.filepath) : null
+          try {
+            atomicWriteFileSync(entry.filepath, `${entry.filepath}.mig.tmp`, out)
+          } finally {
+            releasePin(pin)
+          }
           return 'converted'
         } catch (err) {
           console.error(
@@ -1004,9 +1025,17 @@ export async function resumeAudioMigration(): Promise<AudioMigrationResult | nul
 }
 
 /**
+ * Exact names of PLAINTEXT quarantined index backups (never `.sealed*`, `.tmp` leftovers or
+ * look-alikes). Sealing anything else would produce a name outside CORRUPT_BACKUP_RE that no
+ * erase/reset ever deletes - an orphan after crypto-shred (L5).
+ */
+const PLAIN_CORRUPT_BACKUP_RE = /^index\.json\.corrupt-[0-9]+(\.json)?$/
+
+/**
  * index.json.corrupt-* backups hold PLAINTEXT history. When encryption is turned ON they are
  * sealed in place via the same envelope (av=2) and renamed to <name>.sealed.json, then the
- * plaintext copy is removed. A backup that cannot be sealed is left and counted (never silent).
+ * plaintext copy is overwritten with zeros and removed (best-effort, L4). A backup that cannot be
+ * sealed or removed is left and counted (never silent).
  * There is no read path for recovering a sealed backup yet: the data is preserved, not browsable.
  */
 function sealCorruptBackups(): { sealed: number; left: number } {
@@ -1014,9 +1043,7 @@ function sealCorruptBackups(): { sealed: number; left: number } {
   let left = 0
   let names: string[] = []
   try {
-    names = readdirSync(getRecordingsDir()).filter(
-      (n) => n.startsWith('index.json.corrupt-') && !n.endsWith('.sealed.json')
-    )
+    names = readdirSync(getRecordingsDir()).filter((n) => PLAIN_CORRUPT_BACKUP_RE.test(n))
   } catch {
     return { sealed, left }
   }
@@ -1028,7 +1055,8 @@ function sealCorruptBackups(): { sealed: number; left: number } {
       const tmp = `${out}.tmp`
       writeFileSync(tmp, serializeEnvelope(sealIndexPayload(key, readFileSync(p, 'utf-8'))), 'utf-8')
       renameSync(tmp, out)
-      unlinkSync(p) // only after the sealed copy is in place
+      // only after the sealed copy is in place; overwrite failure falls back to a plain unlink
+      if (secureDeleteFile(p) === 'failed') throw new Error('plaintext backup could not be removed')
       sealed++
     } catch {
       left++
@@ -1081,8 +1109,9 @@ export function setHistoryEncryption(enabled: boolean): Promise<SetHistoryEncryp
       prevFlag = false
     }
     saveSettings({ encryptHistory: enabled })
+    if (enabled) sweepPendingWipes(getRecordingsDir())
     try {
-      writeIndexFile(st.index, enabled)
+      writeIndexFile(st.index, enabled, enabled && !st.sealedOnDisk)
     } catch (err) {
       try { saveSettings({ encryptHistory: prevFlag }) } catch { /* best-effort rollback */ }
       throw err
