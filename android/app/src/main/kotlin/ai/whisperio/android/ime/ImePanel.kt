@@ -57,6 +57,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 
+/** Where a dictation that could not be typed into the field went (incognito fields never reach History). */
+enum class NotInsertedReason { HISTORY, CLIPBOARD, DISCARDED }
+
 /** Everything the panel renders; built by the service, or by fixtures in snapshot tests. */
 data class ImePanelState(
     val dictation: DictationState,
@@ -66,6 +69,8 @@ data class ImePanelState(
     val providerLabel: String,
     /** True when a finished dictation was not typed (field changed meanwhile). */
     val notInserted: Boolean = false,
+    /** Why the text is not in the field and where it went; only read when [notInserted]. */
+    val notInsertedReason: NotInsertedReason = NotInsertedReason.HISTORY,
     /** Language the next dictation uses (global, or the saved one for this app); `auto`, `pl`, ... */
     val language: String = AppSettings.LANGUAGE_AUTO,
     /** Changes whenever a new input field starts; resets per-field panel state such as the open language list. */
@@ -193,7 +198,13 @@ fun ImePanel(
                 if (d is DictationState.Recording) LevelMeter(d.level, Modifier.widthIn(max = 320.dp))
                 val status = when {
                     state.passwordField -> stringResource(R.string.ime_password_off)
-                    d is DictationState.Done && state.notInserted -> stringResource(R.string.ime_not_inserted)
+                    d is DictationState.Done && state.notInserted -> stringResource(
+                        when (state.notInsertedReason) {
+                            NotInsertedReason.HISTORY -> R.string.ime_not_inserted
+                            NotInsertedReason.CLIPBOARD -> R.string.ime_not_inserted_clipboard
+                            NotInsertedReason.DISCARDED -> R.string.ime_not_inserted_discarded
+                        },
+                    )
                     else -> dictationStatusText(d)
                 }
                 Text(
