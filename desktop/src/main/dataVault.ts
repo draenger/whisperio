@@ -1,6 +1,6 @@
 import { app, safeStorage } from 'electron'
-import { readFileSync, writeFileSync, existsSync, renameSync, unlinkSync, statSync } from 'fs'
-import { join } from 'path'
+import { readFileSync, existsSync, renameSync, unlinkSync, statSync, openSync, writeSync, fsyncSync, closeSync } from 'fs'
+import { join, dirname } from 'path'
 import { unlinkWithRetry } from './audioVault'
 import { generateDataKey, DATA_KEY_BYTES } from './secretCrypto'
 
@@ -37,14 +37,29 @@ function keyPath(): string {
   return join(app.getPath('userData'), KEY_FILE)
 }
 
+// Durable, not just atomic: the wrapped key must be on disk before anything is sealed with it,
+// or a power loss could keep the ciphertext and lose the key (history permanently unreadable).
 function atomicWrite(filePath: string, data: string): void {
   const tmp = `${filePath}.${process.pid}.${Date.now()}.tmp`
-  writeFileSync(tmp, data, 'utf-8')
   try {
+    const fd = openSync(tmp, 'w')
+    try {
+      writeSync(fd, data, null, 'utf-8')
+      fsyncSync(fd)
+    } finally {
+      closeSync(fd)
+    }
     renameSync(tmp, filePath)
   } catch (err) {
     try { unlinkSync(tmp) } catch { /* best-effort cleanup */ }
     throw err
+  }
+  // Persist the rename too (POSIX); Windows cannot open a directory for fsync, so skip it there.
+  if (process.platform !== 'win32') {
+    try {
+      const dfd = openSync(dirname(filePath), 'r')
+      try { fsyncSync(dfd) } finally { closeSync(dfd) }
+    } catch { /* best-effort */ }
   }
 }
 

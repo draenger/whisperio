@@ -1052,7 +1052,9 @@ export function migrateAudio(direction: 'encrypt' | 'decrypt'): Promise<AudioMig
           const cur = readIndexState()
           if (cur.locked) return 'skipped'
           const entry = cur.index.recordings.find((e) => e.id === id && !e.deletedAt)
-          if (!entry || !existsSync(entry.filepath)) return 'skipped'
+          // Same containment as playback/delete: a tampered index must never make the migration
+          // rewrite (and then wipe) a file outside the recordings dir.
+          if (!entry || !isInsideRecordingsDir(entry.filepath) || !existsSync(entry.filepath)) return 'skipped'
           // Re-check intent inside the slot: a toggle flipped mid-run is handled by the chained run.
           const flagOn = encryptHistoryReader()
           if (direction === 'encrypt' && !flagOn) return 'skipped'
@@ -1133,6 +1135,9 @@ export const PLAIN_INDEX_BACKUP_RE = /^index(\.json\.corrupt-[0-9]+(\.json)?|\.(
  * sealed or removed is left and counted (never silent).
  * There is no read path for recovering a sealed backup yet: the data is preserved, not browsable.
  */
+/** Leftover of an interrupted atomic index write (see writeIndex: `${indexPath}.${pid}.${ts}.tmp`). */
+const INDEX_WRITE_TMP_RE = /^index\.json\.[0-9]+\.[0-9]+\.tmp$/
+
 function sealCorruptBackups(): { sealed: number; left: number } {
   let sealed = 0
   let left = 0
@@ -1142,6 +1147,13 @@ function sealCorruptBackups(): { sealed: number; left: number } {
   } catch {
     return { sealed, left }
   }
+  // A crash mid index write leaves `index.json.<pid>.<ts>.tmp`, a plaintext copy of the history. The
+  // rename never happened, so index.json is the canonical copy: the leftover is removed, not sealed.
+  try {
+    for (const n of readdirSync(getRecordingsDir()).filter((x) => INDEX_WRITE_TMP_RE.test(x))) {
+      try { unlinkSync(join(getRecordingsDir(), n)) } catch { left++ }
+    }
+  } catch { /* dir unreadable: handled above */ }
   for (const n of names) {
     const p = join(getRecordingsDir(), n)
     try {

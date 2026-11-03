@@ -126,6 +126,17 @@ describe('recordingStore index recovery', () => {
     }
   })
 
+  it('turning encryption ON removes plaintext leftovers of an interrupted index write', async () => {
+    writeFileSync(INDEX, plainIndex)
+    writeFileSync(join(DIR, 'index.json.1234.1700000000000.tmp'), `{"recordings":[{"transcription":"${SECRET}"}]}`)
+    writeFileSync(join(DIR, 'index.json.tmpnote'), 'not ours')
+    const res = await setHistoryEncryption(true)
+    expect(res.ok).toBe(true)
+    const files = readdirSync(DIR)
+    expect(files).not.toContain('index.json.1234.1700000000000.tmp')
+    expect(files).toContain('index.json.tmpnote')
+  })
+
   it('turning encryption ON seals plaintext .corrupt-* backups and removes the plaintext', async () => {
     writeFileSync(INDEX, plainIndex)
     writeFileSync(join(DIR, 'index.json.corrupt-111'), `{"recordings":[{"transcription":"${SECRET}"`)
