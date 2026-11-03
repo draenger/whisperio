@@ -1,12 +1,25 @@
 import { app } from 'electron'
-import { existsSync, realpathSync, mkdirSync, writeFileSync, readFileSync, unlinkSync, renameSync, copyFileSync, statSync, readdirSync } from 'fs'
-import { join, resolve, sep, dirname } from 'path'
+import {
+  existsSync,
+  realpathSync,
+  mkdirSync,
+  writeFileSync,
+  readFileSync,
+  unlinkSync,
+  renameSync,
+  copyFileSync,
+  statSync,
+  readdirSync
+} from 'fs'
+import { join, resolve, sep, dirname, basename, isAbsolute } from 'path'
 import type { SpeakerSegment } from './dictation/conversation'
 import { loadSettings, saveSettings } from './settingsManager'
 import {
   isDataVaultAvailable,
   getDataKeyForEncrypt,
   getDataKeyForDecrypt,
+  shredDataKey,
+  dataKeyFileExists,
   registerSealedDataProbe
 } from './dataVault'
 import {
@@ -21,10 +34,12 @@ import {
   isEncryptedAudio,
   atomicWriteFileSync,
   renameWithRetry,
+  unlinkWithRetry,
   isTransientRenameError,
   peekIsEncryptedAudio,
   AudioVaultError
 } from './audioVault'
+import { secureDeleteFile, pinForWipe, releasePin, sweepPendingWipes } from './secureDelete'
 
 export interface RecordingEntry {
   id: string
@@ -195,6 +210,14 @@ const INDEX_KID = 'hist-1'
  * the ciphertext was tampered with). Refusing is what keeps the next save from replacing the
  * user's sealed history with an empty index.
  */
+export class KeyShredError extends Error {
+  readonly code = 'KEY_SHRED_FAILED'
+  constructor() {
+    super('The encryption key could not be deleted, so nothing was erased. Close other programs using the app data folder and try again.')
+    this.name = 'KeyShredError'
+  }
+}
+
 export class HistoryLockedError extends Error {
   readonly code = 'HISTORY_LOCKED'
   constructor() {
@@ -207,6 +230,18 @@ export interface HistoryEncryptionStatus {
   enabled: boolean
   sealedOnDisk: boolean
   locked: boolean
+  /**
+   * Only present when locked. 'unrecoverable': sealed data but the key file is MISSING.
+   * 'transient': key file present but could not be unwrapped (locked Keychain/keyring may be
+   * temporary): offer "Try again" before any destructive reset. 'unavailable': the index file
+   * could not be read (AV/backup lock, damage) and no sealed data was found: plain history merely
+   * unavailable, nothing deleted, reset refused.
+   */
+  lockKind?: 'transient' | 'unrecoverable' | 'unavailable'
+}
+
+function lockKindNow(): 'transient' | 'unrecoverable' {
+  return dataKeyFileExists() ? 'transient' : 'unrecoverable'
 }
 
 // Reads the encryptHistory flag. Injectable so tests can drive it; defaults to the settings file.
@@ -395,9 +430,12 @@ function loadIndexForWrite(): RecordingIndex {
 
 export function getHistoryEncryptionStatus(): HistoryEncryptionStatus {
   let st: IndexState
+  let unavailable = false
   try {
     st = readIndexState()
   } catch {
+    // IndexUnavailableError (persistent read error): never 'unrecoverable' - nothing was proven lost.
+    unavailable = true
     st = { index: { recordings: [] }, sealedOnDisk: false, locked: true }
   }
   let enabled = false
@@ -406,7 +444,9 @@ export function getHistoryEncryptionStatus(): HistoryEncryptionStatus {
   } catch {
     enabled = false
   }
-  return { enabled, sealedOnDisk: st.sealedOnDisk, locked: st.locked }
+  return st.locked
+    ? { enabled, sealedOnDisk: st.sealedOnDisk, locked: true, lockKind: unavailable ? (sealedDataExists() ? 'transient' : 'unavailable') : lockKindNow() }
+    : { enabled, sealedOnDisk: st.sealedOnDisk, locked: false }
 }
 
 function serializeIndex(index: RecordingIndex, seal: boolean): string {
@@ -445,16 +485,25 @@ export function saveIndex(index: RecordingIndex): void {
   if (st.locked) throw new HistoryLockedError()
   // Sealing is sticky: a sealed index stays sealed even if the flag reads OFF (e.g. settings.json
   // was reset to defaults after corruption). Only setHistoryEncryption(false) writes plain over it.
-  writeIndexFile(index, st.sealedOnDisk || encryptHistoryReader())
+  const seal = st.sealedOnDisk || encryptHistoryReader()
+  // Flag ON but index still plain (crash between flag and rewrite): this save seals it, so the
+  // plaintext it replaces is wiped (L4).
+  writeIndexFile(index, seal, seal && !st.sealedOnDisk)
 }
 
-function writeIndexFile(index: RecordingIndex, seal: boolean): void {
+/**
+ * wipePrevious: the index being replaced is PLAINTEXT and the new one is sealed (encryption
+ * migration). The old inode is pinned with a hard link before the rename and overwritten with
+ * zeros after it (best-effort, never fails the write - see secureDelete.ts for the limits).
+ */
+function writeIndexFile(index: RecordingIndex, seal: boolean, wipePrevious = false): void {
   // Atomic write: serialize to a temp file then rename over the real index.
   // A crash mid-write leaves the previous index intact instead of a truncated
   // (corrupt) file.
   const indexPath = getIndexPath()
   const tmpPath = `${indexPath}.${process.pid}.${Date.now()}.tmp`
   writeFileSync(tmpPath, serializeIndex(index, seal), 'utf-8')
+  const pin = wipePrevious && existsSync(indexPath) ? pinForWipe(indexPath) : null
 
   // The rename can fail (transient Windows lock, disk full, read-only dir).
   // Whatever the reason, the temp file must not be left behind: saveIndex runs
@@ -464,8 +513,11 @@ function writeIndexFile(index: RecordingIndex, seal: boolean): void {
     renameWithRetry(tmpPath, indexPath)
   } catch (err) {
     try { unlinkSync(tmpPath) } catch { /* best-effort cleanup */ }
+    releasePin(pin) // still a second name of the live index: unlinked, never overwritten
     throw err
   }
+  releasePin(pin) // now the only name of the replaced plaintext index: zeroed, then unlinked
+  forgetOrphan('index.json') // a freshly written index is live data, not an orphan
 }
 
 // Serialize every read-modify-write so overlapping IPC mutations (e.g. an
@@ -546,6 +598,7 @@ export async function saveRecording(
         throw err
       }
     }
+    forgetOrphan(filename) // the name is live again: the startup sweep must never delete it
     const entry: RecordingEntry = {
       id,
       filename,
@@ -629,9 +682,162 @@ export function deleteRecording(id: string): Promise<boolean> {
   })
 }
 
-export function deleteAllRecordings(): Promise<void> {
-  return enqueue(() => {
-    const index = loadIndexForWrite()
+const ORPHANS_FILE = 'shredded-orphans.json'
+
+function orphansPath(): string {
+  return join(getRecordingsDir(), ORPHANS_FILE)
+}
+
+/**
+ * Orphan entries are untrusted (the file lives in userData): accept only plain basenames that are
+ * ours to delete - `*.webm`, `*.tmp` or exactly `index.json`. Anything with a separator, `..` or an
+ * absolute path is dropped on read.
+ */
+/**
+ * Index backups, plain (PLAIN_INDEX_BACKUP_RE) or their sealed copies (`<name>.sealed.json`), that
+ * erase/reset must remove.
+ */
+const CORRUPT_BACKUP_RE =
+  /^index(\.json\.corrupt-[0-9]+(\.json)?|\.(corrupt|filtered)-[0-9]+\.json)(\.sealed(\.json)?)?$/
+
+export function isValidOrphanName(f: unknown): f is string {
+  if (typeof f !== 'string' || f.length === 0) return false
+  if (f.includes('/') || f.includes('\\') || f.includes('\0') || f.includes('..')) return false
+  if (isAbsolute(f) || basename(f) !== f) return false
+  if (f.includes(':')) return false // Windows drive-relative names / NTFS alternate data streams
+  return f === 'index.json' || CORRUPT_BACKUP_RE.test(f) || f.endsWith('.webm') || f.endsWith('.tmp')
+}
+
+/** Drop a name from the orphan list (a new file legitimately reuses it). Never throws. */
+function forgetOrphan(name: string): void {
+  try {
+    if (!existsSync(orphansPath())) return
+    const names = readOrphans()
+    if (names.includes(name)) writeOrphans(names.filter((n) => n !== name))
+  } catch { /* best-effort */ }
+}
+
+/** Names (not paths) of sealed files whose key was destroyed but which could not be deleted yet. */
+function readOrphans(): string[] {
+  try {
+    const p = orphansPath()
+    if (!existsSync(p)) return []
+    const parsed = JSON.parse(readFileSync(p, 'utf-8')) as { files?: unknown }
+    return Array.isArray(parsed.files) ? parsed.files.filter(isValidOrphanName) : []
+  } catch {
+    return []
+  }
+}
+
+function writeOrphans(names: string[]): void {
+  try {
+    const p = orphansPath()
+    if (names.length === 0) {
+      if (existsSync(p)) unlinkSync(p)
+      return
+    }
+    writeFileSync(p, JSON.stringify({ files: names }), 'utf-8')
+  } catch { /* best-effort: the startup sweep also finds nothing to retry then, which is acceptable */ }
+}
+
+export interface ShredReport {
+  /** Files that could not be deleted after the key was destroyed (retried at next start). */
+  undeleted: number
+}
+
+/**
+ * After a SUCCESSFUL deliberate key shred: delete EVERY audio/tmp file in the recordings dir (not
+ * only indexed ones), then the index. Anything that still cannot be deleted holds data sealed under
+ * a destroyed key (garbage); it is recorded by name in shredded-orphans.json so the sealed-data
+ * probe ignores it (else minting a new key would be refused forever) and the startup sweep retries.
+ */
+function wipeAfterShred(): ShredReport {
+  const dir = getRecordingsDir()
+  const stuck: string[] = []
+  let names: string[] = []
+  sweepPendingWipes(dir) // leftover plaintext pins (crash mid-migration): overwrite, not just unlink
+  try { names = readdirSync(dir) } catch { /* nothing to wipe */ }
+  for (const f of names) {
+    // index backups (corrupt/filtered copies) may hold plaintext history: erase/reset removes them too
+    // (every other path keeps them).
+    if (!(f.endsWith('.webm') || f.endsWith('.tmp') || CORRUPT_BACKUP_RE.test(f))) continue
+    try { unlinkWithRetry(join(dir, f)) } catch { stuck.push(f) }
+  }
+  const indexPath = getIndexPath()
+  if (existsSync(indexPath)) {
+    try {
+      unlinkWithRetry(indexPath)
+    } catch {
+      // Cannot delete the sealed index: try replacing it with an empty plain one.
+      try { writeIndexFile({ recordings: [] }, false) } catch { stuck.push('index.json') }
+    }
+  }
+  const all = Array.from(new Set([...readOrphans(), ...stuck]))
+  writeOrphans(all)
+  return { undeleted: stuck.length }
+}
+
+/**
+ * Retry deleting files left behind by an earlier shred (startup). Entries are dropped from the list
+ * once gone. index.json is only removed while it is still unopenable (never a healthy new index).
+ */
+export function sweepShreddedOrphans(): ShredReport {
+  const names = readOrphans()
+  if (names.length === 0) return { undeleted: 0 }
+  const dir = getRecordingsDir()
+  const left: string[] = []
+  // Files the current, readable index references are live data (a reused name after a clock
+  // rollback, a new recording): never delete them, just forget the stale orphan entry.
+  let st: IndexState
+  try {
+    st = readIndexState()
+  } catch (err) {
+    // Index unreadable right now: delete nothing, keep the orphan list for the next startup.
+    if (err instanceof IndexUnavailableError) return { undeleted: names.length }
+    throw err
+  }
+  const live = new Set<string>()
+  if (!st.locked) {
+    for (const r of st.index.recordings) {
+      if (r.filename) live.add(r.filename)
+      if (r.filepath) live.add(basename(r.filepath))
+    }
+  }
+  for (const f of names) {
+    const p = join(dir, f)
+    try {
+      if (!existsSync(p)) continue
+      if (f === 'index.json' && !st.locked) continue
+      if (live.has(f)) continue
+      unlinkWithRetry(p)
+    } catch {
+      left.push(f)
+    }
+  }
+  writeOrphans(left)
+  return { undeleted: left.length }
+}
+
+/**
+ * Erase all history. When history is encrypted (sealed index on disk or the flag ON) this is a
+ * crypto-shred (design 4.3): (1) destroy the wrapped data key FIRST (if that fails nothing is
+ * deleted and KeyShredError is thrown); (2) delete every audio file and the index, tolerating files
+ * that cannot be deleted (reported in the result, retried at startup). Erase still succeeds then:
+ * those files are unreadable without the key. A later save mints a fresh key. Plain history keeps
+ * the old path.
+ */
+export function deleteAllRecordings(): Promise<ShredReport> {
+  return enqueue((): ShredReport => {
+    const st = readIndexState()
+    if (st.locked) throw new HistoryLockedError()
+    const index = st.index
+    // Flag OFF but sealed audio left (e.g. failed decrypt migration): still shred + delete.
+    const shred = st.sealedOnDisk || encryptHistoryReader() || sealedDataExists()
+
+    if (shred) {
+      if (!shredDataKey()) throw new KeyShredError()
+      return wipeAfterShred()
+    }
 
     for (const entry of index.recordings) {
       if (isInsideRecordingsDir(entry.filepath) && existsSync(entry.filepath)) {
@@ -642,9 +848,93 @@ export function deleteAllRecordings(): Promise<void> {
         }
       }
     }
-
+    let undeleted = 0
+    try {
+      for (const f of readdirSync(getRecordingsDir())) {
+        if (!CORRUPT_BACKUP_RE.test(f)) continue // exact backup names only, never look-alikes
+        try { unlinkWithRetry(join(getRecordingsDir(), f)) } catch { undeleted++ }
+      }
+    } catch { /* no recordings dir: nothing to remove */ }
     saveIndex({ recordings: [] })
+    return { undeleted }
   })
+}
+
+export interface ResetReport extends ShredReport {
+  ok: boolean
+  /** True when refused because the key file exists (possibly transient lock): needs confirmDestroy. */
+  needsConfirmDestroy?: boolean
+}
+
+/**
+ * Locked-history recovery: SEALED data exists on disk (sealed index or WHSPAUD audio) but cannot be
+ * opened (key lost / keychain gone). If the key file is MISSING the data is unrecoverable and reset is
+ * allowed. If the key file is PRESENT but could not be unwrapped (possibly a temporarily locked
+ * Keychain/keyring) reset is refused unless confirmDestroy === true (the UI offers "Try again" first).
+ * (1) remove the key file; if that fails, return ok:false and
+ * delete nothing; (2) delete audio, leaked tmp files and index.json and index.json.corrupt-* backups, tolerating undeletable files like erase does; (3) encryption OFF so the next save
+ * starts a fresh history. Refuses (ok:false) for a merely unparsable or AV-locked PLAIN index: that
+ * is not lost-key data and must not be destroyed.
+ */
+export function resetLockedHistory(confirmDestroy?: boolean): Promise<ResetReport> {
+  return enqueue((): ResetReport => {
+    try {
+      if (!readIndexState().locked) return { ok: false, undeleted: 0 }
+    } catch (err) {
+      // Index unreadable (persistent read error / no backup possible): not proven lost -> refuse.
+      if (err instanceof IndexUnavailableError) return { ok: false, undeleted: 0 }
+      throw err
+    }
+    if (!sealedDataExists()) return { ok: false, undeleted: 0 }
+    if (dataKeyFileExists() && confirmDestroy !== true) {
+      return { ok: false, undeleted: 0, needsConfirmDestroy: true }
+    }
+    if (!shredDataKey()) return { ok: false, undeleted: 0 } // key first, abort before touching files
+    const report = wipeAfterShred()
+    saveSettings({ encryptHistory: false })
+    return { ok: true, undeleted: report.undeleted }
+  })
+}
+
+export type EncryptionUiState = 'off' | 'on' | 'migrating' | 'locked' | 'locked-transient' | 'unavailable'
+
+export interface EncryptionProgress {
+  state: EncryptionUiState
+  done: number
+  total: number
+}
+
+/**
+ * Status for the Privacy panel. While a migration runs it answers from counters kept by the job (no
+ * index decrypt, no file opens), so a 1 s poll is cheap. Otherwise one header peek per audio file
+ * (called on open and after actions, not per tick).
+ */
+export function getEncryptionProgress(): EncryptionProgress {
+  if (migrationRunning && migrationCounts) {
+    return { state: 'migrating', done: migrationCounts.done, total: migrationCounts.total }
+  }
+  let st: IndexState
+  try {
+    st = readIndexState()
+  } catch (err) {
+    if (err instanceof IndexUnavailableError) {
+      return { state: sealedDataExists() ? 'locked-transient' : 'unavailable', done: 0, total: 0 }
+    }
+    throw err
+  }
+  if (st.locked) {
+    return { state: lockKindNow() === 'transient' ? 'locked-transient' : 'locked', done: 0, total: 0 }
+  }
+  let enabled = false
+  try { enabled = encryptHistoryReader() } catch { enabled = false }
+  let done = 0
+  let total = 0
+  for (const r of st.index.recordings) {
+    if (r.deletedAt || !existsSync(r.filepath)) continue
+    total++
+    if (peekIsEncryptedAudio(r.filepath) === enabled) done++
+  }
+  return { state: enabled ? 'on' : 'off', done, total }
 }
 
 export function deleteRecordingsByDate(dateStr: string): Promise<void> {
@@ -705,11 +995,13 @@ export interface AudioMigrationResult {
   failed: number
 }
 
+let migrationCounts: { done: number; total: number } | null = null
 let migrationRunning: { direction: 'encrypt' | 'decrypt'; promise: Promise<AudioMigrationResult> } | null = null
 
 function sweepLeakedAudioTmp(): void {
   try {
     const dir = getRecordingsDir()
+    sweepPendingWipes(dir) // plaintext pins left by a crash mid-migration (L4)
     for (const f of readdirSync(dir)) {
       if (f.endsWith('.webm.mig.tmp') || f.endsWith('.webm.tmp')) {
         try { unlinkSync(join(dir, f)) } catch { /* best-effort */ }
@@ -753,6 +1045,7 @@ export function migrateAudio(direction: 'encrypt' | 'decrypt'): Promise<AudioMig
       return result
     }
     const ids = st.index.recordings.filter((r) => !r.deletedAt).map((r) => r.id)
+    migrationCounts = { done: 0, total: ids.length }
     for (const id of ids) {
       const r = await enqueue((): 'converted' | 'skipped' | 'failed' => {
         try {
@@ -776,7 +1069,14 @@ export function migrateAudio(direction: 'encrypt' | 'decrypt'): Promise<AudioMig
           }
           const out =
             direction === 'encrypt' ? encryptAudio(key!, raw, entry.id) : decryptAudio(key!, raw, entry.id)
-          atomicWriteFileSync(entry.filepath, `${entry.filepath}.mig.tmp`, out)
+          // Encrypt: pin the plaintext inode so it can be overwritten once the sealed copy has
+          // replaced it (L4, best-effort; a pin failure never blocks the migration).
+          const pin = direction === 'encrypt' ? pinForWipe(entry.filepath) : null
+          try {
+            atomicWriteFileSync(entry.filepath, `${entry.filepath}.mig.tmp`, out)
+          } finally {
+            releasePin(pin)
+          }
           return 'converted'
         } catch (err) {
           console.error(
@@ -787,6 +1087,7 @@ export function migrateAudio(direction: 'encrypt' | 'decrypt'): Promise<AudioMig
         }
       })
       result[r]++
+      if (migrationCounts) migrationCounts.done++
       await new Promise<void>((resolve) => setImmediate(resolve))
     }
     return result
@@ -794,7 +1095,10 @@ export function migrateAudio(direction: 'encrypt' | 'decrypt'): Promise<AudioMig
   const entry = {
     direction,
     promise: job.finally(() => {
-      if (migrationRunning === entry) migrationRunning = null
+      if (migrationRunning === entry) {
+        migrationRunning = null
+        migrationCounts = null
+      }
     })
   }
   migrationRunning = entry
@@ -819,14 +1123,16 @@ export async function resumeAudioMigration(): Promise<AudioMigrationResult | nul
 /**
  * Names of PLAINTEXT index backups: quarantined corrupt copies (`index.corrupt-<ts>.json`, legacy
  * `index.json.corrupt-<ts>`) and the copy kept before invalid entries are filtered out
- * (`index.filtered-<ts>.json`). Exact names only, never `.sealed*` or `.tmp` leftovers.
+ * (`index.filtered-<ts>.json`). Exact names only, never `.sealed*` or `.tmp` leftovers: sealing anything else would produce a
+ * name outside CORRUPT_BACKUP_RE that no erase/reset ever deletes - an orphan after crypto-shred (L5).
  */
 export const PLAIN_INDEX_BACKUP_RE = /^index(\.json\.corrupt-[0-9]+(\.json)?|\.(corrupt|filtered)-[0-9]+\.json)$/
 
 /**
  * Plaintext index backups (PLAIN_INDEX_BACKUP_RE) hold PLAINTEXT history. When encryption is turned ON they are
  * sealed in place via the same envelope (av=2) and renamed to <name>.sealed.json, then the
- * plaintext copy is removed. A backup that cannot be sealed is left and counted (never silent).
+ * plaintext copy is overwritten with zeros and removed (best-effort, L4). A backup that cannot be
+ * sealed or removed is left and counted (never silent).
  * There is no read path for recovering a sealed backup yet: the data is preserved, not browsable.
  */
 /** Leftover of an interrupted atomic index write (see writeIndex: `${indexPath}.${pid}.${ts}.tmp`). */
@@ -856,7 +1162,8 @@ function sealCorruptBackups(): { sealed: number; left: number } {
       const tmp = `${out}.tmp`
       writeFileSync(tmp, serializeEnvelope(sealIndexPayload(key, readFileSync(p, 'utf-8'))), 'utf-8')
       renameSync(tmp, out)
-      unlinkSync(p) // only after the sealed copy is in place
+      // only after the sealed copy is in place; overwrite failure falls back to a plain unlink
+      if (secureDeleteFile(p) === 'failed') throw new Error('plaintext backup could not be removed')
       sealed++
     } catch {
       left++
@@ -909,8 +1216,9 @@ export function setHistoryEncryption(enabled: boolean): Promise<SetHistoryEncryp
       prevFlag = false
     }
     saveSettings({ encryptHistory: enabled })
+    if (enabled) sweepPendingWipes(getRecordingsDir())
     try {
-      writeIndexFile(st.index, enabled)
+      writeIndexFile(st.index, enabled, enabled && !st.sealedOnDisk)
     } catch (err) {
       try { saveSettings({ encryptHistory: prevFlag }) } catch { /* best-effort rollback */ }
       throw err
@@ -931,7 +1239,7 @@ export function sealedDataExists(): boolean {
   try {
     const dir = getRecordingsDir()
     const indexPath = join(dir, 'index.json')
-    if (existsSync(indexPath)) {
+    if (existsSync(indexPath) && !readOrphans().includes('index.json')) {
       const txt = readFileSync(indexPath, 'utf-8')
       try {
         if (looksSealed(JSON.parse(txt))) return true
@@ -939,8 +1247,9 @@ export function sealedDataExists(): boolean {
         if (/"ct"\s*:/.test(txt) && /"alg"\s*:/.test(txt)) return true
       }
     }
+    const orphans = new Set(readOrphans()) // sealed under a destroyed key: garbage, never blocks a new key
     for (const f of readdirSync(dir)) {
-      if (f.endsWith('.tmp') || f === 'index.json') continue
+      if (f.endsWith('.tmp') || f === 'index.json' || f === ORPHANS_FILE || orphans.has(f)) continue
       if (peekIsEncryptedAudio(join(dir, f))) return true
     }
   } catch { /* unreadable dir: nothing provably sealed */ }

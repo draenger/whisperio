@@ -194,3 +194,17 @@ export function atomicWriteFileSync(finalPath: string, tmpPath: string, data: Bu
     throw err
   }
 }
+
+/** unlinkSync with bounded retries on transient errors (AV/indexer holding the file). Throws on final failure. */
+export function unlinkWithRetry(path: string): void {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      unlinkSync(path)
+      return
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException | null)?.code === 'ENOENT') return
+      if (attempt < RENAME_RETRIES - 1 && isTransientRenameError(err)) continue
+      throw err
+    }
+  }
+}
