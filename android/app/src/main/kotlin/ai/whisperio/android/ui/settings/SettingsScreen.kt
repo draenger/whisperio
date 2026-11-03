@@ -51,6 +51,7 @@ import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.foundation.text.KeyboardOptions
@@ -225,7 +226,7 @@ fun SettingsScreen(state: SettingsUiState, actions: SettingsActions, modifier: M
                 modifier = Modifier.heightIn(min = 48.dp),
             )
 
-            SectionTitle(stringResource(R.string.settings_privacy_storage))
+            SectionTitle(stringResource(R.string.settings_privacy_storage), Modifier.testTag(PRIVACY_SECTION_TAG))
             SwitchRow(
                 stringResource(R.string.settings_consent),
                 stringResource(R.string.settings_consent_hint),
@@ -323,40 +324,13 @@ fun SettingsScreen(state: SettingsUiState, actions: SettingsActions, modifier: M
         )
     }
     confirmEncrypt?.let { target ->
-        AlertDialog(
-            onDismissRequest = { confirmEncrypt = null },
-            title = { Text(stringResource(if (target) R.string.settings_encrypt_on_title else R.string.settings_encrypt_off_title)) },
-            text = { Text(stringResource(if (target) R.string.settings_encrypt_on_body else R.string.settings_encrypt_off_body)) },
-            confirmButton = {
-                TextButton(onClick = { confirmEncrypt = null; actions.onEncryptHistory(target) }) {
-                    Text(stringResource(if (target) R.string.settings_encrypt_on_confirm else R.string.settings_encrypt_off_confirm))
-                }
-            },
-            dismissButton = { TextButton(onClick = { confirmEncrypt = null }) { Text(stringResource(R.string.action_cancel)) } },
+        EncryptConfirmDialog(
+            target,
+            onConfirm = { confirmEncrypt = null; actions.onEncryptHistory(target) },
+            onDismiss = { confirmEncrypt = null },
         )
     }
-    state.encryptNotice?.let { notice ->
-        AlertDialog(
-            onDismissRequest = actions::onEncryptNoticeDismiss,
-            title = {
-                Text(
-                    stringResource(
-                        if (notice is EncryptNotice.Unavailable) R.string.settings_encrypt_unavailable_title else R.string.settings_encrypt,
-                    ),
-                )
-            },
-            text = {
-                Text(
-                    when (notice) {
-                        EncryptNotice.Unavailable -> stringResource(R.string.settings_encrypt_unavailable_body)
-                        is EncryptNotice.Unreadable ->
-                            pluralStringResource(R.plurals.settings_encrypt_unreadable, notice.count, notice.count)
-                    },
-                )
-            },
-            confirmButton = { TextButton(onClick = actions::onEncryptNoticeDismiss) { Text(stringResource(R.string.action_close)) } },
-        )
-    }
+    state.encryptNotice?.let { notice -> EncryptNoticeDialog(notice, actions::onEncryptNoticeDismiss) }
     if (confirmErase) {
         AlertDialog(
             onDismissRequest = { confirmErase = false },
@@ -482,4 +456,48 @@ private fun SwitchRow(title: String, hint: String, checked: Boolean, onChange: (
         }
         Switch(checked = checked, onCheckedChange = null, enabled = enabled)
     }
+}
+
+/** Test tag of the "Privacy and storage" section title (Roborazzi scrolls to it). */
+const val PRIVACY_SECTION_TAG = "settings_privacy"
+
+/** The result of an "Encrypt history" run that needs attention; shared by Settings and the Home card. */
+@Composable
+fun EncryptNoticeDialog(notice: EncryptNotice, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                stringResource(
+                    if (notice is EncryptNotice.Unavailable) R.string.settings_encrypt_unavailable_title else R.string.settings_encrypt,
+                ),
+            )
+        },
+        text = {
+            Text(
+                when (notice) {
+                    EncryptNotice.Unavailable -> stringResource(R.string.settings_encrypt_unavailable_body)
+                    is EncryptNotice.Unreadable ->
+                        pluralStringResource(R.plurals.settings_encrypt_unreadable, notice.count, notice.count)
+                },
+            )
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_close)) } },
+    )
+}
+
+/** The confirmation before turning encryption ON or OFF; shared by Settings and the Home card. */
+@Composable
+fun EncryptConfirmDialog(target: Boolean, onConfirm: () -> Unit, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(if (target) R.string.settings_encrypt_on_title else R.string.settings_encrypt_off_title)) },
+        text = { Text(stringResource(if (target) R.string.settings_encrypt_on_body else R.string.settings_encrypt_off_body)) },
+        confirmButton = {
+            TextButton(onClick = onConfirm) {
+                Text(stringResource(if (target) R.string.settings_encrypt_on_confirm else R.string.settings_encrypt_off_confirm))
+            }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) } },
+    )
 }

@@ -42,6 +42,7 @@ class SettingsRepository(
         val onboarding = booleanPreferencesKey("onboarding_done")
         val perAppLanguage = booleanPreferencesKey("per_app_language")
         val encryptHistory = booleanPreferencesKey("encrypt_history")
+        val encryptCardHandled = booleanPreferencesKey("encrypt_card_handled")
         val customCategories = stringPreferencesKey("custom_categories") // JSON list, CONTRACT-1.2 F3
         fun baseUrl(id: ProviderId) = stringPreferencesKey("base_url_${id.wire}")
     }
@@ -112,6 +113,7 @@ class SettingsRepository(
             onboardingDone = p[K.onboarding] ?: false,
             perAppLanguage = p[K.perAppLanguage] ?: false,
             encryptHistory = p[K.encryptHistory] ?: false,
+            encryptCardHandled = p[K.encryptCardHandled] ?: false,
         )
     }
 
@@ -151,6 +153,9 @@ class SettingsRepository(
 
     /** Only [ai.whisperio.android.di.AppGraph.setEncryptHistory] calls this: the flag and the row migration go together. */
     suspend fun setEncryptHistory(v: Boolean) = store.edit { it[K.encryptHistory] = v }
+
+    /** Set when the user answers the one-time card on Home (either button). */
+    suspend fun setEncryptCardHandled(v: Boolean) = store.edit { it[K.encryptCardHandled] = v }
 
     /** Part of "Erase all data": resets every setting to its default. */
     suspend fun clear() {
