@@ -299,6 +299,9 @@ class AppGraph private constructor(private val appOrNull: Application?, private 
                 val store = encryptingHistory ?: return@withLock
                 if (enabled && !dataKeyUsable()) return@withLock
                 settings.setEncryptHistory(enabled)
+                // Persist this before rewriting a row: a process death leaves plaintext in WAL/free pages even
+                // when the next migration finds no remaining plaintext rows.
+                if (enabled) settings.setNeedsCompaction(true)
                 val report = migrateAudio(enabled, store.migrate(enabled))
                 // Old plaintext survives in the WAL and in freed pages: scrub it, but never fail the switch over it.
                 if (enabled) {
@@ -405,10 +408,12 @@ class AppGraph private constructor(private val appOrNull: Application?, private 
                 encryptingHistory?.let { store ->
                     val on = settings.current().encryptHistory
                     if (!on || dataKeyUsable()) {
+                        // refreshPending above identifies rows/clips this pass can seal. Mark before the first
+                        // rewrite so a process death cannot lose the WAL/free-page cleanup requirement.
+                        if (on && store.pendingEncryption.value > 0) settings.setNeedsCompaction(true)
                         val report = migrateAudio(on, store.migrate(on))
                         // Rows sealed just now left plaintext behind in the file.
                         if (on && report.converted > 0) {
-                            settings.setNeedsCompaction(true)
                             sealedNow = true
                         }
                     }
