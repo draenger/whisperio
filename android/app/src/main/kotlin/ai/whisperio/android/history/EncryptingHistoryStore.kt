@@ -84,6 +84,18 @@ class EncryptingHistoryStore(
         if (on && (concealed == null || _pending.value != 0 || kept.audioPath?.endsWith(".m4a") == true)) refreshPending()
     }
 
+    /**
+     * The dictation result path (DictationController.writeBack, main #59) writes through updateOutcome, not upsert:
+     * it must be sealed the same way, or finished transcripts and provider errors land in SQLite as plaintext.
+     */
+    override suspend fun updateOutcome(r: Recording) {
+        val kept = keepUnreadable(r)
+        val on = enabled()
+        val concealed = if (on) tryConceal(kept) else null
+        inner.updateOutcome(concealed ?: kept)
+        if (on && (concealed == null || _pending.value != 0 || kept.audioPath?.endsWith(".m4a") == true)) refreshPending()
+    }
+
     /** Recounts the plaintext items. Cheap enough to run after a write or a migration. */
     suspend fun refreshPending() {
         pendingLock.withLock {
