@@ -1,4 +1,5 @@
 import { useState, type CSSProperties, type ReactElement } from 'react'
+import { normalizeSnippetPhrase } from '../../../shared/snippets'
 import type { Theme } from '../../theme'
 import { SectionHeader } from './SettingsForm'
 
@@ -30,9 +31,9 @@ export interface SnippetsPanelProps {
   theme: Theme
 }
 
-/** Case/whitespace-insensitive duplicate check for the add form (UI-only; main normalises fully). */
+/** Uses the matcher canonicalization, so visually different equivalent triggers cannot coexist. */
 function sameTrigger(a: string, b: string): boolean {
-  return a.trim().replace(/\s+/g, ' ').toLowerCase() === b.trim().replace(/\s+/g, ' ').toLowerCase()
+  return normalizeSnippetPhrase(a) === normalizeSnippetPhrase(b)
 }
 
 export function SnippetsPanel({ snippets, setSnippets, s, theme }: SnippetsPanelProps): ReactElement {
@@ -45,7 +46,9 @@ export function SnippetsPanel({ snippets, setSnippets, s, theme }: SnippetsPanel
     !snippets.some((sn) => sameTrigger(sn.trigger, newTrigger))
 
   const updateAt = (index: number, patch: Partial<SnippetEntry>): void => {
-    setSnippets(snippets.map((sn, i) => (i === index ? { ...sn, ...patch } : sn)))
+    const next = { ...snippets[index], ...patch }
+    if (!next.text.trim() || snippets.some((sn, i) => i !== index && sameTrigger(sn.trigger, next.trigger))) return
+    setSnippets(snippets.map((sn, i) => (i === index ? next : sn)))
   }
   const removeAt = (index: number): void => {
     setSnippets(snippets.filter((_, i) => i !== index))

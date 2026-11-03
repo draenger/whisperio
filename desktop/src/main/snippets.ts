@@ -1,3 +1,5 @@
+import { normalizeSnippetPhrase } from '../shared/snippets'
+
 // Snippets (Wispr-Flow parity, Phase 1 #2 — exact-match variant).
 //
 // A snippet maps a spoken TRIGGER phrase to a stored replacement TEXT, e.g.
@@ -23,13 +25,7 @@ export interface Snippet {
   text: string
 }
 
-const EDGE_PUNCT = /^[\s\p{P}]+|[\s\p{P}]+$/gu
-const INNER_WS = /\s+/gu
-
-/** Canonical form used for comparison only — never shown or pasted. */
-export function normalizeSnippetPhrase(phrase: string): string {
-  return phrase.normalize('NFC').replace(EDGE_PUNCT, '').replace(INNER_WS, ' ').toLowerCase()
-}
+export { normalizeSnippetPhrase } from '../shared/snippets'
 
 /** Keeps only well-formed entries (string trigger with content, string text). */
 export function sanitizeSnippets(value: unknown): Snippet[] {
@@ -55,7 +51,7 @@ export function expandSnippets(text: string, snippets: readonly Snippet[] | null
   for (const snippet of snippets) {
     if (!snippet || typeof snippet.trigger !== 'string' || typeof snippet.text !== 'string') continue
     const trigger = normalizeSnippetPhrase(snippet.trigger)
-    if (trigger && trigger === spoken) return snippet.text
+    if (trigger && trigger === spoken && snippet.text.trim()) return snippet.text
   }
   return text
 }

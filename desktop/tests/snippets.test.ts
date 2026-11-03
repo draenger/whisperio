@@ -75,6 +75,11 @@ describe('expandSnippets — matching contract', () => {
   it('pastes the snippet text verbatim (no trimming/normalising of the output)', () => {
     expect(expandSnippets('sig', [{ trigger: 'sig', text: '  Best,\n  Ana  ' }])).toBe('  Best,\n  Ana  ')
   })
+
+  it('does not apply a snippet with an empty or whitespace-only replacement', () => {
+    expect(expandSnippets('sig', [{ trigger: 'sig', text: '' }])).toBe('sig')
+    expect(expandSnippets('sig', [{ trigger: 'sig', text: ' \n\t ' }])).toBe('sig')
+  })
 })
 
 describe('normalizeSnippetPhrase', () => {

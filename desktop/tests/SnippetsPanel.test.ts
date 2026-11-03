@@ -40,9 +40,9 @@ describe('SnippetsPanel', () => {
     expect(setSnippets).toHaveBeenCalledWith([{ trigger: 'my address', text: '221B Baker St' }])
   })
 
-  it('refuses to add a duplicate trigger (case/space-insensitive)', () => {
+  it('refuses to add a duplicate trigger using matcher normalization', () => {
     const { setSnippets } = renderPanel({ snippets: [{ trigger: 'my address', text: 'a' }] })
-    fireEvent.change(screen.getByLabelText('New snippet trigger phrase'), { target: { value: 'My  Address' } })
+    fireEvent.change(screen.getByLabelText('New snippet trigger phrase'), { target: { value: ' "My  Address." ' } })
     fireEvent.change(screen.getByLabelText('New snippet text'), { target: { value: 'b' } })
     const add = screen.getByText('+ Add') as HTMLButtonElement
     expect(add.disabled).toBe(true)
@@ -60,6 +60,18 @@ describe('SnippetsPanel', () => {
     const texts = screen.getAllByLabelText('Snippet text')
     fireEvent.change(texts[0], { target: { value: 'Alpha' } })
     expect(setSnippets).toHaveBeenLastCalledWith([{ trigger: 'a', text: 'Alpha' }, { trigger: 'b', text: 'B' }])
+  })
+
+  it('refuses duplicate triggers and blank replacement text while editing', () => {
+    const list = [{ trigger: 'my address', text: 'A' }, { trigger: 'signature', text: 'B' }]
+    const { setSnippets } = renderPanel({ snippets: list })
+    const triggers = screen.getAllByLabelText('Snippet trigger phrase')
+    const texts = screen.getAllByLabelText('Snippet text')
+
+    fireEvent.change(triggers[1], { target: { value: 'My address.' } })
+    fireEvent.change(texts[0], { target: { value: ' \n\t ' } })
+
+    expect(setSnippets).not.toHaveBeenCalled()
   })
 
   it('deletes a row', () => {
