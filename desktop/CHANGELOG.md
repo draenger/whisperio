@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+### GitHub sync vault key (PR #37)
+- The key that seals secrets in your GitHub sync repo is never silently replaced any more.
+  If the OS keychain is locked or access is denied, push/pull stop with a clear message
+  and the key file is left untouched (before: a new key was minted and the secrets already
+  in the repo became unreadable).
+- **Linux without a keyring** (GNOME Keyring / KWallet not running, Electron falls back to
+  `basic_text`): the vault now counts as unavailable — GitHub secret sync is off until a
+  keyring is available. A vault key created earlier under `basic_text` is kept on disk but
+  not used. Install/unlock a keyring to use secret sync.
+
 ### Electron 41
 - Electron 34 -> 41.10.6 (pinned exactly). Picks up Chromium/V8/Node 24 security
   fixes that 34 (out of support) no longer receives.
