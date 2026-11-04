@@ -132,6 +132,7 @@ export function SnippetsPanel({ snippets, setSnippets, s, theme }: SnippetsPanel
         <button
           onClick={add}
           disabled={!canAdd}
+          aria-label="Add snippet"
           style={{
             ...buttonBase,
             border: `1px solid ${theme.inputBorder}`,
