@@ -228,6 +228,7 @@ describe('SettingsForm — settings.load() failure handling', () => {
 })
 
 describe('SettingsForm — Snippets section wiring (load -> edit -> auto-save)', () => {
+  // Renders the whole form: ~1 s locally but past the 5 s default on a loaded CI runner (#63 run 41891768684).
   it('loads saved snippets, and an added snippet is persisted via settings.save', async () => {
     const save = vi.fn().mockResolvedValue({})
     const load = vi.fn().mockResolvedValue({ snippets: [{ trigger: 'my address', text: '221B Baker St' }] })
@@ -271,5 +272,5 @@ describe('SettingsForm — Snippets section wiring (load -> edit -> auto-save)',
         ),
       { timeout: 3000 }
     )
-  })
+  }, 15_000)
 })
