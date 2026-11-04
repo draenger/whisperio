@@ -10,6 +10,8 @@ import ai.whisperio.android.settings.SettingsRepository
 import ai.whisperio.android.settings.toChainSettings
 import ai.whisperio.core.KeyValidation
 import ai.whisperio.core.ProviderId
+import ai.whisperio.core.Snippet
+import ai.whisperio.core.SnippetCheck
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import java.io.File
 import kotlinx.coroutines.CoroutineScope
@@ -165,6 +167,32 @@ class SettingsRepositoryTest {
         assertFalse(r.current().cloudConsentGranted)
         assertFalse(r.current().onboardingDone)
         assertEquals(ProviderId.entries.size, r.flow.first().order.size)
+    }
+
+    @Test fun snippetsDefaultEmptyAndSupportAddEditDelete() = runBlocking {
+        val r = repo()
+        assertTrue(r.current().snippets.isEmpty())
+        var n = 0
+        val ok = r.saveSnippet(" brb ", "Be right back", newId = { "sn${++n}" })
+        assertEquals(SnippetCheck.Ok("brb", "Be right back"), ok)
+        assertEquals(listOf(Snippet("sn1", "brb", "Be right back")), r.current().snippets)
+        assertEquals(SnippetCheck.Duplicate, r.saveSnippet("BRB!", "x", newId = { "sn${++n}" }))
+        assertEquals(1, r.snippets.first().size)
+        // Editing may keep its own trigger.
+        assertTrue(r.saveSnippet("brb", "Back soon", editId = "sn1") is SnippetCheck.Ok)
+        assertEquals("Back soon", r.current().snippets.single().replacement)
+        r.removeSnippet("sn1")
+        assertTrue(r.current().snippets.isEmpty())
+        // Editing a deleted snippet does not resurrect it.
+        r.saveSnippet("brb", "again", editId = "sn1")
+        assertTrue(r.current().snippets.isEmpty())
+    }
+
+    @Test fun clearErasesSnippets() = runBlocking {
+        val r = repo()
+        r.saveSnippet("brb", "Be right back")
+        r.clear()
+        assertTrue(r.snippets.first().isEmpty())
     }
 }
 

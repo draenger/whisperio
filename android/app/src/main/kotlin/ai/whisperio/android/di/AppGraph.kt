@@ -9,10 +9,21 @@ import ai.whisperio.android.dictation.DictationResult
 import ai.whisperio.android.dictation.SetupStatus
 import ai.whisperio.android.dictation.computeSetupStatus
 import ai.whisperio.android.history.AppDatabase
+import ai.whisperio.android.history.AudioMigration
+import ai.whisperio.android.history.DbCompactor
+import ai.whisperio.android.history.EncryptingHistoryStore
+import ai.whisperio.android.ui.settings.EncryptSwitch
 import ai.whisperio.android.history.HistoryStore
 import ai.whisperio.android.history.MIGRATION_1_2
+import ai.whisperio.android.history.MigrationReport
 import ai.whisperio.android.history.RoomHistoryStore
+import ai.whisperio.android.history.SecureDeleteCallback
+import ai.whisperio.android.history.hasSealedData
 import ai.whisperio.android.security.AndroidKeystoreCipher
+import ai.whisperio.android.security.AudioCipher
+import ai.whisperio.android.security.DataCipher
+import ai.whisperio.android.security.DataStoreWrappedKeyStore
+import ai.whisperio.android.security.Decrypted
 import ai.whisperio.android.security.KeystoreSecretStore
 import ai.whisperio.android.security.SecretStore
 import ai.whisperio.android.settings.AppLanguageStore
@@ -36,15 +47,28 @@ import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.preferencesDataStore
 import androidx.room.Room
 import java.io.File
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+
+/** Outcome of [AppGraph.setEncryptHistory]. */
+sealed interface EncryptHistoryResult {
+    /** Flag saved and rows migrated; [report] counts rows rewritten and rows that could not be read. */
+    data class Done(val report: MigrationReport) : EncryptHistoryResult
+
+    /** Turning ON was refused because the data key could not be created or used (fail closed, flag stays OFF). */
+    data object KeystoreUnavailable : EncryptHistoryResult
+}
 
 private val Context.settingsDataStore by preferencesDataStore(
     name = "settings",
@@ -58,6 +82,9 @@ private val Context.appLanguagesDataStore by preferencesDataStore(
     name = "app_languages",
     corruptionHandler = corruptionHandlerFor("app_languages"),
 )
+// No corruption handler on purpose: silently replacing the wrapped data key with defaults would orphan encrypted
+// history (see DataCipher: never a silent new DEK).
+private val Context.dataKeyDataStore by preferencesDataStore(name = "data_key")
 
 /**
  * A corrupt preferences file must not crash every start (and the keyboard with it): log and fall back to defaults. The
@@ -128,6 +155,10 @@ class AppGraph private constructor(private val appOrNull: Application?, private 
         val dictation: DictationController,
         val appLanguages: AppLanguageStore? = null,
         val shareDir: File? = null,
+        /** Null = plain history store (tests that do not exercise encryption). */
+        val dataCipher: DataCipher? = null,
+        /** Null = a real [DbCompactor] on [database]; tests pass a fake to observe or fail the VACUUM. */
+        val compactor: DbCompactor? = null,
     )
 
     internal constructor(overrides: Overrides) : this(null, overrides)
@@ -165,10 +196,62 @@ class AppGraph private constructor(private val appOrNull: Application?, private 
         }.join()
     }
 
-    private val database: AppDatabase by lazy {
-        o?.database ?: Room.databaseBuilder(app, AppDatabase::class.java, "whisperio.db").addMigrations(MIGRATION_1_2).build()
+    private val database: AppDatabase by lazy { o?.database ?: builtDatabase }
+
+    /** Applies `secure_delete` to every connection Room opens; follows the "Encrypt history" setting. */
+    private val secureDeleteOnOpen = SecureDeleteCallback()
+
+    private val builtDatabase: AppDatabase by lazy {
+        Room.databaseBuilder(app, AppDatabase::class.java, "whisperio.db")
+            .addMigrations(MIGRATION_1_2)
+            .addCallback(secureDeleteOnOpen)
+            .build()
     }
-    val history: HistoryStore by lazy { RoomHistoryStore(database.recordings(), recordingsDir) }
+
+    /** WAL checkpoint + VACUUM + secure_delete for the history database (#21 follow-up). */
+    private val compactor: DbCompactor by lazy { o?.compactor ?: DbCompactor(database, secureDeleteOnOpen) }
+    /** History DEK wrapped by its own Keystore key (opt-in encryption). Null only in a test graph without one. */
+    private val dataCipher: DataCipher? by lazy {
+        if (o != null) {
+            o.dataCipher
+        } else {
+            DataCipher(dataKek!!, DataStoreWrappedKeyStore(app.dataKeyDataStore), sealedDataExists = ::sealedDataExists)
+        }
+    }
+
+    /** Probe for [DataCipher]: any sealed row or clip means a missing data key must never be replaced silently. */
+    private suspend fun sealedDataExists(): Boolean = database.recordings().sealedCandidates().any { it.hasSealedData() }
+
+    /** Kept clips (`<id>.m4a.wea`); shares the history data key. Null only in a test graph without a cipher. */
+    val audioCipher: AudioCipher? by lazy { dataCipher?.let(::AudioCipher) }
+
+    private val audioMigration: AudioMigration? by lazy { audioCipher?.let { AudioMigration(database.recordings(), it) } }
+
+    /** Seals/opens the kept clips after the row text; the active recording's own file is left for the next run. */
+    private suspend fun migrateAudio(enabled: Boolean, report: MigrationReport): MigrationReport {
+        val a = audioMigration?.migrate(enabled, dictation.activeId())
+        encryptingHistory?.refreshPending()
+        a ?: return report
+        return report.copy(audioConverted = a.converted, audioUnreadable = a.unreadable)
+    }
+
+    /** The Keystore key that wraps the history DEK; null in a test graph (no Android Keystore on the JVM). */
+    private val dataKek: AndroidKeystoreCipher? by lazy {
+        if (o != null) null else AndroidKeystoreCipher(DataStoreWrappedKeyStore.DATA_KEK_ALIAS)
+    }
+
+    /** Transcripts are sealed on write only while [AppSettings.encryptHistory] is ON; reads always decrypt what they find. */
+    private val encryptingHistory: EncryptingHistoryStore? by lazy {
+        dataCipher?.let { c ->
+            EncryptingHistoryStore(RoomHistoryStore(database.recordings(), recordingsDir), database.recordings(), c,
+                enabled = { settings.current().encryptHistory },
+                activeFile = { dictation.activeFile() },
+                activeId = { dictation.activeId() },
+            )
+        }
+    }
+
+    val history: HistoryStore by lazy { encryptingHistory ?: RoomHistoryStore(database.recordings(), recordingsDir) }
 
     /** CONTRACT-1.2 F5: the one swiped-away History row waiting for its Undo window. */
     val pendingDelete: PendingDeleteController by lazy { PendingDeleteController(appScope, history) }
@@ -193,12 +276,99 @@ class AppGraph private constructor(private val appOrNull: Application?, private 
             recordingsDir = recordingsDir,
             micGranted = ::micGranted,
             nowMs = SystemClock::elapsedRealtime,
+            audioCipher = audioCipher,
+            encryptAudio = { settings.current().encryptHistory },
         )
     }
 
     /** Re-evaluated whenever settings or keys change; [micGranted] is passed by the caller because it can change at any time. */
     fun setupStatus(mic: Flow<Boolean>): Flow<SetupStatus> =
         combine(settings.flow, secrets.configured, mic) { s, keys, granted -> computeSetupStatus(s, keys, granted) }
+
+    /**
+     * The "Encrypt history" switch. ON: proves the data key works (fail closed), saves the flag so new rows are
+     * sealed, then seals existing rows. OFF: saves the flag, then opens existing rows. Runs in [appScope] (never
+     * cancelled); a run killed half-way leaves a readable mix that [runMaintenance] finishes on the next start.
+     */
+    suspend fun setEncryptHistory(enabled: Boolean): EncryptHistoryResult {
+        var result: EncryptHistoryResult = EncryptHistoryResult.KeystoreUnavailable
+        appScope.launch {
+            // Suspending coroutines interleave even on a single-parallelism dispatcher, so switches and
+            // maintenance are serialised by this lock instead.
+            maintenanceLock.withLock {
+                val store = encryptingHistory ?: return@withLock
+                if (enabled && !dataKeyUsable()) return@withLock
+                settings.setEncryptHistory(enabled)
+                // Persist this before rewriting a row: a process death leaves plaintext in WAL/free pages even
+                // when the next migration finds no remaining plaintext rows.
+                if (enabled) settings.setNeedsCompaction(true)
+                val report = migrateAudio(enabled, store.migrate(enabled))
+                // Old plaintext survives in the WAL and in freed pages: scrub it, but never fail the switch over it.
+                if (enabled) {
+                    enableSecureDelete()
+                    compactDatabase()
+                }
+                result = EncryptHistoryResult.Done(report)
+            }
+        }.join()
+        return result
+    }
+
+    /**
+     * Shared by Settings and the Home card: the busy / notice state lives here (process scoped), so it survives
+     * rotation and a screen change while a migration runs.
+     */
+    val encryptSwitch: EncryptSwitch by lazy { EncryptSwitch(
+            appScope,
+            ::setEncryptHistory,
+            pending = encryptingHistory?.pendingEncryption ?: MutableStateFlow(0),
+            locked = dataCipher?.locked ?: MutableStateFlow(false),
+        ) }
+
+    /** Held for the whole of [setEncryptHistory] and [runMaintenance]: no migration or sweep overlaps another. */
+    private val maintenanceLock = Mutex()
+
+    /** Best effort, so a migration is still reported as done when it fails. */
+    private suspend fun enableSecureDelete() {
+        try {
+            compactor.enableSecureDelete()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            // Not applied now; the open-callback and the next maintenance pass try again.
+        }
+    }
+
+    /**
+     * Checkpoint + VACUUM. The "needs compaction" flag is raised first and only cleared after a success, so a failure
+     * or a process death mid-way is retried by [runMaintenance]. Caller holds [maintenanceLock]. Never throws.
+     */
+    private suspend fun compactDatabase() {
+        try {
+            settings.setNeedsCompaction(true)
+            if (compactor.compact()) {
+                settings.setNeedsCompaction(false)
+                settings.setCompactionFailedAt(0L)
+            } else {
+                settings.setCompactionFailedAt(System.currentTimeMillis())
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            // The flag may or may not be saved; either way the migration itself already succeeded.
+        }
+    }
+
+    private suspend fun dataKeyUsable(): Boolean {
+        val c = dataCipher ?: return false
+        return try {
+            c.openText(c.sealText(KEY_PROBE)) == Decrypted.Ok(KEY_PROBE)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            false
+        }
+    }
 
     /**
      * Tile / shortcut / widget dictations (DictateActivity) copy their result to the clipboard from here, in [appScope],
@@ -224,10 +394,37 @@ class AppGraph private constructor(private val appOrNull: Application?, private 
     /** Startup sweep (CONTRACT 6) and retention (CONTRACT 7.3). Safe to call repeatedly. */
     fun runMaintenance() {
         appScope.launch {
-            history.sweepInterrupted(dictation.activeId())
-            history.sweepOrphanAudio(dictation.activeFile())
-            settings.current().autoDeleteDays?.let { days ->
-                history.deleteOlderThan(System.currentTimeMillis() - days * 86_400_000L)
+            maintenanceLock.withLock {
+                // First, so Settings never claims "all encrypted" before the first count exists.
+                encryptingHistory?.refreshPending()
+                history.sweepInterrupted(dictation.activeId())
+                history.sweepOrphanAudio(dictation.activeFile())
+                settings.current().autoDeleteDays?.let { days ->
+                    history.deleteOlderThan(System.currentTimeMillis() - days * 86_400_000L)
+                }
+                // Finish an encryption switch interrupted by process death, or seal rows written while the key failed
+                // (no-op when every row is already in place). Last, so a slow pass never delays the sweeps above.
+                var sealedNow = false
+                encryptingHistory?.let { store ->
+                    val on = settings.current().encryptHistory
+                    if (!on || dataKeyUsable()) {
+                        // refreshPending above identifies rows/clips this pass can seal. Mark before the first
+                        // rewrite so a process death cannot lose the WAL/free-page cleanup requirement.
+                        if (on && store.pendingEncryption.value > 0) settings.setNeedsCompaction(true)
+                        val report = migrateAudio(on, store.migrate(on))
+                        // Rows sealed just now left plaintext behind in the file.
+                        if (on && report.converted > 0) {
+                            sealedNow = true
+                        }
+                    }
+                }
+                // Items still plain while ON (key failed earlier) show up in Settings until a pass seals them.
+                encryptingHistory?.refreshPending()
+                if (settings.current().encryptHistory) enableSecureDelete()
+                // A failed attempt is retried at most once a day; fresh plaintext skips the wait.
+                val waited = System.currentTimeMillis() - settings.compactionFailedAt()
+                // waited < 0: the clock moved backwards since the failure — don't stall, retry now.
+                if (settings.needsCompaction() && (sealedNow || waited < 0 || waited >= COMPACTION_RETRY_MS)) compactDatabase()
             }
         }
     }
@@ -240,18 +437,61 @@ class AppGraph private constructor(private val appOrNull: Application?, private 
         }.join()
     }
 
-    /** "Erase all data" (CONTRACT 7.3): history, audio, keys and settings. */
+    /** Best effort per step: a Keystore error must not stop Erase all from deleting the data itself. */
+    private suspend fun shredDataKey() {
+        var wrappedKeyLeft = false
+        try {
+            dataCipher?.shred()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            wrappedKeyLeft = true // the KEK deletion below still makes it unusable, but it must not stay behind
+        }
+        try {
+            dataKek?.deleteKey()
+        } catch (e: Exception) {
+            // Keystore unavailable: the wrapped DEK is already gone (or will be with the DataStore files).
+        }
+        if (wrappedKeyLeft) {
+            // A dead wrapped DEK left behind would make DataCipher refuse to mint a new key (it never replaces an
+            // existing one), so the feature would stay "not available" for good. One more try, best effort.
+            try {
+                dataCipher?.shred()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // Still failing: the rest of the erase goes on.
+            }
+        }
+    }
+
+    private companion object {
+        const val KEY_PROBE = "whisperio-key-probe"
+        const val COMPACTION_RETRY_MS = 86_400_000L
+    }
+
+    /**
+     * "Erase all data" (CONTRACT 7.3): history, audio, keys and settings. Crypto-shred first (design 4.3): the wrapped
+     * history key and its Keystore key go before any row or file, so even if the rest is interrupted or flash keeps
+     * old blocks, everything that was encrypted stays unreadable.
+     */
     suspend fun eraseAllData() {
         // Runs entirely in appScope (single-threaded, never cancelled) so leaving the screen cannot stop it midway;
         // abortAll() first guarantees no in-flight transcription writes a row after the wipe.
         appScope.launch {
             dictation.abortAll()
             pendingDelete.drop()
-            history.clear()
-            secrets.clear()
-            settings.clear()
-            appLanguages.clear()
-            shareDir?.deleteRecursively()
+            // Waits for a running encryption switch / maintenance pass, so none writes a file after the wipe.
+            maintenanceLock.withLock {
+                shredDataKey()
+                history.clear()
+                secrets.clear()
+                settings.clear()
+                appLanguages.clear()
+                shareDir?.deleteRecursively()
+                dataCipher?.recheckLocked()
+                encryptingHistory?.refreshPending()
+            }
         }.join()
     }
 }

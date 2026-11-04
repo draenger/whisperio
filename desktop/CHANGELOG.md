@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## v1.6.0 — 2026-11-03
+
+Opt-in encryption of history and recordings (default OFF), hold-to-talk (Windows),
+CLI control, silence gate/trim, clipboard restore, and reliability + security fixes.
+Release notes: docs/release-notes-v1.6.0.md (EN), docs/release-notes-v1.6.0.pl.md (PL).
+Platforms: Windows + Linux (macOS separately).
+
 ### GitHub sync vault key (PR #37)
 - The key that seals secrets in your GitHub sync repo is never silently replaced any more.
   If the OS keychain is locked or access is denied, push/pull stop with a clear message
@@ -20,23 +27,6 @@
 - Linux: forced to X11/XWayland (`ozone-platform=x11`) as on Electron 34, so global
   hotkeys and the always-on-top overlay keep working on Wayland sessions.
 - active-win's macOS helper and Windows N-API binding are unpacked from app.asar explicitly.
-
-### Context-aware tone (branch `feat/p1.1-context-tone`, merge-hold until v1.5 ships)
-- AI cleanup can now nudge its **register** (never meaning) to match the app
-  you're dictating into — Slack/Discord/WhatsApp/Telegram get casual,
-  Gmail/Outlook/Mail get formal, VS Code/Cursor/Windsurf/JetBrains stay
-  technical. Off by default; fully editable app → tone table in Settings.
-- **No-screenshot moat, hard invariant**: only the foreground app's
-  **process name** is read by default — never a screenshot, never screen
-  pixels. Window-title matching is a separate, off-by-default opt-in with an
-  explicit "Enable window-title matching" button that's the only thing that
-  ever triggers the macOS Screen Recording permission prompt.
-- Tone is captured **at recording time** and stored on the recording, so a
-  later on-demand "Clean up" click resolves the same tone the original
-  dictation would have — not whatever app happens to be in the foreground
-  when you click, possibly hours later.
-- Raw transcription is never touched — tone only ever applies to the
-  rule-based cleanup rewrite, same as every other AI cleanup guarantee.
 
 ## v1.5.1 — 2026-10-19
 

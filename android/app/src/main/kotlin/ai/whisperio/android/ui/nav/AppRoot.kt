@@ -58,9 +58,15 @@ import ai.whisperio.android.ui.recap.RecapScreen
 import ai.whisperio.android.ui.recap.RecapShare
 import ai.whisperio.android.ui.recap.toRecapItems
 import ai.whisperio.android.ui.settings.KeyDialogState
+import ai.whisperio.android.ui.settings.shouldOfferEncryptCard
+import ai.whisperio.android.ui.settings.shouldShowEncryptLockedBanner
 import ai.whisperio.android.ui.settings.SettingsActions
 import ai.whisperio.android.ui.settings.SettingsScreen
+import ai.whisperio.android.ui.settings.SettingsScrollTarget
+import ai.whisperio.android.ui.settings.SettingsSection
 import ai.whisperio.android.ui.settings.SettingsUiState
+import ai.whisperio.android.ui.settings.SnippetsActions
+import ai.whisperio.android.ui.settings.SnippetsScreen
 import ai.whisperio.core.ExportFormat
 import ai.whisperio.core.Recap
 import ai.whisperio.core.ProviderId
@@ -128,6 +134,7 @@ private object Routes {
     const val SETTINGS = "settings"
     const val ABOUT = "about"
     const val CATEGORIES = "settings/categories"
+    const val SNIPPETS = "settings/snippets"
     const val RECAP = "recap"
     const val DETAIL = "history/{id}"
     fun detail(id: String) = "history/$id"
@@ -309,6 +316,8 @@ private fun MainShell(g: AppGraph) {
     val backStack by nav.currentBackStackEntryAsState()
     val route = backStack?.destination?.route
     val snackbar = remember { SnackbarHostState() }
+    // One-shot "scroll Settings to Privacy" request from the Home locked banner's Fix; outlives tab switches.
+    val settingsScroll = remember { SettingsScrollTarget() }
     // F9: a finished transcription ticks while this window is on screen (confirmHaptic ignores a detached view).
     val shellView = LocalView.current
     LaunchedEffect(Unit) { g.dictation.results.collect { r ->
@@ -346,11 +355,12 @@ private fun MainShell(g: AppGraph) {
         },
     ) { padding ->
         NavHost(nav, startDestination = Routes.HOME, modifier = Modifier.padding(padding)) {
-            composable(Routes.HOME) { HomeRoute(g, nav) }
+            composable(Routes.HOME) { HomeRoute(g, nav, settingsScroll) }
             composable(Routes.HISTORY) { HistoryRoute(g, nav, snackbar) }
             composable(Routes.DETAIL) { entry -> DetailRoute(g, nav, entry.arguments?.getString("id").orEmpty(), snackbar) }
-            composable(Routes.SETTINGS) { SettingsRoute(g, nav) }
+            composable(Routes.SETTINGS) { SettingsRoute(g, nav, settingsScroll) }
             composable(Routes.CATEGORIES) { CategoriesRoute(g, nav) }
+            composable(Routes.SNIPPETS) { SnippetsRoute(g, nav) }
             composable(Routes.RECAP) { RecapRoute(g, nav, snackbar) }
             composable(Routes.ABOUT) {
                 val ctx = LocalContext.current
@@ -366,7 +376,7 @@ private fun MainShell(g: AppGraph) {
 }
 
 @Composable
-private fun HomeRoute(g: AppGraph, nav: NavHostController) {
+private fun HomeRoute(g: AppGraph, nav: NavHostController, settingsScroll: SettingsScrollTarget) {
     val ctx = LocalContext.current
     val view = LocalView.current
     val scope = rememberCoroutineScope()
@@ -388,6 +398,12 @@ private fun HomeRoute(g: AppGraph, nav: NavHostController) {
         val changing = (ctx as? Activity)?.isChangingConfigurations == true
         if (!changing && s is DictationState.Recording && s.source == RecordingSource.APP) g.dictation.stopAndTranscribe()
     }
+    val encryptBusy by g.encryptSwitch.busy.collectAsState()
+    val encryptNotice by g.encryptSwitch.notice.collectAsState()
+    val encryptLocked by g.encryptSwitch.locked.collectAsState()
+    // True only for a run started by the card's "Turn on": progress and the notice then show here, not for Settings runs.
+    var cardRun by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(encryptBusy) { if (encryptBusy == null && cardRun && encryptNotice == null) cardRun = false }
     val setup = computeSetupStatus(settings, keys, mic)
     val primary = settings.primaryProvider(keys)
     Box(Modifier.statusBarsPadding(), contentAlignment = Alignment.TopCenter) {
@@ -398,6 +414,10 @@ private fun HomeRoute(g: AppGraph, nav: NavHostController) {
                 setupNeeded = !setup.ready,
                 providerLabel = primary?.let { "${it.first.label(ctx)} - ${it.second}" }.orEmpty(),
                 customCategories = customCategories,
+                encryptCard = shouldOfferEncryptCard(settings),
+                encryptBusy = encryptBusy.takeIf { cardRun },
+                encryptNotice = encryptNotice.takeIf { cardRun },
+                encryptLockedBanner = shouldShowEncryptLockedBanner(settings, encryptLocked),
             ),
             actions = object : HomeActions {
                 override fun onDictate() {
@@ -412,6 +432,25 @@ private fun HomeRoute(g: AppGraph, nav: NavHostController) {
                 override fun onDismissResult() = g.dictation.acknowledge()
                 override fun onOpen(id: String) = nav.navigate(Routes.detail(id))
                 override fun onSeeAll() = nav.navigate(Routes.HISTORY)
+                override fun onEncryptCardTurnOn() {
+                    // Same code path as the Settings switch (the card showed the confirmation); answered either way.
+                    g.appScope.launch { g.settings.setEncryptCardHandled(true) }
+                    cardRun = true
+                    g.encryptSwitch.request(true)
+                }
+                override fun onEncryptCardDismiss() { g.appScope.launch { g.settings.setEncryptCardHandled(true) } }
+                override fun onEncryptNoticeDismiss() {
+                    g.encryptSwitch.dismissNotice()
+                    cardRun = false
+                }
+                override fun onEncryptLockedFix() {
+                    settingsScroll.request(SettingsSection.PRIVACY)
+                    nav.navigate(Routes.SETTINGS) {
+                        popUpTo(Routes.HOME) { saveState = true }
+                        launchSingleTop = true
+                        restoreState = true
+                    }
+                }
                 override fun onOpenSetup() {
                     if (!mic && setup.hasKey && setup.consent) {
                         micLauncher.launch(Manifest.permission.RECORD_AUDIO)
@@ -532,7 +571,10 @@ private fun DetailRoute(g: AppGraph, nav: NavHostController, id: String, snackba
     val audioPath = rec?.audioPath
     val audioExists = remember(audioPath, rec?.status) { audioPath != null && File(audioPath).exists() }
     val availability = playerAvailability(audioExists, recording = dictation is DictationState.Recording)
-    val player = rememberAudioPlayer(audioPath.orEmpty(), (rec?.durationMs ?: 0L).toInt(), stop = shouldStopPlayback(dictation))
+    val player = rememberAudioPlayer(
+        audioPath.orEmpty(), (rec?.durationMs ?: 0L).toInt(), stop = shouldStopPlayback(dictation),
+        audioCipher = g.audioCipher, recordingId = id,
+    )
     val playerUi = if (availability == PlayerAvailability.HIDDEN) null else PlayerUi(
         playing = player.playing,
         positionMs = player.positionMs,
@@ -612,7 +654,24 @@ private fun CategoriesRoute(g: AppGraph, nav: NavHostController) {
 }
 
 @Composable
-private fun SettingsRoute(g: AppGraph, nav: NavHostController) {
+private fun SnippetsRoute(g: AppGraph, nav: NavHostController) {
+    val snippets by g.settings.snippets.collectAsState(initial = emptyList())
+    SnippetsScreen(
+        snippets = snippets,
+        actions = object : SnippetsActions {
+            override fun onBack() { nav.popBackStack() }
+            // appScope: the write must finish even if the user leaves the screen right after saving.
+            override fun onSave(trigger: String, replacement: String, editId: String?) {
+                g.appScope.launch { g.settings.saveSnippet(trigger, replacement, editId) }
+            }
+            override fun onDelete(id: String) { g.appScope.launch { g.settings.removeSnippet(id) } }
+        },
+    )
+}
+
+@Composable
+private fun SettingsRoute(g: AppGraph, nav: NavHostController, settingsScroll: SettingsScrollTarget) {
+    val scrollTarget by settingsScroll.pending.collectAsState()
     val scope = rememberCoroutineScope()
     val settings by g.settings.flow.collectAsState(initial = AppSettings(order = g.settings.defaultOrder()))
     val configured by g.secrets.configured.collectAsState(initial = emptySet())
@@ -620,6 +679,10 @@ private fun SettingsRoute(g: AppGraph, nav: NavHostController) {
     val appLanguageCount by g.appLanguages.count.collectAsState(initial = 0)
     var dialog by remember { mutableStateOf<KeyDialogState?>(null) }
     var keyChecks by remember { mutableStateOf<Map<ProviderId, KeyUi>>(emptyMap()) }
+    val encryptBusy by g.encryptSwitch.busy.collectAsState()
+    val encryptNotice by g.encryptSwitch.notice.collectAsState()
+    val encryptPending by g.encryptSwitch.pending.collectAsState()
+    val encryptLocked by g.encryptSwitch.locked.collectAsState()
     val enrollment = remember { KeyEnrollment(g.keyChecker, g.secrets, g.settings) }
     val models = remember { ProviderId.entries.associateWith { g.catalog.models(it) } }
     val openAiUrl = settings.baseUrls[ProviderId.OPENAI]
@@ -671,14 +734,20 @@ private fun SettingsRoute(g: AppGraph, nav: NavHostController) {
         override fun onKeepAudio(value: Boolean) { scope.launch { g.settings.setKeepAudio(value) } }
         override fun onAutoDelete(days: Int?) { scope.launch { g.settings.setAutoDeleteDays(days) } }
         override fun onSensitive(value: Boolean) { scope.launch { g.settings.setSensitive(value) } }
+        // The run and its busy/notice state live in the graph (appScope): they survive rotation and leaving the screen.
+        override fun onEncryptHistory(value: Boolean) = g.encryptSwitch.request(value)
+        override fun onEncryptNoticeDismiss() = g.encryptSwitch.dismissNotice()
         override fun onConsent(value: Boolean) { scope.launch { g.settings.setConsent(value) } }
         override fun onDeleteAllAudio() { scope.launch { g.history.deleteAllAudio(g.dictation.activeId(), g.dictation.activeFile()) } }
         override fun onEraseAll() { scope.launch { g.eraseAllData() } }
         override fun onCategories() { nav.navigate(Routes.CATEGORIES) }
+        override fun onSnippets() { nav.navigate(Routes.SNIPPETS) }
         override fun onAbout() { nav.navigate(Routes.ABOUT) }
     }
     run {
         SettingsScreen(
+            scrollTo = scrollTarget,
+            onScrollConsumed = settingsScroll::consume,
             state = SettingsUiState(
                 settings = settings,
                 configured = configured,
@@ -688,6 +757,10 @@ private fun SettingsRoute(g: AppGraph, nav: NavHostController) {
                 keyDialog = dialog,
                 keyChecks = keyChecks,
                 appLanguageCount = appLanguageCount,
+                encryptBusy = encryptBusy,
+                encryptNotice = encryptNotice,
+                encryptPending = encryptPending,
+                encryptLocked = encryptLocked,
             ),
             actions = actions,
         )
