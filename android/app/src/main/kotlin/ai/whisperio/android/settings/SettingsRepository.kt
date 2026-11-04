@@ -5,6 +5,9 @@ import ai.whisperio.android.security.SecretStore
 import ai.whisperio.core.Categories
 import ai.whisperio.core.ChainSettings
 import ai.whisperio.core.ProviderId
+import ai.whisperio.core.Snippet
+import ai.whisperio.core.SnippetCheck
+import ai.whisperio.core.Snippets
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
@@ -47,6 +50,7 @@ class SettingsRepository(
         val needsCompaction = booleanPreferencesKey("needs_compaction")
         val compactionFailedAt = longPreferencesKey("compaction_failed_at")
         val customCategories = stringPreferencesKey("custom_categories") // JSON list, CONTRACT-1.2 F3
+        val snippets = stringPreferencesKey("snippets") // JSON list of {id, trigger, replacement}; absent = none
         fun baseUrl(id: ProviderId) = stringPreferencesKey("base_url_${id.wire}")
     }
 
@@ -84,6 +88,39 @@ class SettingsRepository(
         if (next.isEmpty()) it.remove(K.customCategories) else it[K.customCategories] = CustomCategories.encode(next)
     }
 
+    /** Snippets in creation order. Stored in this DataStore, so [clear] erases them. */
+    val snippets: Flow<List<Snippet>> = store.data.map { Snippets.decode(it[K.snippets]) }
+
+    /**
+     * Adds a snippet, or edits [editId] when given. Validation and write share one DataStore transaction, so two quick
+     * saves cannot create duplicate triggers. [newId] is injectable for tests.
+     */
+    suspend fun saveSnippet(
+        trigger: String,
+        replacement: String,
+        editId: String? = null,
+        newId: () -> String = { UUID.randomUUID().toString() },
+    ): SnippetCheck {
+        var result: SnippetCheck = SnippetCheck.BlankTrigger
+        store.edit {
+            val list = Snippets.decode(it[K.snippets])
+            result = Snippets.check(trigger, replacement, list.filterNot { s -> s.id == editId })
+            // Editing a snippet deleted meanwhile (another screen, erase-all) must not resurrect it.
+            if (editId != null && list.none { s -> s.id == editId }) return@edit
+            (result as? SnippetCheck.Ok)?.let { ok ->
+                val next = if (editId == null) Snippets.add(list, Snippet(newId(), ok.trigger, ok.replacement))
+                else Snippets.update(list, editId, ok.trigger, ok.replacement)
+                it[K.snippets] = Snippets.encode(next)
+            }
+        }
+        return result
+    }
+
+    suspend fun removeSnippet(id: String) = store.edit {
+        val next = Snippets.remove(Snippets.decode(it[K.snippets]), id)
+        if (next.isEmpty()) it.remove(K.snippets) else it[K.snippets] = Snippets.encode(next)
+    }
+
     override suspend fun chain(): ChainSettings {
         val settings = current()
         val keys = ProviderId.entries.associateWith { secrets.get(it) }
@@ -115,6 +152,7 @@ class SettingsRepository(
             transcriptsSensitive = p[K.sensitive] ?: false,
             onboardingDone = p[K.onboarding] ?: false,
             perAppLanguage = p[K.perAppLanguage] ?: false,
+            snippets = Snippets.decode(p[K.snippets]),
             encryptHistory = p[K.encryptHistory] ?: false,
             encryptCardHandled = p[K.encryptCardHandled] ?: false,
         )

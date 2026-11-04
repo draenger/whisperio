@@ -3,6 +3,8 @@ package ai.whisperio.android.dictation
 import ai.whisperio.android.audio.AudioFocusGate
 import ai.whisperio.android.audio.AudioRecorder
 import ai.whisperio.android.audio.Levels
+import ai.whisperio.android.di.CoreSnippetExpander
+import ai.whisperio.android.di.SnippetExpander
 import ai.whisperio.android.di.TextTidy
 import ai.whisperio.android.di.Transcriber
 import ai.whisperio.android.di.UploadTooLargeException
@@ -103,6 +105,8 @@ class DictationController(
     private val wallClockMs: () -> Long = System::currentTimeMillis,
     private val newId: () -> String = { UUID.randomUUID().toString() },
     private val pollMs: Long = POLL_MS,
+    /** Defaulted so AppGraph and existing callers need no change; tests may inject a fake. */
+    private val snippets: SnippetExpander = CoreSnippetExpander(),
     /** Encrypts kept clips to `<id>.m4a.wea` (opt-in setting); null = clips stay plain. */
     private val audioCipher: AudioCipher? = null,
     /** Asked once per kept clip: is "Encrypt history and recordings" ON right now? */
@@ -291,7 +295,7 @@ class DictationController(
         try {
             val res = transcriber.transcribe(TranscriptionRequest(file, row.language, s.vocabulary), single)
             var text = res.text.trim()
-            if (s.cleanupEnabled && text.isNotEmpty()) text = tidy.tidy(text).trim()
+            text = finish(text, s)
             if (text.isEmpty()) {
                 _state.value = DictationState.Idle
                 return retryFailed(row.id, DictationError.NO_SPEECH)
@@ -316,6 +320,14 @@ class DictationController(
             _state.value = DictationState.Idle
             retryFailed(row.id, DictationError.PROVIDER, t.message?.let { ProviderError.redactSecrets(it) }?.take(MAX_ERROR_CHARS))
         }
+    }
+
+    /** Post-processing of a raw transcript: optional cleanup, then snippets (no-op when the list is empty). */
+    private fun finish(raw: String, s: AppSettings): String {
+        var text = raw
+        if (s.cleanupEnabled && text.isNotEmpty()) text = tidy.tidy(text).trim()
+        if (s.snippets.isNotEmpty() && text.isNotEmpty()) text = snippets.expand(text, s.snippets)
+        return text
     }
 
     private suspend fun precheck(s: AppSettings): DictationError? {
@@ -445,7 +457,7 @@ class DictationController(
             val chain = settings.chain()
             val res = transcriber.transcribe(TranscriptionRequest(file, s.language, s.vocabulary), chain)
             var text = res.text.trim()
-            if (s.cleanupEnabled && text.isNotEmpty()) text = tidy.tidy(text).trim()
+            text = finish(text, s)
             if (text.isEmpty()) return failTranscription(row, durationMs, DictationError.NO_SPEECH, null, persist, file, retained, retry)
             val keep = persist && s.keepAudio
             val keptPath = settleAudio(row.id, file, retained, keep)
