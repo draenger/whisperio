@@ -32,7 +32,9 @@ let runtimeInstalled = true
 vi.mock('../src/main/stt/parakeet', async (orig) => ({
   ...await orig<typeof import('../src/main/stt/parakeet')>(),
   parakeetTranscribe: (...a: unknown[]) => mockParakeet(...a),
-  isParakeetRuntimeInstalled: () => runtimeInstalled
+  isParakeetRuntimeInstalled: () => runtimeInstalled,
+  // Same rule as the real parakeetAllowed, but on the mocked runtime probe.
+  parakeetAllowed: (s: { experimentalParakeet?: boolean }) => s.experimentalParakeet === true && runtimeInstalled
 }))
 let modelReady = true
 vi.mock('../src/main/stt/parakeetModel', () => ({

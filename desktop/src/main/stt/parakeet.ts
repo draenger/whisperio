@@ -86,6 +86,15 @@ export function loadSherpa(): { path: string; module: unknown } {
   }
 }
 
+/**
+ * The flag only counts when the native addon is actually packaged. Release builds exclude
+ * sherpa-onnx (only the lab build ships it, see .devops/electron-builder.lab.cjs), so there a
+ * stale experimentalParakeet=true acts as OFF and the UI hides the card.
+ */
+export function parakeetAllowed(settings: { experimentalParakeet?: boolean }): boolean {
+  return settings.experimentalParakeet === true && isParakeetRuntimeInstalled()
+}
+
 export function isParakeetRuntimeInstalled(): boolean {
   try {
     const req = createRequire(join(app.getAppPath(), 'package.json'))

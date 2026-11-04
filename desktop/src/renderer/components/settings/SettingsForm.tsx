@@ -1823,8 +1823,19 @@ function ProvidersTab({
 }): ReactElement {
   const [expandedProvider, setExpandedProvider] = useState<string | null>(null)
   const [parakeetOn, setParakeetOn] = useState(false)
+  // Release builds do not ship the native addon: no card, no provider, a stale flag stays OFF.
+  const [parakeetAvailable, setParakeetAvailable] = useState(false)
   useEffect(() => {
-    window.api.settings.load().then((st) => setParakeetOn(st.experimentalParakeet === true)).catch(() => {})
+    window.api.parakeet
+      .status()
+      .then((st) => {
+        setParakeetAvailable(st.runtimeInstalled === true)
+        if (st.runtimeInstalled === true) {
+          return window.api.settings.load().then((cfg) => setParakeetOn(cfg.experimentalParakeet === true))
+        }
+        return undefined
+      })
+      .catch(() => {})
   }, [])
 
   const toggleProvider = useCallback((id: string) => {
@@ -1857,7 +1868,7 @@ function ProvidersTab({
 
   return (
     <>
-      <ExperimentalParakeetCard enabled={parakeetOn} onEnabledChange={(v) => { setParakeetOn(v); if (!v) { const c = providerChain.filter((p) => p !== 'parakeet'); setProviderChain(c.length ? c : ['openai']) } }} s={s} theme={theme} />
+      {parakeetAvailable && <ExperimentalParakeetCard enabled={parakeetOn} onEnabledChange={(v) => { setParakeetOn(v); if (!v) { const c = providerChain.filter((p) => p !== 'parakeet'); setProviderChain(c.length ? c : ['openai']) } }} s={s} theme={theme} />}
       <div style={s.card}>
         <SectionHeader title="Provider Chain" s={s} theme={theme} />
         <span style={s.hint}>First = primary. If it fails, the next one kicks in. Drag order with arrows.</span>

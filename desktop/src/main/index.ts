@@ -65,7 +65,7 @@ import {
   cancelParakeetDownload,
   deleteParakeetModel
 } from './stt/parakeetModel'
-import { isParakeetRuntimeInstalled, shutdownParakeet } from './stt/parakeet'
+import { isParakeetRuntimeInstalled, parakeetAllowed, shutdownParakeet } from './stt/parakeet'
 import {
   getServerStatus,
   startServer,
@@ -618,7 +618,7 @@ app.whenReady().then(() => {
 
   // Local server IPC handlers
   // EXPERIMENTAL Parakeet (flag: experimentalParakeet)
-  const parakeetEnabled = (): boolean => loadSettings().experimentalParakeet === true
+  const parakeetEnabled = (): boolean => parakeetAllowed(loadSettings())
   ipcMain.handle('parakeet:status', guard(() => ({
     ...getParakeetModelStatus(),
     runtimeInstalled: isParakeetRuntimeInstalled()

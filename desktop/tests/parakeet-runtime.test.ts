@@ -11,6 +11,7 @@ import {
   recognizeWith,
   loadSherpa,
   isParakeetRuntimeInstalled,
+  parakeetAllowed,
   parakeetTranscribe,
   ParakeetRuntimeMissingError,
   ParakeetClipTooLongError,
@@ -86,6 +87,10 @@ describe('runtime missing (sherpa-onnx-node is not a dependency yet)', () => {
     expect(() => loadSherpa()).toThrow(ParakeetRuntimeMissingError)
     expect(() => loadSherpa()).toThrow(/runtime is not installed/)
     expect(isParakeetRuntimeInstalled()).toBe(false)
+  })
+  it('a stale experimentalParakeet=true counts as OFF when the addon is not packaged (release build)', () => {
+    expect(parakeetAllowed({ experimentalParakeet: true })).toBe(false)
+    expect(parakeetAllowed({ experimentalParakeet: false })).toBe(false)
   })
   it('parakeetTranscribe rejects (does not hang) on a valid clip', async () => {
     await expect(parakeetTranscribe(makeWav([1, 2, 3, 4]))).rejects.toThrow(/not installed|incomplete/)
