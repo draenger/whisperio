@@ -166,6 +166,25 @@ describe('usageTracker', () => {
       expect(bucket.credits).toBe(330)
     })
 
+    it('a NaN or missing duration never poisons the stored totals', async () => {
+      await recordSTT({ provider: 'openai', audioSeconds: 600 })
+      await recordSTT({ provider: 'openai', audioSeconds: Number.NaN })
+      await recordSTT({ provider: 'openai', audioSeconds: undefined as unknown as number })
+      await recordSTT({ provider: 'elevenlabs', audioSeconds: Number.NaN })
+      const oa = getUsage().openai[monthKey()]
+      expect(oa.requests).toBe(3)
+      expect(oa.audioSeconds).toBe(600)
+      expect(oa.estimatedCostUsd).toBeCloseTo(0.06)
+      expect(getUsage().elevenlabs[monthKey()].credits).toBe(0)
+    })
+
+    it('a negative duration counts as zero', async () => {
+      await recordSTT({ provider: 'openai', audioSeconds: -60 })
+      const oa = getUsage().openai[monthKey()]
+      expect(oa.audioSeconds).toBe(0)
+      expect(oa.estimatedCostUsd).toBe(0)
+    })
+
     it('prefers an explicit creditsUsed over the length-based ElevenLabs estimate', async () => {
       await recordSTT({ provider: 'elevenlabs', audioSeconds: 60, creditsUsed: 999 })
       const bucket = getUsage().elevenlabs[monthKey()]
