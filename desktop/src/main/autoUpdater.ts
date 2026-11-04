@@ -106,9 +106,28 @@ function handleUpdaterError(err: unknown): void {
   setState({ status: 'not-available', version: undefined, percent: undefined, error: undefined, manualDownloadUrl: undefined })
 }
 
+let unavailableLogged = false
+
+/**
+ * True when electron-updater is usable. Its lazy `autoUpdater` getter constructs the platform
+ * updater and THROWS on e.g. an invalid app version; inside the startup chain that used to make
+ * the whole app fatal (modal error box, exit 1). Updates are optional: treat it as inactive.
+ */
+function updaterActive(): boolean {
+  try {
+    return autoUpdater.isUpdaterActive()
+  } catch (err) {
+    if (!unavailableLogged) {
+      unavailableLogged = true
+      console.error('[Whisperio] auto-update unavailable:', err instanceof Error ? err.message : err)
+    }
+    return false
+  }
+}
+
 /** Trigger a manual update check (returns immediately; progress arrives via updater:status). */
 export function checkForUpdatesManual(): void {
-  if (!autoUpdater.isUpdaterActive()) return
+  if (!updaterActive()) return
   setState({ status: 'checking', error: undefined })
   autoUpdater.checkForUpdates().catch((err) => {
     // Fail soft for ordinary failures; a signature rejection is surfaced (see handleUpdaterError).
@@ -177,7 +196,7 @@ export function setUpdateChecksEnabled(enabled: boolean): void {
 }
 
 export function initAutoUpdater(enabled = true): void {
-  if (!autoUpdater.isUpdaterActive()) return
+  if (!updaterActive()) return
 
   // Downloads are started explicitly from the 'update-available' handler (so a previously
   // rejected version is never re-downloaded), hence autoDownload=false. Never install silently on

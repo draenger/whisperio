@@ -146,6 +146,25 @@ describe('autoUpdater', () => {
     })
   })
 
+  describe('electron-updater that throws while being constructed', () => {
+    it('is treated as inactive: startup and manual checks do not throw', async () => {
+      // Same failure as the lazy autoUpdater getter on an invalid app version.
+      h.autoUpdater.isUpdaterActive.mockImplementation(() => {
+        throw new Error('App version is not a valid semver version: "0.0"')
+      })
+      const err = vi.spyOn(console, 'error').mockImplementation(() => {})
+      const { initAutoUpdater, checkForUpdatesManual, getUpdateState } = await loadModule()
+
+      expect(() => initAutoUpdater(true)).not.toThrow()
+      expect(() => checkForUpdatesManual()).not.toThrow()
+      expect(h.autoUpdater.on).not.toHaveBeenCalled()
+      expect(h.autoUpdater.checkForUpdates).not.toHaveBeenCalled()
+      expect(getUpdateState().status).toBe('idle')
+      expect(err).toHaveBeenCalledTimes(1)
+      err.mockRestore()
+    })
+  })
+
   describe('checkForUpdatesManual', () => {
     it('returns without changing state when updater is not active', async () => {
       h.autoUpdater.isUpdaterActive.mockReturnValue(false)
