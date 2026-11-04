@@ -134,4 +134,25 @@ describe('parakeet worker lifecycle', () => {
     expect(fw.terminated).toBe(true)
     await expect(p).rejects.toThrow(/stopped/)
   })
+
+  it('a late exit of an OLD worker does not reject the NEW worker\'s pending request', async () => {
+    const fw2 = new FakeWorker()
+    const workers = [fw, fw2]
+    deps.createWorker = () => workers.shift() as never
+    const p1 = parakeetTranscribe(wav(1600))
+    const p1Assert = expect(p1).rejects.toThrow(/timed out/)
+    fw.emit('message', { type: 'ready' })
+    await vi.advanceTimersByTimeAsync(0)
+    await vi.advanceTimersByTimeAsync(30_001) // timeout -> stopWorker clears the host
+    await p1Assert
+    const p2 = parakeetTranscribe(wav(1600))
+    fw2.emit('message', { type: 'ready' })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(fw2.posted).toHaveLength(1)
+    fw.emit('exit', 1) // late exit of the old worker
+    await vi.advanceTimersByTimeAsync(0)
+    const { id } = fw2.posted[0] as { id: number }
+    fw2.emit('message', { type: 'result', id, text: 'still-ok' })
+    await expect(p2).resolves.toBe('still-ok')
+  })
 })

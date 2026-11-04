@@ -628,10 +628,16 @@ export function getCustomModels(): LocalModel[] {
  * Generic single-file secure download used by multi-file model sets (the
  * experimental Parakeet ONNX bundle). Reuses assertSecureModelUrl on every hop
  * and handleDownloadResponse (progress, cancel, size verification, temp file +
- * atomic rename). `downloadId` is the activeDownloads/progress key; `destPath`
+ * atomic rename). A given `sha256` is a PIN: checked before promotion and before any
+ * integrity record is stored (a rejected file leaves no record). `downloadId` is the activeDownloads/progress key; `destPath`
  * must already be confined by the caller's resolver.
  */
-export function downloadFileSecure(downloadId: string, url: string, destPath: string): Promise<string> {
+export function downloadFileSecure(
+  downloadId: string,
+  url: string,
+  destPath: string,
+  sha256: string | null = null
+): Promise<string> {
   try {
     assertSecureModelUrl(url)
   } catch (err) {
@@ -674,7 +680,7 @@ export function downloadFileSecure(downloadId: string, url: string, destPath: st
         reject(new Error(`Download failed: HTTP ${response.statusCode}`))
         return
       }
-      handleDownloadResponse(downloadId, response, destPath, tempPath, resolvePath, reject, () => { aborted = true; request.abort() })
+      handleDownloadResponse(downloadId, response, destPath, tempPath, resolvePath, reject, () => { aborted = true; request.abort() }, { key: downloadId, sha256, minBytes: null })
     })
 
     request.on('error', (err) => {

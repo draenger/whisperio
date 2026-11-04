@@ -13,6 +13,7 @@ import {
   PARAKEET_FILES,
   PARAKEET_DIR_NAME,
   resolveParakeetFile,
+  getParakeetDir,
   getParakeetModelStatus,
   getParakeetModelPaths,
   isParakeetModelReady,
@@ -55,14 +56,56 @@ describe('parakeet model resolver', () => {
     expect(() => getParakeetModelPaths()).toThrow(/incomplete/)
   })
 
-  it('is ready when all files exist but not verified until a download checked each pin', () => {
+  function writeFiles(): void {
     for (const f of PARAKEET_FILES) writeFileSync(resolveParakeetFile(f.name), 'x')
+  }
+  function writeManifest(sizeOverride?: Record<string, number>): void {
+    const files: Record<string, { size: number; sha256: string }> = {}
+    for (const f of PARAKEET_FILES) files[f.name] = { size: sizeOverride?.[f.name] ?? 1, sha256: f.sha256 as string }
+    writeFileSync(join(getParakeetDir(), 'verified.json'), JSON.stringify({ files }))
+  }
+
+  it('files without a verified record are NOT ready and never reach the recognizer (e.g. left by an interrupted download)', () => {
+    writeFiles()
+    const st = getParakeetModelStatus()
+    expect(st.ready).toBe(false)
+    expect(st.verified).toBe(false)
+    expect(st.missing).toHaveLength(4)
+    expect(isParakeetModelReady()).toBe(false)
+    expect(() => getParakeetModelPaths()).toThrow(/incomplete/)
+  })
+
+  it('is ready only when every file has a manifest record matching its pin and size', () => {
+    writeFiles()
+    writeManifest()
     const st = getParakeetModelStatus()
     expect(st.ready).toBe(true)
-    expect(st.verified).toBe(false)
+    expect(st.verified).toBe(true)
     expect(getParakeetModelPaths().encoder.endsWith('encoder.int8.onnx')).toBe(true)
+  })
+
+  it('a file whose size changed since it was verified is not ready', () => {
+    writeFiles()
+    writeManifest({ 'joiner.int8.onnx': 999 })
+    const st = getParakeetModelStatus()
+    expect(st.ready).toBe(false)
+    expect(st.missing).toEqual(['joiner.int8.onnx'])
+  })
+
+  it('a manifest record with a different sha256 than the pin is ignored', () => {
+    writeFiles()
+    const files = Object.fromEntries(PARAKEET_FILES.map((f) => [f.name, { size: 1, sha256: 'ab'.repeat(32) }]))
+    writeFileSync(join(getParakeetDir(), 'verified.json'), JSON.stringify({ files }))
+    expect(isParakeetModelReady()).toBe(false)
+  })
+
+  it('delete removes the files and the manifest', () => {
+    writeFiles()
+    writeManifest()
     deleteParakeetModel()
     expect(existsSync(resolveParakeetFile('tokens.txt'))).toBe(false)
+    expect(existsSync(join(getParakeetDir(), 'verified.json'))).toBe(false)
+    expect(isParakeetModelReady()).toBe(false)
   })
 
   it('pins every file to a 64-hex SHA-256 and a 40-hex HF revision URL', () => {

@@ -633,9 +633,10 @@ app.whenReady().then(() => {
     await downloadParakeetModel()
     return { ...getParakeetModelStatus(), runtimeInstalled: isParakeetRuntimeInstalled() }
   }))
-  ipcMain.handle('parakeet:cancel', guard(() => {
-    if (!parakeetEnabled()) throw new Error('Parakeet is experimental and disabled.')
+  // Not gated by the flag: it only stops work (a running download + the worker), never starts any.
+  ipcMain.handle('parakeet:cancel', guard(async () => {
     cancelParakeetDownload(cancelDownload)
+    await shutdownParakeet()
     return true
   }))
   ipcMain.handle('parakeet:delete', guard(async () => {

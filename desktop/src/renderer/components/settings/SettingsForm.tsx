@@ -1664,6 +1664,8 @@ function ExperimentalParakeetCard({
       await window.api.settings.save({ experimentalParakeet: true })
       return
     }
+    // Stop any running download and the worker BEFORE the flag is saved off (cancel is not flag-gated).
+    try { await window.api.parakeet.cancel() } catch { /* nothing to stop */ }
     // Turning the flag off fully undoes it: drop 'parakeet' from the saved chain too.
     const cur = await window.api.settings.load()
     const chain = chainWithoutParakeet(cur.providerChain)

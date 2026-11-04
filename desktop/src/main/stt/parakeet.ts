@@ -212,6 +212,8 @@ type Pending = {
   resolve: (t: string) => void
   reject: (e: Error) => void
   timer: ReturnType<typeof setTimeout> | null
+  /** The worker this request was posted to; only that worker's failure may reject it. */
+  owner: Host
 }
 
 interface Host {
@@ -234,12 +236,13 @@ let idleTimer: ReturnType<typeof setTimeout> | null = null
 let nextId = 1
 const pending = new Map<number, Pending>()
 
-function rejectAll(err: Error): void {
-  for (const p of pending.values()) {
+function rejectAll(err: Error, owner?: Host): void {
+  for (const [id, p] of pending) {
+    if (owner && p.owner !== owner) continue
     if (p.timer) clearTimeout(p.timer)
     p.reject(err)
+    pending.delete(id)
   }
-  pending.clear()
 }
 
 /** Terminate the worker, reject every in-flight request, resolve once it is gone. */
@@ -279,7 +282,7 @@ function ensureHost(): Host {
       if (readyTimer) clearTimeout(readyTimer)
       rejectReady(err)
     }
-    rejectAll(err)
+    rejectAll(err, h)
     if (host === h) {
       host = null
       void Promise.resolve(w.terminate()).catch(() => {})
@@ -359,7 +362,7 @@ export async function parakeetTranscribe(
       void stopWorker(`Parakeet transcription timed out after ${Math.round(timeoutMs / 1000)}s.`)
     }, timeoutMs)
     timer.unref?.()
-    pending.set(id, { resolve, reject, timer })
+    pending.set(id, { resolve, reject, timer, owner: h })
     h.worker.postMessage({ id, samples, sampleRate: TARGET_SAMPLE_RATE })
   })
 }
