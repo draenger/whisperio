@@ -62,9 +62,11 @@ object BaseUrlPolicy {
         // Dotless intranet names never resolve on the public internet, except numeric IPv4
         // literals, which the JVM may resolve as public IPv4 addresses.
         if (!host.contains(".") && !host.contains(":") && !isNumericIpv4Literal(host)) return true
-        // IPv6 unique-local (fc00::/7) and link-local (fe80::/10).
+        // IPv6 unique-local (fc00::/7) and link-local (fe80::/10), judged on the numeric first
+        // hextet: a text prefix wrongly accepted `fc::1` (= 00fc::1) and `fc0::1` (= 0fc0::1).
         if (host.contains(":")) {
-            return host.startsWith("fc") || host.startsWith("fd") || host.startsWith("fe80:")
+            val first = firstHextet(host) ?: return false
+            return (first and 0xFE00) == 0xFC00 || (first and 0xFFC0) == 0xFE80
         }
         val parts = host.split(".")
         if (parts.size == 4 && parts.all { it.isNotEmpty() && it.length <= 3 && it.all { c -> c in '0'..'9' } }) {
@@ -76,6 +78,13 @@ object BaseUrlPolicy {
             if (o[0] == 100 && o[1] in 64..127) return true // Tailscale / CGNAT 100.64.0.0/10
         }
         return false
+    }
+
+    /** First 16-bit group of an IPv6 literal, or null when it is empty (`::…`) or not 1-4 hex digits. */
+    private fun firstHextet(host: String): Int? {
+        val group = host.substringBefore(":")
+        if (group.isEmpty() || group.length > 4 || !group.all { it in '0'..'9' || it in 'a'..'f' }) return null
+        return group.toInt(16)
     }
 
     private fun isNumericIpv4Literal(host: String): Boolean =

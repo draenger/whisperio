@@ -6,6 +6,7 @@ import okhttp3.Interceptor
 import okhttp3.OkHttpClient
 import java.io.IOException
 import java.net.InetAddress
+import java.net.Proxy
 import java.util.concurrent.TimeUnit
 
 /**
@@ -41,6 +42,9 @@ object HttpClients {
             )
             .followRedirects(false)
             .followSslRedirects(false)
+            // Always connect directly: through a proxy the route address below is the proxy's,
+            // so a private proxy would let cleartext (and the API key) reach a public host.
+            .proxy(Proxy.NO_PROXY)
             .addNetworkInterceptor(
                 Interceptor { chain ->
                     val url = chain.request().url

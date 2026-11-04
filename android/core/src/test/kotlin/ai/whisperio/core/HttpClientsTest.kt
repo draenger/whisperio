@@ -65,6 +65,29 @@ class HttpClientsTest {
         }
     }
 
+    @Test fun localClientBypassesAnyProxySoTheAddressCheckSeesTheRealTarget() {
+        val proxy = MockWebServer().apply { start() }
+        val target = MockWebServer().apply { start() }
+        try {
+            proxy.enqueue(MockResponse().setBody("via-proxy"))
+            target.enqueue(MockResponse().setBody("direct"))
+            val proxied = HttpClients.secureClient.newBuilder()
+                .proxy(java.net.Proxy(java.net.Proxy.Type.HTTP, java.net.InetSocketAddress(proxy.hostName, proxy.port)))
+                .build()
+            val client = HttpClients.localClient(proxied)
+            assertEquals(java.net.Proxy.NO_PROXY, client.proxy)
+            val resp = client.newCall(
+                Request.Builder().url(target.url("/v1")).header("Authorization", "Bearer k").build(),
+            ).execute()
+            assertEquals("direct", resp.body?.string())
+            resp.close()
+            assertEquals(0, proxy.requestCount)
+            assertEquals(1, target.requestCount)
+        } finally {
+            proxy.shutdown(); target.shutdown()
+        }
+    }
+
     @Test fun privateAddressClassifier() {
         fun ip(s: String) = InetAddress.getByName(s)
         for (s in listOf("127.0.0.1", "::1", "10.1.2.3", "172.16.0.1", "172.31.255.255", "192.168.1.5",
