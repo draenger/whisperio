@@ -147,7 +147,10 @@ export function preflight(opts, deps = {}) {
 
   const localTag = run('git', ['rev-parse', '-q', '--verify', `refs/tags/${tag}`])
   const remoteTag = out(run('git', ['ls-remote', '--tags', 'origin', tag]))
-  add('tag state', 'ok', `${tag}: local ${localTag.status === 0 ? 'exists' : 'absent'}, origin ${remoteTag ? 'exists' : 'absent'} (CI creates the tag with the draft)`)
+  add('tag state', 'ok', `${tag}: local ${localTag.status === 0 ? 'exists' : 'absent'}, origin ${remoteTag ? 'exists' : 'absent'} (a draft has no tag; GitHub creates it on publish)`)
+  // sha the origin tag points at (peeled ^{} line wins for an annotated tag), or ''.
+  const tagLines = remoteTag.split(/\r?\n/).filter(Boolean)
+  const remoteTagSha = ((tagLines.find((l) => l.endsWith('^{}')) ?? tagLines[0] ?? '').split(/\s+/)[0]) || ''
 
   const auth = run('gh', ['auth', 'status'])
   add('gh auth', auth.status === 0 ? 'ok' : 'fail', auth.status === 0 ? 'authenticated' : 'gh auth status failed (gh auth login)')
@@ -168,7 +171,7 @@ export function preflight(opts, deps = {}) {
     add('signtool', st ? 'ok' : 'fail', st ?? 'signtool.exe not found in Windows SDK / electron-builder cache')
   }
 
-  const rel = run('gh', ['release', 'view', tag, '--json', 'isDraft,assets'])
+  const rel = run('gh', ['release', 'view', tag, '--json', 'isDraft,assets,targetCommitish'])
   if (rel.status !== 0) add('draft release', soft, `release ${tag} not found on GitHub (push to release branch so CI creates the draft)`)
   else {
     let j = null
@@ -178,6 +181,21 @@ export function preflight(opts, deps = {}) {
       add('draft release', j.isDraft ? 'ok' : soft, j.isDraft ? `${tag} is a draft` : `${tag} is already published (--clobber would modify a live release)`)
       const names = (j.assets ?? []).map((a) => a.name)
       add('CI assets', names.length ? 'ok' : soft, names.length ? `${names.length} assets: ${names.join(', ')}` : 'draft has no CI assets (mac/linux build not finished?)')
+      // Publishing a draft creates the tag at targetCommitish. CI drafts carry a branch name
+      // ("main"), so a publish after more merges would tag a commit the binaries were NOT built
+      // from (v1.6.0 nearly did). Require the tag (or an exact-sha target) to be this HEAD.
+      const head = out(run('git', ['rev-parse', 'HEAD']))
+      const target = `${j.targetCommitish ?? ''}`
+      const fix = `run: git tag ${tag} HEAD && git push origin refs/tags/${tag}`
+      if (remoteTagSha) {
+        add('publish target', remoteTagSha === head ? 'ok' : 'fail', remoteTagSha === head
+          ? `origin ${tag} -> HEAD ${head.slice(0, 7)}`
+          : `origin ${tag} -> ${remoteTagSha.slice(0, 7)}, but HEAD is ${head.slice(0, 7)} (binaries would not match the tag)`)
+      } else if (target === head) {
+        add('publish target', 'ok', `draft target is HEAD ${head.slice(0, 7)}`)
+      } else {
+        add('publish target', soft, `draft target is "${target || 'unknown'}", not HEAD ${head.slice(0, 7)}; publish would tag that instead (${fix})`)
+      }
     }
   }
   return checks

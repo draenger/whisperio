@@ -99,7 +99,7 @@ describe('preflight (mocked child_process)', () => {
       if (key.startsWith('git rev-parse -q')) return { status: 1, stdout: '' }
       if (key.startsWith('git rev-parse')) return { status: 0, stdout: 'abc\n' }
       if (key.startsWith('powershell')) return { status: 0, stdout: 'FOUND\n' }
-      if (key.startsWith('gh release view')) return { status: 0, stdout: JSON.stringify({ isDraft: true, assets: [{ name: 'a.zip' }] }) }
+      if (key.startsWith('gh release view')) return { status: 0, stdout: JSON.stringify({ isDraft: true, assets: [{ name: 'a.zip' }], targetCommitish: 'abc' }) }
       return { status: 0, stdout: '' }
     })
   const base = { version: '1.5.0', platform: 'win32', findSigntool: () => 'C:\\signtool.exe' }
@@ -152,6 +152,26 @@ describe('preflight (mocked child_process)', () => {
     const ps = run.mock.calls.find((c) => c[0] === 'powershell')![1].join(' ')
     expect(ps).toContain('Get-ChildItem')
     expect(ps).not.toMatch(/Export|pfx/i)
+  })
+  it('publish target: a branch-name draft target without a tag would tag the wrong commit', () => {
+    const draftOnMain = { 'gh release view': { status: 0, stdout: JSON.stringify({ isDraft: true, assets: [{ name: 'a.zip' }], targetCommitish: 'main' }) } }
+    expect(st(rel.preflight(dry, { ...base, run: mk(draftOnMain) }), 'publish target')).toBe('warn')
+    const cs = rel.preflight(exec, { ...base, run: mk(draftOnMain) })
+    expect(st(cs, 'publish target')).toBe('fail')
+    expect(cs.find((c: { name: string }) => c.name === 'publish target').detail).toMatch(/git tag v1\.5\.0 HEAD/)
+  })
+  it('publish target: origin tag at HEAD is ok, at another commit fails', () => {
+    const draftOnMain = { isDraft: true, assets: [{ name: 'a.zip' }], targetCommitish: 'main' }
+    const at = (sha: string) => mk({
+      'git ls-remote': { status: 0, stdout: `${sha}\trefs/tags/v1.5.0\n` },
+      'gh release view': { status: 0, stdout: JSON.stringify(draftOnMain) }
+    })
+    expect(st(rel.preflight(exec, { ...base, run: at('abc') }), 'publish target')).toBe('ok')
+    expect(st(rel.preflight(exec, { ...base, run: at('def') }), 'publish target')).toBe('fail')
+  })
+  it('publish target: annotated tag uses the peeled commit', () => {
+    const run = mk({ 'git ls-remote': { status: 0, stdout: 'tagobj\trefs/tags/v1.5.0\nabc\trefs/tags/v1.5.0^{}\n' } })
+    expect(st(rel.preflight(exec, { ...base, run }), 'publish target')).toBe('ok')
   })
   it('invalid version fails', () => {
     expect(st(rel.preflight(dry, { ...base, version: 'x', run: mk() }), 'version')).toBe('fail')
