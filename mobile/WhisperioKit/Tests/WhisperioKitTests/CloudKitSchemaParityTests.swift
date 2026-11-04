@@ -89,5 +89,5 @@ struct CloudKitSchemaParityTests {
         }
     }
 }
-#endif
 }
+#endif
