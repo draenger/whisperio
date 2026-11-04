@@ -34,6 +34,9 @@ import {
   setDownloadProgressCallback,
   DownloadCancelledError
 } from '../src/main/modelManager'
+import { unpinCatalogModelsForEachTest } from './helpers/unpinCatalogModel'
+
+unpinCatalogModelsForEachTest()
 
 const MODELS_DIR = join(testDir, 'models')
 const TINY_BIN = join(MODELS_DIR, 'ggml-tiny.bin')
