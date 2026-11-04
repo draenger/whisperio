@@ -1,0 +1,15 @@
+Whisperio 1.0.0 – build testowy
+
+Nowe w tym buildzie
+• Bezpieczniejsze połączenia z własnym serwerem: zwykłe http:// działa tylko dla adresów w Twojej sieci (localhost, 192.168.x.x, 10.x.x.x, nazwy .local/.lan). Adresy, które tylko udają lokalne (np. 010.010.010.010, [fc::1], 134744072), wymagają teraz https://.
+
+Co przetestować (ok. 10 minut)
+1. Dyktowanie w aplikacji: nagraj 20–30 s mowy po polsku i po angielsku. Sprawdź, czy tekst jest poprawny i czy trafia do historii.
+2. Klawiatura Whisperio: w Notatkach lub Wiadomościach przełącz na klawiaturę Whisperio, podyktuj zdanie i sprawdź, czy tekst się wstawił.
+3. Zablokowany ekran: zacznij dyktowanie, zablokuj telefon na ok. 2 minuty, odblokuj i zakończ. Nagranie nie może zginąć.
+4. Silniki i klucze: zostaw domyślny silnik Apple (na urządzeniu) albo dodaj własny klucz (OpenAI, ElevenLabs lub inny). Przy własnym serwerze sprawdź, że adres http:// w sieci domowej działa, a publiczny bez https:// jest odrzucony z jasnym komunikatem.
+5. Historia i synchronizacja iCloud: na drugim urządzeniu z tym samym Apple ID sprawdź, czy nagrania i transkrypcje się pojawiają.
+6. Apple Watch (jeśli masz): nagraj krótką notatkę z zegarka i sprawdź, czy nagrywanie kończy się bez błędu.
+
+Zgłaszanie problemów
+Zrób zrzut ekranu w TestFlight i opisz krok po kroku, co się stało: model telefonu, wersja iOS, silnik (Apple, OpenAI itd.) i czy było połączenie z internetem. Nie wysyłaj nam swoich kluczy API.
