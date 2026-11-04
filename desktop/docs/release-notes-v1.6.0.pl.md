@@ -27,7 +27,7 @@ Platformy: **Windows** i **Linux**. Wersja na macOS pojawi się osobno.
 
 ## 🔒 Bezpieczeństwo
 - Klucze API dostawców są przechowywane wyłącznie w bezpiecznym magazynie systemu, bez awaryjnego zapisu otwartym tekstem. Na Linuksie bez pęku kluczy dostajesz jednorazowe ostrzeżenie, a klucze działają do końca sesji.
-- Pobierany whisper-server i modele są sprawdzane względem przypiętych skrótów SHA-256.
+- Pobierany whisper-server i modele mają kontrolę SHA-256: suma z pierwszego pobrania jest zapisywana, a późniejsze pobranie o innej sumie jest odrzucane.
 - Ostrzejsza kontrola komunikacji między oknem aplikacji a procesem w tle (tylko dozwolone pola, ścieżki ograniczone do folderu nagrań).
 - Klucz synchronizacji z GitHubem nie jest już po cichu podmieniany przy chwilowym błędzie pęku kluczy, a logowanie do GitHuba otwiera tylko strony weryfikacji github.com.
 - Tekst transkrypcji i schowka trafia do porządkowania AI wyraźnie oznaczony jako dane, a nie polecenia.

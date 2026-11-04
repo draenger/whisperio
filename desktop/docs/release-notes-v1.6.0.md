@@ -27,7 +27,7 @@ Platforms: **Windows** and **Linux**. The macOS build follows separately.
 
 ## 🔒 Security
 - Provider API keys are stored only in OS secure storage — there is no plain-text fallback any more. On Linux without a keyring you get a one-time warning and the keys are kept for the session.
-- Downloaded whisper-server and models are checked against pinned SHA-256 hashes.
+- Downloaded whisper-server and models get a SHA-256 check: the checksum of the first download is recorded and a later download that differs is rejected.
 - Stricter checks on messages between the app window and the background process (allowed fields only, paths confined to the recordings folder).
 - The GitHub sync key is never silently replaced on a temporary keychain failure; GitHub sign-in only opens github.com verification pages.
 - Transcript and clipboard text are passed to AI cleanup clearly marked as data, not instructions.
