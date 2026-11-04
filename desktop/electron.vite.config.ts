@@ -8,7 +8,9 @@ export default defineConfig({
     build: {
       rollupOptions: {
         input: {
-          index: resolve(__dirname, 'src/main/index.ts')
+          index: resolve(__dirname, 'src/main/index.ts'),
+          // utilityProcess entry for experimental on-device STT (isolates the native addon)
+          parakeetHost: resolve(__dirname, 'src/main/stt/parakeetHost.ts')
         }
       }
     }

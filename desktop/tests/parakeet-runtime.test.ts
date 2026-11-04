@@ -8,8 +8,8 @@ vi.mock('electron', () => ({
 import {
   wavToPcm16k,
   buildRecognizerConfig,
-  recognizeWith,
-  loadSherpa,
+  resolveSherpa,
+  toUnpackedPath,
   isParakeetRuntimeInstalled,
   parakeetAllowed,
   parakeetTranscribe,
@@ -18,6 +18,9 @@ import {
   ParakeetLanguageUnsupportedError,
   PARAKEET_MAX_AUDIO_SECONDS
 } from '../src/main/stt/parakeet'
+import { recognizeWith, runHost } from '../src/main/stt/parakeetHost'
+import { readFileSync } from 'fs'
+import { join } from 'path'
 
 function makeWav(samples: number[], rate = 16000, channels = 1): Buffer {
   const data = Buffer.alloc(samples.length * 2)
@@ -83,9 +86,9 @@ describe('recognizer', () => {
 })
 
 describe('runtime missing (sherpa-onnx-node is not a dependency yet)', () => {
-  it('loadSherpa throws a clear experimental-runtime error', () => {
-    expect(() => loadSherpa()).toThrow(ParakeetRuntimeMissingError)
-    expect(() => loadSherpa()).toThrow(/runtime is not installed/)
+  it('resolveSherpa throws a clear experimental-runtime error', () => {
+    expect(() => resolveSherpa()).toThrow(ParakeetRuntimeMissingError)
+    expect(() => resolveSherpa()).toThrow(/runtime is not installed/)
     expect(isParakeetRuntimeInstalled()).toBe(false)
   })
   it('a stale experimentalParakeet=true counts as OFF when the addon is not packaged (release build)', () => {
@@ -114,5 +117,52 @@ describe('Parakeet input guards', () => {
     await expect(parakeetTranscribe(makeWav([1]), { language: 'ja' })).rejects.toThrow(ParakeetLanguageUnsupportedError)
     await expect(parakeetTranscribe(makeWav([1]), { language: 'auto' })).rejects.toThrow(ParakeetRuntimeMissingError)
     await expect(parakeetTranscribe(makeWav([1]), { language: 'pl' })).rejects.toThrow(ParakeetRuntimeMissingError)
+  })
+})
+
+describe('asar unpacked path', () => {
+  it('rewrites app.asar to app.asar.unpacked (posix and windows) and leaves other paths alone', () => {
+    expect(toUnpackedPath('/r/app.asar/node_modules/s/i.js')).toBe('/r/app.asar.unpacked/node_modules/s/i.js')
+    expect(toUnpackedPath('C:\\r\\app.asar\\node_modules\\s\\i.js')).toBe('C:\\r\\app.asar.unpacked\\node_modules\\s\\i.js')
+    expect(toUnpackedPath('/r/app.asar.unpacked/n/i.js')).toBe('/r/app.asar.unpacked/n/i.js')
+    expect(toUnpackedPath('/dev/node_modules/s/i.js')).toBe('/dev/node_modules/s/i.js')
+  })
+})
+
+describe('parakeetHost protocol', () => {
+  function port() {
+    let cb!: (e: { data: unknown }) => void
+    const sent: any[] = []
+    return {
+      sent,
+      send: (data: unknown) => cb({ data }),
+      p: { on: (_: 'message', f: typeof cb) => (cb = f), postMessage: (m: unknown) => sent.push(m) }
+    }
+  }
+  const rec = { createStream: () => ({ acceptWaveform() {} }), decode() {}, getResult: () => ({ text: ' hi ' }) }
+  it('init loads the addon from sherpaPath, replies ready, then answers requests', () => {
+    const { p, send, sent } = port()
+    const load = vi.fn(() => ({ OfflineRecognizer: function () { return rec } }))
+    runHost(p, load as never)
+    send({ type: 'init', sherpaPath: '/p', config: {} })
+    expect(load).toHaveBeenCalledWith('/p')
+    send({ id: 4, samples: new Float32Array(1), sampleRate: 16000 })
+    expect(sent).toEqual([{ type: 'ready' }, { type: 'result', id: 4, text: 'hi' }])
+  })
+  it('replies fatal when loading fails and per-request errors otherwise', () => {
+    const { p, send, sent } = port()
+    runHost(p, () => { throw new Error('dll missing') })
+    send({ type: 'init', sherpaPath: '/p', config: {} })
+    send({ id: 1, samples: new Float32Array(1), sampleRate: 16000 })
+    expect(sent[0]).toEqual({ type: 'fatal', error: 'dll missing' })
+    expect(sent[1]).toMatchObject({ type: 'result', id: 1 })
+    expect(sent[1].error).toMatch(/not initialised/)
+  })
+})
+
+describe('build config', () => {
+  it('electron.vite.config.ts emits the parakeetHost utilityProcess bundle', () => {
+    const cfg = readFileSync(join(__dirname, '..', 'electron.vite.config.ts'), 'utf8')
+    expect(cfg).toMatch(/parakeetHost:\s*resolve\(__dirname, 'src\/main\/stt\/parakeetHost\.ts'\)/)
   })
 })

@@ -9,10 +9,14 @@ vi.mock('electron', () => ({
 import { parakeetTranscribe, shutdownParakeet, deps, ParakeetClipTooLongError } from '../src/main/stt/parakeet'
 
 class FakeWorker extends EventEmitter {
-  posted: unknown[] = []
+  all: unknown[] = []
+  /** Recognition requests only (the first message to the child is the init handshake). */
+  get posted(): unknown[] {
+    return this.all.filter((m) => (m as { type?: string }).type !== 'init')
+  }
   terminated = false
   postMessage(m: unknown): void {
-    this.posted.push(m)
+    this.all.push(m)
   }
   terminate(): Promise<number> {
     this.terminated = true
@@ -45,7 +49,7 @@ const orig = { ...deps }
 beforeEach(() => {
   vi.useFakeTimers()
   fw = new FakeWorker()
-  deps.loadSherpa = () => ({ path: '/x/sherpa' })
+  deps.resolveSherpa = () => ({ path: '/x/sherpa' })
   deps.getModelPaths = () => ({ encoder: 'e', decoder: 'd', joiner: 'j', tokens: 't' })
   deps.createWorker = () => fw as never
   deps.readyTimeoutMs = 1000
@@ -95,13 +99,13 @@ describe('parakeet worker lifecycle', () => {
     expect(fw.terminated).toBe(true)
   })
 
-  it('rejects pending requests when the worker exits', async () => {
+  it('rejects pending requests when the process exits', async () => {
     const p = parakeetTranscribe(wav(1600))
     p.catch(() => {})
     fw.emit('message', { type: 'ready' })
     await vi.advanceTimersByTimeAsync(0)
     fw.emit('exit', 1)
-    await expect(p).rejects.toThrow(/exited unexpectedly/)
+    await expect(p).rejects.toThrow(/Parakeet process exited unexpectedly \(code 1\)/)
   })
 
   it('times out a stuck request, terminates the worker and rejects', async () => {
@@ -154,5 +158,53 @@ describe('parakeet worker lifecycle', () => {
     const { id } = fw2.posted[0] as { id: number }
     fw2.emit('message', { type: 'result', id, text: 'still-ok' })
     await expect(p2).resolves.toBe('still-ok')
+  })
+
+  it('sends the init handshake with the addon path rewritten to app.asar.unpacked', async () => {
+    deps.resolveSherpa = () => ({ path: '/Apps/W/resources/app.asar/node_modules/sherpa-onnx-node/sherpa-onnx.js' })
+    const p = parakeetTranscribe(wav(1600))
+    p.catch(() => {})
+    const init = fw.all[0] as { type: string; sherpaPath: string; config: unknown }
+    expect(init.type).toBe('init')
+    expect(init.sherpaPath).toBe('/Apps/W/resources/app.asar.unpacked/node_modules/sherpa-onnx-node/sherpa-onnx.js')
+    expect(init.config).toBeTruthy()
+  })
+
+  it('a native crash (child exit) while pending rejects clearly and the next call starts a NEW process', async () => {
+    const fw2 = new FakeWorker()
+    const workers = [fw, fw2]
+    const create = vi.fn(() => workers.shift() as never)
+    deps.createWorker = create
+    const p1 = parakeetTranscribe(wav(1600))
+    const p1Assert = expect(p1).rejects.toThrow('Parakeet process exited unexpectedly (code 3221225477).')
+    fw.emit('message', { type: 'ready' })
+    await vi.advanceTimersByTimeAsync(0)
+    fw.emit('exit', 3221225477)
+    await p1Assert
+    expect(create).toHaveBeenCalledTimes(1)
+    const p2 = parakeetTranscribe(wav(1600))
+    fw2.emit('message', { type: 'ready' })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(create).toHaveBeenCalledTimes(2)
+    const { id } = fw2.posted[0] as { id: number }
+    fw2.emit('message', { type: 'result', id, text: 'recovered' })
+    await expect(p2).resolves.toBe('recovered')
+  })
+
+  it('a crash with a null exit code (signal) is also reported', async () => {
+    const p = parakeetTranscribe(wav(1600))
+    const a = expect(p).rejects.toThrow(/exited unexpectedly \(code null\)/)
+    fw.emit('exit', null)
+    await a
+  })
+
+  it('the main process only resolves the addon path, never loads it', async () => {
+    const resolveSherpa = vi.fn(() => ({ path: '/x/sherpa' }))
+    deps.resolveSherpa = resolveSherpa
+    const p = parakeetTranscribe(wav(1600))
+    p.catch(() => {})
+    expect(resolveSherpa).toHaveBeenCalledTimes(1)
+    // the seam returns a path only: there is no module object for main to hold or call
+    expect(Object.keys(resolveSherpa.mock.results[0].value)).toEqual(['path'])
   })
 })
