@@ -315,4 +315,28 @@
         <item quantity="many">Usunąć %1$d nagrań z wczoraj pasujących do bieżącego wyszukiwania i filtrów? Nagrania dźwiękowe też zostaną usunięte.</item>
         <item quantity="other">Usunąć %1$d nagrania z wczoraj pasujące do bieżącego wyszukiwania i filtrów? Nagrania dźwiękowe też zostaną usunięte.</item>
     </plurals>
+    <!-- Snippets: spoken trigger phrase -> replacement text -->
+    <string name="settings_snippets">Skróty tekstowe</string>
+    <string name="settings_snippets_hint">Powiedz krótką frazę, aby wstawić dłuższy tekst, np. adres lub podpis.</string>
+    <plurals name="settings_snippets_count">
+        <item quantity="one">%1$d skrót</item>
+        <item quantity="few">%1$d skróty</item>
+        <item quantity="many">%1$d skrótów</item>
+        <item quantity="other">%1$d skrótu</item>
+    </plurals>
+    <string name="snippets_explainer">Gdy całe dyktowanie to dokładnie fraza wyzwalająca (wielkość liter bez znaczenia, interpunkcja na końcach pomijana), zamiast niej zostanie wstawiony tekst zastępczy.</string>
+    <string name="snippets_empty">Nie masz jeszcze skrótów.</string>
+    <string name="snippets_add">Dodaj skrót</string>
+    <string name="snippets_edit_title">Edytuj skrót</string>
+    <string name="snippets_save">Zapisz</string>
+    <string name="snippets_trigger_label">Fraza wyzwalająca</string>
+    <string name="snippets_trigger_hint">To, co powiesz, np. \"mój adres\"</string>
+    <string name="snippets_replacement_label">Tekst zastępczy</string>
+    <string name="snippets_err_trigger_long">Użyj najwyżej 80 znaków.</string>
+    <string name="snippets_err_replacement_long">Użyj najwyżej 2000 znaków.</string>
+    <string name="snippets_err_duplicate">Skrót z tą frazą już istnieje.</string>
+    <string name="snippets_edit_cd">Edytuj skrót %1$s</string>
+    <string name="snippets_delete_cd">Usuń skrót %1$s</string>
+    <string name="snippets_delete_title">Usunąć ten skrót?</string>
+    <string name="snippets_delete_body">Powiedzenie \"%1$s\" nie będzie już wstawiać jego tekstu.</string>
 </resources>

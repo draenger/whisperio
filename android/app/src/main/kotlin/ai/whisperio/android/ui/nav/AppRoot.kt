@@ -65,6 +65,8 @@ import ai.whisperio.android.ui.settings.SettingsScreen
 import ai.whisperio.android.ui.settings.SettingsScrollTarget
 import ai.whisperio.android.ui.settings.SettingsSection
 import ai.whisperio.android.ui.settings.SettingsUiState
+import ai.whisperio.android.ui.settings.SnippetsActions
+import ai.whisperio.android.ui.settings.SnippetsScreen
 import ai.whisperio.core.ExportFormat
 import ai.whisperio.core.Recap
 import ai.whisperio.core.ProviderId
@@ -132,6 +134,7 @@ private object Routes {
     const val SETTINGS = "settings"
     const val ABOUT = "about"
     const val CATEGORIES = "settings/categories"
+    const val SNIPPETS = "settings/snippets"
     const val RECAP = "recap"
     const val DETAIL = "history/{id}"
     fun detail(id: String) = "history/$id"
@@ -357,6 +360,7 @@ private fun MainShell(g: AppGraph) {
             composable(Routes.DETAIL) { entry -> DetailRoute(g, nav, entry.arguments?.getString("id").orEmpty(), snackbar) }
             composable(Routes.SETTINGS) { SettingsRoute(g, nav, settingsScroll) }
             composable(Routes.CATEGORIES) { CategoriesRoute(g, nav) }
+            composable(Routes.SNIPPETS) { SnippetsRoute(g, nav) }
             composable(Routes.RECAP) { RecapRoute(g, nav, snackbar) }
             composable(Routes.ABOUT) {
                 val ctx = LocalContext.current
@@ -650,6 +654,22 @@ private fun CategoriesRoute(g: AppGraph, nav: NavHostController) {
 }
 
 @Composable
+private fun SnippetsRoute(g: AppGraph, nav: NavHostController) {
+    val snippets by g.settings.snippets.collectAsState(initial = emptyList())
+    SnippetsScreen(
+        snippets = snippets,
+        actions = object : SnippetsActions {
+            override fun onBack() { nav.popBackStack() }
+            // appScope: the write must finish even if the user leaves the screen right after saving.
+            override fun onSave(trigger: String, replacement: String, editId: String?) {
+                g.appScope.launch { g.settings.saveSnippet(trigger, replacement, editId) }
+            }
+            override fun onDelete(id: String) { g.appScope.launch { g.settings.removeSnippet(id) } }
+        },
+    )
+}
+
+@Composable
 private fun SettingsRoute(g: AppGraph, nav: NavHostController, settingsScroll: SettingsScrollTarget) {
     val scrollTarget by settingsScroll.pending.collectAsState()
     val scope = rememberCoroutineScope()
@@ -721,6 +741,7 @@ private fun SettingsRoute(g: AppGraph, nav: NavHostController, settingsScroll: S
         override fun onDeleteAllAudio() { scope.launch { g.history.deleteAllAudio(g.dictation.activeId(), g.dictation.activeFile()) } }
         override fun onEraseAll() { scope.launch { g.eraseAllData() } }
         override fun onCategories() { nav.navigate(Routes.CATEGORIES) }
+        override fun onSnippets() { nav.navigate(Routes.SNIPPETS) }
         override fun onAbout() { nav.navigate(Routes.ABOUT) }
     }
     run {
