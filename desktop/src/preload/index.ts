@@ -106,6 +106,8 @@ export interface AppSettings {
   allowUrlControl: boolean
   allowUrlStart: boolean
   checkForUpdates: boolean
+  // Read-only here: switched only via history:encryption:set (settings:save strips it).
+  encryptHistory: boolean
   dictationHotkey: string
   dictateAndSendHotkey: string
   // COMMAND mode (v1.7) — see settingsManager.ts's AppSettings for the full
@@ -236,7 +238,8 @@ export interface RecordingsAPI {
   save: (audioData: ArrayBuffer, metadata: { duration: number; provider: string }) => Promise<RecordingEntry>
   update: (id: string, updates: Partial<RecordingEntry>) => Promise<RecordingEntry | null>
   delete: (id: string) => Promise<boolean>
-  deleteAll: () => Promise<void>
+  /** Resolves with the count of files that could not be deleted (retried at startup). */
+  deleteAll: () => Promise<{ undeleted: number } | void>
   deleteByDate: (date: string) => Promise<void>
   getAudio: (id: string) => Promise<Buffer | null>
   reprocess: (id: string) => Promise<RecordingEntry | null>
@@ -410,10 +413,40 @@ export interface ContextAPI {
   enableWindowTitleMatching: () => Promise<AppSettings>
 }
 
+export interface HistoryEncryptionStatus {
+  enabled: boolean
+  sealedOnDisk: boolean
+  locked: boolean
+  lockKind?: 'transient' | 'unrecoverable' | 'unavailable'
+  vault: { ok: true } | { ok: false; reason: 'unavailable' | 'weak-backend' }
+}
+
+export type SetHistoryEncryptionResult =
+  | { ok: true }
+  | { ok: false; reason: 'unavailable' | 'weak-backend' | 'locked' }
+
+export interface HistoryAPI {
+  /** Encryption status of the saved-history index plus OS key-vault availability. */
+  getEncryption: () => Promise<HistoryEncryptionStatus>
+  /** Opt in/out of history encryption. Fails closed (flag stays unchanged) on any non-ok result. */
+  setEncryption: (enabled: boolean) => Promise<SetHistoryEncryptionResult>
+  /** Coarse state plus audio conversion progress (done of total files) for the Privacy panel. */
+  getEncryptionStatus: () => Promise<HistoryEncryptionProgress>
+  /** Locked history only: crypto-shred, delete the history files, encryption OFF. false = refused. */
+  resetLocked: (opts?: { confirmDestroy?: boolean }) => Promise<{ ok: boolean; undeleted: number; needsConfirmDestroy?: boolean }>
+}
+
+export interface HistoryEncryptionProgress {
+  state: 'off' | 'on' | 'migrating' | 'locked' | 'locked-transient' | 'unavailable'
+  done: number
+  total: number
+}
+
 export interface WhisperioAPI {
   dictation: DictationAPI
   settings: SettingsAPI
   recordings: RecordingsAPI
+  history: HistoryAPI
   models: ModelsAPI
   server: ServerAPI
   errors: ErrorAPI
@@ -506,6 +539,13 @@ const settingsApi: SettingsAPI = {
       ipcRenderer.removeListener('settings:set-tab', handler)
     }
   }
+}
+
+const historyApi: HistoryAPI = {
+  getEncryption: () => ipcRenderer.invoke('history:encryption:get'),
+  setEncryption: (enabled) => ipcRenderer.invoke('history:encryption:set', enabled),
+  getEncryptionStatus: () => ipcRenderer.invoke('history:encryption:status'),
+  resetLocked: (opts) => ipcRenderer.invoke('history:reset', opts)
 }
 
 const recordingsApi: RecordingsAPI = {
@@ -624,6 +664,7 @@ contextBridge.exposeInMainWorld('api', {
   dictation: dictationApi,
   settings: settingsApi,
   recordings: recordingsApi,
+  history: historyApi,
   models: modelsApi,
   server: serverApi,
   errors: errorsApi,

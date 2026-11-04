@@ -180,6 +180,10 @@ export interface AppSettings {
   clipboardRestoreDelayMs: number
   outputRecordingHotkey: string
   fallbackEnabled: boolean
+  // Opt-in history encryption (recordingStore seals index.json when true). Default OFF. Changed ONLY
+  // through setHistoryEncryption (IPC history:encryption:set); settings:save strips this key so the
+  // renderer cannot flip it via the generic setter.
+  encryptHistory: boolean
   // GitHub secret-store selection (NON-SECRET metadata only). The access token
   // and the encryption key are never stored here — they live Keychain-wrapped
   // via secretVault.ts. Secrets themselves are only ever committed to the repo
@@ -346,6 +350,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   clipboardRestoreDelayMs: 700,
   outputRecordingHotkey: '',
   fallbackEnabled: false,
+  encryptHistory: false,
   githubUser: '',
   githubRepo: '',
   githubBranch: ''

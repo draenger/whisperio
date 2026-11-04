@@ -49,6 +49,16 @@ interface RecordingDao {
     @Query("SELECT * FROM recording WHERE id = :id")
     suspend fun get(id: String): Recording?
 
+    /**
+     * Cheap prefilter for the sealed-data probe: rows whose transcript/error start with the sealed prefix or whose
+     * clip is `.wea`. A superset of the strict check, so callers still apply [hasSealedData] to what comes back.
+     */
+    @Query(
+        "SELECT * FROM recording WHERE substr(transcript, 1, 4) = 'WE1:' OR substr(error, 1, 4) = 'WE1:' " +
+            "OR audio_path LIKE '%.m4a.wea'",
+    )
+    suspend fun sealedCandidates(): List<Recording>
+
     @Upsert
     suspend fun upsert(recording: Recording)
 
@@ -103,6 +113,24 @@ interface RecordingDao {
 
     @Query("UPDATE recording SET audio_path = NULL WHERE audio_path IS NOT NULL AND id != :keepId")
     suspend fun clearAudioPathsExcept(keepId: String)
+
+    /**
+     * Encryption migration: swaps only transcript/error, and only if they still hold what the migration read
+     * (compare-and-swap). A row the dictation pipeline rewrote in the meantime is left alone (returns 0), so a
+     * migration never puts back a stale status or text.
+     */
+    @Query(
+        "UPDATE recording SET transcript = :newTranscript, error = :newError " +
+            "WHERE id = :id AND transcript IS :oldTranscript AND error IS :oldError",
+    )
+    suspend fun swapText(id: String, oldTranscript: String?, oldError: String?, newTranscript: String?, newError: String?): Int
+
+    /**
+     * Audio migration: points the row at the converted clip only if it still points at [old] (compare-and-swap, so a
+     * row rewritten or whose clip was deleted meanwhile is left alone: returns 0). Touches nothing else.
+     */
+    @Query("UPDATE recording SET audio_path = :new WHERE id = :id AND audio_path IS :old")
+    suspend fun swapAudioPath(id: String, old: String?, new: String?): Int
 }
 
 @Database(entities = [Recording::class], version = 2, exportSchema = true)
