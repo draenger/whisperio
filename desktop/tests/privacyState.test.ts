@@ -112,4 +112,11 @@ describe('index unavailable (plain history merely unreadable)', () => {
   it('undeletedMessage says files are removed on next start', () => {
     expect(undeletedMessage(2)).toContain('removed on next start')
   })
+
+  it('undeletedMessage for a plain-history erase never promises the files are unreadable', () => {
+    expect(undeletedMessage(2, true)).toBe("Couldn't delete 2 file(s). Will retry on next start.")
+    expect(undeletedMessage(2, true)).not.toContain('key')
+    expect(undeletedMessage(0, true)).toBeNull()
+    expect(undeletedMessage(2, false)).toContain('unreadable without the key')
+  })
 })

@@ -298,7 +298,7 @@ export function RecordingsView(): ReactElement {
     try {
       setActionError(null)
       const res = await window.api.recordings.deleteAll()
-      const warn = undeletedMessage(res ? res.undeleted : 0)
+      const warn = undeletedMessage(res ? res.undeleted : 0, res ? res.plaintext === true : false)
       if (warn) setActionError(warn)
       setDeleteAllConfirm(false)
       await loadRecordings()
