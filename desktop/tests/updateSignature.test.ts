@@ -112,6 +112,58 @@ describe('verifyAuthenticode', () => {
     expect(await verifyAuthenticode(p, TEST_PIN)).toEqual({ ok: false, reason: 'certificate table has slack or extra entries' })
   })
 
+  // Forged PKCS#7 structure: one byte changed inside the signature blob, each must be refused
+  // by its own check (not just by some later failure).
+  const OID_SIGNED_DATA = Buffer.from('06092a864886f70d010702', 'hex')
+  const OID_SPC_INDIRECT = Buffer.from('060a2b0601040182370201 04'.replace(/ /g, ''), 'hex')
+  const OID_MESSAGE_DIGEST = Buffer.from('06092a864886f70d010904', 'hex')
+  const CERT_V3_SERIAL = Buffer.from('a00302010202', 'hex') // [0] version v3, then INTEGER serial
+  /** Copy of the fixture with `edit(b, start, end)` applied inside the PKCS#7 blob bytes. */
+  function blobVariant(name: string, edit: (b: Buffer, start: number, end: number) => void): string {
+    return variant(name, (b) => {
+      const table = b.readUInt32LE(secDir(b))
+      edit(b, table + 8, table + b.readUInt32LE(table))
+      return b
+    })
+  }
+  function nth(b: Buffer, needle: Buffer, start: number, end: number, n: number): number {
+    let at = start - 1
+    for (let i = 0; i < n; i++) {
+      at = b.indexOf(needle, at + 1)
+      if (at < 0 || at >= end) throw new Error(`fixture: occurrence ${n} of ${needle.toString('hex')} not found`)
+    }
+    return at
+  }
+
+  it('rejects a blob whose outer contentType is not SignedData', async () => {
+    const p = blobVariant('not-signeddata.exe', (b, s, e) => { b[nth(b, OID_SIGNED_DATA, s, e, 1) + OID_SIGNED_DATA.length - 1] = 0x03 })
+    expect(await verifyAuthenticode(p, TEST_PIN)).toEqual({ ok: false, reason: 'not PKCS#7 SignedData' })
+  })
+  it('rejects SignedData whose encapsulated content is not SpcIndirectData', async () => {
+    const p = blobVariant('not-spc.exe', (b, s, e) => { b[nth(b, OID_SPC_INDIRECT, s, e, 1) + OID_SPC_INDIRECT.length - 1] = 0x05 })
+    expect(await verifyAuthenticode(p, TEST_PIN)).toEqual({ ok: false, reason: 'not an Authenticode signature' })
+  })
+  it('rejects a signed contentType attribute that is not SpcIndirectData', async () => {
+    const p = blobVariant('attr-ct.exe', (b, s, e) => { b[nth(b, OID_SPC_INDIRECT, s, e, 2) + OID_SPC_INDIRECT.length - 1] = 0x05 })
+    expect(await verifyAuthenticode(p, TEST_PIN)).toEqual({ ok: false, reason: 'signed contentType is not SpcIndirectData' })
+  })
+  it('rejects signed attributes without a messageDigest', async () => {
+    const p = blobVariant('no-md.exe', (b, s, e) => { b[nth(b, OID_MESSAGE_DIGEST, s, e, 1) + OID_MESSAGE_DIGEST.length - 1] = 0x7f })
+    expect(await verifyAuthenticode(p, TEST_PIN)).toEqual({ ok: false, reason: 'no messageDigest attribute' })
+  })
+  it('rejects a messageDigest that does not match the signed SpcIndirectData', async () => {
+    // attribute = OID, SET { OCTET STRING(32) }: OID + 31 22 04 20 + digest
+    const p = blobVariant('bad-md.exe', (b, s, e) => { b[nth(b, OID_MESSAGE_DIGEST, s, e, 1) + OID_MESSAGE_DIGEST.length + 4] ^= 0x01 })
+    expect(await verifyAuthenticode(p, TEST_PIN)).toEqual({ ok: false, reason: 'signed attributes do not match the signed content' })
+  })
+  it('rejects a signature whose signer certificate is not the embedded one (serial mismatch)', async () => {
+    const p = blobVariant('no-signer-cert.exe', (b, s, e) => {
+      const at = nth(b, CERT_V3_SERIAL, s, e, 1) + CERT_V3_SERIAL.length // serial length byte
+      b[at + b[at]] ^= 0x01 // last byte of the embedded cert's serial
+    })
+    expect(await verifyAuthenticode(p, TEST_PIN)).toEqual({ ok: false, reason: 'signer certificate not embedded' })
+  })
+
   it('rejects a non-PE and a missing file without throwing', async () => {
     const p = join(tmp, 'notpe.exe')
     writeFileSync(p, Buffer.alloc(4096, 0x41))

@@ -9,7 +9,8 @@ const h = vi.hoisted(() => ({
   fdPath: new Map<number, string>(),
   zeroed: [] as string[],
   failLink: false,
-  failWrite: false
+  failWrite: false,
+  failUnlink: null as RegExp | null
 }))
 
 vi.mock('electron', () => ({
@@ -40,6 +41,10 @@ vi.mock('fs', async (importOriginal) => {
       if (zero && h.failWrite) throw new Error('EIO')
       if (zero) h.zeroed.push(h.fdPath.get(fd) ?? '?')
       return (real.writeSync as (...a: unknown[]) => number)(fd, buf, ...rest)
+    },
+    unlinkSync: (p: string) => {
+      if (h.failUnlink && h.failUnlink.test(String(p))) throw Object.assign(new Error('EPERM'), { code: 'EPERM' })
+      return real.unlinkSync(p)
     },
     linkSync: (a: string, b: string) => {
       if (h.failLink) throw Object.assign(new Error('EPERM'), { code: 'EPERM' })
@@ -91,11 +96,13 @@ describe('recordingStore - secure deletion of migrated plaintext (L4) + sealed b
     h.zeroed.length = 0
     h.failLink = false
     h.failWrite = false
+    h.failUnlink = null
   })
   afterEach(() => {
     setEncryptHistoryReader(null)
     shredDataKey()
     h.failLink = h.failWrite = false
+    h.failUnlink = null
     if (existsSync(testDir)) rmSync(testDir, { recursive: true })
   })
 
@@ -191,6 +198,17 @@ describe('recordingStore - secure deletion of migrated plaintext (L4) + sealed b
     expect(zeroedNames()).toContain('index.json.corrupt-123')
     expect(existsSync(b)).toBe(false)
     expect(readFileSync(`${b}.sealed.json`, 'utf-8')).not.toContain(SECRET)
+  })
+
+  it('a plaintext backup that cannot be removed is reported as left, never as sealed', async () => {
+    await seed()
+    const b = join(DIR, 'index.json.corrupt-9')
+    writeFileSync(b, `{"recordings":[{"transcription":"${SECRET}"`)
+    h.failUnlink = /index.json.corrupt-9$/
+    // The UI turns plainBackupsLeft into 'old backup copies are still readable' (privacyState).
+    expect(await setHistoryEncryption(true)).toEqual({ ok: true, sealedBackups: 0, plainBackupsLeft: 1 })
+    expect(existsSync(b)).toBe(true)
+    h.failUnlink = null
   })
 
   it('leftover pins from a crash are wiped on the next migration start and on erase', async () => {
