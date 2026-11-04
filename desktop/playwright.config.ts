@@ -14,7 +14,9 @@ export default defineConfig({
   fullyParallel: false,
   workers: 1,
   retries: process.env['CI'] ? 1 : 0,
-  timeout: 30_000,
+  // Generous: the first Electron cold start in a CI job under xvfb is slow
+  // (launch waits for app ready, see e2e/helpers.ts).
+  timeout: 90_000,
   expect: {
     timeout: 10_000
   },
