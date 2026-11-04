@@ -14,6 +14,9 @@ import ai.whisperio.android.ui.common.SectionTitle
 import ai.whisperio.android.ui.common.dictationStatusText
 import ai.whisperio.android.ui.common.formatDateTime
 import ai.whisperio.android.ui.common.liveStatus
+import ai.whisperio.android.ui.settings.EncryptConfirmDialog
+import ai.whisperio.android.ui.settings.EncryptNotice
+import ai.whisperio.android.ui.settings.EncryptNoticeDialog
 import androidx.annotation.StringRes
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
@@ -34,6 +37,8 @@ import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilledIconButton
@@ -46,6 +51,11 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
@@ -66,6 +76,14 @@ data class HomeState(
     val providerLabel: String = "",
     /** CONTRACT-1.2 F3: needed to resolve the tag of a custom category on the recent rows. */
     val customCategories: List<CustomCategory> = emptyList(),
+    /** The one-time "Encrypt history" offer is visible (after onboarding, encryption OFF, not answered yet). */
+    val encryptCard: Boolean = false,
+    /** Non-null while the encrypt switch migrates rows (target value); the card then shows progress only. */
+    val encryptBusy: Boolean? = null,
+    /** Result of the last run that needs the user's attention. */
+    val encryptNotice: EncryptNotice? = null,
+    /** Encryption is ON but locked (sealed data, key unusable): new dictations are saved unencrypted. Not dismissible. */
+    val encryptLockedBanner: Boolean = false,
 )
 
 interface HomeActions {
@@ -76,6 +94,12 @@ interface HomeActions {
     fun onOpen(id: String) {}
     fun onSeeAll() {}
     fun onOpenSetup() {}
+    /** The user confirmed the dialog opened by the card's "Turn on". */
+    fun onEncryptCardTurnOn() {}
+    fun onEncryptCardDismiss() {}
+    fun onEncryptNoticeDismiss() {}
+    /** The locked banner's "Fix": open Settings, Privacy and storage. */
+    fun onEncryptLockedFix() {}
 }
 
 @Composable
@@ -138,6 +162,12 @@ fun HomeScreen(state: HomeState, actions: HomeActions, modifier: Modifier = Modi
                 }
             }
         }
+        if (state.encryptLockedBanner) {
+            item { EncryptLockedBanner(actions) }
+        }
+        if (state.encryptCard || state.encryptBusy != null) {
+            item { EncryptCard(state.encryptBusy, actions) }
+        }
         item {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                 SectionTitle(stringResource(R.string.home_recent))
@@ -164,7 +194,78 @@ fun HomeScreen(state: HomeState, actions: HomeActions, modifier: Modifier = Modi
             )
         }
     }
+    state.encryptNotice?.let { EncryptNoticeDialog(it, actions::onEncryptNoticeDismiss) }
 }
+
+/** One-time offer (design doc, decision 1): never shown again once answered; the busy line replaces the buttons. */
+@Composable
+private fun EncryptCard(busy: Boolean?, actions: HomeActions) {
+    var confirm by rememberSaveable { mutableStateOf(false) }
+    Card(
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+        modifier = Modifier.fillMaxWidth().padding(top = 8.dp).testTag(ENCRYPT_CARD_TAG),
+    ) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(stringResource(R.string.encrypt_card_title), style = MaterialTheme.typography.titleMedium)
+            Text(
+                stringResource(R.string.encrypt_card_body),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            if (busy != null) {
+                Text(
+                    stringResource(if (busy) R.string.settings_encrypt_busy_on else R.string.settings_encrypt_busy_off),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.liveStatus(),
+                )
+            } else {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(onClick = { confirm = true }, modifier = Modifier.heightIn(min = 48.dp)) {
+                        Text(stringResource(R.string.encrypt_card_turn_on))
+                    }
+                    TextButton(onClick = actions::onEncryptCardDismiss, modifier = Modifier.heightIn(min = 48.dp)) {
+                        Text(stringResource(R.string.encrypt_card_not_now))
+                    }
+                }
+            }
+        }
+    }
+    if (confirm) {
+        EncryptConfirmDialog(
+            target = true,
+            onConfirm = { confirm = false; actions.onEncryptCardTurnOn() },
+            onDismiss = { confirm = false },
+        )
+    }
+}
+
+/** Persistent, non-dismissible warning while encryption is locked (new dictations are stored unencrypted). */
+@Composable
+private fun EncryptLockedBanner(actions: HomeActions) {
+    Card(
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
+        modifier = Modifier.fillMaxWidth().padding(top = 8.dp).testTag(ENCRYPT_LOCKED_BANNER_TAG),
+    ) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(
+                stringResource(R.string.home_encrypt_locked_banner),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onErrorContainer,
+                modifier = Modifier.liveStatus(),
+            )
+            TextButton(onClick = actions::onEncryptLockedFix, modifier = Modifier.heightIn(min = 48.dp)) {
+                Text(stringResource(R.string.home_encrypt_locked_fix), color = MaterialTheme.colorScheme.onErrorContainer)
+            }
+        }
+    }
+}
+
+/** Test tag of the encrypt-locked banner. */
+const val ENCRYPT_LOCKED_BANNER_TAG = "encrypt_locked_banner"
+
+/** Test tag of the one-time encrypt card. */
+const val ENCRYPT_CARD_TAG = "encrypt_card"
 
 @Composable
 private fun ResultCard(text: String, actions: HomeActions) {

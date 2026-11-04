@@ -5,11 +5,15 @@ import ai.whisperio.android.security.SecretStore
 import ai.whisperio.core.Categories
 import ai.whisperio.core.ChainSettings
 import ai.whisperio.core.ProviderId
+import ai.whisperio.core.Snippet
+import ai.whisperio.core.SnippetCheck
+import ai.whisperio.core.Snippets
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
+import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import java.util.UUID
 import kotlinx.coroutines.flow.Flow
@@ -41,7 +45,12 @@ class SettingsRepository(
         val sensitive = booleanPreferencesKey("transcripts_sensitive")
         val onboarding = booleanPreferencesKey("onboarding_done")
         val perAppLanguage = booleanPreferencesKey("per_app_language")
+        val encryptHistory = booleanPreferencesKey("encrypt_history")
+        val encryptCardHandled = booleanPreferencesKey("encrypt_card_handled")
+        val needsCompaction = booleanPreferencesKey("needs_compaction")
+        val compactionFailedAt = longPreferencesKey("compaction_failed_at")
         val customCategories = stringPreferencesKey("custom_categories") // JSON list, CONTRACT-1.2 F3
+        val snippets = stringPreferencesKey("snippets") // JSON list of {id, trigger, replacement}; absent = none
         fun baseUrl(id: ProviderId) = stringPreferencesKey("base_url_${id.wire}")
     }
 
@@ -79,6 +88,39 @@ class SettingsRepository(
         if (next.isEmpty()) it.remove(K.customCategories) else it[K.customCategories] = CustomCategories.encode(next)
     }
 
+    /** Snippets in creation order. Stored in this DataStore, so [clear] erases them. */
+    val snippets: Flow<List<Snippet>> = store.data.map { Snippets.decode(it[K.snippets]) }
+
+    /**
+     * Adds a snippet, or edits [editId] when given. Validation and write share one DataStore transaction, so two quick
+     * saves cannot create duplicate triggers. [newId] is injectable for tests.
+     */
+    suspend fun saveSnippet(
+        trigger: String,
+        replacement: String,
+        editId: String? = null,
+        newId: () -> String = { UUID.randomUUID().toString() },
+    ): SnippetCheck {
+        var result: SnippetCheck = SnippetCheck.BlankTrigger
+        store.edit {
+            val list = Snippets.decode(it[K.snippets])
+            result = Snippets.check(trigger, replacement, list.filterNot { s -> s.id == editId })
+            // Editing a snippet deleted meanwhile (another screen, erase-all) must not resurrect it.
+            if (editId != null && list.none { s -> s.id == editId }) return@edit
+            (result as? SnippetCheck.Ok)?.let { ok ->
+                val next = if (editId == null) Snippets.add(list, Snippet(newId(), ok.trigger, ok.replacement))
+                else Snippets.update(list, editId, ok.trigger, ok.replacement)
+                it[K.snippets] = Snippets.encode(next)
+            }
+        }
+        return result
+    }
+
+    suspend fun removeSnippet(id: String) = store.edit {
+        val next = Snippets.remove(Snippets.decode(it[K.snippets]), id)
+        if (next.isEmpty()) it.remove(K.snippets) else it[K.snippets] = Snippets.encode(next)
+    }
+
     override suspend fun chain(): ChainSettings {
         val settings = current()
         val keys = ProviderId.entries.associateWith { secrets.get(it) }
@@ -110,6 +152,9 @@ class SettingsRepository(
             transcriptsSensitive = p[K.sensitive] ?: false,
             onboardingDone = p[K.onboarding] ?: false,
             perAppLanguage = p[K.perAppLanguage] ?: false,
+            snippets = Snippets.decode(p[K.snippets]),
+            encryptHistory = p[K.encryptHistory] ?: false,
+            encryptCardHandled = p[K.encryptCardHandled] ?: false,
         )
     }
 
@@ -146,6 +191,22 @@ class SettingsRepository(
     suspend fun setSensitive(v: Boolean) = store.edit { it[K.sensitive] = v }
     suspend fun setOnboardingDone(v: Boolean) = store.edit { it[K.onboarding] = v }
     suspend fun setPerAppLanguage(v: Boolean) = store.edit { it[K.perAppLanguage] = v }
+
+    /** Only [ai.whisperio.android.di.AppGraph.setEncryptHistory] calls this: the flag and the row migration go together. */
+    suspend fun setEncryptHistory(v: Boolean) = store.edit { it[K.encryptHistory] = v }
+
+    /** Set when the user answers the one-time card on Home (either button). */
+    suspend fun setEncryptCardHandled(v: Boolean) = store.edit { it[K.encryptCardHandled] = v }
+
+    /** True while the history database still needs a WAL checkpoint + VACUUM (an earlier one failed or was cut short). */
+    suspend fun needsCompaction(): Boolean = store.data.first()[K.needsCompaction] ?: false
+
+    suspend fun setNeedsCompaction(v: Boolean) = store.edit { it[K.needsCompaction] = v }
+
+    /** Wall-clock ms of the last failed compaction (0 = none); the start-up retry waits a day after it. */
+    suspend fun compactionFailedAt(): Long = store.data.first()[K.compactionFailedAt] ?: 0L
+
+    suspend fun setCompactionFailedAt(ms: Long) = store.edit { it[K.compactionFailedAt] = ms }
 
     /** Part of "Erase all data": resets every setting to its default. */
     suspend fun clear() {

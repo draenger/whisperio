@@ -9,6 +9,8 @@ import ai.whisperio.core.KeyValidator
 import ai.whisperio.core.ProviderCatalog
 import ai.whisperio.core.ProviderError
 import ai.whisperio.core.ProviderId
+import ai.whisperio.core.Snippet
+import ai.whisperio.core.Snippets
 import ai.whisperio.core.TextCleaner
 import ai.whisperio.core.TranscriptionRequest
 import ai.whisperio.core.TranscriptionResult
@@ -46,6 +48,10 @@ class CoreModelCatalog : ModelCatalog {
 
 class CoreTextTidy : TextTidy {
     override fun tidy(text: String): String = TextCleaner.tidy(text)
+}
+
+class CoreSnippetExpander : SnippetExpander {
+    override fun expand(text: String, snippets: List<Snippet>): String = Snippets.apply(text, snippets)
 }
 
 class CoreHostPolicy : HostPolicy {
