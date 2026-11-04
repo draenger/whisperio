@@ -10,6 +10,12 @@ directories:
   output: dist
 files:
   - out/**/*
+  # EXPERIMENTAL Parakeet (#47): the sherpa-onnx native addon (optionalDependency, ~23 MB of
+  # unsigned onnxruntime/sherpa DLLs) is NOT shipped in release builds. Only the lab build
+  # (npm run build:lab:*, .devops/electron-builder.lab.cjs) packages and unpacks it; without it
+  # the app treats experimentalParakeet as OFF and hides the UI (parakeetAllowed()).
+  - "!node_modules/sherpa-onnx-node/**"
+  - "!node_modules/sherpa-onnx-*/**"
 asarUnpack:
   - "node_modules/koffi/**"
   # active-win: macOS execFile()s its Swift helper `main` and Windows loads a N-API .node via

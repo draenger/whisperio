@@ -3,13 +3,15 @@
 // is produced only when `selfhosted` (whisper.cpp) is in the chain, and is
 // sent as an additional buffer so main can pick per provider.
 
-import { providerNeedsWav } from '../../shared/providerFormat'
+import { chainNeedsWav } from '../../shared/providerFormat'
 
 export interface FormatPlan {
   sendOriginal: true
   needsWav: boolean
 }
 
-export function planAudioFormats(chain: readonly string[] | undefined | null): FormatPlan {
-  return { sendOriginal: true, needsWav: !!chain && chain.some(providerNeedsWav) }
+export function planAudioFormats(chain: readonly string[] | undefined | null,
+  experimentalParakeet?: boolean
+): FormatPlan {
+  return { sendOriginal: true, needsWav: chainNeedsWav(chain, experimentalParakeet) }
 }

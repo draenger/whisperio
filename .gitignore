@@ -1,6 +1,7 @@
 node_modules/
 out/
 dist/
+dist-lab/
 .node/
 .env
 # .claude/ (kept for project-local commands)

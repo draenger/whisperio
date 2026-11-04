@@ -17,6 +17,7 @@ export type ProviderId =
   | 'deepgram'
   | 'assemblyai'
   | 'mistral'
+  | 'parakeet'
 
 export type AccentColor = 'graphite' | 'blue' | 'teal' | 'emerald' | 'amber'
 
@@ -180,6 +181,8 @@ export interface AppSettings {
   clipboardRestoreDelayMs: number
   outputRecordingHotkey: string
   fallbackEnabled: boolean
+  // EXPERIMENTAL (spike): enables the on-device 'parakeet' provider. Default off.
+  experimentalParakeet: boolean
   // Opt-in history encryption (recordingStore seals index.json when true). Default OFF. Changed ONLY
   // through setHistoryEncryption (IPC history:encryption:set); settings:save strips this key so the
   // renderer cannot flip it via the generic setter.
@@ -350,6 +353,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   clipboardRestoreDelayMs: 700,
   outputRecordingHotkey: '',
   fallbackEnabled: false,
+  experimentalParakeet: false,
   encryptHistory: false,
   githubUser: '',
   githubRepo: '',

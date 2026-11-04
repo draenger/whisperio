@@ -60,6 +60,13 @@ import {
   setDownloadProgressCallback
 } from './modelManager'
 import {
+  getParakeetModelStatus,
+  downloadParakeetModel,
+  cancelParakeetDownload,
+  deleteParakeetModel
+} from './stt/parakeetModel'
+import { isParakeetRuntimeInstalled, parakeetAllowed, shutdownParakeet } from './stt/parakeet'
+import {
   getServerStatus,
   startServer,
   stopServer,
@@ -610,6 +617,35 @@ app.whenReady().then(() => {
   ipcMain.handle('models:delete', guard((_e, modelId: string) => deleteModel(modelId)))
 
   // Local server IPC handlers
+  // EXPERIMENTAL Parakeet (flag: experimentalParakeet)
+  const parakeetEnabled = (): boolean => parakeetAllowed(loadSettings())
+  ipcMain.handle('parakeet:status', guard(() => ({
+    ...getParakeetModelStatus(),
+    runtimeInstalled: isParakeetRuntimeInstalled()
+  })))
+  ipcMain.handle('parakeet:download', guard(async () => {
+    if (!parakeetEnabled()) throw new Error('Parakeet is experimental and disabled.')
+    setDownloadProgressCallback((progress) => {
+      BrowserWindow.getAllWindows().forEach((win) => {
+        if (!win.isDestroyed()) win.webContents.send('models:download-progress', progress)
+      })
+    })
+    await downloadParakeetModel()
+    return { ...getParakeetModelStatus(), runtimeInstalled: isParakeetRuntimeInstalled() }
+  }))
+  // Not gated by the flag: it only stops work (a running download + the worker), never starts any.
+  ipcMain.handle('parakeet:cancel', guard(async () => {
+    cancelParakeetDownload(cancelDownload)
+    await shutdownParakeet()
+    return true
+  }))
+  ipcMain.handle('parakeet:delete', guard(async () => {
+    if (!parakeetEnabled()) throw new Error('Parakeet is experimental and disabled.')
+    await shutdownParakeet()
+    deleteParakeetModel()
+    return { ...getParakeetModelStatus(), runtimeInstalled: isParakeetRuntimeInstalled() }
+  }))
+
   ipcMain.handle('server:status', guard(() => getServerStatus()))
   ipcMain.handle('server:start', guard(async (_e, modelFilename: string) => {
     setServerStatusCallback((status) => {
@@ -680,6 +716,7 @@ app.on('window-all-closed', () => {
 })
 
 app.on('before-quit', () => {
+  void shutdownParakeet()
   // Don't leave the managed whisper-server holding RAM and port 8178.
   stopServer()
   cleanupDictation()

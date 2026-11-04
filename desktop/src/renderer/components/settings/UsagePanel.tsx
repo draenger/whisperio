@@ -25,7 +25,7 @@ type UsageMonthly = Awaited<ReturnType<Window['api']['usage']['get']>>[string][s
 /** Providers metered as always-free (see usageTracker.ts's LOCAL_PROVIDER_IDS) —
  * used here only to decide whether to show the on-device badge next to the
  * (already-zeroed) cost, never to override a real number. */
-const FREE_PROVIDERS = new Set(['local', 'selfhosted'])
+const FREE_PROVIDERS = new Set(['local', 'selfhosted', 'parakeet'])
 
 const PROVIDER_DISPLAY_NAMES: Record<string, string> = {
   openai: 'OpenAI',
@@ -33,7 +33,8 @@ const PROVIDER_DISPLAY_NAMES: Record<string, string> = {
   replicate: 'Replicate',
   elevenlabs: 'ElevenLabs',
   local: 'Local',
-  selfhosted: 'On-Device'
+  selfhosted: 'On-Device',
+  parakeet: 'Parakeet (experimental)'
 }
 
 /** "YYYY-MM" (local time) for right now — mirrors usageTracker.ts's `monthKey()`

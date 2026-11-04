@@ -41,6 +41,7 @@ import {
 } from '../src/main/settingsManager'
 
 const DEFAULT_SETTINGS = {
+  experimentalParakeet: false,
   sttProvider: 'openai',
   providerChain: ['openai'],
   openaiApiKey: '',

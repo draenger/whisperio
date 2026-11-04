@@ -233,6 +233,7 @@ describe('SettingsForm — Snippets section wiring (load -> edit -> auto-save)',
     const load = vi.fn().mockResolvedValue({ snippets: [{ trigger: 'my address', text: '221B Baker St' }] })
     // @ts-expect-error minimal test double — only what the Providers tab touches.
     window.api = {
+      parakeet: { status: vi.fn().mockResolvedValue({ runtimeInstalled: false }) },
       settings: { load, save, pauseHotkeys: vi.fn(), resumeHotkeys: vi.fn(), onSetTab: vi.fn().mockReturnValue(() => {}) },
       window: { getVersion: vi.fn().mockResolvedValue('1.5.0'), minimize: vi.fn(), maximize: vi.fn(), close: vi.fn() },
       updater: {

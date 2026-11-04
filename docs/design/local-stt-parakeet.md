@@ -228,3 +228,9 @@ These are estimates, not measurements.
 - Metal speed of whisper.cpp large-v3-turbo on Apple Silicon; size of a self-built mac/Linux `whisper-server`.
 - bz2 extraction dependency choice; existence of a Third-party notices surface in the renderer.
 - Recorder output container (webm vs wav) on each platform.
+
+## 15. Lab build (how Parakeet ships today)
+
+- **Release builds do not contain Parakeet.** `.devops/electron-builder.yml` excludes `node_modules/sherpa-onnx*` (the ~23 MB of unsigned onnxruntime/sherpa DLLs). Without the addon, `parakeetAllowed()` is false: a stale `experimentalParakeet: true` acts as OFF and Settings hides the Experimental card. Checked on real Windows `--dir` builds (release: 0 sherpa/onnx entries; lab: 27 in `app.asar` + 8 unpacked, including `onnxruntime.dll`) and by `tests/packaging-parakeet.test.ts`.
+- **Lab build:** `cd desktop && npm run build:lab:win` (or `:linux` / `:mac`). This is the release config plus the addon (`.devops/electron-builder.lab.cjs`), written to `dist-lab/` with `*-lab-*` artifact names and `publish: null`, so it can never overwrite a release asset or `latest*.yml`. Never upload it to a GitHub release.
+- **WARNING (until astra P1 is fixed):** the native addon loads and runs inside the Electron main process (the worker thread shares it). A native crash in sherpa-onnx/onnxruntime (access violation, abort) **closes the whole app**, including an in-progress recording. Use lab builds only for testing. The fix, moving load + inference into a separate process (Electron `utilityProcess`), is a board task and blocks enabling Parakeet outside the lab channel.

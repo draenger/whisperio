@@ -188,7 +188,7 @@ function ensureBucket(store: UsageStore, provider: string, month: string): Provi
 // the app's own bundled local model server (id 'local', see transcribe.ts's
 // buildCleanupCandidates) and the self-hosted STT server (ProviderId
 // 'selfhosted', see settingsManager.ts).
-const LOCAL_PROVIDER_IDS = new Set(['local', 'selfhosted'])
+const LOCAL_PROVIDER_IDS = new Set(['local', 'selfhosted', 'parakeet'])
 
 function isFreeProvider(providerId: string, isLocal: boolean | undefined): boolean {
   return isLocal === true || LOCAL_PROVIDER_IDS.has(providerId.trim().toLowerCase())

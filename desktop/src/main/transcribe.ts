@@ -31,6 +31,8 @@ import { TONE_PROFILE_DESCRIPTIONS } from './llm/prompts'
 // following the same shape as whisperTranscribe/elevenLabsTranscribe/
 // replicateTranscribe below, not the llm/provider.ts LLMProvider interface
 // (that abstraction is for text completion, not speech-to-text).
+import { parakeetTranscribe, parakeetAllowed } from './stt/parakeet'
+import { isParakeetModelReady } from './stt/parakeetModel'
 import { groqTranscribe } from './llm/groq'
 import { deepgramTranscribe, deepgramTranscribeDiarized } from './llm/deepgram'
 import { assemblyAITranscribe, assemblyAITranscribeDiarized } from './llm/assembly'
@@ -96,7 +98,8 @@ const PROVIDER_LABELS: Record<ProviderId, string> = {
   groq: 'Groq',
   deepgram: 'Deepgram',
   assemblyai: 'AssemblyAI',
-  mistral: 'Mistral'
+  mistral: 'Mistral',
+  parakeet: 'On-device (Parakeet)'
 }
 
 interface TranscribeResult {
@@ -505,6 +508,12 @@ export async function transcribeAudio(
       chain.push(fallback)
     }
   }
+  // EXPERIMENTAL: with the flag off 'parakeet' is ignored entirely (a stale
+  // chain entry must never run, nor become the only provider).
+  if (!parakeetAllowed(settings)) {
+    chain = chain.filter((p) => p !== 'parakeet')
+    if (chain.length === 0) chain = ['openai']
+  }
 
   // Filter to only configured providers, but keep at least the first one to get a proper error
   const configuredChain = chain.filter((p) => isProviderConfigured(settings, p))
@@ -543,7 +552,7 @@ export async function transcribeAudio(
         audioSeconds: wavAudio
           ? estimateAudioSeconds(wavAudio.buffer, wavAudio.filename)
           : estimateAudioSeconds(audio.buffer, audio.filename),
-        isLocal: provider === 'selfhosted'
+        isLocal: provider === 'selfhosted' || provider === 'parakeet'
       })
       if (firstError) {
         // Not a toast, but a broken primary must not be completely silent.
@@ -598,6 +607,8 @@ function isProviderConfigured(settings: AppSettings, provider: ProviderId): bool
   if (provider === 'deepgram') return !!settings.deepgramApiKey
   if (provider === 'assemblyai') return !!settings.assemblyaiApiKey
   if (provider === 'mistral') return !!settings.mistralApiKey
+  // EXPERIMENTAL: hidden/unconfigured unless the flag is on AND the model files exist.
+  if (provider === 'parakeet') return parakeetAllowed(settings) && isParakeetModelReady()
   return false
 }
 
@@ -634,6 +645,14 @@ async function transcribeWithProvider(
     const vocab = getActiveVocabulary(settings)
     const lang = settings.transcriptionLanguage?.trim() || 'auto'
     return elevenLabsTranscribe(apiKey, audioBuffer, filename, vocab, lang)
+  }
+
+  if (provider === 'parakeet') {
+    if (!parakeetAllowed(settings)) {
+      throw new Error('On-device Parakeet is experimental and disabled. Enable it in Settings > Experimental.')
+    }
+    // Any runtime/model error propagates as a provider error so the chain falls through.
+    return parakeetTranscribe(audioBuffer, { language: settings.transcriptionLanguage })
   }
 
   if (provider === 'selfhosted') {
