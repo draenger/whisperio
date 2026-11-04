@@ -14,11 +14,11 @@ export const PARAKEET_DIR_NAME = 'parakeet-tdt-0.6b-v3-int8'
 export interface ParakeetFileSpec {
   name: string
   url: string
-  /** Approximate size from the sherpa-onnx docs page (spec section 3.1). */
+  /** Size in bytes at the pinned HF revision (progress / disk checks). */
   approxBytes: number
   /**
-   * SHA-256 pin. TODO: the spec lists no hashes. Until every entry is filled
-   * the model is NEVER reported as `verified` (it can still be `ready`).
+   * SHA-256 pin (HF LFS oid at HF_REVISION; tokens.txt hashed from a download).
+   * A null pin means the model is NEVER reported as `verified` (it can still be `ready`).
    */
   sha256: string | null
 }
@@ -26,17 +26,37 @@ export interface ParakeetFileSpec {
 // Upstream sherpa-onnx release tarball (spec 3.1):
 //   github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8.tar.bz2
 // To avoid a bz2 extraction dependency the spike downloads the files one by one.
-// TODO(unverified): the per-file HuggingFace mirror below is the repo the
-// sherpa-onnx docs point at for these models, but its URLs were not fetched for
-// this spike (no downloads allowed). Confirm before enabling for users.
-const HF_BASE =
-  'https://huggingface.co/csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8/resolve/main'
+// Per-file HuggingFace mirror the sherpa-onnx docs point at, pinned to a revision so an
+// upstream re-upload cannot turn into an integrity error for users. Pins checked
+// 2026-11-04: HF API LFS oids + a full download, load and transcription on the Mac (#47).
+const HF_REVISION = '2bda32ec70b097a55adaa07d9a7173915b43cc78'
+const HF_BASE = `https://huggingface.co/csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8/resolve/${HF_REVISION}`
 
 export const PARAKEET_FILES: ParakeetFileSpec[] = [
-  { name: 'encoder.int8.onnx', url: `${HF_BASE}/encoder.int8.onnx`, approxBytes: 622_000_000, sha256: null },
-  { name: 'decoder.int8.onnx', url: `${HF_BASE}/decoder.int8.onnx`, approxBytes: 12_000_000, sha256: null },
-  { name: 'joiner.int8.onnx', url: `${HF_BASE}/joiner.int8.onnx`, approxBytes: 6_100_000, sha256: null },
-  { name: 'tokens.txt', url: `${HF_BASE}/tokens.txt`, approxBytes: 92_000, sha256: null }
+  {
+    name: 'encoder.int8.onnx',
+    url: `${HF_BASE}/encoder.int8.onnx`,
+    approxBytes: 652_184_281,
+    sha256: 'acfc2b4456377e15d04f0243af540b7fe7c992f8d898d751cf134c3a55fd2247'
+  },
+  {
+    name: 'decoder.int8.onnx',
+    url: `${HF_BASE}/decoder.int8.onnx`,
+    approxBytes: 11_845_275,
+    sha256: '179e50c43d1a9de79c8a24149a2f9bac6eb5981823f2a2ed88d655b24248db4e'
+  },
+  {
+    name: 'joiner.int8.onnx',
+    url: `${HF_BASE}/joiner.int8.onnx`,
+    approxBytes: 6_355_277,
+    sha256: '3164c13fc2821009440d20fcb5fdc78bff28b4db2f8d0f0b329101719c0948b3'
+  },
+  {
+    name: 'tokens.txt',
+    url: `${HF_BASE}/tokens.txt`,
+    approxBytes: 93_939,
+    sha256: 'd58544679ea4bc6ac563d1f545eb7d474bd6cfa467f0a6e2c1dc1c7d37e3c35d'
+  }
 ]
 
 export function getParakeetDir(): string {

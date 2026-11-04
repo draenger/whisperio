@@ -99,6 +99,8 @@ export function isParakeetRuntimeInstalled(): boolean {
 /**
  * Decode a RIFF/WAVE buffer (PCM16 or float32) to mono Float32 at 16 kHz
  * (channel average + linear resample). Throws on anything else (e.g. webm).
+ * Keep this JS decoder: sherpa's own `readWave` throws 'External buffers are not
+ * allowed' inside Electron (V8 memory cage), verified on the Mac run of #47.
  */
 export function wavToPcm16k(buf: Buffer): Float32Array {
   if (buf.length < 44 || buf.toString('ascii', 0, 4) !== 'RIFF' || buf.toString('ascii', 8, 12) !== 'WAVE') {

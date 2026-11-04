@@ -55,7 +55,7 @@ describe('parakeet model resolver', () => {
     expect(() => getParakeetModelPaths()).toThrow(/incomplete/)
   })
 
-  it('is ready when all files exist but never verified without SHA-256 pins', () => {
+  it('is ready when all files exist but not verified until a download checked each pin', () => {
     for (const f of PARAKEET_FILES) writeFileSync(resolveParakeetFile(f.name), 'x')
     const st = getParakeetModelStatus()
     expect(st.ready).toBe(true)
@@ -65,7 +65,10 @@ describe('parakeet model resolver', () => {
     expect(existsSync(resolveParakeetFile('tokens.txt'))).toBe(false)
   })
 
-  it('has sha256 pins unset (TODO) so verification stays refused', () => {
-    expect(PARAKEET_FILES.every((f) => f.sha256 === null)).toBe(true)
+  it('pins every file to a 64-hex SHA-256 and a 40-hex HF revision URL', () => {
+    for (const f of PARAKEET_FILES) {
+      expect(f.sha256).toMatch(/^[0-9a-f]{64}$/)
+      expect(f.url).toMatch(/\/resolve\/[0-9a-f]{40}\//)
+    }
   })
 })
