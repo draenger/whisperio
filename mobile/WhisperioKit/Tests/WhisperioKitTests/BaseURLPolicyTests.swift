@@ -50,6 +50,65 @@ import Foundation
         guard case .failure(.insecureHTTP) = BaseURLPolicy.validate("example.com", assumeHTTPForBareHost: true) else { Issue.record("expected rejection"); return }
     }
 
+    /// "fc::1" is 00fc::1 and "fc0::1" is 0fc0::1: outside fc00::/7 although the text starts with fc.
+    @Test func shortIPv6StartingWithFcIsNotUniqueLocal() {
+        for h in ["fc::1", "fd::1", "fc0::1", "fd0::1", "fe8::1", "fe::1", "[fc::1]", "[fd::1]", "[fc0::1]"] {
+            #expect(!BaseURLPolicy.isLocalHost(h), "\(h)")
+        }
+        for s in ["http://[fc::1]/v1", "http://[fd::1]/v1", "http://[fc0::1]/v1"] {
+            guard case .failure(.insecureHTTP) = BaseURLPolicy.validate(s) else { Issue.record("expected rejection: \(s)"); continue }
+        }
+    }
+
+    /// The whole fc00::/7 and fe80::/10 ranges count, by value of the first hextet.
+    @Test func uniqueLocalAndLinkLocalRangesByValue() {
+        for h in ["fc00::1", "fcff::1", "fd00::1", "fd12:3456::1", "fdff:ffff::1", "FD12::1", "fe80::1", "fe9a::1", "febf::1"] {
+            #expect(BaseURLPolicy.isLocalHost(h), "\(h)")
+        }
+        for h in ["fe00::1", "fec0::1", "fb00::1", "ff02::1", "2001:db8::1", "::ffff:8.8.8.8", "fc000::1", "fz00::1"] {
+            #expect(!BaseURLPolicy.isLocalHost(h), "\(h)")
+        }
+        guard case .success = BaseURLPolicy.validate("http://[fd12:3456::1]:8080/v1") else { Issue.record("expected ok"); return }
+    }
+
+    /// Dotless numeric hosts are IPv4 literals for the resolver (134744072 == 8.8.8.8), not intranet names.
+    @Test func dotlessNumericIPv4LiteralIsNotLocal() {
+        for h in ["134744072", "0x08080808", "2130706433"] {
+            #expect(!BaseURLPolicy.isLocalHost(h), "\(h)")
+        }
+        for s in ["http://134744072/v1", "http://0x08080808/v1"] {
+            guard case .failure(.insecureHTTP) = BaseURLPolicy.validate(s) else { Issue.record("expected rejection: \(s)"); continue }
+        }
+        #expect(BaseURLPolicy.isLocalHost("nas"))
+        #expect(BaseURLPolicy.isLocalHost("box1"))
+        #expect(!BaseURLPolicy.isLocalHost("0X08080808"))
+    }
+
+    /// Leading-zero parts are octal for the resolver (010.010.010.010 == 8.8.8.8): never private.
+    @Test func leadingZeroIPv4PartsAreNotPrivate() {
+        for h in ["010.010.010.010", "010.0.0.1", "10.010.0.1", "192.168.01.1", "127.0.0.01", "00.0.0.0"] {
+            #expect(!BaseURLPolicy.isLocalHost(h), "\(h)")
+        }
+        guard case .failure(.insecureHTTP) = BaseURLPolicy.validate("http://010.010.010.010/v1") else { Issue.record("expected rejection"); return }
+        for h in ["10.0.0.1", "192.168.0.10", "127.0.0.1", "172.20.0.100"] {
+            #expect(BaseURLPolicy.isLocalHost(h), "\(h)")
+        }
+    }
+
+    /// A dotless non-ASCII name may map to an IPv4 literal (fullwidth digits): not an intranet name.
+    @Test func nonASCIIDotlessHostIsNotLocal() {
+        #expect(!BaseURLPolicy.isLocalHost("\u{FF11}\u{FF13}\u{FF14}\u{FF17}\u{FF14}\u{FF14}\u{FF10}\u{FF17}\u{FF12}"))
+        #expect(!BaseURLPolicy.isLocalHost("nä s"))
+        #expect(BaseURLPolicy.isLocalHost("my-nas"))
+    }
+
+    /// Zone ids and uncompressed forms keep working.
+    @Test func ipv6ZoneAndUncompressedForms() {
+        #expect(BaseURLPolicy.isLocalHost("fe80::1%en0"))
+        #expect(BaseURLPolicy.isLocalHost("fd00:0000:0000:0000:0000:0000:0000:0001"))
+        #expect(!BaseURLPolicy.isLocalHost("2001:0db8:0000:0000:0000:0000:0000:0001"))
+    }
+
     @Test func officialVsCustomHost() {
         #expect(BaseURLPolicy.isOfficialHost(provider: .openAI, url: URL(string: "https://api.openai.com/v1")!))
         #expect(BaseURLPolicy.isOfficialHost(provider: .openAI, url: URL(string: "https://API.OPENAI.COM/v1")!))
