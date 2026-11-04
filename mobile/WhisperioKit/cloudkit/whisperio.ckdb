@@ -1,0 +1,61 @@
+DEFINE SCHEMA
+
+    RECORD TYPE CD_DigestEntity (
+        "___createTime"         TIMESTAMP,
+        "___createdBy"          REFERENCE,
+        "___etag"               STRING,
+        "___modTime"            TIMESTAMP,
+        "___modifiedBy"         REFERENCE,
+        "___recordID"           REFERENCE QUERYABLE,
+        CD_date                 TIMESTAMP,
+        CD_dayKey               STRING,
+        CD_entityName           STRING,
+        CD_groupsData           BYTES,
+        CD_modifiedAt           TIMESTAMP,
+        CD_recordingIDsData     BYTES,
+        CD_summary              STRING,
+        CD_summaryGeneratedAt   TIMESTAMP,
+        GRANT WRITE TO "_creator",
+        GRANT CREATE TO "_icloud",
+        GRANT READ TO "_world"
+    );
+
+    RECORD TYPE CD_RecordingEntity (
+        "___createTime"         TIMESTAMP,
+        "___createdBy"          REFERENCE,
+        "___etag"               STRING,
+        "___modTime"            TIMESTAMP,
+        "___modifiedBy"         REFERENCE,
+        "___recordID"           REFERENCE QUERYABLE,
+        CD_category             STRING,
+        CD_duration             DOUBLE,
+        CD_entityName           STRING,
+        CD_error                STRING,
+        CD_filename             STRING,
+        CD_id                   STRING,
+        CD_modifiedAt           TIMESTAMP,
+        CD_providerRaw          STRING,
+        CD_render               STRING,
+        CD_renderPresetID       STRING,
+        CD_segmentsData         BYTES,
+        CD_source               STRING,
+        CD_speakerNamesData     BYTES,
+        CD_statusRaw            STRING,
+        CD_timestamp            TIMESTAMP,
+        CD_transcription        STRING,
+        GRANT WRITE TO "_creator",
+        GRANT CREATE TO "_icloud",
+        GRANT READ TO "_world"
+    );
+
+    RECORD TYPE Users (
+        "___createTime"         TIMESTAMP,
+        "___createdBy"          REFERENCE,
+        "___etag"               STRING,
+        "___modTime"            TIMESTAMP,
+        "___modifiedBy"         REFERENCE,
+        "___recordID"           REFERENCE,
+        roles                   LIST<INT64>,
+        GRANT WRITE TO "_creator",
+        GRANT READ TO "_world"
+    );
