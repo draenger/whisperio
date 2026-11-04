@@ -318,6 +318,63 @@ describe('autoUpdater', () => {
       h.fire('error', new Error('ENOTFOUND'))
       expect(existsSync(join(h.userData.dir, 'rejected-update.json'))).toBe(false)
     })
+
+    const sigErrNoVersion = (message?: string): Error =>
+      Object.assign(message === undefined ? {} : new Error(message), { code: 'ERR_UPDATER_INVALID_SIGNATURE' }) as Error
+
+    it('signature error without a version in the message uses the version being downloaded', async () => {
+      const { initAutoUpdater, getUpdateState } = await loadModule()
+      initAutoUpdater(false)
+      h.fire('update-available', { version: '3.1.4' })
+      h.fire('error', sigErrNoVersion('publisherName mismatch'))
+
+      expect(getUpdateState()).toMatchObject({ status: 'error', version: '3.1.4' })
+      expect(getUpdateState().error).toMatch(/^Version 3\.1\.4 couldn't be verified/)
+      expect(JSON.parse(readFileSync(join(h.userData.dir, 'rejected-update.json'), 'utf-8'))).toEqual({ version: '3.1.4' })
+    })
+
+    it('signature error with no version at all: honest "(unknown)" message, nothing remembered', async () => {
+      const { initAutoUpdater, getUpdateState } = await loadModule()
+      initAutoUpdater(false)
+      h.fire('error', sigErrNoVersion())
+
+      expect(getUpdateState().status).toBe('error')
+      expect(getUpdateState().error).toMatch(/^Version \(unknown\) couldn't be verified/)
+      expect(existsSync(join(h.userData.dir, 'rejected-update.json'))).toBe(false)
+    })
+
+    it('a malformed rejected-update.json does not block any version', async () => {
+      const { writeFileSync } = await import('fs')
+      writeFileSync(join(h.userData.dir, 'rejected-update.json'), JSON.stringify({ version: 999 }))
+      const { initAutoUpdater, getUpdateState } = await loadModule()
+      initAutoUpdater(false)
+      h.fire('update-available', { version: '9.9.9' })
+      expect(h.autoUpdater.downloadUpdate).toHaveBeenCalledTimes(1)
+      expect(getUpdateState().status).toBe('available')
+    })
+
+    it('a rejected version that cannot be persisted is still reported (no crash)', async () => {
+      const err = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+      h.userData.dir = join(h.userData.dir, 'missing', 'dir')
+      const { initAutoUpdater, getUpdateState } = await loadModule()
+      initAutoUpdater(false)
+      expect(() => h.fire('error', sigErr())).not.toThrow()
+      expect(getUpdateState()).toMatchObject({ status: 'error', version: '9.9.9' })
+      expect(err.mock.calls.some((c) => String(c[0]).includes('Could not persist rejected update version'))).toBe(true)
+      err.mockRestore()
+    })
+
+    it('manual-update platforms notify once per new version', async () => {
+      setPlatform('linux')
+      h.mockNotificationIsSupported.mockReturnValue(true)
+      const { initAutoUpdater } = await loadModule()
+      initAutoUpdater(false)
+      h.fire('update-available', { version: '2.0.0' })
+      h.fire('update-available', { version: '2.0.0' })
+      expect(h.mockNotificationShow).toHaveBeenCalledTimes(1)
+      h.fire('update-available', { version: '2.0.1' })
+      expect(h.mockNotificationShow).toHaveBeenCalledTimes(2)
+    })
   })
 
   describe('update signature verification (win32)', () => {
