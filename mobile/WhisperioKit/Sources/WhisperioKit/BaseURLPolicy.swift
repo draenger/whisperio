@@ -57,7 +57,10 @@ public enum BaseURLPolicy {
         // Dotless intranet names ("nas", "whisper-box") never resolve on the public internet, except
         // numeric IPv4 literals: Foundation keeps "134744072" / "0x08080808" as the host and the
         // resolver reads them as 8.8.8.8.
-        if !host.contains(".") && !host.contains(":") && !isNumericIPv4Literal(host) { return true }
+        // Non-ASCII names are not trusted either: IDN mapping can turn fullwidth digits into an IPv4 literal.
+        if !host.contains(".") && !host.contains(":") {
+            return host.allSatisfy(\.isASCII) && !isNumericIPv4Literal(host)
+        }
         // IPv6 unique-local (fc00::/7) and link-local (fe80::/10), judged on the numeric first
         // hextet: a text prefix wrongly accepted "fc::1" (= 00fc::1) and "fc0::1" (= 0fc0::1).
         if host.contains(":") {
@@ -65,6 +68,9 @@ public enum BaseURLPolicy {
             return (first & 0xFE00) == 0xFC00 || (first & 0xFFC0) == 0xFE80
         }
         let parts = host.split(separator: ".", omittingEmptySubsequences: false)
+        // A part with a leading zero ("010") is octal for an inet_aton-style resolver (010.010.010.010
+        // = 8.8.8.8) but decimal for Int(): never classify such a host as private.
+        if parts.contains(where: { $0.count > 1 && $0.hasPrefix("0") }) { return false }
         if parts.count == 4, parts.allSatisfy({ !$0.isEmpty && $0.count <= 3 && $0.allSatisfy(\.isASCII) && $0.allSatisfy(\.isNumber) }) {
             let o = parts.compactMap { Int($0) }
             guard o.count == 4, o.allSatisfy({ $0 <= 255 }) else { return false }

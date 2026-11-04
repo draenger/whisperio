@@ -81,6 +81,32 @@ import Foundation
         }
         #expect(BaseURLPolicy.isLocalHost("nas"))
         #expect(BaseURLPolicy.isLocalHost("box1"))
+        #expect(!BaseURLPolicy.isLocalHost("0X08080808"))
+    }
+
+    /// Leading-zero parts are octal for the resolver (010.010.010.010 == 8.8.8.8): never private.
+    @Test func leadingZeroIPv4PartsAreNotPrivate() {
+        for h in ["010.010.010.010", "010.0.0.1", "10.010.0.1", "192.168.01.1", "127.0.0.01", "00.0.0.0"] {
+            #expect(!BaseURLPolicy.isLocalHost(h), "\(h)")
+        }
+        guard case .failure(.insecureHTTP) = BaseURLPolicy.validate("http://010.010.010.010/v1") else { Issue.record("expected rejection"); return }
+        for h in ["10.0.0.1", "192.168.0.10", "127.0.0.1", "172.20.0.100"] {
+            #expect(BaseURLPolicy.isLocalHost(h), "\(h)")
+        }
+    }
+
+    /// A dotless non-ASCII name may map to an IPv4 literal (fullwidth digits): not an intranet name.
+    @Test func nonASCIIDotlessHostIsNotLocal() {
+        #expect(!BaseURLPolicy.isLocalHost("\u{FF11}\u{FF13}\u{FF14}\u{FF17}\u{FF14}\u{FF14}\u{FF10}\u{FF17}\u{FF12}"))
+        #expect(!BaseURLPolicy.isLocalHost("nä s"))
+        #expect(BaseURLPolicy.isLocalHost("my-nas"))
+    }
+
+    /// Zone ids and uncompressed forms keep working.
+    @Test func ipv6ZoneAndUncompressedForms() {
+        #expect(BaseURLPolicy.isLocalHost("fe80::1%en0"))
+        #expect(BaseURLPolicy.isLocalHost("fd00:0000:0000:0000:0000:0000:0000:0001"))
+        #expect(!BaseURLPolicy.isLocalHost("2001:0db8:0000:0000:0000:0000:0000:0001"))
     }
 
     @Test func officialVsCustomHost() {
