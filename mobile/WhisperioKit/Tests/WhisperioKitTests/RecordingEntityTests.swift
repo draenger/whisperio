@@ -3,6 +3,8 @@ import Foundation
 import SwiftData
 @testable import WhisperioKit
 
+// Nested in SwiftDataSerialTests: SwiftData suites must not run in parallel with each other.
+extension SwiftDataSerialTests {
 struct RecordingEntityTests {
     // MARK: - Pure helpers (no container / CloudKit account needed)
 
@@ -338,4 +340,5 @@ struct RecordingEntityTests {
         #expect(!defaults.bool(forKey: flagKey))
         #expect(store.lastErrorMessage != nil)
     }
+}
 }

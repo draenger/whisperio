@@ -144,6 +144,8 @@ import Testing
 
 // MARK: - Recording additive fields survive the entity round-trip
 
+// Nested in SwiftDataSerialTests: SwiftData suites must not run in parallel with each other.
+extension SwiftDataSerialTests {
 @Suite struct ConversationPersistenceTests {
     @Test func recordingCodableToleratesMissingConversationFields() throws {
         // A pre-conversation JSON blob (no segments/speakerNames keys) must keep decoding.
@@ -193,4 +195,5 @@ import Testing
         #expect(entity.recording.segments == nil)
         #expect(entity.recording.speakerNames == nil)
     }
+}
 }

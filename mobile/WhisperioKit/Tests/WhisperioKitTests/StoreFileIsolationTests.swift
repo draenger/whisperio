@@ -14,6 +14,8 @@ import SwiftData
 /// app's real construction order (`RecordingsStore` builds its store before `DigestStore` does)
 /// against real temp-dir URLs, so a future regression back to a shared/unnamed configuration
 /// fails here instead of silently degrading on device.
+// Nested in SwiftDataSerialTests: SwiftData suites must not run in parallel with each other.
+extension SwiftDataSerialTests {
 struct StoreFileIsolationTests {
     @available(iOS 17, macOS 14, *)
     @MainActor
@@ -57,4 +59,5 @@ struct StoreFileIsolationTests {
         #expect(reloadedRecordingStore.items.contains { $0.id == recording.id })
         #expect(reloadedDigestStore.digests.contains { $0.id == "2026-07-11" })
     }
+}
 }
