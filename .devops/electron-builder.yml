@@ -28,6 +28,10 @@ extraResources:
     to: icons/whisperio.ico
   - from: icons/whisperio.png
     to: icons/whisperio.png
+  - from: icons/tray.ico
+    to: icons/tray.ico
+  - from: icons/tray.png
+    to: icons/tray.png
 publish:
   provider: github
   owner: draenger
@@ -54,12 +58,13 @@ nsis:
   allowToChangeInstallationDirectory: true
   installerIcon: build/icon.ico
   uninstallerIcon: build/icon.ico
+  installerHeaderIcon: build/icon.ico
   # No spaces — GitHub rewrites spaces to dots in asset names, which breaks the
   # filename match in latest.yml and makes auto-update 404 ("exec not found").
   artifactName: ${productName}-Setup-${version}.${ext}
 
 mac:
-  icon: build/icon.png
+  icon: build/icon.icns
   # Custom entitlements: the electron-builder default omits the microphone entitlement,
   # which the hardened runtime requires. Without it getUserMedia returns a SILENT stream
   # (no prompt, no error) so recordings are empty and every transcription comes back "".
@@ -91,7 +96,7 @@ mac:
         - arm64
 
 linux:
-  icon: icons/whisperio.png
+  icon: build/icons
   target:
     - target: AppImage
       arch:
