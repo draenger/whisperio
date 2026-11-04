@@ -209,6 +209,33 @@ describe('modelManager', () => {
       expect(deleteModel('my-custom.bin')).toBe(true)
       expect(existsSync(filepath)).toBe(false)
     })
+
+    // models:delete and models:downloadCustom take renderer-supplied names: none of these may
+    // reach a file outside the models dir (a compromised renderer must not delete user files).
+    const ESCAPES = [
+      '../victim.bin',
+      'custom:../victim.bin',
+      '..\\victim.bin',
+      'custom:..\\victim.bin',
+      'sub/../../victim.bin',
+      join(testDir, 'victim.bin'),
+      'custom:' + join(testDir, 'victim.bin'),
+      'victim.bin.exe',
+      'custom:',
+      ''
+    ]
+    it('refuses path traversal, absolute paths and non-.bin names, leaving the outside file intact', () => {
+      mkdirSync(MODELS_DIR, { recursive: true })
+      const victim = join(testDir, 'victim.bin')
+      writeFileSync(victim, Buffer.from('user file'))
+      for (const name of ESCAPES) expect(deleteModel(name), name).toBe(false)
+      expect(existsSync(victim)).toBe(true)
+    })
+    it('downloadCustomModel rejects the same names before any request is made', async () => {
+      for (const name of ESCAPES) {
+        await expect(downloadCustomModel('https://example.com/m.bin', name), name).rejects.toThrow(/Invalid model filename|escapes models directory/)
+      }
+    })
   })
 
   describe('getCustomModels', () => {
