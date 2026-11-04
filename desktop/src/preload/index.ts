@@ -96,6 +96,8 @@ export interface AppSettings {
   contextAwareTone: boolean
   toneMap: Record<string, ToneProfileId>
   windowTitlePermissionEnabled: boolean
+  /** Snippets: spoken trigger phrase -> replacement text (whole-transcript, case-insensitive). */
+  snippets: { trigger: string; text: string }[]
   aiProvider: 'openai' | 'anthropic' | 'replicate' | 'local'
   aiBaseUrl: string
   aiModel: string

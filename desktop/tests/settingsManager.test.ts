@@ -72,6 +72,7 @@ const DEFAULT_SETTINGS = {
   contextAwareTone: false,
   toneMap: DEFAULT_TONE_MAP,
   windowTitlePermissionEnabled: false,
+  snippets: [],
   aiProvider: 'openai',
   aiBaseUrl: '',
   aiModel: '',
@@ -548,6 +549,63 @@ describe('settingsManager', () => {
 
       expect(result.theme).toBe('light')
       expect(result.accentColor).toBe('amber')
+    })
+  })
+
+  describe('snippets additive setting (Wispr-Flow parity)', () => {
+    it('defaults snippets to [] on a file predating the key, keeping every other key', () => {
+      mockExistsSync.mockReturnValue(true)
+      mockReadFileSync.mockReturnValue(JSON.stringify({ openaiApiKey: 'sk-test', toneMap: { figma: 'technical' } }))
+
+      const result = loadSettings()
+
+      expect(result.snippets).toEqual([])
+      expect(result.openaiApiKey).toBe('sk-test')
+      expect(result.toneMap).toEqual({ figma: 'technical' })
+    })
+
+    it('defaults snippets to [] on a fresh install (no settings file)', () => {
+      mockExistsSync.mockReturnValue(false)
+      expect(loadSettings().snippets).toEqual([])
+    })
+
+    it('hands back a fresh array, never a shared default reference', () => {
+      mockExistsSync.mockReturnValue(true)
+      mockReadFileSync.mockReturnValue(JSON.stringify({}))
+      loadSettings().snippets.push({ trigger: 'x', text: 'y' })
+      expect(loadSettings().snippets).toEqual([])
+    })
+
+    it('preserves saved snippets in order', () => {
+      const snippets = [
+        { trigger: 'my address', text: '221B Baker Street' },
+        { trigger: 'sig', text: 'Best,\nAna' }
+      ]
+      mockExistsSync.mockReturnValue(true)
+      mockReadFileSync.mockReturnValue(JSON.stringify({ snippets }))
+      expect(loadSettings().snippets).toEqual(snippets)
+    })
+
+    it('sanitizes a malformed snippets value instead of crashing or dropping other keys', () => {
+      mockExistsSync.mockReturnValue(true)
+      mockReadFileSync.mockReturnValue(
+        JSON.stringify({ snippets: [{ trigger: 'ok', text: 'fine' }, { trigger: 5 }, null], cleanupAuto: true })
+      )
+      const result = loadSettings()
+      expect(result.snippets).toEqual([{ trigger: 'ok', text: 'fine' }])
+      expect(result.cleanupAuto).toBe(true)
+
+      mockReadFileSync.mockReturnValue(JSON.stringify({ snippets: 'nope' }))
+      expect(loadSettings().snippets).toEqual([])
+    })
+
+    it('round-trips snippets through saveSettings', () => {
+      mockExistsSync.mockReturnValue(true)
+      mockReadFileSync.mockReturnValue(JSON.stringify({}))
+      const saved = saveSettings({ snippets: [{ trigger: 'a', text: 'b' }] })
+      expect(saved.snippets).toEqual([{ trigger: 'a', text: 'b' }])
+      const written = JSON.parse(mockWriteFileSync.mock.calls[0][1] as string)
+      expect(written.snippets).toEqual([{ trigger: 'a', text: 'b' }])
     })
   })
 
