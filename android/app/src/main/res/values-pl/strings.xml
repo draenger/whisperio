@@ -63,6 +63,12 @@
     <string name="home_finish_setup">Dokończ konfigurację</string>
     <string name="home_recent">Ostatnie</string>
     <string name="home_see_all">Zobacz wszystkie</string>
+    <string name="encrypt_card_title">Szyfruj historię i nagrania</string>
+    <string name="encrypt_card_body">Transkrypcje i zachowane nagrania będą zaszyfrowane na tym urządzeniu kluczem przechowywanym w Android Keystore. Jeśli klucz zostanie utracony (np. po przywróceniu ustawień fabrycznych), zaszyfrowanej historii nie da się odzyskać. Możesz to zmienić w każdej chwili w Ustawieniach, w sekcji Prywatność i dane.</string>
+    <string name="encrypt_card_turn_on">Włącz</string>
+    <string name="encrypt_card_not_now">Nie teraz</string>
+    <string name="home_encrypt_locked_banner">Szyfrowanie jest zablokowane. Nowe dyktowania zapisują się bez szyfrowania.</string>
+    <string name="home_encrypt_locked_fix">Napraw</string>
     <string name="history_empty">Na razie pusto. Twoje dyktowania pojawią się tutaj, tylko na tym urządzeniu.</string>
     <string name="history_detail">Dyktowanie</string>
     <string name="history_failed">Nie udało się</string>
@@ -182,10 +188,38 @@
     <string name="settings_days">%1$d d.</string>
     <string name="settings_sensitive">Traktuj transkrypcje jako poufne</string>
     <string name="settings_sensitive_hint">Ukrywa skopiowany tekst w podglądach schowka.</string>
+    <string name="settings_encrypt">Szyfruj historię</string>
+    <string name="settings_encrypt_hint">Gdy włączone, nowe transkrypcje i zachowane nagrania są przechowywane w postaci zaszyfrowanej na tym urządzeniu, kluczem z Android Keystore, a istniejąca historia jest konwertowana. Data, długość, dostawca, model, język, źródło i kategoria pozostają niezaszyfrowane. Jeśli klucz zostanie utracony (np. po przywróceniu ustawień fabrycznych), zaszyfrowanej historii nie da się odzyskać. Nie dotyczy tekstu kopiowanego lub wstawianego do innych aplikacji ani nagrań wysyłanych do Twojego dostawcy. Tekst zapisany jawnie przed włączeniem szyfrowania może fizycznie pozostać w pamięci flash urządzenia, dopóki nie zostanie nadpisany.</string>
+    <string name="settings_encrypt_status_on">Szyfrowanie jest włączone. Cała zapisana historia i zachowane nagrania są zaszyfrowane.</string>
+    <plurals name="settings_encrypt_pending">
+        <item quantity="one">%1$d element czeka na zaszyfrowanie. Do następnej udanej próby jest zapisany bez szyfrowania.</item>
+        <item quantity="few">%1$d elementy czekają na zaszyfrowanie. Do następnej udanej próby są zapisane bez szyfrowania.</item>
+        <item quantity="many">%1$d elementów czeka na zaszyfrowanie. Do następnej udanej próby są zapisane bez szyfrowania.</item>
+        <item quantity="other">%1$d elementu czeka na zaszyfrowanie. Do następnej udanej próby jest zapisany bez szyfrowania.</item>
+    </plurals>
+    <string name="settings_encrypt_locked">Brak klucza szyfrowania, więc zaszyfrowanej historii nie da się odczytać i nic nowego nie zostanie zaszyfrowane. Nie utworzono nowego klucza, aby nie pozbawić Cię danych na stałe. Usuń nieczytelne elementy albo użyj „Usuń wszystkie dane”, aby zacząć od nowa.</string>
+    <string name="settings_encrypt_locked_action">Usuń wszystkie dane i zacznij od nowa</string>
+    <string name="history_unreadable">Nie można odczytać zaszyfrowanych danych</string>
+    <string name="settings_encrypt_on_title">Włączyć szyfrowanie?</string>
+    <string name="settings_encrypt_on_body">Twoja dotychczasowa historia zostanie zaszyfrowana na tym urządzeniu. Jeśli klucz szyfrowania zostanie utracony, np. po przywróceniu ustawień fabrycznych albo awarii magazynu kluczy urządzenia, zaszyfrowanych transkrypcji i nagrań nie da się odzyskać. Szyfrowanie możesz wyłączyć w każdej chwili.</string>
+    <string name="settings_encrypt_on_confirm">Włącz</string>
+    <string name="settings_encrypt_off_title">Wyłączyć szyfrowanie?</string>
+    <string name="settings_encrypt_off_body">Historia i nagrania zostaną odszyfrowane i znów będą przechowywane bez szyfrowania w prywatnym katalogu aplikacji.</string>
+    <string name="settings_encrypt_off_confirm">Wyłącz</string>
+    <string name="settings_encrypt_busy_on">Szyfrowanie historii...</string>
+    <string name="settings_encrypt_busy_off">Odszyfrowywanie historii...</string>
+    <string name="settings_encrypt_unavailable_title">Szyfrowanie niedostępne</string>
+    <string name="settings_encrypt_unavailable_body">Magazyn kluczy tego urządzenia nie mógł utworzyć ani użyć klucza szyfrowania, więc szyfrowanie nie zostało włączone. Nic nie zostało zmienione.</string>
+    <plurals name="settings_encrypt_unreadable">
+        <item quantity="one">Nie udało się odczytać %1$d elementu, pozostawiono go bez zmian.</item>
+        <item quantity="few">Nie udało się odczytać %1$d elementów, pozostawiono je bez zmian.</item>
+        <item quantity="many">Nie udało się odczytać %1$d elementów, pozostawiono je bez zmian.</item>
+        <item quantity="other">Nie udało się odczytać %1$d elementu, pozostawiono go bez zmian.</item>
+    </plurals>
     <string name="settings_delete_audio">Usuń wszystkie nagrania</string>
     <string name="settings_delete_audio_body">Pliki audio zostaną usunięte. Transkrypcje zostaną w Historii.</string>
     <string name="settings_erase_all">Usuń wszystkie dane</string>
-    <string name="settings_erase_all_body">Usuwa z tego urządzenia historię, nagrania, klucze API i ustawienia. Tego nie można cofnąć.</string>
+    <string name="settings_erase_all_body">Usuwa z tego urządzenia historię, nagrania, klucze API i ustawienia. Jeśli szyfrowanie jest włączone, najpierw niszczony jest klucz szyfrowania, więc zaszyfrowanej historii nie da się odzyskać. Tego nie można cofnąć.</string>
     <string name="settings_erase_confirm">Usuń wszystko</string>
     <string name="about_tagline">Dyktowanie z Twoim własnym kluczem API. Bez konta, bez śledzenia.</string>
     <string name="about_version">Wersja</string>
@@ -281,4 +315,28 @@
         <item quantity="many">Usunąć %1$d nagrań z wczoraj pasujących do bieżącego wyszukiwania i filtrów? Nagrania dźwiękowe też zostaną usunięte.</item>
         <item quantity="other">Usunąć %1$d nagrania z wczoraj pasujące do bieżącego wyszukiwania i filtrów? Nagrania dźwiękowe też zostaną usunięte.</item>
     </plurals>
+    <!-- Snippets: spoken trigger phrase -> replacement text -->
+    <string name="settings_snippets">Skróty tekstowe</string>
+    <string name="settings_snippets_hint">Powiedz krótką frazę, aby wstawić dłuższy tekst, np. adres lub podpis.</string>
+    <plurals name="settings_snippets_count">
+        <item quantity="one">%1$d skrót</item>
+        <item quantity="few">%1$d skróty</item>
+        <item quantity="many">%1$d skrótów</item>
+        <item quantity="other">%1$d skrótu</item>
+    </plurals>
+    <string name="snippets_explainer">Gdy całe dyktowanie to dokładnie fraza wyzwalająca (wielkość liter bez znaczenia, interpunkcja na końcach pomijana), zamiast niej zostanie wstawiony tekst zastępczy.</string>
+    <string name="snippets_empty">Nie masz jeszcze skrótów.</string>
+    <string name="snippets_add">Dodaj skrót</string>
+    <string name="snippets_edit_title">Edytuj skrót</string>
+    <string name="snippets_save">Zapisz</string>
+    <string name="snippets_trigger_label">Fraza wyzwalająca</string>
+    <string name="snippets_trigger_hint">To, co powiesz, np. \"mój adres\"</string>
+    <string name="snippets_replacement_label">Tekst zastępczy</string>
+    <string name="snippets_err_trigger_long">Użyj najwyżej 80 znaków.</string>
+    <string name="snippets_err_replacement_long">Użyj najwyżej 2000 znaków.</string>
+    <string name="snippets_err_duplicate">Skrót z tą frazą już istnieje.</string>
+    <string name="snippets_edit_cd">Edytuj skrót %1$s</string>
+    <string name="snippets_delete_cd">Usuń skrót %1$s</string>
+    <string name="snippets_delete_title">Usunąć ten skrót?</string>
+    <string name="snippets_delete_body">Powiedzenie \"%1$s\" nie będzie już wstawiać jego tekstu.</string>
 </resources>

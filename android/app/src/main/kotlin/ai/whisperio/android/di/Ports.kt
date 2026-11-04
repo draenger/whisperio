@@ -3,6 +3,7 @@ package ai.whisperio.android.di
 import ai.whisperio.core.ChainSettings
 import ai.whisperio.core.KeyValidation
 import ai.whisperio.core.ProviderId
+import ai.whisperio.core.Snippet
 import ai.whisperio.core.TranscriptionRequest
 import ai.whisperio.core.TranscriptionResult
 
@@ -30,6 +31,11 @@ interface ModelCatalog {
 
 fun interface TextTidy {
     fun tidy(text: String): String
+}
+
+/** Snippets: replaces a transcript that is exactly one trigger phrase; anything else passes through unchanged. */
+fun interface SnippetExpander {
+    fun expand(text: String, snippets: List<Snippet>): String
 }
 
 fun interface HostPolicy {

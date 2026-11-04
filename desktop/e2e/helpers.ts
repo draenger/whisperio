@@ -3,10 +3,20 @@ import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
 
-// Built main-process entry point (npm run build's electron-vite output —
-// package.json's "main" field points here too). `test:e2e` rebuilds before
-// running; `test:e2e:fast` assumes a build already exists.
-const MAIN_ENTRY = join(__dirname, '..', 'out', 'main', 'index.js')
+// Launch the desktop/ package dir, not out/main/index.js directly: Electron then
+// reads package.json ("main" -> out/main/index.js, the electron-vite build) and
+// app.getVersion() is the real version. Launched with the bare script path,
+// Electron 42.11.18 reports version "0.0", electron-updater throws on it, and
+// startup failure shows a modal error box that hangs xvfb CI forever.
+// `test:e2e` rebuilds before running; `test:e2e:fast` assumes a build exists.
+const MAIN_ENTRY = join(__dirname, '..')
+
+const LAUNCH_TIMEOUT_MS = 45_000
+const OPEN_WINDOW_TIMEOUT_MS = 20_000
+const CLOSE_TIMEOUT_MS = 10_000
+
+/** Last chunks of each launched app's main-process stdout/stderr (diagnostics only). */
+const mainLogs = new WeakMap<ElectronApplication, string[]>()
 
 /**
  * Minimal shape of the settings.json fields these specs care about seeding.
@@ -98,8 +108,25 @@ export async function launchApp(opts: {
     env: {
       ...process.env,
       WHISPERIO_USER_DATA_DIR: userDataDir
-    }
+    },
+    timeout: LAUNCH_TIMEOUT_MS
   })
+
+  // Keep the main process's own log: when a launch hangs on CI it is the only
+  // evidence of how far startup got. Printed by openSettingsWindow on failure.
+  const log: string[] = []
+  const keep = (chunk: Buffer): void => {
+    log.push(chunk.toString('utf-8'))
+    if (log.length > 200) log.shift()
+  }
+  app.process().stdout?.on('data', keep)
+  app.process().stderr?.on('data', keep)
+  mainLogs.set(app, log)
+
+  // The 'activate' handler only works after 'ready' (BrowserWindow cannot be
+  // created earlier). A cold first launch under xvfb can take several seconds,
+  // so never emit before the app reports ready.
+  await app.evaluate(({ app: a }) => a.whenReady())
 
   return { app, userDataDir }
 }
@@ -107,8 +134,18 @@ export async function launchApp(opts: {
 /** Closes the app and deletes its temp userData dir. Never throws — a failed
  * teardown must not mask the real test failure/success. */
 export async function closeApp({ app, userDataDir }: LaunchedApp): Promise<void> {
-  await app.close().catch(() => {})
-  rmSync(userDataDir, { recursive: true, force: true })
+  // app.close() waits for the process to exit; a wedged main process used to
+  // hang here until Playwright's 30 s worker-teardown timeout. Bound it, then
+  // kill only this test's own Electron process.
+  const closed = await Promise.race([
+    app.close().then(() => true, () => false),
+    new Promise<boolean>((r) => setTimeout(() => r(false), CLOSE_TIMEOUT_MS))
+  ])
+  if (!closed) {
+    try { app.process().kill('SIGKILL') } catch { /* already gone */ }
+  }
+  mainLogs.delete(app)
+  rmSync(userDataDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 })
 }
 
 /**
@@ -121,16 +158,36 @@ export async function closeApp({ app, userDataDir }: LaunchedApp): Promise<void>
  * to simulate an actual tray-icon click (Electron doesn't expose one).
  */
 export async function openSettingsWindow(electronApp: ElectronApplication): Promise<Page> {
-  const existing = electronApp.windows().find((w) => w.url().includes('settings.html'))
-  if (existing && !existing.isClosed()) {
-    await electronApp.evaluate(({ app }) => app.emit('activate'))
-    await existing.waitForLoadState('domcontentloaded')
-    return existing
-  }
+  const find = (): Page | undefined =>
+    electronApp.windows().find((w) => !w.isClosed() && w.url().includes('settings.html'))
 
-  const windowPromise = electronApp.waitForEvent('window')
-  await electronApp.evaluate(({ app }) => app.emit('activate'))
-  const page = await windowPromise
+  // Poll windows() instead of waitForEvent('window'): the first 'window' event
+  // is not necessarily the Settings window (or it can fire before we listen),
+  // and a lost event used to cost the whole 30 s test timeout.
+  await electronApp.evaluate(({ app }) => { app.emit('activate') })
+  const deadline = Date.now() + OPEN_WINDOW_TIMEOUT_MS
+  let page = find()
+  let lastEmit = Date.now()
+  while (!page && Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, 100))
+    page = find()
+    if (!page && Date.now() - lastEmit > 3000) {
+      // openSettingsWindow() is idempotent (focuses an existing window), so a
+      // repeat activate is safe if the first one raced app startup.
+      await electronApp.evaluate(({ app }) => { app.emit('activate') })
+      lastEmit = Date.now()
+    }
+  }
+  if (!page) {
+    const urls = electronApp.windows().map((w) => w.url())
+    const tail = (mainLogs.get(electronApp) ?? []).join('').slice(-4000)
+    throw new Error(
+      `Settings window never opened within ${OPEN_WINDOW_TIMEOUT_MS} ms. ` +
+        `Open windows: ${JSON.stringify(urls)}
+--- main process log (tail) ---
+${tail}`
+    )
+  }
   await page.waitForLoadState('domcontentloaded')
   // window.api (the contextBridge surface) is attached by the preload script
   // at document-start — by domcontentloaded it's guaranteed present, but wait

@@ -12,6 +12,7 @@ import ai.whisperio.android.history.RecordingSource
 import ai.whisperio.android.history.RecordingStatus
 import ai.whisperio.android.settings.AppSettings
 import ai.whisperio.core.ProviderId
+import ai.whisperio.core.Snippet
 import java.io.File
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -118,6 +119,31 @@ class DictationControllerTest {
         assertEquals("hello", (c.state.value as DictationState.Done).text)
     }
 
+    @Test fun snippetReplacesWholeTranscriptAfterCleanup() = runTest {
+        settings.settings = settings.settings.copy(
+            cleanupEnabled = true,
+            snippets = listOf(Snippet("s1", "my signature", "Best regards,\nJan")),
+        )
+        transcriber.text = "my signature"
+        // Cleanup runs first (capital + period); the snippet must still match.
+        val c = controller(TextTidy { "My signature." })
+        c.start(StartOptions(RecordingSource.APP))
+        runCurrent(); advance(500)
+        c.stopAndTranscribe(); advance(200)
+        assertEquals("Best regards,\nJan", (c.state.value as DictationState.Done).text)
+        assertEquals("Best regards,\nJan", history.rows.value["id1"]!!.transcript)
+    }
+
+    @Test fun snippetDoesNotTouchOtherTranscripts() = runTest {
+        settings.settings = settings.settings.copy(snippets = listOf(Snippet("s1", "my signature", "SIG")))
+        transcriber.text = "please add my signature"
+        val c = controller()
+        c.start(StartOptions(RecordingSource.APP))
+        runCurrent(); advance(500)
+        c.stopAndTranscribe(); advance(200)
+        assertEquals("please add my signature", (c.state.value as DictationState.Done).text)
+    }
+
     @Test fun silentMicIsRejectedAfterThreeSecondsWithoutUpload() = runTest {
         recorder.amplitude = { 0 }
         val c = controller()
@@ -186,6 +212,27 @@ class DictationControllerTest {
         c.retry("id1"); runCurrent()
         assertEquals(RecordingStatus.DONE, history.rows.value["id1"]!!.status)
         assertEquals("hello world", (c.state.value as DictationState.Done).text)
+    }
+
+    @Test fun retryDoesNotWriteBackAStaleAudioPathAfterAMigration() = runTest {
+        transcriber.failure = IllegalStateException("boom")
+        val c = controller()
+        c.start(StartOptions(RecordingSource.APP))
+        runCurrent(); advance(500)
+        c.stopAndTranscribe(); advance(200)
+        assertEquals(RecordingStatus.FAILED, history.rows.value["id1"]!!.status)
+
+        transcriber.failure = null
+        transcriber.latencyMs = 1_000
+        c.retry("id1"); runCurrent()
+        // A migration converts the clip while the retry is uploading: the row now points at the new file.
+        val converted = File(File(tmp.root, "recordings"), "id1.m4a.wea").also { it.writeBytes(byteArrayOf(1)) }
+        history.upsert(history.rows.value["id1"]!!.copy(audioPath = converted.path))
+        advance(1_000)
+
+        val row = history.rows.value["id1"]!!
+        assertEquals(RecordingStatus.DONE, row.status)
+        assertEquals(converted.path, row.audioPath)
     }
 
     @Test fun failedRetryNeverDeletesTheOnlyClipEvenWithKeepAudioOff() = runTest {

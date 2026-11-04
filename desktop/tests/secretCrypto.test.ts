@@ -5,6 +5,8 @@ import {
   decryptWithKey,
   serializeEnvelope,
   parseEnvelope,
+  encryptWithKeyAad,
+  decryptWithKeyAad,
   DATA_KEY_BYTES,
   type SecretEnvelope
 } from '../src/main/secretCrypto'
@@ -102,5 +104,31 @@ describe('secretCrypto', () => {
   it('parseEnvelope rejects malformed payloads', () => {
     expect(() => parseEnvelope('{"v":9}')).toThrow()
     expect(() => parseEnvelope('not json')).toThrow()
+  })
+})
+
+describe('secretCrypto AAD (additive)', () => {
+  it('round-trips with matching AAD and carries an optional kid', () => {
+    const key = generateDataKey()
+    const env = encryptWithKeyAad(key, 'payload', 'whisperio/index/v1', 'hist-1')
+    expect(env.kid).toBe('hist-1')
+    expect(decryptWithKeyAad(key, parseEnvelope(serializeEnvelope(env)), 'whisperio/index/v1')).toBe('payload')
+  })
+
+  it('rejects a wrong AAD', () => {
+    const key = generateDataKey()
+    const env = encryptWithKeyAad(key, 'payload', 'whisperio/index/v1')
+    expect(() => decryptWithKeyAad(key, env, 'whisperio/other/v1')).toThrow()
+  })
+
+  it('AAD-sealed envelopes cannot be opened by plain decryptWithKey, and vice versa', () => {
+    const key = generateDataKey()
+    expect(() => decryptWithKey(key, encryptWithKeyAad(key, 'x', 'a'))).toThrow()
+    expect(() => decryptWithKeyAad(key, encryptWithKey(key, 'x'), 'a')).toThrow()
+  })
+
+  it('plain encryptWithKey output has no kid field (existing envelope shape unchanged)', () => {
+    const env = encryptWithKey(generateDataKey(), 'x')
+    expect(Object.keys(env).sort()).toEqual(['alg', 'ct', 'iv', 'tag', 'v'])
   })
 })
