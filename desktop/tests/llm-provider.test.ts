@@ -65,6 +65,24 @@ describe('isLocalHost', () => {
   it.each(cases)('classifies %s as local=%s', (host, expected) => {
     expect(isLocalHost(host)).toBe(expected)
   })
+
+  // fc00::/7 and fe80::/10 by value of the first hextet, not by its text.
+  it.each([
+    'fc00::1', 'fcff::1', 'fd00::1', 'fdff:ffff::1', 'FD12::1', '[fd12:3456::1]', 'fe9a::1', 'febf::1'
+  ])('IPv6 %s is local', (host) => {
+    expect(isLocalHost(host)).toBe(true)
+  })
+  it.each([
+    'fc::1', 'fd::1', 'fc0::1', 'fd0::1', '[fc::1]', 'fe8::1', 'fe00::1', 'fec0::1', 'ff02::1',
+    '::ffff:808:808', 'fc000::1'
+  ])('IPv6 %s is not local', (host) => {
+    expect(isLocalHost(host)).toBe(false)
+  })
+  it('a URL with a short fc/fd IPv6 host is not local (no plain http to it)', () => {
+    for (const u of ['http://[fc::1]/v1', 'http://[fd::1]/v1', 'http://[fc0::1]/v1']) {
+      expect(isLocalHost(new URL(u).hostname)).toBe(false)
+    }
+  })
 })
 
 describe('OpenAICompatibleProvider', () => {
