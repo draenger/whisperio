@@ -276,6 +276,28 @@ describe('plain-mode record operations', () => {
     h.failUnlink = null
     expect(JSON.parse(readFileSync(INDEX, 'utf-8'))).toEqual({ recordings: [] })
   })
+
+  it('erase with encryption OFF counts an index backup it cannot delete and removes the others', async () => {
+    await seed()
+    writeFileSync(join(DIR, 'index.json.corrupt-1700000000000'), '{ old')
+    writeFileSync(join(DIR, 'index.corrupt-1700000000001.json'), '{ old')
+    h.failUnlink = /index\.json\.corrupt-1700000000000$/
+    expect(await deleteAllRecordings()).toEqual({ undeleted: 1 })
+    h.failUnlink = null
+    expect(existsSync(join(DIR, 'index.json.corrupt-1700000000000'))).toBe(true)
+    expect(existsSync(join(DIR, 'index.corrupt-1700000000001.json'))).toBe(false)
+    expect(JSON.parse(readFileSync(INDEX, 'utf-8'))).toEqual({ recordings: [] })
+  })
+
+  it('turning encryption ON reports a leftover index write temp file it cannot remove', async () => {
+    await seed()
+    const leftover = join(DIR, 'index.json.4242.1700000000000.tmp')
+    writeFileSync(leftover, '{"recordings":[]}')
+    h.failUnlink = /index\.json\.4242\.1700000000000\.tmp$/
+    expect(await setHistoryEncryption(true)).toEqual({ ok: true, sealedBackups: 0, plainBackupsLeft: 1 })
+    h.failUnlink = null
+    expect(existsSync(leftover)).toBe(true)
+  })
 })
 
 describe('readRecordingAudio', () => {
