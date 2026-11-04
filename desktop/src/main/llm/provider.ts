@@ -85,8 +85,14 @@ export function isLocalHost(hostname: string): boolean {
   if (['.local', '.lan', '.home.arpa', '.internal'].some((s) => host.endsWith(s))) return true
   // Dotless intranet names never resolve on the public internet.
   if (!host.includes('.') && !host.includes(':')) return true
-  // IPv6 unique-local (fc00::/7) and link-local (fe80::/10)
-  if (host.includes(':')) return /^(fc|fd)/.test(host) || host.startsWith('fe80:')
+  // IPv6 unique-local (fc00::/7) and link-local (fe80::/10), judged on the numeric first
+  // hextet: a text prefix wrongly accepted `fc::1` (= 00fc::1) and `fc0::1` (= 0fc0::1).
+  if (host.includes(':')) {
+    const group = host.split(':')[0]
+    if (!/^[0-9a-f]{1,4}$/.test(group)) return false
+    const first = parseInt(group, 16)
+    return (first & 0xfe00) === 0xfc00 || (first & 0xffc0) === 0xfe80
+  }
 
   const ipv4Parts = host.split('.')
   if (ipv4Parts.length === 4 && ipv4Parts.every((p) => /^\d{1,3}$/.test(p))) {
