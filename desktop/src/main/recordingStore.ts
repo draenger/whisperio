@@ -108,11 +108,22 @@ interface RecordingIndex {
 export function isInsideRecordingsDir(filepath: unknown): boolean {
   if (typeof filepath !== 'string' || !filepath) return false
   // Follow symlinks for paths that exist, so a link inside the dir that points
-  // outside it is refused. Non-existent paths fall back to lexical resolution.
+  // outside it is refused. A non-existent path is resolved through its nearest
+  // existing ancestor, so a symlinked parent (macOS: /var -> /private/var) gives
+  // the same prefix for the dir and for a not-yet-written file inside it.
   const real = (p: string): string => {
     const r = resolve(p)
+    let head = r
+    let tail = ''
     try {
-      return existsSync(r) ? realpathSync(r) : r
+      while (!existsSync(head)) {
+        const parent = dirname(head)
+        if (parent === head) return r
+        tail = tail ? join(basename(head), tail) : basename(head)
+        head = parent
+      }
+      const realHead = realpathSync(head)
+      return tail ? join(realHead, tail) : realHead
     } catch {
       return r
     }
