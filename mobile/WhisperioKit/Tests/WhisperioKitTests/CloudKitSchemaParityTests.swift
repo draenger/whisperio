@@ -18,6 +18,8 @@ import SwiftData
 /// on *either* side (the `@Model` or the hand-built schema) without updating this test is exactly
 /// the drift this guards against; `literalsMatchTheSwiftDataModels` additionally pins the literals
 /// to the real `@Model`s through SwiftData's headless `Schema`, so the literal itself can't go stale.
+// Nested in SwiftDataSerialTests: SwiftData suites must not run in parallel with each other.
+extension SwiftDataSerialTests {
 struct CloudKitSchemaParityTests {
     /// `RecordingEntity`'s stored properties, excluding nothing — CloudKit requires every one of
     /// them representable, so the hand-built schema must carry all of them and no more.
@@ -86,5 +88,6 @@ struct CloudKitSchemaParityTests {
             #expect(attribute.isOptional, "\(attribute.name) must be optional for CloudKit")
         }
     }
+}
 }
 #endif

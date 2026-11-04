@@ -14,6 +14,8 @@ import CoreData
 /// subscription bootstrap the iPad's push-driven import path depends on. A `.setup` failure (e.g.
 /// the Production schema not existing yet — see CLOUDKIT_SCHEMA_PROMOTION.md) produced no error,
 /// no log entry, nothing: sync would just never work, with no signal why.
+// Nested in SwiftDataSerialTests: SwiftData suites must not run in parallel with each other.
+extension SwiftDataSerialTests {
 struct CloudKitEventHandlingTests {
     private struct StubError: Error, LocalizedError {
         var errorDescription: String? { "stub failure" }
@@ -183,4 +185,5 @@ struct CloudKitEventHandlingTests {
         #expect(DigestSyncStore.syncEffect(type: .setup, succeeded: false, endDate: nil, error: StubError()) == .none)
         #expect(DigestSyncStore.syncEffect(type: .import, succeeded: true, endDate: nil, error: nil) == .none)
     }
+}
 }
