@@ -3,10 +3,13 @@ import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
 
-// Built main-process entry point (npm run build's electron-vite output —
-// package.json's "main" field points here too). `test:e2e` rebuilds before
-// running; `test:e2e:fast` assumes a build already exists.
-const MAIN_ENTRY = join(__dirname, '..', 'out', 'main', 'index.js')
+// Launch the desktop/ package dir, not out/main/index.js directly: Electron then
+// reads package.json ("main" -> out/main/index.js, the electron-vite build) and
+// app.getVersion() is the real version. Launched with the bare script path,
+// Electron 42.11.18 reports version "0.0", electron-updater throws on it, and
+// startup failure shows a modal error box that hangs xvfb CI forever.
+// `test:e2e` rebuilds before running; `test:e2e:fast` assumes a build exists.
+const MAIN_ENTRY = join(__dirname, '..')
 
 const LAUNCH_TIMEOUT_MS = 45_000
 const OPEN_WINDOW_TIMEOUT_MS = 20_000
