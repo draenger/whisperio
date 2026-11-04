@@ -32,7 +32,10 @@ import {
   handleTranscriptionError,
   getRecentErrors,
   notifyError,
-  notifyInfo
+  notifyInfo,
+  notifyTranscriptionFailure,
+  handleCommandError,
+  type WhisperioError
 } from '../src/main/errorHandler'
 
 describe('errorHandler', () => {
@@ -263,6 +266,54 @@ describe('errorHandler', () => {
       const errors2 = getRecentErrors()
       expect(errors1).not.toBe(errors2)
       expect(errors1).toEqual(errors2)
+    })
+  })
+
+  describe('notifyTranscriptionFailure', () => {
+    const live = { isDestroyed: () => false, webContents: { send: vi.fn() } }
+    const dead = { isDestroyed: () => true, webContents: { send: vi.fn() } }
+    const err = (message: string): WhisperioError =>
+      ({ category: 'UNKNOWN', message, provider: 'openai', timestamp: 1 }) as WhisperioError
+
+    it('an empty failure list shows nothing and broadcasts nothing', () => {
+      mockGetAllWindows.mockReturnValue([live] as never)
+      notifyTranscriptionFailure([])
+      expect(mockNotificationShow).not.toHaveBeenCalled()
+      expect(live.webContents.send).not.toHaveBeenCalled()
+    })
+
+    it('one notification with the primary message and the failed-provider count', () => {
+      mockGetAllWindows.mockReturnValue([live] as never)
+      notifyTranscriptionFailure([err('Key rejected'), err('Timed out')])
+      expect(mockNotificationShow).toHaveBeenCalledTimes(1)
+      expect(mockNotificationShow).toHaveBeenCalledWith({ title: 'Transcription Error', body: 'Key rejected (2 providers failed)' })
+      expect(live.webContents.send).toHaveBeenCalledWith('errors:new', expect.objectContaining({ message: 'Key rejected (2 providers failed)' }))
+    })
+
+    it('a single failure has no count, and destroyed windows are skipped', () => {
+      mockGetAllWindows.mockReturnValue([dead, live] as never)
+      notifyTranscriptionFailure([err('Key rejected')])
+      expect(mockNotificationShow).toHaveBeenCalledWith({ title: 'Transcription Error', body: 'Key rejected' })
+      expect(dead.webContents.send).not.toHaveBeenCalled()
+      expect(live.webContents.send).toHaveBeenCalledTimes(1)
+    })
+  })
+
+  describe('handleCommandError', () => {
+    it('a NotConfigured error is reported as a missing key, notified, recorded and broadcast', () => {
+      const live = { isDestroyed: () => false, webContents: { send: vi.fn() } }
+      mockGetAllWindows.mockReturnValue([live] as never)
+      const e = Object.assign(new Error('No LLM provider configured'), { name: 'NotConfigured' })
+      handleCommandError(e)
+      expect(mockNotificationShow).toHaveBeenCalledWith({ title: 'Whisperio — Command mode', body: 'No LLM provider configured' })
+      expect(getRecentErrors().at(-1)).toMatchObject({ category: 'API_KEY_MISSING', provider: 'command' })
+      expect(live.webContents.send).toHaveBeenCalledWith('errors:new', expect.objectContaining({ category: 'API_KEY_MISSING' }))
+    })
+
+    it('any other error is UNKNOWN', () => {
+      mockGetAllWindows.mockReturnValue([])
+      handleCommandError(new Error('LLM returned nothing'))
+      expect(getRecentErrors().at(-1)).toMatchObject({ category: 'UNKNOWN', message: 'LLM returned nothing', provider: 'command' })
     })
   })
 
