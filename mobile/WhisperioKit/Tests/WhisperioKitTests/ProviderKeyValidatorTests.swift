@@ -1,7 +1,9 @@
 import Testing
 @testable import WhisperioKit
 
-// Only the paths that never touch the network are covered here (this suite must stay offline):
+// Only the paths that never build a request are covered here; the HTTP half (status mapping,
+// per-provider URL and auth header) is in ProviderKeyValidatorHTTPTests with a stub URLProtocol.
+// Original note: only the paths that never touch the network are covered here:
 // on-device engines short-circuit before any request is built, and `.selfHosted` validates a
 // server URL locally (see R4) rather than calling a vendor API. The real cloud engines
 // (OpenAI/ElevenLabs/Groq/Deepgram/AssemblyAI/Mistral/Replicate) all require a live authenticated

@@ -116,4 +116,28 @@ import Foundation
         #expect(!BaseURLPolicy.isOfficialHost(provider: .openAI, url: URL(string: "https://api.openai.com.evil.test/v1")!))
         #expect(!BaseURLPolicy.isOfficialHost(provider: .selfHosted, url: URL(string: "https://api.openai.com/v1")!))
     }
+
+    /// 0.0.0.0 (a server bound to every interface, reached locally) has its own branch.
+    @Test func unspecifiedAddressCountsAsLocal() {
+        #expect(BaseURLPolicy.isLocalHost("0.0.0.0"))
+        guard case .success = BaseURLPolicy.validate("http://0.0.0.0:8080/v1") else { Issue.record("expected ok"); return }
+        #expect(!BaseURLPolicy.isLocalHost("0.0.0.1"))
+    }
+
+    /// Pasted URLs often carry spaces or a newline; they are trimmed, not rejected or kept.
+    @Test func surroundingWhitespaceIsTrimmed() {
+        guard case .success(let u) = BaseURLPolicy.validate("  https://api.openai.com/v1\n") else { Issue.record("expected ok"); return }
+        #expect(u.absoluteString == "https://api.openai.com/v1")
+        guard case .failure(.insecureHTTP) = BaseURLPolicy.validate(" http://example.com ") else { Issue.record("expected rejection"); return }
+    }
+
+    /// The text the user sees: names the rejected host and the fix, and never says "error" alone.
+    @Test func userFacingMessagesNameTheHostAndTheFix() {
+        let insecure = BaseURLPolicy.Error.insecureHTTP(host: "example.com").errorDescription ?? ""
+        #expect(insecure.contains("example.com"))
+        #expect(insecure.contains("https://"))
+        #expect((BaseURLPolicy.Error.unsupportedScheme("ftp").errorDescription ?? "").contains("\"ftp\""))
+        #expect(BaseURLPolicy.Error.empty.errorDescription == "Enter a URL.")
+        #expect((BaseURLPolicy.Error.invalid.errorDescription ?? "").contains("https://host[:port]/v1"))
+    }
 }
