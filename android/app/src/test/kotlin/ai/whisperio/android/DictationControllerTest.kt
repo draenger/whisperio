@@ -12,6 +12,7 @@ import ai.whisperio.android.history.RecordingSource
 import ai.whisperio.android.history.RecordingStatus
 import ai.whisperio.android.settings.AppSettings
 import ai.whisperio.core.ProviderId
+import ai.whisperio.core.Snippet
 import java.io.File
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -116,6 +117,31 @@ class DictationControllerTest {
         runCurrent(); advance(500)
         c.stopAndTranscribe(); advance(200)
         assertEquals("hello", (c.state.value as DictationState.Done).text)
+    }
+
+    @Test fun snippetReplacesWholeTranscriptAfterCleanup() = runTest {
+        settings.settings = settings.settings.copy(
+            cleanupEnabled = true,
+            snippets = listOf(Snippet("s1", "my signature", "Best regards,\nJan")),
+        )
+        transcriber.text = "my signature"
+        // Cleanup runs first (capital + period); the snippet must still match.
+        val c = controller(TextTidy { "My signature." })
+        c.start(StartOptions(RecordingSource.APP))
+        runCurrent(); advance(500)
+        c.stopAndTranscribe(); advance(200)
+        assertEquals("Best regards,\nJan", (c.state.value as DictationState.Done).text)
+        assertEquals("Best regards,\nJan", history.rows.value["id1"]!!.transcript)
+    }
+
+    @Test fun snippetDoesNotTouchOtherTranscripts() = runTest {
+        settings.settings = settings.settings.copy(snippets = listOf(Snippet("s1", "my signature", "SIG")))
+        transcriber.text = "please add my signature"
+        val c = controller()
+        c.start(StartOptions(RecordingSource.APP))
+        runCurrent(); advance(500)
+        c.stopAndTranscribe(); advance(200)
+        assertEquals("please add my signature", (c.state.value as DictationState.Done).text)
     }
 
     @Test fun silentMicIsRejectedAfterThreeSecondsWithoutUpload() = runTest {

@@ -13,9 +13,9 @@ export interface ModelInfo {
   filename: string
   url: string
   /**
-   * Pinned SHA-256 (hex) of the model file, or null if not known in-repo.
-   * TODO: fill from the huggingface LFS pointer ("oid sha256") of each file.
-   * While null, the first download is trusted (TOFU) and later downloads must match it.
+   * Pinned SHA-256 (hex) of the model file (HF LFS "oid sha256" at MODEL_REVISION),
+   * or null if not known in-repo. While null, the first download is trusted (TOFU)
+   * and later downloads must match it.
    */
   sha256: string | null
 }
@@ -36,6 +36,13 @@ export interface DownloadProgress {
   totalBytes: number
 }
 
+// Model files are pinned to one commit of ggerganov/whisper.cpp on Hugging Face,
+// so the bytes behind a URL cannot change under the pinned SHA-256 (with
+// /resolve/main an upstream re-upload would turn into an integrity error).
+// Revision and hashes from the HF API (2026-11-03); ggml-tiny re-checked with sha256sum.
+const MODEL_REVISION = '5359861c739e955e79d9a303bcbc70fb988958b1'
+const MODEL_BASE = `https://huggingface.co/ggerganov/whisper.cpp/resolve/${MODEL_REVISION}`
+
 const MODELS: ModelInfo[] = [
   {
     id: 'tiny',
@@ -44,8 +51,8 @@ const MODELS: ModelInfo[] = [
     sizeBytes: 75_000_000,
     description: 'Fastest, lowest quality. Good for testing.',
     filename: 'ggml-tiny.bin',
-    url: 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.bin',
-    sha256: null
+    url: `${MODEL_BASE}/ggml-tiny.bin`,
+    sha256: 'be07e048e1e599ad46341c8d2a135645097a538221678b7acdd1b1919c6e1b21'
   },
   {
     id: 'base',
@@ -54,8 +61,8 @@ const MODELS: ModelInfo[] = [
     sizeBytes: 142_000_000,
     description: 'Fast with decent quality.',
     filename: 'ggml-base.bin',
-    url: 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.bin',
-    sha256: null
+    url: `${MODEL_BASE}/ggml-base.bin`,
+    sha256: '60ed5bc3dd14eea856493d334349b405782ddcaf0028d4b5df4088345fba2efe'
   },
   {
     id: 'small',
@@ -64,8 +71,8 @@ const MODELS: ModelInfo[] = [
     sizeBytes: 466_000_000,
     description: 'Good balance of speed and quality.',
     filename: 'ggml-small.bin',
-    url: 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.bin',
-    sha256: null
+    url: `${MODEL_BASE}/ggml-small.bin`,
+    sha256: '1be3a9b2063867b937e64e2ec7483364a79917e157fa98c5d94b5c1fffea987b'
   },
   {
     id: 'medium',
@@ -74,8 +81,8 @@ const MODELS: ModelInfo[] = [
     sizeBytes: 1_500_000_000,
     description: 'High quality, needs more RAM.',
     filename: 'ggml-medium.bin',
-    url: 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-medium.bin',
-    sha256: null
+    url: `${MODEL_BASE}/ggml-medium.bin`,
+    sha256: '6c14d5adee5f86394037b4e4e8b59f1673b6cee10e3cf0b11bbdbee79c156208'
   },
   {
     id: 'large-v3-turbo',
@@ -84,8 +91,8 @@ const MODELS: ModelInfo[] = [
     sizeBytes: 1_600_000_000,
     description: 'Best speed/quality ratio. Recommended.',
     filename: 'ggml-large-v3-turbo.bin',
-    url: 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo.bin',
-    sha256: null
+    url: `${MODEL_BASE}/ggml-large-v3-turbo.bin`,
+    sha256: '1fc70f774d38eb169993ac391eea357ef47c88757ef72ee5943879b7e8e2bc69'
   },
   {
     id: 'large-v3',
@@ -94,8 +101,8 @@ const MODELS: ModelInfo[] = [
     sizeBytes: 3_100_000_000,
     description: 'Best quality. Needs 6+ GB RAM.',
     filename: 'ggml-large-v3.bin',
-    url: 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3.bin',
-    sha256: null
+    url: `${MODEL_BASE}/ggml-large-v3.bin`,
+    sha256: '64d182b440b98d5203c4f9bd541544d84c605196c4f7b845dfa11fb23594d1e2'
   }
 ]
 

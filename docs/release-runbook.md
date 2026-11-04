@@ -95,6 +95,11 @@ npm run release:desktop -- --execute --publish   # same, then gh release edit vX
 Without `--publish` it stops after the upload and prints the publish command. Exit codes: 0 ok, 1 preflight/verify
 failure, 2 usage. Must run from `main`/`release` up to date with origin, clean tree.
 
+**Tag before publishing.** The CI draft has no tag and its `targetCommitish` is a branch name (`main`): publishing
+creates the tag at whatever that branch is *then*, not at the commit the binaries were built from. Create it first
+from the `release` checkout: `git tag vX.Y.Z HEAD && git push origin refs/tags/vX.Y.Z`. Preflight check
+`publish target` fails `--execute` until the origin tag (or an exact-sha draft target) equals HEAD.
+
 **Manual fallback** (exactly what the script does):
 ```powershell
 cd desktop

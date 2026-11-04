@@ -6,6 +6,7 @@ import { join } from 'path'
 // pattern postprocess.ts already uses for CleanupMode). prompts.ts owns
 // ToneProfileId + its human-readable descriptions (Work Item B).
 import type { ToneProfileId } from './llm/prompts'
+import { sanitizeSnippets, type Snippet } from './snippets'
 
 export type ProviderId =
   | 'openai'
@@ -123,6 +124,11 @@ export interface AppSettings {
   // getActiveContext() also request the window title, which is what actually
   // triggers the OS permission prompt the first time.
   windowTitlePermissionEnabled: boolean
+  // Snippets (Wispr-Flow parity): spoken trigger phrase -> replacement text,
+  // applied by transcribe.ts to the final transcript via snippets.ts's
+  // expandSnippets(). Additive key, default [] (= feature off); anything
+  // malformed on disk is sanitized on load, never dropped wholesale.
+  snippets: Snippet[]
   aiProvider: AiProvider
   // Empty string = provider-appropriate default (e.g. api.openai.com for 'openai').
   aiBaseUrl: string
@@ -321,6 +327,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   contextAwareTone: false,
   toneMap: DEFAULT_TONE_MAP,
   windowTitlePermissionEnabled: false,
+  snippets: [],
   aiProvider: 'openai',
   aiBaseUrl: '',
   aiModel: '',
@@ -560,6 +567,9 @@ export function loadSettings(): AppSettings {
   merged.clipboardRestoreDelayMs = clampRestoreDelay(merged.clipboardRestoreDelayMs)
   if (merged.hotkeyMode !== 'toggle' && merged.hotkeyMode !== 'hold') merged.hotkeyMode = 'toggle'
   merged.silenceGateThresholdDbfs = clampSilenceGateThreshold(merged.silenceGateThresholdDbfs)
+  // Snippets migration: pre-snippets files have no key -> [] (fresh array, not
+  // the shared default); a hand-edited non-array or bad entries are filtered.
+  merged.snippets = sanitizeSnippets(merged.snippets)
   return merged
 }
 

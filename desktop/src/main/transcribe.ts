@@ -9,6 +9,7 @@ import { recordTranscriptionError, describeTranscriptionError, notifyTranscripti
 import { noteTranscriptionActivity } from './dictation/watchdog'
 import { guardRedirects, GUARDED_REDIRECT } from './llm/redirectGuard'
 import { OpenAICompatibleProvider, AnthropicProvider, ReplicateProvider, selectProvider, isLocalHost, type LLMProvider } from './llm/provider'
+import { expandSnippets } from './snippets'
 import { cleanupTranscription, cleanupTranscriptionDetailed, formatTranscription, rewriteSelection, type CleanupResult } from './postprocess'
 import { getServerStatus, ensureManagedServerForUrl } from './localServer'
 import { recordSTT, estimateAudioSeconds } from './usageTracker'
@@ -576,12 +577,17 @@ export async function transcribeAudio(
   // Cleanup runs AFTER the STT chain and is fail-soft: a cleanup problem must
   // never discard a good transcript or re-bill the next STT provider.
   noteActivity?.() // cleanup starting
+  let finalText: string
   try {
-    return await applyCleanup(settings, text, context)
+    finalText = await applyCleanup(settings, text, context)
   } catch (err) {
     console.warn('[Whisperio] Cleanup failed, using raw transcript:', err instanceof Error ? err.message : String(err))
-    return text
+    finalText = text
   }
+  // Snippets run last, on the FINAL transcript (post-cleanup), so a trigger
+  // still matches even when cleanup added capitalisation/punctuation. Pure and
+  // offline; a no-op when the list is empty.
+  return expandSnippets(finalText, settings.snippets)
 }
 
 function isProviderConfigured(settings: AppSettings, provider: ProviderId): boolean {

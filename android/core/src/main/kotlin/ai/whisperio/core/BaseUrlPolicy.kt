@@ -59,8 +59,9 @@ object BaseUrlPolicy {
         if (host.startsWith("[") && host.endsWith("]")) host = host.substring(1, host.length - 1)
         if (host == "localhost" || host == "::1" || host == "0.0.0.0") return true
         for (suffix in listOf(".local", ".lan", ".home.arpa", ".internal")) if (host.endsWith(suffix)) return true
-        // Dotless intranet names never resolve on the public internet.
-        if (!host.contains(".") && !host.contains(":")) return true
+        // Dotless intranet names never resolve on the public internet, except numeric IPv4
+        // literals, which the JVM may resolve as public IPv4 addresses.
+        if (!host.contains(".") && !host.contains(":") && !isNumericIpv4Literal(host)) return true
         // IPv6 unique-local (fc00::/7) and link-local (fe80::/10).
         if (host.contains(":")) {
             return host.startsWith("fc") || host.startsWith("fd") || host.startsWith("fe80:")
@@ -76,6 +77,10 @@ object BaseUrlPolicy {
         }
         return false
     }
+
+    private fun isNumericIpv4Literal(host: String): Boolean =
+        (host.isNotEmpty() && host.all { it in '0'..'9' }) ||
+            (host.startsWith("0x") && host.length > 2 && host.drop(2).all { it in '0'..'9' || it in 'a'..'f' })
 
     /** The provider's official API host; only OpenAI has a user-editable base URL. */
     fun officialHost(provider: ProviderId): String? =

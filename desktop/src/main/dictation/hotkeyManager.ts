@@ -237,7 +237,7 @@ async function activateWith(accel: string | null, sendEnter = false): Promise<vo
     console.error('[Whisperio] Error in activate():', err)
     // Force reset to idle so the user can try again
     invalidateSession()
-    state = 'idle'
+    setState('idle')
     hideOverlay()
   }
 }
@@ -285,7 +285,7 @@ async function activateOutput(): Promise<void> {
   } catch (err) {
     console.error('[Whisperio] Error in activateOutput():', err)
     invalidateSession()
-    state = 'idle'
+    setState('idle')
     hideOverlay()
   }
 }
@@ -347,7 +347,7 @@ async function activateCommand(): Promise<void> {
     console.error('[Whisperio] Error in activateCommand():', err)
     invalidateSession()
     activeSessionIsCommand = false
-    state = 'idle'
+    setState('idle')
     hideOverlay()
   }
 }

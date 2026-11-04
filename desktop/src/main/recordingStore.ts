@@ -108,11 +108,22 @@ interface RecordingIndex {
 export function isInsideRecordingsDir(filepath: unknown): boolean {
   if (typeof filepath !== 'string' || !filepath) return false
   // Follow symlinks for paths that exist, so a link inside the dir that points
-  // outside it is refused. Non-existent paths fall back to lexical resolution.
+  // outside it is refused. A non-existent path is resolved through its nearest
+  // existing ancestor, so a symlinked parent (macOS: /var -> /private/var) gives
+  // the same prefix for the dir and for a not-yet-written file inside it.
   const real = (p: string): string => {
     const r = resolve(p)
+    let head = r
+    let tail = ''
     try {
-      return existsSync(r) ? realpathSync(r) : r
+      while (!existsSync(head)) {
+        const parent = dirname(head)
+        if (parent === head) return r
+        tail = tail ? join(basename(head), tail) : basename(head)
+        head = parent
+      }
+      const realHead = realpathSync(head)
+      return tail ? join(realHead, tail) : realHead
     } catch {
       return r
     }
@@ -1108,12 +1119,24 @@ export function migrateAudio(direction: 'encrypt' | 'decrypt'): Promise<AudioMig
 /** Startup/after-toggle hook: converge audio to the current setting. Never throws. */
 export async function resumeAudioMigration(): Promise<AudioMigrationResult | null> {
   try {
-    const st = readIndexState()
-    if (st.locked) return null
-    if (encryptHistoryReader()) return await migrateAudio('encrypt')
-    // OFF: only decrypt once the index itself is plain (setHistoryEncryption(false) completed).
-    if (!st.sealedOnDisk) return await migrateAudio('decrypt')
-    return null
+    const direction = await enqueue((): 'encrypt' | 'decrypt' | null => {
+      const st = readIndexState()
+      if (st.locked) return null
+      if (encryptHistoryReader()) {
+        // Complete an interrupted enable before migrating audio: otherwise the setting can report
+        // encryption enabled while index.json still exposes transcripts in plaintext.
+        if (!st.sealedOnDisk) {
+          writeIndexFile(st.index, true, true)
+        }
+        sealCorruptBackups()
+        return 'encrypt'
+      }
+      // OFF: only decrypt once the index itself is plain (setHistoryEncryption(false) completed).
+      // Sealing is sticky (see saveIndex): a flag that reads OFF because settings.json was reset must
+      // never make startup write transcripts or audio back in plaintext.
+      return st.sealedOnDisk ? null : 'decrypt'
+    })
+    return direction ? await migrateAudio(direction) : null
   } catch (err) {
     console.error('[Whisperio] audio migration aborted:', err instanceof Error ? err.message : err)
     return null
@@ -1181,11 +1204,11 @@ export type SetHistoryEncryptionResult =
  * Turn history encryption on/off. Runs in the same mutation queue as every other write.
  *
  * ORDER: the flag is persisted FIRST, then the index is rewritten. Reads are self-describing, so
- * every intermediate state is readable: a crash in between leaves flag=ON/index=plain (the next
- * save seals it) or flag=OFF/index=sealed-but-readable (the next save writes plain) - both
- * converge to the user's intent and neither loses data. If the index rewrite itself fails the
- * previous flag value is restored. The index is one atomically-written file, so there is no
- * half-migrated state.
+ * every intermediate state is readable: a crash in between leaves flag=ON/index=plain (startup
+ * resume seals it before migrating audio) or flag=OFF/index=sealed-but-readable (sticky: stays
+ * sealed until the user turns encryption off again; data is never lost). If
+ * the index rewrite itself fails the previous flag value is restored. The index is one
+ * atomically-written file, so there is no half-migrated state.
  */
 export function setHistoryEncryption(enabled: boolean): Promise<SetHistoryEncryptionResult> {
   return enqueue((): SetHistoryEncryptionResult => {

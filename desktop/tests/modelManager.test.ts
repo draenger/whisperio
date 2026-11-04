@@ -30,6 +30,9 @@ import {
   DownloadCancelledError,
   type DownloadProgress
 } from '../src/main/modelManager'
+import { unpinCatalogModelsForEachTest } from './helpers/unpinCatalogModel'
+
+unpinCatalogModelsForEachTest()
 
 const MODELS_DIR = join(testDir, 'models')
 

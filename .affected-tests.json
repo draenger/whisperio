@@ -1,0 +1,85 @@
+{
+  "name": "whisperio",
+  "description": "Rules for forge affected-tests. Lives in the repo so selection works in any worktree folder (.wt/<name>). Desktop needs node_modules (CI: npm ci; PC: junction to .wt/deps/desktop/node_modules). Android needs JAVA_HOME=JDK 21. Android L-cost targets go through the heavy queue.",
+  "ignore": [
+    {
+      "match": ["**/*.md", "docs/**", "**/marketing/**", "LICENSE.md", "icon.png", ".affected-tests.json"],
+      "reason": "docs, design mockups and marketing assets"
+    }
+  ],
+  "fullSuiteTriggers": [
+    { "match": ["desktop/package-lock.json", "desktop/package.json"], "reason": "desktop dependencies", "rule": "desktop-main" },
+    { "match": ["desktop/vitest.config.*", "desktop/tsconfig*.json", "desktop/electron.vite.config.*"], "reason": "desktop build/test config", "rule": "desktop-main" },
+    { "match": ["android/gradle/**", "android/*.gradle.kts", "android/gradle.properties"], "reason": "android build config / version catalog", "rule": "android-app" },
+    { "match": [".github/workflows/**", "scripts/ci/**"], "reason": "CI workflow", "rule": "desktop-main" }
+  ],
+  "rules": [
+    {
+      "id": "desktop-main",
+      "match": ["desktop/src/**", "desktop/tests/**", "desktop/resources/**"],
+      "tests": [
+        { "cmd": "npm run typecheck", "cwd": "desktop", "cost": "S", "platform": "windows" },
+        { "cmd": "npx vitest run --changed origin/main --maxWorkers=3", "cwd": "desktop", "cost": "M", "platform": "windows" },
+        { "cmd": "xvfb-run -a npm run test:e2e", "cwd": "desktop", "cost": "L", "platform": "linux-ci" }
+      ],
+      "note": "Never launch the Electron app on Daniel's PC: e2e runs only in CI."
+    },
+    {
+      "id": "desktop-e2e",
+      "match": ["desktop/e2e/**", "desktop/playwright.config.ts"],
+      "tests": [
+        { "cmd": "npm run typecheck", "cwd": "desktop", "cost": "S", "platform": "windows" },
+        { "cmd": "xvfb-run -a npm run test:e2e", "cwd": "desktop", "cost": "L", "platform": "linux-ci" }
+      ],
+      "note": "e2e launches Electron: CI only."
+    },
+    {
+      "id": "android-core",
+      "match": ["android/core/**"],
+      "tests": [
+        { "cmd": "./gradlew --max-workers=3 :core:test", "cwd": "android", "cost": "S", "platform": "windows" }
+      ],
+      "dependents": ["android-app"]
+    },
+    {
+      "id": "android-app",
+      "match": ["android/app/**"],
+      "tests": [
+        { "cmd": "./gradlew --max-workers=3 :app:testDebugUnitTest", "cwd": "android", "cost": "L", "platform": "windows" },
+        { "cmd": "./gradlew --max-workers=3 :app:verifyRoborazziDebug", "cwd": "android", "cost": "L", "platform": "windows" }
+      ],
+      "note": "Heavy: take heavy.lock first. Never gradlew --stop."
+    },
+    {
+      "id": "android-strings-pl",
+      "match": ["android/app/src/main/res/values-pl/**", "android/app/src/main/res/values/strings.xml", "android/scripts/check-strings-pl.mjs"],
+      "tests": [
+        { "cmd": "node scripts/check-strings-pl.mjs", "cwd": "android", "cost": "S", "platform": "windows" }
+      ],
+      "dependents": ["android-app"]
+    },
+    {
+      "id": "ios-kit",
+      "match": ["mobile/WhisperioKit/**"],
+      "tests": [
+        { "cmd": "swift test", "cwd": "mobile/WhisperioKit", "cost": "M", "platform": "mac" }
+      ],
+      "dependents": ["ios-app"]
+    },
+    {
+      "id": "ios-app",
+      "match": ["mobile/WhisperioApp/**"],
+      "tests": [
+        { "cmd": "xcodebuild build -project WhisperioApp.xcodeproj -scheme WhisperioApp -destination 'generic/platform=iOS Simulator'", "cwd": "mobile/WhisperioApp", "cost": "L", "platform": "mac" },
+        { "cmd": "bash Scripts/check-reachability.sh", "cwd": "mobile/WhisperioApp", "cost": "S", "platform": "mac" }
+      ]
+    }
+  ],
+  "fallbacks": [
+    { "prefix": "desktop", "rule": "desktop-main" },
+    { "prefix": "android/core", "rule": "android-core" },
+    { "prefix": "android", "rule": "android-app" },
+    { "prefix": "mobile/WhisperioKit", "rule": "ios-kit" },
+    { "prefix": "mobile", "rule": "ios-app" }
+  ]
+}
