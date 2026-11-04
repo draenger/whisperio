@@ -752,8 +752,14 @@ function writeOrphans(names: string[]): void {
 }
 
 export interface ShredReport {
-  /** Files that could not be deleted after the key was destroyed (retried at next start). */
+  /** Files that could not be deleted yet (retried at next start). */
   undeleted: number
+  /**
+   * Set (true) when some undeleted files are NOT sealed: a plain-history erase could not remove
+   * them, so they stay readable until the startup sweep removes them. The UI must not call them
+   * "unreadable without the key".
+   */
+  plaintext?: boolean
 }
 
 /**
@@ -826,6 +832,8 @@ export function sweepShreddedOrphans(): ShredReport {
     }
   }
   writeOrphans(left)
+  // Count only: file names and paths can carry the user name.
+  if (left.length > 0) console.warn(`[Whisperio] startup sweep: ${left.length} file(s) still could not be deleted; retrying at next start.`)
   return { undeleted: left.length }
 }
 
@@ -850,24 +858,31 @@ export function deleteAllRecordings(): Promise<ShredReport> {
       return wipeAfterShred()
     }
 
+    // Plain history: a file that cannot be deleted now (AV lock, permissions) still holds readable
+    // audio. Its index entry is dropped so the erase converges, but the name goes on the orphan
+    // list so the startup sweep retries until it is gone, and the caller reports it.
+    const stuck: string[] = []
     for (const entry of index.recordings) {
       if (isInsideRecordingsDir(entry.filepath) && existsSync(entry.filepath)) {
         try {
-          unlinkSync(entry.filepath)
+          unlinkWithRetry(entry.filepath)
         } catch {
-          /* best-effort: still drop the index entry so the delete converges */
+          stuck.push(basename(entry.filepath))
         }
       }
     }
-    let undeleted = 0
     try {
       for (const f of readdirSync(getRecordingsDir())) {
         if (!CORRUPT_BACKUP_RE.test(f)) continue // exact backup names only, never look-alikes
-        try { unlinkWithRetry(join(getRecordingsDir(), f)) } catch { undeleted++ }
+        try { unlinkWithRetry(join(getRecordingsDir(), f)) } catch { stuck.push(f) }
       }
     } catch { /* no recordings dir: nothing to remove */ }
     saveIndex({ recordings: [] })
-    return { undeleted }
+    if (stuck.length === 0) return { undeleted: 0 }
+    writeOrphans(Array.from(new Set([...readOrphans(), ...stuck.filter(isValidOrphanName)])))
+    // Count only: file names and paths can carry the user name.
+    console.warn(`[Whisperio] erase: ${stuck.length} file(s) could not be deleted yet; retrying at next start.`)
+    return { undeleted: stuck.length, plaintext: true }
   })
 }
 

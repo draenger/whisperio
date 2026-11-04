@@ -233,7 +233,7 @@ export interface RecordingsAPI {
   update: (id: string, updates: Partial<RecordingEntry>) => Promise<RecordingEntry | null>
   delete: (id: string) => Promise<boolean>
   /** Resolves with the count of files that could not be deleted (retried at startup). */
-  deleteAll: () => Promise<{ undeleted: number } | void>
+  deleteAll: () => Promise<{ undeleted: number; plaintext?: boolean } | void>
   deleteByDate: (date: string) => Promise<void>
   getAudio: (id: string) => Promise<Buffer | null>
   reprocess: (id: string) => Promise<RecordingEntry | null>

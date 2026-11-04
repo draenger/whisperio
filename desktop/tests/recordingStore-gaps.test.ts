@@ -269,12 +269,37 @@ describe('plain-mode record operations', () => {
     expect(webms()).toHaveLength(1)
   })
 
-  it('erase with encryption OFF converges when an audio file cannot be unlinked', async () => {
+  // A plaintext recording that erase cannot delete used to be dropped from the index silently
+  // ({ undeleted: 0 }) and never retried. It is now reported and swept at the next start.
+  it('erase with encryption OFF reports undeletable audio as plaintext and the startup sweep removes it', async () => {
     await seed('e', 2)
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     h.failUnlink = /\.webm$/
-    expect(await deleteAllRecordings()).toEqual({ undeleted: 0 })
-    h.failUnlink = null
+    expect(await deleteAllRecordings()).toEqual({ undeleted: 2, plaintext: true })
     expect(JSON.parse(readFileSync(INDEX, 'utf-8'))).toEqual({ recordings: [] })
+    expect(webms()).toHaveLength(2)
+    expect(new Set(JSON.parse(readFileSync(ORPHANS, 'utf-8')).files)).toEqual(new Set(webms()))
+    // the log carries a count, never a path or file name (they can hold the user name)
+    const logged = warn.mock.calls.map((c) => c.join(' ')).join('\n')
+    expect(logged).toContain('2 file(s) could not be deleted yet')
+    expect(logged).not.toContain(DIR)
+    expect(logged).not.toContain('.webm')
+
+    // still locked at the next start: kept for the one after
+    expect(sweepShreddedOrphans()).toEqual({ undeleted: 2 })
+    expect(webms()).toHaveLength(2)
+    h.failUnlink = null
+    expect(sweepShreddedOrphans()).toEqual({ undeleted: 0 })
+    expect(webms()).toEqual([])
+    expect(existsSync(ORPHANS)).toBe(false)
+    warn.mockRestore()
+  })
+
+  it('erase with encryption OFF that deletes everything reports nothing and writes no orphan list', async () => {
+    await seed('e', 2)
+    expect(await deleteAllRecordings()).toEqual({ undeleted: 0 })
+    expect(webms()).toEqual([])
+    expect(existsSync(ORPHANS)).toBe(false)
   })
 
   it('erase with encryption OFF counts an index backup it cannot delete and removes the others', async () => {
@@ -282,11 +307,13 @@ describe('plain-mode record operations', () => {
     writeFileSync(join(DIR, 'index.json.corrupt-1700000000000'), '{ old')
     writeFileSync(join(DIR, 'index.corrupt-1700000000001.json'), '{ old')
     h.failUnlink = /index\.json\.corrupt-1700000000000$/
-    expect(await deleteAllRecordings()).toEqual({ undeleted: 1 })
+    expect(await deleteAllRecordings()).toEqual({ undeleted: 1, plaintext: true })
     h.failUnlink = null
     expect(existsSync(join(DIR, 'index.json.corrupt-1700000000000'))).toBe(true)
     expect(existsSync(join(DIR, 'index.corrupt-1700000000001.json'))).toBe(false)
     expect(JSON.parse(readFileSync(INDEX, 'utf-8'))).toEqual({ recordings: [] })
+    expect(sweepShreddedOrphans()).toEqual({ undeleted: 0 })
+    expect(existsSync(join(DIR, 'index.json.corrupt-1700000000000'))).toBe(false)
   })
 
   it('turning encryption ON reports a leftover index write temp file it cannot remove', async () => {

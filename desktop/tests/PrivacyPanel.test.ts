@@ -75,4 +75,14 @@ describe('PrivacyPanel', () => {
     fireEvent.click(await screen.findByText('Erase all'))
     await waitFor(() => expect(api.deleteAll).toHaveBeenCalled())
   })
+
+  it('a plain erase that left files says it will retry, not that they are unreadable', async () => {
+    const api = mockApi()
+    api.deleteAll.mockResolvedValue({ undeleted: 2, plaintext: true })
+    render(createElement(PrivacyPanel, { s: FAKE_STYLES, theme: darkTheme }))
+    fireEvent.click(await screen.findByText('Erase all history', { selector: 'button' }))
+    fireEvent.click(await screen.findByText('Erase all'))
+    await screen.findByText("Couldn't delete 2 file(s). Will retry on next start.")
+    expect(screen.queryByText(/unreadable without the key/)).toBeNull()
+  })
 })
