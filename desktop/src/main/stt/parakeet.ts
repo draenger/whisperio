@@ -1,16 +1,14 @@
 // EXPERIMENTAL (spike, behind settings.experimentalParakeet): local STT with
 // NVIDIA Parakeet TDT 0.6B V3 through sherpa-onnx-node.
 //
-// - `sherpa-onnx-node` is NOT a declared dependency yet. It is loaded lazily
-//   with a guarded require; when absent we throw ParakeetRuntimeMissingError so
-//   the provider chain falls through (offline invariant: never break dictation).
-// - Recognition runs in a worker_thread (spike; the spec's target is an Electron
-//   utilityProcess) so a 640 MB model load cannot freeze the main process. The
-//   worker body is the pure function `recognizeWith`, serialized via toString().
-import { app } from 'electron'
+// - `sherpa-onnx-node` is NOT a declared dependency yet. The main process only RESOLVES its path
+//   (never require()s it); when absent we throw ParakeetRuntimeMissingError so the provider chain
+//   falls through (offline invariant: never break dictation).
+// - Loading the addon and recognition run in an Electron utilityProcess (parakeetHost.ts, a separate
+//   OS process): a native crash there only ends that child and surfaces as an ordinary provider error.
+import { app, utilityProcess } from 'electron'
 import { createRequire } from 'module'
 import { join } from 'path'
-import { Worker } from 'worker_threads'
 import { getParakeetModelPaths } from './parakeetModel'
 
 export const TARGET_SAMPLE_RATE = 16000
@@ -75,15 +73,19 @@ export function buildRecognizerConfig(paths: {
   }
 }
 
-/** Guarded lazy load. Returns the resolved module path (for the worker) and the module. */
-export function loadSherpa(): { path: string; module: unknown } {
+/** Resolve (never load) the addon path; throws ParakeetRuntimeMissingError when it is absent. */
+export function resolveSherpa(): { path: string } {
   try {
     const req = createRequire(join(app.getAppPath(), 'package.json'))
-    const path = req.resolve(SHERPA_PACKAGE)
-    return { path, module: req(SHERPA_PACKAGE) }
+    return { path: req.resolve(SHERPA_PACKAGE) }
   } catch (err) {
     throw new ParakeetRuntimeMissingError(err instanceof Error ? err.message : undefined)
   }
+}
+
+/** Packaged builds keep the native addon in app.asar.unpacked; a child process cannot read inside the asar. */
+export function toUnpackedPath(p: string): string {
+  return p.replace(/app\.asar(?=[\\/]|$)/, 'app.asar.unpacked')
 }
 
 /**
@@ -165,45 +167,40 @@ export function wavToPcm16k(buf: Buffer): Float32Array {
   return out
 }
 
-/**
- * Pure recognition step (self-contained: it is serialized into the worker).
- * `sherpa` is the sherpa-onnx-node module.
- */
-export function recognizeWith(
-  sherpa: any, // eslint-disable-line @typescript-eslint/no-explicit-any
-  recognizer: any, // eslint-disable-line @typescript-eslint/no-explicit-any
-  samples: Float32Array,
-  sampleRate: number
-): string {
-  void sherpa
-  const stream = recognizer.createStream()
-  stream.acceptWaveform({ sampleRate, samples })
-  recognizer.decode(stream)
-  const result = recognizer.getResult(stream)
-  return String(result?.text ?? '').trim()
+/** What the host logic needs from the child process (a utilityProcess in production, a fake in tests). */
+export interface ParakeetChild {
+  postMessage(m: unknown): void
+  on(event: 'message', cb: (m: any) => void): unknown // eslint-disable-line @typescript-eslint/no-explicit-any
+  on(event: 'error', cb: (e: Error) => void): unknown
+  on(event: 'exit', cb: (code: number | null) => void): unknown
+  terminate(): Promise<unknown> | unknown
 }
 
-const WORKER_SOURCE = `
-const { parentPort, workerData } = require('worker_threads')
-const recognizeWith = ${recognizeWith.toString()}
-let sherpa, recognizer
-try {
-  sherpa = require(workerData.sherpaPath)
-  recognizer = new sherpa.OfflineRecognizer(workerData.config)
-  parentPort.postMessage({ type: 'ready' })
-} catch (e) {
-  parentPort.postMessage({ type: 'fatal', error: String(e && e.message || e) })
-}
-parentPort.on('message', (m) => {
-  try {
-    const text = recognizeWith(sherpa, recognizer, m.samples, m.sampleRate)
-    parentPort.postMessage({ type: 'result', id: m.id, text })
-  } catch (e) {
-    parentPort.postMessage({ type: 'result', id: m.id, error: String(e && e.message || e) })
+function createChild(): ParakeetChild {
+  const proc = utilityProcess.fork(join(__dirname, 'parakeetHost.js'), [], {
+    serviceName: 'whisperio-parakeet',
+    stdio: 'pipe'
+  })
+  // Diagnostics only (addon/onnxruntime logs); transcripts never travel over stdio.
+  proc.stdout?.on('data', (d: Buffer) => console.log('[parakeet]', String(d).trimEnd()))
+  proc.stderr?.on('data', (d: Buffer) => console.error('[parakeet]', String(d).trimEnd()))
+  let exited = false
+  const gone = new Promise<void>((res) => {
+    proc.once('exit', () => {
+      exited = true
+      res()
+    })
+  })
+  return {
+    postMessage: (m) => proc.postMessage(m),
+    on: (event: string, cb: (...a: any[]) => void) => proc.on(event as 'exit', cb), // eslint-disable-line @typescript-eslint/no-explicit-any
+    terminate: async () => {
+      if (exited) return
+      proc.kill()
+      await Promise.race([gone, new Promise((res) => setTimeout(res, 2000).unref?.())])
+    }
   }
-})
-`
-
+}
 
 export const READY_TIMEOUT_MS = 120_000
 export const MIN_REQUEST_TIMEOUT_MS = 30_000
@@ -217,16 +214,15 @@ type Pending = {
 }
 
 interface Host {
-  worker: Worker
+  worker: ParakeetChild
   ready: Promise<void>
 }
 
 // Seams so the lifecycle can be unit-tested without the native addon.
 export const deps = {
-  loadSherpa: (): { path: string } => loadSherpa(),
+  resolveSherpa: (): { path: string } => resolveSherpa(),
   getModelPaths: getParakeetModelPaths,
-  createWorker: (source: string, workerData: unknown): Worker =>
-    new Worker(source, { eval: true, workerData }),
+  createWorker: (): ParakeetChild => createChild(),
   readyTimeoutMs: READY_TIMEOUT_MS,
   minRequestTimeoutMs: MIN_REQUEST_TIMEOUT_MS
 }
@@ -263,9 +259,9 @@ export async function stopWorker(reason = 'Parakeet worker stopped.'): Promise<v
 
 function ensureHost(): Host {
   if (host) return host
-  const { path } = deps.loadSherpa()
+  const { path } = deps.resolveSherpa()
   const config = buildRecognizerConfig(deps.getModelPaths())
-  const w = deps.createWorker(WORKER_SOURCE, { sherpaPath: path, config })
+  const w = deps.createWorker()
   let readyTimer: ReturnType<typeof setTimeout> | null = null
   let settled = false
   let resolveReady!: () => void
@@ -289,7 +285,7 @@ function ensureHost(): Host {
     }
   }
   readyTimer = setTimeout(
-    () => failAll(new Error('Parakeet worker did not become ready in time.')),
+    () => failAll(new Error('Parakeet process did not become ready in time.')),
     deps.readyTimeoutMs
   )
   readyTimer.unref?.()
@@ -313,7 +309,8 @@ function ensureHost(): Host {
     }
   })
   w.on('error', (err: Error) => failAll(err))
-  w.on('exit', (code: number) => failAll(new Error(`Parakeet worker exited unexpectedly (code ${code}).`)))
+  w.on('exit', (code: number | null) => failAll(new Error(`Parakeet process exited unexpectedly (code ${code}).`)))
+  w.postMessage({ type: 'init', sherpaPath: toUnpackedPath(path), config })
   host = h
   return h
 }
