@@ -54,12 +54,15 @@ public enum BaseURLPolicy {
         if host.hasPrefix("[") && host.hasSuffix("]") { host = String(host.dropFirst().dropLast()) }
         if host == "localhost" || host == "::1" || host == "0.0.0.0" { return true }
         for suffix in [".local", ".lan", ".home.arpa", ".internal"] where host.hasSuffix(suffix) { return true }
-        // Dotless intranet names ("nas", "whisper-box") never resolve on the public internet.
-        if !host.contains(".") && !host.contains(":") { return true }
-        // IPv6 unique-local (fc00::/7) and link-local (fe80::/10).
+        // Dotless intranet names ("nas", "whisper-box") never resolve on the public internet, except
+        // numeric IPv4 literals: Foundation keeps "134744072" / "0x08080808" as the host and the
+        // resolver reads them as 8.8.8.8.
+        if !host.contains(".") && !host.contains(":") && !isNumericIPv4Literal(host) { return true }
+        // IPv6 unique-local (fc00::/7) and link-local (fe80::/10), judged on the numeric first
+        // hextet: a text prefix wrongly accepted "fc::1" (= 00fc::1) and "fc0::1" (= 0fc0::1).
         if host.contains(":") {
-            if host.hasPrefix("fc") || host.hasPrefix("fd") || host.hasPrefix("fe80:") { return true }
-            return false
+            guard let first = firstHextet(host) else { return false }
+            return (first & 0xFE00) == 0xFC00 || (first & 0xFFC0) == 0xFE80
         }
         let parts = host.split(separator: ".", omittingEmptySubsequences: false)
         if parts.count == 4, parts.allSatisfy({ !$0.isEmpty && $0.count <= 3 && $0.allSatisfy(\.isASCII) && $0.allSatisfy(\.isNumber) }) {
@@ -70,6 +73,20 @@ public enum BaseURLPolicy {
             if o[0] == 172 && (16...31).contains(o[1]) { return true }
             if o[0] == 100 && (64...127).contains(o[1]) { return true }   // Tailscale / CGNAT 100.64.0.0/10
         }
+        return false
+    }
+
+    /// First 16-bit group of an IPv6 literal, or nil when it is empty ("::…") or not 1-4 hex digits.
+    static func firstHextet(_ host: String) -> Int? {
+        let group = host.split(separator: ":", maxSplits: 1, omittingEmptySubsequences: false).first.map(String.init) ?? ""
+        guard (1...4).contains(group.count), group.allSatisfy({ $0.isASCII && $0.isHexDigit }) else { return nil }
+        return Int(group, radix: 16)
+    }
+
+    /// "134744072", "0x08080808": a dotless host that the resolver reads as an IPv4 address.
+    static func isNumericIPv4Literal(_ host: String) -> Bool {
+        if !host.isEmpty && host.allSatisfy({ $0.isASCII && $0.isNumber }) { return true }
+        if host.hasPrefix("0x") && host.count > 2 && host.dropFirst(2).allSatisfy({ $0.isASCII && $0.isHexDigit }) { return true }
         return false
     }
 

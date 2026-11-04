@@ -50,6 +50,39 @@ import Foundation
         guard case .failure(.insecureHTTP) = BaseURLPolicy.validate("example.com", assumeHTTPForBareHost: true) else { Issue.record("expected rejection"); return }
     }
 
+    /// "fc::1" is 00fc::1 and "fc0::1" is 0fc0::1: outside fc00::/7 although the text starts with fc.
+    @Test func shortIPv6StartingWithFcIsNotUniqueLocal() {
+        for h in ["fc::1", "fd::1", "fc0::1", "fd0::1", "fe8::1", "fe::1", "[fc::1]", "[fd::1]", "[fc0::1]"] {
+            #expect(!BaseURLPolicy.isLocalHost(h), "\(h)")
+        }
+        for s in ["http://[fc::1]/v1", "http://[fd::1]/v1", "http://[fc0::1]/v1"] {
+            guard case .failure(.insecureHTTP) = BaseURLPolicy.validate(s) else { Issue.record("expected rejection: \(s)"); continue }
+        }
+    }
+
+    /// The whole fc00::/7 and fe80::/10 ranges count, by value of the first hextet.
+    @Test func uniqueLocalAndLinkLocalRangesByValue() {
+        for h in ["fc00::1", "fcff::1", "fd00::1", "fd12:3456::1", "fdff:ffff::1", "FD12::1", "fe80::1", "fe9a::1", "febf::1"] {
+            #expect(BaseURLPolicy.isLocalHost(h), "\(h)")
+        }
+        for h in ["fe00::1", "fec0::1", "fb00::1", "ff02::1", "2001:db8::1", "::ffff:8.8.8.8", "fc000::1", "fz00::1"] {
+            #expect(!BaseURLPolicy.isLocalHost(h), "\(h)")
+        }
+        guard case .success = BaseURLPolicy.validate("http://[fd12:3456::1]:8080/v1") else { Issue.record("expected ok"); return }
+    }
+
+    /// Dotless numeric hosts are IPv4 literals for the resolver (134744072 == 8.8.8.8), not intranet names.
+    @Test func dotlessNumericIPv4LiteralIsNotLocal() {
+        for h in ["134744072", "0x08080808", "2130706433"] {
+            #expect(!BaseURLPolicy.isLocalHost(h), "\(h)")
+        }
+        for s in ["http://134744072/v1", "http://0x08080808/v1"] {
+            guard case .failure(.insecureHTTP) = BaseURLPolicy.validate(s) else { Issue.record("expected rejection: \(s)"); continue }
+        }
+        #expect(BaseURLPolicy.isLocalHost("nas"))
+        #expect(BaseURLPolicy.isLocalHost("box1"))
+    }
+
     @Test func officialVsCustomHost() {
         #expect(BaseURLPolicy.isOfficialHost(provider: .openAI, url: URL(string: "https://api.openai.com/v1")!))
         #expect(BaseURLPolicy.isOfficialHost(provider: .openAI, url: URL(string: "https://API.OPENAI.COM/v1")!))
