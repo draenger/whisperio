@@ -331,7 +331,7 @@ describe('plain-mode record operations', () => {
     writeFileSync(join(DIR, 'index.json.corrupt-1700000000000'), '{ old')
     writeFileSync(join(DIR, 'index.corrupt-1700000000001.json'), '{ old')
     h.failUnlink = /index\.json\.corrupt-1700000000000$/
-    expect(await deleteAllRecordings()).toEqual({ undeleted: 1 })
+    expect(await deleteAllRecordings()).toEqual({ undeleted: 1, plaintext: true })
     h.failUnlink = null
     expect(existsSync(join(DIR, 'index.json.corrupt-1700000000000'))).toBe(true)
     expect(existsSync(join(DIR, 'index.corrupt-1700000000001.json'))).toBe(false)
