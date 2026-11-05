@@ -312,6 +312,26 @@ describe('settingsManager', () => {
       expect(terms).toContain('Svelte')
       expect(terms).toContain('Rust')
     })
+
+    it('a custom term that repeats an active default or itself (any case) appears once, first spelling kept', () => {
+      const result = getActiveVocabulary({ ...base, customVocabulary: 'docker, Svelte, SVELTE' })
+      const terms = result.split(', ')
+      expect(terms.filter((t) => t.toLowerCase() === 'docker')).toEqual(['Docker'])
+      expect(terms.filter((t) => t.toLowerCase() === 'svelte')).toEqual(['Svelte'])
+      expect(terms.indexOf('Docker')).toBe(DEFAULT_VOCABULARY_TERMS.indexOf('Docker'))
+    })
+  })
+
+  describe('hotkeyMode from file', () => {
+    it('keeps "hold" and resets an unknown or missing mode to "toggle"', () => {
+      mockExistsSync.mockReturnValue(true)
+      mockReadFileSync.mockReturnValue(JSON.stringify({ hotkeyMode: 'hold' }))
+      expect(loadSettings().hotkeyMode).toBe('hold')
+      for (const bad of ['push', 42, null, 'HOLD']) {
+        mockReadFileSync.mockReturnValue(JSON.stringify({ hotkeyMode: bad }))
+        expect(loadSettings().hotkeyMode).toBe('toggle')
+      }
+    })
   })
 
   describe('legacy vocabulary migration', () => {

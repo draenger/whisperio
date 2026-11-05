@@ -118,7 +118,7 @@ export function PrivacyPanel({ s, theme }: { s: SettingsStyles; theme: Theme }):
         }
       } else if (pending.type === 'erase') {
         const res = await window.api.recordings.deleteAll()
-        setMessage(undeletedMessage(res ? res.undeleted : 0))
+        setMessage(undeletedMessage(res ? res.undeleted : 0, res ? res.plaintext === true : false))
       } else {
         const res = await window.api.history.resetLocked(
           transient ? { confirmDestroy: true } : undefined

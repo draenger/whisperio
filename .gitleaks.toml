@@ -4,9 +4,17 @@
 useDefault = true
 
 [allowlist]
-description = "UserDefaults key names flagged by generic-api-key (not secrets)"
+description = "Known non-secrets flagged by generic-api-key: UserDefaults key names, a file name, test fixture keys"
 regexes = [
   '''^whisperio\.launchSentinel\.earlyDeaths\.v1$''',
   '''^whisperio\.launchSentinel\.inFlightAt\.v1$''',
   '''^whisperio\.digestPrompts\.v1$''',
+  # desktop/src/main/localServer.ts: the release ZIP file name passed next to ZIP_INTEGRITY_KEY (a cache key, not a secret)
+  '''^whisper-bin-x64\.zip$''',
+  # desktop/tests: fake provider keys used as test fixtures (never real credentials)
+  '''^aai-SECRET-KEY-98765$''',
+  '''^dg-SECRET-KEY-12345$''',
+  # android/core tests: fake keys fed to the redaction tests (they assert these never reach the UI)
+  '''^abcdef123456$''',
+  '''^sk-abcdefgh12345$''',
 ]

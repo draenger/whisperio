@@ -1479,7 +1479,11 @@ async function replicateTranscribe(
       redirect: 'error'
     })
   } catch (err) {
-    const error = err instanceof Error ? err : new Error(String(err))
+    // Our own timeout aborts the fetch ("This operation was aborted"): say what happened,
+    // like the other providers' 45 s timeouts do.
+    const error = controller.signal.aborted
+      ? new Error(`Replicate transcription request timed out after ${REPLICATE_TIMEOUT_MS / 1000}s`)
+      : err instanceof Error ? err : new Error(String(err))
     recordTranscriptionError(error, 'replicate')
     throw error
   } finally {

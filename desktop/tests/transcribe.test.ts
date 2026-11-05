@@ -648,6 +648,38 @@ describe('replicate provider', () => {
     await expect(transcribeAudio(Buffer.from('audio'), 'rec.webm')).rejects.toThrow('network down')
   })
 
+  it('aborts a hanging Replicate request at 55 s and says it timed out (not "This operation was aborted")', async () => {
+    vi.useFakeTimers()
+    try {
+      mockLoadSettings.mockReturnValue({
+        providerChain: ['replicate'],
+        replicateApiKey: 'r8_test_key',
+        transcriptionPrompt: '',
+        customVocabulary: ''
+      })
+      let signal: AbortSignal | undefined
+      const fetchMock = vi.fn((_url: string, init: RequestInit) => {
+        signal = init.signal as AbortSignal
+        return new Promise((_resolve, reject) => {
+          signal!.addEventListener('abort', () => reject(new DOMException('This operation was aborted', 'AbortError')))
+        })
+      })
+      vi.stubGlobal('fetch', fetchMock)
+
+      const outcome = transcribeAudio(Buffer.from('audio'), 'rec.webm').then(
+        () => 'resolved',
+        (e: Error) => e.message
+      )
+      await vi.advanceTimersByTimeAsync(54_999)
+      expect(signal?.aborted).toBe(false)
+      await vi.advanceTimersByTimeAsync(1)
+      expect(signal?.aborted).toBe(true)
+      expect(await outcome).toBe('Replicate transcription request timed out after 55s')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('throws a descriptive error when the response has no recognizable transcription shape', async () => {
     mockLoadSettings.mockReturnValue({
       providerChain: ['replicate'],

@@ -243,8 +243,13 @@ export const TRY_AGAIN_STILL_LOCKED = 'Still locked. Unlock your keychain/keyrin
 export const RESET_FAILED_MESSAGE =
   'History was not reset: it is not locked encrypted history, or the encryption key file could not be removed. Nothing was deleted.'
 
-/** Shown after erase/reset succeeded but some files could not be deleted yet. */
-export function undeletedMessage(n: number): string | null {
+/**
+ * Shown after erase/reset succeeded but some files could not be deleted yet. `plaintext` (plain
+ * history erase) means the leftovers are NOT sealed, so the "unreadable without the key" promise
+ * would be false for them.
+ */
+export function undeletedMessage(n: number, plaintext = false): string | null {
   if (!n || n < 1) return null
+  if (plaintext) return `Couldn't delete ${n} file(s). Will retry on next start.`
   return `${n} file(s) couldn't be deleted and will be removed on next start. They are unreadable without the key.`
 }

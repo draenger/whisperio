@@ -401,6 +401,105 @@ describe('autoUpdater', () => {
     })
   })
 
+  describe('installed win32 hooks really verify against the production pins', () => {
+    async function initOnWin32(): Promise<Record<string, any>> {
+      setPlatform('win32')
+      const au = h.autoUpdater as Record<string, any>
+      au.verifyUpdateCodeSignature = undefined
+      au.verifySignature = undefined
+      const { initAutoUpdater } = await loadModule()
+      initAutoUpdater(false)
+      return au
+    }
+    afterEach(() => {
+      delete (h.autoUpdater as Record<string, unknown>).verifySignature
+    })
+
+    it('verifyUpdateCodeSignature rejects what Authenticode rejects and passes the pinned signers', async () => {
+      const { PINNED_UPDATE_SIGNERS } = await import('../src/main/updateSignature/updateVerifier')
+      const au = await initOnWin32()
+      h.mockVerifyAuthenticode.mockResolvedValueOnce({ ok: false, reason: 'signer X is not a pinned publisher' })
+      expect(await au.verifyUpdateCodeSignature(['Whisperio'], 'C:/u/setup.exe')).toBe(
+        'update signature rejected: signer X is not a pinned publisher'
+      )
+      expect(h.mockVerifyAuthenticode).toHaveBeenLastCalledWith('C:/u/setup.exe', PINNED_UPDATE_SIGNERS)
+      expect(await au.verifyUpdateCodeSignature(['Whisperio'], 'C:/u/setup.exe')).toBeNull()
+    })
+
+    it('verifySignature (used when app-update.yml has no publisherName) goes through the same pinned check', async () => {
+      const { PINNED_UPDATE_SIGNERS } = await import('../src/main/updateSignature/updateVerifier')
+      const au = await initOnWin32()
+      h.mockVerifyAuthenticode.mockResolvedValueOnce({ ok: false, reason: 'file is not signed' })
+      expect(await au.verifySignature('C:/u/unsigned.exe')).toBe('update signature rejected: file is not signed')
+      expect(h.mockVerifyAuthenticode).toHaveBeenLastCalledWith('C:/u/unsigned.exe', PINNED_UPDATE_SIGNERS)
+      expect(await au.verifySignature('C:/u/setup.exe')).toBeNull()
+    })
+  })
+
+  describe('failing background updater calls never escape as unhandled rejections', () => {
+    // The rejecting stand-ins are plain functions on purpose: vitest attaches its own handler to
+    // promises returned by vi.fn() (for mock.settledResults), which would hide a missing .catch.
+    const unhandled: unknown[] = []
+    const onUnhandled = (r: unknown): void => {
+      unhandled.push(r)
+    }
+    const au = h.autoUpdater as Record<string, any>
+    const originals = { checkForUpdates: au.checkForUpdates, downloadUpdate: au.downloadUpdate }
+    beforeEach(() => {
+      unhandled.length = 0
+      process.on('unhandledRejection', onUnhandled)
+    })
+    afterEach(() => {
+      process.off('unhandledRejection', onUnhandled)
+      au.checkForUpdates = originals.checkForUpdates
+      au.downloadUpdate = originals.downloadUpdate
+    })
+    async function settle(): Promise<void> {
+      vi.useRealTimers()
+      await new Promise((r) => setTimeout(r, 20))
+    }
+
+    it('a rejected initial and interval update check is swallowed (offline at startup)', async () => {
+      let calls = 0
+      au.checkForUpdates = (): Promise<never> => {
+        calls++
+        return Promise.reject(new Error('net::ERR_INTERNET_DISCONNECTED'))
+      }
+      const { initAutoUpdater } = await loadModule()
+      initAutoUpdater(true)
+      vi.advanceTimersByTime(10_000)
+      vi.advanceTimersByTime(4 * 60 * 60 * 1000)
+      expect(calls).toBe(2)
+      await settle()
+      expect(unhandled).toEqual([])
+    })
+
+    it('a rejected download is swallowed (it is reported through the error event)', async () => {
+      let calls = 0
+      au.downloadUpdate = (): Promise<never> => {
+        calls++
+        return Promise.reject(new Error('net::ERR_CONNECTION_RESET'))
+      }
+      const { initAutoUpdater } = await loadModule()
+      initAutoUpdater(false)
+      h.fire('update-available', { version: '2.0.0' })
+      expect(calls).toBe(1)
+      await settle()
+      expect(unhandled).toEqual([])
+    })
+  })
+
+  it('update-downloaded skips destroyed windows when broadcasting updater:ready', async () => {
+    const { initAutoUpdater } = await loadModule()
+    initAutoUpdater(false)
+    const alive = { webContents: { send: vi.fn() }, isDestroyed: () => false }
+    const dead = { webContents: { send: vi.fn() }, isDestroyed: () => true }
+    h.mockGetAllWindows.mockReturnValue([dead, alive])
+    h.fire('update-downloaded', { version: '2.0.0' })
+    expect(alive.webContents.send).toHaveBeenCalledWith('updater:ready', '2.0.0')
+    expect(dead.webContents.send).not.toHaveBeenCalled()
+  })
+
   describe('update-check gating (checkForUpdates setting)', () => {
     const TEN_S = 10_000
     const FOUR_H = 4 * 60 * 60 * 1000

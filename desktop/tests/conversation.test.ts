@@ -75,6 +75,14 @@ describe('buildSpeakerSegments', () => {
     ]
     expect(buildSpeakerSegments(words)).toEqual([{ speaker: 'speaker_0', start: 0, end: 0.5, text: 'Hello' }])
   })
+
+  it('a spacing entry before the first word never opens a segment (its start comes from the word)', () => {
+    const words: DiarizedWord[] = [
+      { text: ' ', start: 0, end: 0.3, type: 'spacing', speakerId: 'speaker_0' },
+      { text: 'Hi', start: 0.3, end: 0.6, type: 'word', speakerId: 'speaker_0' }
+    ]
+    expect(buildSpeakerSegments(words)).toEqual([{ speaker: 'speaker_0', start: 0.3, end: 0.6, text: 'Hi' }])
+  })
 })
 
 describe('speakerOrder', () => {

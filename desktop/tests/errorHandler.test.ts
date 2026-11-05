@@ -208,6 +208,40 @@ describe('errorHandler', () => {
       expect(last.category).toBe('NETWORK_ERROR')
     })
 
+    // Electron's net module (used by most STT providers) reports Chromium codes, and Node
+    // reports errno codes the old list missed: offline users got the raw code instead of the
+    // "check your connection" message.
+    it.each([
+      'net::ERR_INTERNET_DISCONNECTED',
+      'net::ERR_NAME_NOT_RESOLVED',
+      'net::ERR_CONNECTION_RESET',
+      'net::ERR_NETWORK_CHANGED',
+      'read ECONNRESET',
+      'getaddrinfo EAI_AGAIN api.openai.com',
+      'ETIMEDOUT',
+      'ENOTFOUND',
+      'fetch failed',
+      'network down'
+    ])('classifies "%s" as a network error with the connection message', (raw) => {
+      handleTranscriptionError(new Error(raw), 'openai')
+      const last = getRecentErrors().at(-1)!
+      expect(last.category).toBe('NETWORK_ERROR')
+      expect(last.message).toBe('Network error. Check your connection.')
+      expect(last.rawError).toBe(raw)
+    })
+
+    it('an HTTP status still wins over network words in the message', () => {
+      handleTranscriptionError(new Error('OpenAI API error 429: network busy'), 'openai')
+      expect(getRecentErrors().at(-1)!.category).toBe('RATE_LIMITED')
+    })
+
+    it('a provider timeout keeps its own message (not a connection error)', () => {
+      handleTranscriptionError(new Error('Replicate transcription request timed out after 55s'), 'replicate')
+      const last = getRecentErrors().at(-1)!
+      expect(last.category).toBe('UNKNOWN')
+      expect(last.message).toBe('Replicate transcription request timed out after 55s')
+    })
+
     // Regression: the privacy-hardened, bodiless production messages must still
     // map to actionable categories (previously fell through to UNKNOWN).
     it('categorizes a bodiless 401 as API_KEY_MISSING', () => {

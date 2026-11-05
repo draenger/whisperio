@@ -65,18 +65,16 @@ export function parseApiError(error: Error): { statusCode: number | null, respon
     }
   }
 
-  // Network-level errors (no HTTP status)
-  if (
-    message.includes('ECONNREFUSED') ||
-    message.includes('ENOTFOUND') ||
-    message.includes('ETIMEDOUT') ||
-    message.includes('network') ||
-    message.includes('fetch failed')
-  ) {
-    return { statusCode: null, responseBody: message }
-  }
-
   return { statusCode: null, responseBody: message }
+}
+
+// Connection-level failures with no HTTP status. Electron's net module reports
+// Chromium codes ("net::ERR_INTERNET_DISCONNECTED", "net::ERR_NAME_NOT_RESOLVED"),
+// Node/fetch report errno codes ("ECONNRESET", "EAI_AGAIN") or "fetch failed".
+const NETWORK_ERROR_MARKERS = ['ECONNREFUSED', 'ENOTFOUND', 'ETIMEDOUT', 'ECONNRESET', 'EAI_AGAIN', 'net::ERR_', 'network', 'fetch failed']
+
+function isNetworkFailure(text: string): boolean {
+  return NETWORK_ERROR_MARKERS.some((m) => text.includes(m))
 }
 
 function buildTranscriptionError(error: Error, provider: string): WhisperioError {
@@ -89,13 +87,7 @@ function buildTranscriptionError(error: Error, provider: string): WhisperioError
     category = 'API_KEY_MISSING'
   } else if (statusCode === null && !responseBody.includes('API error')) {
     // No HTTP status code and not an API error — likely a network issue
-    if (
-      responseBody.includes('ECONNREFUSED') ||
-      responseBody.includes('ENOTFOUND') ||
-      responseBody.includes('ETIMEDOUT') ||
-      responseBody.includes('network') ||
-      responseBody.includes('fetch failed')
-    ) {
+    if (isNetworkFailure(responseBody)) {
       category = 'NETWORK_ERROR'
     } else {
       category = categorizeError(statusCode, responseBody)

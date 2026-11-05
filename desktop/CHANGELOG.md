@@ -2,6 +2,37 @@
 
 ## Unreleased
 
+## v1.6.1 — 2026-11-04
+
+Teal app icon, clear network error messages, and a retry for undeletable plain recordings.
+Release notes: docs/release-notes-v1.6.1.md (EN), docs/release-notes-v1.6.1.pl.md (PL).
+Platforms: Windows now (macOS separately).
+
+### App icon (PR #108)
+- App, installer, uninstaller, window and tray icons are now the teal ghost from the iOS
+  app instead of the purple one (Windows .ico, macOS .icns, Linux png set; tray uses a
+  cut-out ghost on a transparent background). Purple duplicates removed; a test guards the set.
+- Windows caches icons: the old icon can stay on the shortcut or taskbar until Explorer is
+  restarted or the user signs out and back in.
+
+### Error messages (PR #102)
+- Offline errors from Electron `net` (`net::ERR_*`) and Node (`ECONNRESET`, `EAI_AGAIN`) now
+  map to "Network error. Check your connection." instead of showing the raw code.
+- A Replicate request aborted at 55 s now says it timed out after 55s.
+
+### Erase all, history encryption off (PRs #103, #104)
+- Audio files and index backups that cannot be deleted are counted, reported ("Couldn't
+  delete N file(s). Will retry on next start.") and retried by the startup sweep. Before,
+  the index entry was dropped and the plaintext file stayed on disk unnoticed.
+
+### Network (PR #92)
+- Local-network address check judges IPv6 unique-local / link-local by value, not by text prefix.
+
+### Tests
+- Added tests for update signature and updater hooks, recordings path containment, usage and
+  failure notifications, vocabulary/settings edges, model download and Parakeet
+  (PRs #86, #87, #89-#91, #94, #97, #99-#101, #103, #105).
+
 ## v1.6.0 — 2026-11-03
 
 Opt-in encryption of history and recordings (default OFF), hold-to-talk (Windows),
