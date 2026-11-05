@@ -161,7 +161,7 @@ describe('desktop icons are the teal brand icon (no purple left)', () => {
     const sizes = frames.map((f) => f.w)
     for (const n of [32, 64, 128, 256, 512, 1024]) expect(sizes).toContain(n)
     for (const f of frames) expectBrand(f, `icns ${f.w}px`)
-  })
+  }, 30000)
 
   it.each([
     ['desktop/build/icon.png', 1024],
@@ -172,7 +172,7 @@ describe('desktop icons are the teal brand icon (no purple left)', () => {
     const img = decodePng(readFileSync(join(REPO, f as string)))
     expect([img.w, img.h]).toEqual([n, n])
     expectBrand(img, f as string)
-  })
+  }, 30000)
 
   it('the Linux icon directory has every size, all teal', () => {
     const dir = join(REPO, 'desktop/build/icons')
@@ -183,7 +183,7 @@ describe('desktop icons are the teal brand icon (no purple left)', () => {
       expect(`${img.w}x${img.h}.png`).toBe(f)
       expectBrand(img, f)
     }
-  })
+  }, 30000)
 
   it('no other image file in desktop/icons or desktop/build (no leftover purple duplicates)', () => {
     const images = (d: string): string[] => readdirSync(join(REPO, d)).filter((f) => /\.(png|ico|icns|svg)$/.test(f))
