@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="desktop/icons/whisperio_large.png" alt="Whisperio" width="128" />
+  <img src="desktop/icons/whisperio.png" alt="Whisperio" width="128" />
 </p>
 
 <h1 align="center">Whisperio</h1>

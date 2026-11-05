@@ -11,9 +11,10 @@ let updateReadyVersion: string | null = null
 let onInstallUpdate: (() => void) | null = null
 
 function getIconPath(): string {
+  // The tray uses the ghost on a transparent background (the app tile is too heavy at 16 px).
   // macOS menubar can't render Windows .ico files (comes out blank/invisible),
   // so use the PNG there; Windows keeps the .ico.
-  const file = process.platform === 'darwin' ? 'whisperio.png' : 'whisperio.ico'
+  const file = process.platform === 'darwin' ? 'tray.png' : 'tray.ico'
   if (is.dev) {
     return join(__dirname, '../../icons', file)
   }
