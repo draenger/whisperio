@@ -88,6 +88,67 @@ struct CloudKitSchemaParityTests {
             #expect(attribute.isOptional, "\(attribute.name) must be optional for CloudKit")
         }
     }
+
+    // `cloudkit/whisperio.ckdb` is what `Scripts/cloudkit-schema.sh import-dev` adds to Development
+    // (see CLOUDKIT_SCHEMA_RUNBOOK.md). It must declare every attribute of the hand-built schema as
+    // `CD_<name>` with the type NSPersistentCloudKitContainer gives it, plus `CD_entityName`, or a
+    // field added to the model would never be offered for promotion. Extra fields in the file are
+    // allowed: fields deployed to Production can never be deleted, and the export keeps them.
+    @Test func repoSchemaFileDeclaresEveryAttribute() throws {
+        let url = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("cloudkit/whisperio.ckdb")
+        let declared = Self.ckdbFields(try String(contentsOf: url, encoding: .utf8))
+        for entity in [WhisperioCloudKit.recordingEntityDescription(), WhisperioCloudKit.digestEntityDescription()] {
+            let name = entity.name ?? "?"
+            let fields = declared[name] ?? [:]
+            #expect(!fields.isEmpty, "whisperio.ckdb has no RECORD TYPE \(name)")
+            #expect(fields["CD_entityName"] == "STRING", "\(name).CD_entityName")
+            for case let attribute as NSAttributeDescription in entity.properties {
+                #expect(fields["CD_" + attribute.name] == Self.cloudKitType(attribute.attributeType),
+                        "whisperio.ckdb: \(name).CD_\(attribute.name) should be \(Self.cloudKitType(attribute.attributeType))")
+            }
+        }
+    }
+
+    @Test func ckdbParserReadsQuotedNamesFlagsAndCRLF() {
+        let text = "DEFINE SCHEMA\r\n    RECORD TYPE CD_X (\r\n        \"___recordID\" REFERENCE QUERYABLE,\r\n"
+            + "        CD_a    STRING QUERYABLE SORTABLE,\r\n        CD_b TIMESTAMP,\r\n        GRANT READ TO \"_world\"\r\n    );\r\n"
+        #expect(Self.ckdbFields(text) == ["CD_X": ["___recordID": "REFERENCE", "CD_a": "STRING", "CD_b": "TIMESTAMP"]])
+    }
+
+    /// The CloudKit field type NSPersistentCloudKitContainer mirrors a Core Data attribute type to.
+    static func cloudKitType(_ type: NSAttributeType) -> String {
+        switch type {
+        case .stringAttributeType, .UUIDAttributeType: return "STRING"
+        case .dateAttributeType: return "TIMESTAMP"
+        case .doubleAttributeType: return "DOUBLE"
+        case .binaryDataAttributeType: return "BYTES"
+        default: return "unmapped(\(type.rawValue))"
+        }
+    }
+
+    /// Record type -> field -> type, from CloudKit schema language text (`cktool export-schema`).
+    static func ckdbFields(_ text: String) -> [String: [String: String]] {
+        var out: [String: [String: String]] = [:]
+        var current: String?
+        for raw in text.split(separator: "\n") {
+            let line = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            if line.hasPrefix("RECORD TYPE ") {
+                current = line.dropFirst("RECORD TYPE ".count)
+                    .split(whereSeparator: { $0 == " " || $0 == "(" }).first.map(String.init)
+                continue
+            }
+            if line.hasPrefix(");") { current = nil; continue }
+            guard let recordType = current, !line.isEmpty, !line.hasPrefix("GRANT") else { continue }
+            let parts = line.split(whereSeparator: { $0 == " " || $0 == "\t" })
+            guard parts.count >= 2 else { continue }
+            var type = String(parts[1])
+            if type.hasSuffix(",") { type.removeLast() }
+            out[recordType, default: [:]][parts[0].replacingOccurrences(of: "\"", with: "")] = type
+        }
+        return out
+    }
 }
 }
 #endif
