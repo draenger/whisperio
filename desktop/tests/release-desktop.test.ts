@@ -173,6 +173,15 @@ describe('preflight (mocked child_process)', () => {
     const run = mk({ 'git ls-remote': { status: 0, stdout: 'tagobj\trefs/tags/v1.5.0\nabc\trefs/tags/v1.5.0^{}\n' } })
     expect(st(rel.preflight(exec, { ...base, run }), 'publish target')).toBe('ok')
   })
+  it('publish target: ls-remote queries the tag and its peeled ref explicitly', () => {
+    const run = mk({ 'git ls-remote': { status: 0, stdout: 'tagobj\trefs/tags/v1.5.0\nabc\trefs/tags/v1.5.0^{}\n' } })
+    expect(st(rel.preflight(exec, { ...base, run }), 'publish target')).toBe('ok')
+    expect(run).toHaveBeenCalledWith('git', ['ls-remote', 'origin', 'refs/tags/v1.5.0', 'refs/tags/v1.5.0^{}'])
+  })
+  it('publish target: annotated tag whose peeled line is missing (old failure shape) compares the tag object and fails', () => {
+    const run = mk({ 'git ls-remote': { status: 0, stdout: 'tagobj\trefs/tags/v1.5.0\n' } })
+    expect(st(rel.preflight(exec, { ...base, run }), 'publish target')).toBe('fail')
+  })
   it('invalid version fails', () => {
     expect(st(rel.preflight(dry, { ...base, version: 'x', run: mk() }), 'version')).toBe('fail')
   })

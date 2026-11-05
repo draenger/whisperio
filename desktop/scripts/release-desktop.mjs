@@ -146,8 +146,9 @@ export function preflight(opts, deps = {}) {
   }
 
   const localTag = run('git', ['rev-parse', '-q', '--verify', `refs/tags/${tag}`])
-  const remoteTag = out(run('git', ['ls-remote', '--tags', 'origin', tag]))
+  const remoteTag = out(run('git', ['ls-remote', 'origin', `refs/tags/${tag}`, `refs/tags/${tag}^{}`]))
   add('tag state', 'ok', `${tag}: local ${localTag.status === 0 ? 'exists' : 'absent'}, origin ${remoteTag ? 'exists' : 'absent'} (a draft has no tag; GitHub creates it on publish)`)
+  // Both refs are queried explicitly: a bare `v1.6.1` pattern never prints the peeled `^{}` line.
   // sha the origin tag points at (peeled ^{} line wins for an annotated tag), or ''.
   const tagLines = remoteTag.split(/\r?\n/).filter(Boolean)
   const remoteTagSha = ((tagLines.find((l) => l.endsWith('^{}')) ?? tagLines[0] ?? '').split(/\s+/)[0]) || ''
