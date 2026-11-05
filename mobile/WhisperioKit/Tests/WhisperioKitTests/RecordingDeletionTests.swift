@@ -17,7 +17,7 @@ struct RecordingDeletionTests {
         for suffix in ["", "-shm", "-wal"] { try? FileManager.default.removeItem(atPath: url.path + suffix) }
     }
 
-    private static func rows(_ container: ModelContainer, id: UUID) -> Int {
+    @MainActor private static func rows(_ container: ModelContainer, id: UUID) -> Int {
         let descriptor = FetchDescriptor<RecordingEntity>(predicate: #Predicate { $0.id == id })
         return (try? container.mainContext.fetchCount(descriptor)) ?? -1
     }
