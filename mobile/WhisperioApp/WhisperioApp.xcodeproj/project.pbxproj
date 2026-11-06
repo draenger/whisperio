@@ -89,6 +89,9 @@
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				AppShell.swift,
+				KeyboardSessionView.swift,
+				Engine/KeyboardDictationSessionCoordinator.swift,
+				Engine/SessionAudioCapture.swift,
 				DynamicIslandScene.swift,
 				Engine/PhoneConnectivity.swift,
 				Gallery.swift,
@@ -632,11 +635,10 @@
 				INFOPLIST_KEY_CFBundleDisplayName = Whisperio;
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
-				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Whisperio records your voice to transcribe it into text. Audio is sent to a cloud provider only if you choose one in Settings.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Whisperio records your voice for dictation. When you start a keyboard session, the microphone stays active in the background until you end it or its idle timer expires. Audio is sent to a cloud provider only if you choose one in Settings.";
 				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Whisperio uses speech recognition to turn your dictation into text. Recognition runs on your device unless you allow online recognition in Settings.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
-				INFOPLIST_KEY_UIBackgroundModes = "remote-notification";
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
@@ -672,11 +674,10 @@
 				INFOPLIST_KEY_CFBundleDisplayName = Whisperio;
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
-				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Whisperio records your voice to transcribe it into text. Audio is sent to a cloud provider only if you choose one in Settings.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Whisperio records your voice for dictation. When you start a keyboard session, the microphone stays active in the background until you end it or its idle timer expires. Audio is sent to a cloud provider only if you choose one in Settings.";
 				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Whisperio uses speech recognition to turn your dictation into text. Recognition runs on your device unless you allow online recognition in Settings.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
-				INFOPLIST_KEY_UIBackgroundModes = "remote-notification";
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";

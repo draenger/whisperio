@@ -75,9 +75,10 @@ final class WhisperioAppDelegate: NSObject, UIApplicationDelegate {
 }
 #endif
 
-enum WZScreen { case onboarding, home, recording, conversation, detail, settings, models, keyboardSetup, keyboardReturn, keyboardRewrite, presetEditor, journal, journalNew, digestDay, githubSync, digestPromptEditor, storage, recap, scratchpad }
+enum WZScreen { case onboarding, home, recording, conversation, detail, settings, models, keyboardSetup, keyboardSession, keyboardReturn, keyboardRewrite, presetEditor, journal, journalNew, digestDay, githubSync, digestPromptEditor, storage, recap, scratchpad }
 
 struct WZPhoneView: View {
+    @StateObject private var keyboardSession = KeyboardDictationSessionCoordinator()
     @Environment(\.scenePhase) private var scenePhase
     @EnvironmentObject private var settings: SettingsStore
     @EnvironmentObject private var recordings: RecordingsStore
@@ -279,6 +280,7 @@ struct WZPhoneView: View {
             SettingsView(onBack: { go(.home) }, dark: $dark,
                          openModels: { go(.models) },
                          openKeyboardSetup: { go(.keyboardSetup) },
+                         openKeyboardSession: { go(.keyboardSession) },
                          openOnboarding: { go(.onboarding) },
                          openPresetEditor: { openEditor($0 ?? Self.newPreset(), from: .settings) },
                          openGitHubSync: { go(.githubSync) },
@@ -295,6 +297,8 @@ struct WZPhoneView: View {
         case .keyboardSetup:
             // Back lands on the System page — the keyboard deep page's parent.
             KeyboardSetupView(onBack: { settingsLandingCategory = "system"; go(.settings) })
+        case .keyboardSession:
+            KeyboardSessionView(session: keyboardSession, onBack: { go(.settings) })
         case .githubSync:
             // Back lands on the sync ("Data synchronisation") page — the GitHub deep page's parent.
             GitHubSyncView(onBack: { settingsLandingCategory = "sync"; go(.settings) }, toast: showToast)
