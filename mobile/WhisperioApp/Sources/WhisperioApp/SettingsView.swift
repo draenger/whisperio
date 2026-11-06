@@ -27,6 +27,7 @@ struct SettingsView: View {
     @Binding var dark: Bool
     var openModels: () -> Void
     var openKeyboardSetup: () -> Void = {}
+    var openKeyboardSession: () -> Void = {}
     var openOnboarding: () -> Void = {}
     // Open the rewrite-preset editor — nil means "new template".
     var openPresetEditor: (RewritePreset?) -> Void = { _ in }
@@ -1676,8 +1677,22 @@ struct SettingsView: View {
                         sub: "Action Button, Back Tap, keyboard, widgets & more — step by step",
                         onTap: { showTriggerGuides = true })
                 SettRow(icon: "keyboard", label: "Whisperio keyboard",
-                        sub: "Dictate from any app — install & setup", last: true,
+                        sub: "Dictate from any app — install & setup",
                         onTap: openKeyboardSetup)
+                SettRow(icon: "mic", label: "Keyboard dictation session",
+                        sub: "Start a visible microphone session", onTap: openKeyboardSession)
+                HStack {
+                    Text("End session after idle")
+                    Spacer()
+                    Picker("End session after idle", selection: Binding(
+                        get: { KeyboardSessionStore.idleTimeoutMinutes },
+                        set: { KeyboardSessionStore.idleTimeoutMinutes = $0 })) {
+                            ForEach([1, 2, 5, 10, 15, 30], id: \.self) { minutes in
+                                Text("\(minutes) min").tag(minutes)
+                            }
+                        }
+                }
+                .padding(.horizontal, 16)
                 #else
                 SettRow(icon: "zap", label: "Global hotkeys",
                         sub: "Dictate anywhere with a system-wide shortcut",

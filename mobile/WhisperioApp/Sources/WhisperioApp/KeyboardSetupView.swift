@@ -59,7 +59,7 @@ struct KeyboardSetupView: View {
                                 explainerRow("mic", engineIsOnDevice
                                     ? "Whisperio opens and records on-device"
                                     : "Whisperio opens and records — transcribed by your cloud engine")
-                                explainerRow("arrowUR", "Swipe back — the text is inserted for you")
+                                explainerRow("arrowUR", "Start a keyboard session in Settings to dictate here without reopening Whisperio; otherwise swipe back after recording")
                             }
                             .padding(16)
                             .background(t.surface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))

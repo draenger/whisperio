@@ -14,6 +14,8 @@ final class KeyboardModel: ObservableObject {
     @Published var lastInserted: String?
     @Published var pendingRewrite: String?
     @Published var suggestions: [String] = []
+    @Published var sessionStatus = "Start session in Whisperio"
+    @Published var pendingSessionText: String?
 
     func tap(_ ch: String) {
         controller?.insert(shifted ? ch.uppercased() : ch)
@@ -27,6 +29,7 @@ final class KeyboardModel: ObservableObject {
     func nextKeyboard() { controller?.advanceToNextKeyboard() }
     func toggleShift() { shifted.toggle() }
     func mic() { controller?.startDictation() }
+    func insertSessionResult() { controller?.insertSessionResult() }
     func rewrite(presetID: String) { controller?.startRewrite(presetID: presetID) }
     func pickSuggestion(_ word: String) { controller?.applySuggestion(word) }
 }

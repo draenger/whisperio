@@ -4,12 +4,9 @@ import WhisperioKit
 
 // Whisperio custom keyboard.
 //
-// The hero is a big mic key that uses the BOUNCE-TO-APP flow: it opens the main app via
-// the `whisperio://dictate?return=keyboard` URL (requires Allow Full Access), the app
-// records + transcribes with the existing engine, writes the transcript to the shared
-// App Group, and when the user swipes back to the keyboard we read it and insert it via
-// `textDocumentProxy.insertText`. Honest about iOS: no silent background paste, the user
-// physically returns. Without Full Access we can't open the app, so we explain that state.
+// The mic signals an explicitly started, app-owned session through the App Group.
+// Without a live session it uses the existing open-app dictation flow. The keyboard
+// never owns microphone access and only inserts text while it is visible.
 //
 // Below the mic is a minimal-but-usable QWERTY so this is a real keyboard, not a stub:
 // letters, shift, delete, space, return, and the globe (next-keyboard) key.
@@ -17,6 +14,16 @@ final class KeyboardViewController: UIInputViewController {
 
     private var hosting: UIHostingController<KeyboardRootView>?
     private let model = KeyboardModel()
+    private let keyboardID = UUID()
+    private var sessionObserver: KeyboardSessionObserver?
+    private var sessionTimer: Timer?
+    private var requestID: UUID?
+    private var requestContext: String?
+    private var contextRevision = 0
+    private var requestRevision: Int?
+    private var pendingSessionResult: KeyboardSessionResult?
+    private var commandPending = false
+    private var visible = false
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -46,21 +53,40 @@ final class KeyboardViewController: UIInputViewController {
         heightConstraint.isActive = true
 
         self.hosting = host
+        sessionObserver = KeyboardSessionObserver(names: [KeyboardSessionStore.stateNotification,
+            KeyboardSessionStore.resultNotification]) { [weak self] in
+            Task { @MainActor in self?.refreshSession() }
+        }
         refreshState()
     }
 
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
+        visible = true
+        sessionTimer?.invalidate()
+        sessionTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
+            self?.refreshSession()
+        }
         // Coming back from the app (the bounce flow): pick up and insert the transcript.
         applyPendingRewriteIfAny()
         insertPendingTranscriptIfAny()
         refreshState()
+        refreshSession()
         updateSuggestions()
+    }
+
+    override func viewWillDisappear(_ animated: Bool) {
+        visible = false
+        contextRevision += 1
+        sessionTimer?.invalidate()
+        sessionTimer = nil
+        super.viewWillDisappear(animated)
     }
 
     // Recompute predictions whenever the document text changes.
     override func textDidChange(_ textInput: UITextInput?) {
         super.textDidChange(textInput)
+        contextRevision += 1
         updateSuggestions()
     }
 
@@ -70,6 +96,59 @@ final class KeyboardViewController: UIInputViewController {
         model.hasFullAccess = hasFullAccess
         model.needsGlobeKey = needsInputModeSwitchKey
         model.lastInserted = SharedStore.lastInsertedTranscript
+    }
+
+    private func refreshSession() {
+        guard visible else { return }
+        let snapshot = KeyboardSessionStore.snapshot()
+        if requestID == nil, snapshot?.phase == .done {
+            // A restarted extension may offer the durable result, but never auto-inserts it.
+            requestID = snapshot?.requestID
+            requestRevision = nil
+        }
+        if let requestID, let result = KeyboardSessionStore.result(for: requestID),
+           pendingSessionResult == nil {
+            pendingSessionResult = result
+            if requestContext != nil && requestRevision == contextRevision &&
+                requestContext == textDocumentProxy.documentContextBeforeInput {
+                insertSessionResult()
+            } else {
+                model.pendingSessionText = result.text
+            }
+        }
+        guard let snapshot, snapshot.isLive(at: Date()) else {
+            model.sessionStatus = "Start session in Whisperio"
+            commandPending = false
+            return
+        }
+        switch snapshot.phase {
+        case .sessionActive: model.sessionStatus = "Ready"
+        case .recording: model.sessionStatus = "Recording — tap mic to stop"
+        case .transcribing: model.sessionStatus = "Transcribing"
+        case .done: model.sessionStatus = "Result ready"
+        case .error: model.sessionStatus = "Dictation failed — tap mic to retry"
+        case .idle: model.sessionStatus = "Start session in Whisperio"
+        }
+        if snapshot.phase == .recording || snapshot.phase == .transcribing || snapshot.phase == .done || snapshot.phase == .error {
+            commandPending = false
+        }
+    }
+
+    func insertSessionResult() {
+        guard let result = pendingSessionResult else { return }
+        // No automatic replay after an extension restart or a changed input context.
+        pendingSessionResult = nil
+        model.pendingSessionText = nil
+        textDocumentProxy.insertText(result.text)
+        model.lastInserted = result.text
+        SharedStore.setLastInsertedTranscript(result.text)
+        requestID = nil
+        requestContext = nil
+        requestRevision = nil
+        if let snapshot = KeyboardSessionStore.snapshot(), snapshot.isLive(at: Date()) {
+            _ = KeyboardSessionStore.send(KeyboardSessionCommand(sessionID: snapshot.sessionID,
+                requestID: result.requestID, keyboardID: keyboardID, action: .ackResult))
+        }
     }
 
     private func insertPendingTranscriptIfAny() {
@@ -139,6 +218,29 @@ final class KeyboardViewController: UIInputViewController {
             model.showFullAccessHint = true
             return
         }
+        if let snapshot = KeyboardSessionStore.snapshot(), snapshot.isLive(at: Date()) {
+            guard !commandPending else { return }
+            let action: KeyboardSessionAction
+            let id: UUID
+            switch snapshot.phase {
+            case .sessionActive, .error:
+                action = .startRecording
+                id = UUID()
+                requestID = id
+                requestContext = textDocumentProxy.documentContextBeforeInput
+                requestRevision = contextRevision
+                pendingSessionResult = nil
+                model.pendingSessionText = nil
+            case .recording:
+                action = .stopRecording
+                id = snapshot.requestID ?? requestID ?? UUID()
+            default: return
+            }
+            commandPending = KeyboardSessionStore.send(KeyboardSessionCommand(sessionID: snapshot.sessionID,
+                requestID: id, keyboardID: keyboardID, action: action))
+            if !commandPending { model.sessionStatus = "Session unavailable — open Whisperio" }
+            return
+        }
         SharedStore.swipeBackExplainerShown = true
         if !openURL(SharedStore.dictateURL) {
             // Opening failed despite Full Access — tell the user instead of failing silently.
@@ -166,27 +268,13 @@ final class KeyboardViewController: UIInputViewController {
 
     // MARK: - Helpers
 
-    /// Open a URL from the keyboard extension. The only way is to walk the responder chain
-    /// to the host `UIApplication` and call the modern `open(_:options:completionHandler:)`.
-    /// (The old single-arg `openURL:` selector was removed from UIKit, so `responds(to:)`
-    /// against it now fails and nothing happens — that was the "button does nothing" bug.)
+    /// Existing open-app fallback, using UIKit's public URL API.
     @discardableResult
     private func openURL(_ url: URL) -> Bool {
         var responder: UIResponder? = self
         while let r = responder {
             if let app = r as? UIApplication {
                 app.open(url, options: [:], completionHandler: nil)
-                return true
-            }
-            responder = r.next
-        }
-        // Fallback for OS versions where UIApplication isn't reachable in the chain:
-        // try the legacy selector as a last resort.
-        let sel = sel_registerName("openURL:")
-        responder = self
-        while let r = responder {
-            if r.responds(to: sel) {
-                _ = r.perform(sel, with: url)
                 return true
             }
             responder = r.next
