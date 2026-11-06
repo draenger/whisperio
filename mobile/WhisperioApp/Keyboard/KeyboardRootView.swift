@@ -4,9 +4,8 @@ import WhisperioKit
 // Keyboard surface styled after the design source ("Whisperio Swift Keyboard.html" →
 // wz2/mob-keyboard.jsx, KeyboardScenePro): a slim top bar (globe · brand · on-device chip ·
 // round gradient mic) over bare key rows — no card wrappers — with the return key in the
-// accent color. The design's inline-dictation "listening" state is NOT implementable in a
-// keyboard extension (iOS gives extensions no microphone access), so the mic button keeps
-// the bounce-to-app flow; everything visual follows the design.
+// accent color. The keyboard signals an explicitly started app-owned microphone session;
+// without one, its mic uses the existing open-app flow.
 
 private enum KBPlane { case letters, numbers, symbols }
 
@@ -45,6 +44,15 @@ struct KeyboardRootView: View {
             background.ignoresSafeArea()
             VStack(spacing: 8) {
                 topBar
+                if let text = model.pendingSessionText {
+                    Button("Insert: \(text.prefix(40))") { model.insertSessionResult() }
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(accent)
+                } else {
+                    Text(model.sessionStatus)
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(mutedText)
+                }
                 if model.showFullAccessHint && !model.hasFullAccess {
                     fullAccessBanner
                 }
