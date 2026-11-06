@@ -102,6 +102,10 @@ export interface AppSettings {
   aiBaseUrl: string
   aiModel: string
   anthropicApiKey: string
+  /** Additive (settings:load only): which provider keys are stored + a masked hint. Raw keys are never sent to the renderer. */
+  keyStatus?: Record<string, { set: boolean; hint: string }>
+  /** Save payload only: key fields to delete explicitly. An empty key field otherwise means unchanged. */
+  clearKeys?: string[]
   launchAtStartup: boolean
   allowUrlControl: boolean
   allowUrlStart: boolean

@@ -8,7 +8,9 @@ import { loadSettings, saveSettings } from './settingsManager'
 import { applyLaunchAtStartup, handleStartupFailure } from './startupSettings'
 import {
   getEffectiveSettings,
-  saveSettingsWithKeys,
+  getRendererSettings,
+  saveSettingsFromRenderer,
+  PROVIDER_KEY_FIELDS,
   setSecureStorageWarningListener,
   migrateProviderKeysToKeyStore,
   rescueWeakLinuxKeys,
@@ -18,6 +20,7 @@ import {
   LINUX_KEYRING_WARNING
 } from './secure/keyAccessor'
 import { errName } from './secure/errName'
+import { redactKeys } from '../shared/keyMask'
 import { isEncryptionAvailable as isKeyStoreAvailable } from './secure/keyStore'
 import {
   transcribeAudio,
@@ -389,14 +392,14 @@ app.whenReady().then(() => {
       if (!w.isDestroyed()) w.webContents.send('settings:secure-storage-warning', message)
     }
   })
-  ipcMain.handle('settings:load', guard(() => getEffectiveSettings()))
+  ipcMain.handle('settings:load', guard(() => getRendererSettings()))
   ipcMain.handle('settings:save', guard((_event, incoming) => {
     // encryptHistory is owned by history:encryption:set (which proves the key works and rewrites the
     // index). The generic setter must never flip it, so drop it from whatever the renderer sent.
-    const newSettings = { ...(incoming as Parameters<typeof saveSettingsWithKeys>[0]) }
+    const newSettings = { ...(incoming as Parameters<typeof saveSettingsFromRenderer>[0]) }
     delete newSettings.encryptHistory
     const prevChecks = loadSettings().checkForUpdates !== false
-    const saved = saveSettingsWithKeys(newSettings)
+    const saved = saveSettingsFromRenderer(newSettings)
     if ('allowUrlControl' in newSettings || 'allowUrlStart' in newSettings) {
       refreshUrlSettings()
       syncProtocolRegistration()
@@ -420,7 +423,8 @@ app.whenReady().then(() => {
     ) {
       reRegisterHotkeys()
     }
-    return saved
+    // The renderer never receives a raw provider key (L2): blank them, add keyStatus.
+    return redactKeys(saved, PROVIDER_KEY_FIELDS)
   }))
   // Tells the renderer whether OS secure storage is usable, so it can show
   // an honest hint next to API key fields ("keys are encrypted..." vs.
