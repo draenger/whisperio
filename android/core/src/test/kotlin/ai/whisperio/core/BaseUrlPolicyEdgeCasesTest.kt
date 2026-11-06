@@ -1,6 +1,5 @@
 package ai.whisperio.core
 
-import org.junit.Ignore
 import java.net.InetAddress
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -124,11 +123,27 @@ class BaseUrlPolicyEdgeCasesTest {
         assertIs<BaseUrlError.InsecureHttp>(rejected("http://134744072/v1"))
     }
 
-    /** `fc::1` is 00fc::1 (outside fc00::/7) but passes the string-prefix check. */
-    @Ignore("BUG: BaseUrlPolicy.kt isLocalHost IPv6 ULA check is a string prefix, not fc00::/7")
+    /** `fc::1` is 00fc::1 and `fc0::1` is 0fc0::1: outside fc00::/7 although the text starts with fc. */
     @Test fun shortIpv6StartingWithFcIsNotUniqueLocal() {
-        assertFalse(BaseUrlPolicy.isLocalHost("fc::1"))
-        assertFalse(BaseUrlPolicy.isLocalHost("fd::1"))
+        for (h in listOf("fc::1", "fd::1", "fc0::1", "fd0::1", "fe8::1", "fe::1", "f::1")) {
+            assertFalse(BaseUrlPolicy.isLocalHost(h), h)
+            assertFalse(BaseUrlPolicy.isLocalHost("[$h]"), "[$h]")
+        }
+        for (s in listOf("http://[fc::1]/v1", "http://[fd::1]/v1", "http://[fc0::1]/v1")) {
+            assertIs<BaseUrlError.InsecureHttp>(rejected(s), s)
+        }
+    }
+
+    /** The whole fc00::/7 and fe80::/10 ranges count, judged on the numeric first hextet. */
+    @Test fun uniqueLocalAndLinkLocalRangesByValue() {
+        for (h in listOf("fc00::1", "fcff::1", "fd00::1", "fd12:3456::1", "fdff:ffff::1", "FD12::1",
+            "fe80::1", "fe9a::1", "febf::1")) {
+            assertTrue(BaseUrlPolicy.isLocalHost(h), h)
+        }
+        for (h in listOf("fe00::1", "fec0::1", "fb00::1", "ff02::1", "2001:db8::1", "::ffff:8.8.8.8", "fc000::1", "fz00::1")) {
+            assertFalse(BaseUrlPolicy.isLocalHost(h), h)
+        }
+        ok("http://[fd12:3456::1]:8080/v1")
     }
 
     /** Dotless numeric IPv4 literals are not intranet host names. */
