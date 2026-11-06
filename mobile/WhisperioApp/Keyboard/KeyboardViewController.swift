@@ -101,6 +101,11 @@ final class KeyboardViewController: UIInputViewController {
     private func refreshSession() {
         guard visible else { return }
         let snapshot = KeyboardSessionStore.snapshot()
+        if requestID == nil, snapshot?.phase == .done {
+            // A restarted extension may offer the durable result, but never auto-inserts it.
+            requestID = snapshot?.requestID
+            requestRevision = nil
+        }
         if let requestID, let result = KeyboardSessionStore.result(for: requestID),
            pendingSessionResult == nil {
             pendingSessionResult = result
