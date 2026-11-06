@@ -1,6 +1,7 @@
 import Foundation
 import AVFoundation
 import Combine
+import Speech
 import WhisperioKit
 
 @MainActor
@@ -44,6 +45,15 @@ final class KeyboardDictationSessionCoordinator: ObservableObject {
         guard granted else {
             startError = "Microphone access is required. Enable it in iOS Settings."
             return
+        }
+        if (settings.settings.providerChain.first ?? .onDevice) == .onDevice {
+            let speech = await withCheckedContinuation { (continuation: CheckedContinuation<Bool, Never>) in
+                SFSpeechRecognizer.requestAuthorization { continuation.resume(returning: $0 == .authorized) }
+            }
+            guard speech else {
+                startError = "Speech Recognition access is required for the selected on-device engine."
+                return
+            }
         }
         do {
             try capture.start()
