@@ -18,6 +18,7 @@
   "include": [
     "src/main/**/*.ts",
     "src/shared/**/*.ts",
+    "src/renderer/audio/silenceGate.ts",
     "src/preload/**/*.ts",
     "electron.vite.config.ts"
   ]
