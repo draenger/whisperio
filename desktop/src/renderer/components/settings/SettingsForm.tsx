@@ -612,6 +612,13 @@ export function SettingsForm(): ReactElement {
   const [silenceGate, setSilenceGate] = useState(false)
   const [silenceGateThresholdDbfs, setSilenceGateThresholdDbfs] = useState(-50)
   const [trimSilence, setTrimSilence] = useState(false)
+  const [continuousHotkey, setContinuousHotkey] = useState('Ctrl+Alt+Space')
+  const [continuousAutoSend, setContinuousAutoSend] = useState(true)
+  const [continuousSilenceMs, setContinuousSilenceMs] = useState(1200)
+  const [continuousMinUtteranceMs, setContinuousMinUtteranceMs] = useState(500)
+  const [continuousPinTarget, setContinuousPinTarget] = useState(false)
+  const [continuousThresholdDbfs, setContinuousThresholdDbfs] = useState(-45)
+  const [continuousEchoGuardMs, setContinuousEchoGuardMs] = useState(0)
   const [restoreClipboard, setRestoreClipboard] = useState(false)
   const [clipboardRestoreDelayMs, setClipboardRestoreDelayMs] = useState(700)
   const [inputDevices, setInputDevices] = useState<MediaDeviceOption[]>([])
@@ -663,6 +670,13 @@ export function SettingsForm(): ReactElement {
       setSilenceGate(settings.silenceGate ?? false)
       setSilenceGateThresholdDbfs(settings.silenceGateThresholdDbfs ?? -50)
       setTrimSilence(settings.trimSilence ?? false)
+      setContinuousHotkey(settings.continuousHotkey ?? 'Ctrl+Alt+Space')
+      setContinuousAutoSend(settings.continuousAutoSend ?? true)
+      setContinuousSilenceMs(settings.continuousSilenceMs ?? 1200)
+      setContinuousMinUtteranceMs(settings.continuousMinUtteranceMs ?? 500)
+      setContinuousPinTarget(settings.continuousPinTarget ?? false)
+      setContinuousThresholdDbfs(settings.continuousThresholdDbfs ?? -45)
+      setContinuousEchoGuardMs(settings.continuousEchoGuardMs ?? 0)
       setRestoreClipboard(settings.restoreClipboard ?? false)
       setClipboardRestoreDelayMs(settings.clipboardRestoreDelayMs ?? 700)
       setOutputRecordingHotkey(settings.outputRecordingHotkey ?? '')
@@ -760,6 +774,13 @@ export function SettingsForm(): ReactElement {
       silenceGate,
       silenceGateThresholdDbfs,
       trimSilence,
+      continuousHotkey,
+      continuousAutoSend,
+      continuousSilenceMs,
+      continuousMinUtteranceMs,
+      continuousPinTarget,
+      continuousThresholdDbfs,
+      continuousEchoGuardMs,
       restoreClipboard,
       clipboardRestoreDelayMs,
       outputRecordingHotkey,
@@ -803,6 +824,7 @@ export function SettingsForm(): ReactElement {
     sttApiKey, transcriptionLanguage, prompt,
     vocabulary, removedDefaultVocabulary, aiPostProcessing, launchAtStartup, allowUrlControl, allowUrlStart, checkForUpdates, dictationHotkey,
     dictateAndSendHotkey, commandHotkey, hotkeyMode, inputDeviceId, outputDeviceId, saveRecordings, silenceGate, trimSilence, silenceGateThresholdDbfs, restoreClipboard, clipboardRestoreDelayMs,
+    continuousHotkey, continuousAutoSend, continuousSilenceMs, continuousMinUtteranceMs, continuousPinTarget, continuousThresholdDbfs, continuousEchoGuardMs,
     outputRecordingHotkey, cleanupEnabled, cleanupMode, cleanupAuto, cleanupTemplates,
     aiProvider, aiBaseUrl, aiModel, anthropicApiKey,
     contextAwareTone, toneMap, windowTitlePermissionEnabled, snippets
@@ -1048,6 +1070,20 @@ export function SettingsForm(): ReactElement {
                       setSilenceGateThresholdDbfs={setSilenceGateThresholdDbfs}
                       trimSilence={trimSilence}
                       setTrimSilence={setTrimSilence}
+                      continuousHotkey={continuousHotkey}
+                      setContinuousHotkey={setContinuousHotkey}
+                      continuousAutoSend={continuousAutoSend}
+                      setContinuousAutoSend={setContinuousAutoSend}
+                      continuousSilenceMs={continuousSilenceMs}
+                      setContinuousSilenceMs={setContinuousSilenceMs}
+                      continuousMinUtteranceMs={continuousMinUtteranceMs}
+                      setContinuousMinUtteranceMs={setContinuousMinUtteranceMs}
+                      continuousPinTarget={continuousPinTarget}
+                      setContinuousPinTarget={setContinuousPinTarget}
+                      continuousThresholdDbfs={continuousThresholdDbfs}
+                      setContinuousThresholdDbfs={setContinuousThresholdDbfs}
+                      continuousEchoGuardMs={continuousEchoGuardMs}
+                      setContinuousEchoGuardMs={setContinuousEchoGuardMs}
                       setSaveRecordings={setSaveRecordings}
                       inputDevices={inputDevices}
                       outputDevices={outputDevices}
@@ -2247,6 +2283,13 @@ function AudioTab({
   silenceGate, setSilenceGate,
   silenceGateThresholdDbfs, setSilenceGateThresholdDbfs,
   trimSilence, setTrimSilence,
+  continuousHotkey, setContinuousHotkey,
+  continuousAutoSend, setContinuousAutoSend,
+  continuousSilenceMs, setContinuousSilenceMs,
+  continuousMinUtteranceMs, setContinuousMinUtteranceMs,
+  continuousPinTarget, setContinuousPinTarget,
+  continuousThresholdDbfs, setContinuousThresholdDbfs,
+  continuousEchoGuardMs, setContinuousEchoGuardMs,
   inputDevices, outputDevices,
   s, theme
 }: {
@@ -2262,6 +2305,20 @@ function AudioTab({
   setSilenceGateThresholdDbfs: (v: number) => void
   trimSilence: boolean
   setTrimSilence: (v: boolean) => void
+  continuousHotkey: string
+  setContinuousHotkey: (v: string) => void
+  continuousAutoSend: boolean
+  setContinuousAutoSend: (v: boolean) => void
+  continuousSilenceMs: number
+  setContinuousSilenceMs: (v: number) => void
+  continuousMinUtteranceMs: number
+  setContinuousMinUtteranceMs: (v: number) => void
+  continuousPinTarget: boolean
+  setContinuousPinTarget: (v: boolean) => void
+  continuousThresholdDbfs: number
+  setContinuousThresholdDbfs: (v: number) => void
+  continuousEchoGuardMs: number
+  setContinuousEchoGuardMs: (v: number) => void
   inputDevices: MediaDeviceOption[]
   outputDevices: MediaDeviceOption[]
   s: ReturnType<typeof makeStyles>
@@ -2301,6 +2358,82 @@ function AudioTab({
             <option key={d.deviceId} value={d.deviceId}>{d.label}</option>
           ))}
         </select>
+      </div>
+
+      <div style={s.card}>
+        <SectionHeader title="Tryb ciągły" s={s} theme={theme} />
+        <div style={{ fontSize: '12px', color: theme.textMuted, marginBottom: '8px' }}>
+          Nasłuch bez klikania: każda wypowiedź jest transkrybowana i wklejana do aktywnego okna.
+          Komendy głosowe: „stop nasłuch” lub „pauza” wyłącza tryb, „anuluj” kasuje ostatnią niewysłaną wypowiedź.
+          Podczas trybu ciągłego zwykłe skróty dyktowania są ignorowane.
+        </div>
+        <label style={{ display: 'block', fontSize: '13px', marginBottom: '8px' }}>
+          Skrót włączający (puste = wyłączony)
+          <input
+            type="text"
+            value={continuousHotkey}
+            onChange={(e) => setContinuousHotkey(e.target.value)}
+            placeholder="Ctrl+Alt+Space"
+            style={{ ...s.select, display: 'block', marginTop: '4px', width: '100%' }}
+          />
+        </label>
+        <ToggleRow
+          label="Auto-wyślij (Enter po wklejeniu)"
+          description="Po każdej wklejonej wypowiedzi naciska Enter"
+          checked={continuousAutoSend}
+          onChange={setContinuousAutoSend}
+          theme={theme}
+        />
+        <ToggleRow
+          label="Przypnij okno docelowe"
+          description="Wkleja tylko do okna aktywnego w chwili startu; w innym oknie wypowiedzi czekają w kolejce i wkleją się po powrocie"
+          checked={continuousPinTarget}
+          onChange={setContinuousPinTarget}
+          theme={theme}
+        />
+        <label style={{ display: 'block', fontSize: '13px', margin: '8px 0' }}>
+          Pauza kończąca wypowiedź: {continuousSilenceMs} ms
+          <input
+            type="range" min={400} max={5000} step={100}
+            value={continuousSilenceMs}
+            onChange={(e) => setContinuousSilenceMs(Math.min(5000, Math.max(400, Number(e.target.value))))}
+            aria-label="Pauza kończąca wypowiedź (ms)"
+            style={{ display: 'block', width: '100%' }}
+          />
+        </label>
+        <label style={{ display: 'block', fontSize: '13px', margin: '8px 0' }}>
+          Minimalna długość wypowiedzi: {continuousMinUtteranceMs} ms
+          <input
+            type="range" min={200} max={3000} step={50}
+            value={continuousMinUtteranceMs}
+            onChange={(e) => setContinuousMinUtteranceMs(Math.min(3000, Math.max(200, Number(e.target.value))))}
+            aria-label="Minimalna długość wypowiedzi (ms)"
+            style={{ display: 'block', width: '100%' }}
+          />
+        </label>
+        <label style={{ display: 'block', fontSize: '13px', margin: '8px 0' }}>
+          Próg głośności: {continuousThresholdDbfs} dBFS (niżej = czulej)
+          <input
+            type="range" min={-70} max={-30} step={1}
+            value={continuousThresholdDbfs}
+            onChange={(e) => setContinuousThresholdDbfs(Math.min(-30, Math.max(-70, Number(e.target.value))))}
+            aria-label="Próg głośności (dBFS)"
+            style={{ display: 'block', width: '100%' }}
+          />
+        </label>
+        <label style={{ display: 'block', fontSize: '13px', margin: '8px 0' }}>
+          Ochrona przed echem: {continuousEchoGuardMs === 0 ? 'wyłączona' : `${continuousEchoGuardMs} ms`}
+          <input
+            type="range" min={0} max={5000} step={100}
+            value={continuousEchoGuardMs}
+            onChange={(e) => setContinuousEchoGuardMs(Math.min(5000, Math.max(0, Number(e.target.value))))}
+            aria-label="Ochrona przed echem (ms)"
+            style={{ display: 'block', width: '100%' }}
+          />
+          <span style={{ fontSize: '12px', color: theme.textMuted }}>
+            Ignoruje mikrofon przez tyle ms po każdym wklejeniu (żeby nie łapać własnego wyjścia/TTS)
+          </span>
+        </label>
       </div>
 
       <div style={s.card}>

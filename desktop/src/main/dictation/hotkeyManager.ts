@@ -21,6 +21,7 @@ import { watchKeyRelease, setKeyHoldNotifier } from './keyHold'
 import { rewriteClipboardForCommand } from '../transcribe'
 import { handleCommandError, notifyInfo } from '../errorHandler'
 import { createWatchdog, onTranscriptionActivity } from './watchdog'
+import { isContinuousActive } from './continuousMode'
 
 setKeyHoldNotifier((title, body) => notifyInfo(title, body))
 
@@ -181,6 +182,8 @@ function startHoldWatch(accel: string | null, pressedAt: number): void {
 }
 
 async function activateWith(accel: string | null, sendEnter = false): Promise<void> {
+  // Continuous mode owns the mic: normal dictation hotkeys are ignored while it runs.
+  if (isContinuousActive()) return
   try {
     const pressedAt = Date.now()
     console.log(`[Whisperio] Hotkey pressed — current state: ${state}`)
@@ -247,6 +250,7 @@ async function activateAndSend(): Promise<void> {
 }
 
 async function activateOutput(): Promise<void> {
+  if (isContinuousActive()) return
   try {
     console.log(`[Whisperio] Output hotkey pressed — current state: ${state}`)
     if (state === 'idle') {
@@ -301,6 +305,7 @@ async function activateOutput(): Promise<void> {
  * `'recording'`) and what handleResult() does with the transcript differ.
  */
 async function activateCommand(): Promise<void> {
+  if (isContinuousActive()) return
   try {
     console.log(`[Whisperio] Command hotkey pressed — current state: ${state}`)
     if (state === 'idle') {

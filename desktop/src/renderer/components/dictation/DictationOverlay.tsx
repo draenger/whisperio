@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { JSX } from 'react'
 import { useDictation } from '../../hooks/useDictation'
+import { useContinuousDictation } from '../../hooks/useContinuousDictation'
 import { Ghost } from '../common/Ghost'
 
 /**
@@ -102,6 +103,8 @@ export function DictationOverlay(): JSX.Element {
   const prevMainStateRef = useRef<MainState>('idle')
   const { startRecording, startOutputRecording, stopAndTranscribe, cancelRecording, isRecording, lastWordCount } =
     useDictation()
+  // Hands-free mode shares this window (it already owns the mic); inert until main sends continuous:start.
+  useContinuousDictation()
   // Lead teal accent, sourced from tokens.css (--wsp-accent) — see useTokenColor.
   const accentTeal = useTokenColor('--wsp-accent', '#1cc8b4')
 

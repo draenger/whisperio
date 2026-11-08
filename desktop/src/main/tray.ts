@@ -5,6 +5,7 @@ import { openSettingsWindow } from './settingsWindow'
 import { loadSettings, saveSettings } from './settingsManager'
 import { buildTrayMenuTemplate } from './trayMenu'
 import { getActiveHotkey, getActiveSendHotkey } from './dictation/hotkeyManager'
+import { isContinuousActive, toggleContinuousMode } from './dictation/continuousMode'
 
 let tray: Tray | null = null
 let updateReadyVersion: string | null = null
@@ -72,6 +73,23 @@ export function createTray(): Tray {
   return tray
 }
 
+/** Called when continuous mode starts/stops: refresh checkbox + tooltip. */
+export function refreshTrayForContinuous(active: boolean): void {
+  if (!tray || tray.isDestroyed()) return
+  tray.setToolTip(active ? 'Whisperio — tryb ciągły: nasłuchuję…' : baseTooltip())
+  rebuildMenu()
+}
+
+function baseTooltip(): string {
+  const hotkey = getActiveHotkey()
+  const sendHotkey = getActiveSendHotkey()
+  let tooltip = hotkey
+    ? `Whisperio — press ${hotkey} to dictate`
+    : 'Whisperio — no hotkey registered!'
+  if (sendHotkey) tooltip += ` | ${sendHotkey} to dictate & send`
+  return tooltip
+}
+
 function rebuildMenu(): void {
   if (!tray || tray.isDestroyed()) return
   const items = buildTrayMenuTemplate({
@@ -86,6 +104,8 @@ function rebuildMenu(): void {
       saveSettings({ hotkeyMode: mode })
       rebuildMenu()
     },
+    continuousActive: isContinuousActive(),
+    onToggleContinuous: () => void toggleContinuousMode(),
     onQuit: () => app.quit()
   })
   tray.setContextMenu(Menu.buildFromTemplate(items))

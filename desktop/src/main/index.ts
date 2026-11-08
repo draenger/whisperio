@@ -3,7 +3,8 @@ import path from 'path'
 import { assertTrustedSender, isTrustedAppUrl, sanitizeRecordingUpdate } from './ipcValidation'
 import { initDictation, cleanupDictation, reRegisterHotkeys, pauseHotkeys, resumeHotkeys, cliToggle, cliSend, cliStart, cliStop, cliCancel } from './dictation'
 import { parseControlArgv, hasUrlArg, createOpenUrlHandler, createUrlDispatcher, dispatchCliCommand, shouldRegisterProtocol } from './cliControl'
-import { createTray, destroyTray } from './tray'
+import { createTray, destroyTray, refreshTrayForContinuous } from './tray'
+import { getContinuousController, setContinuousStateListener } from './dictation/continuousWiring'
 import { loadSettings, saveSettings } from './settingsManager'
 import { applyLaunchAtStartup, handleStartupFailure } from './startupSettings'
 import {
@@ -416,7 +417,8 @@ app.whenReady().then(() => {
       'dictationHotkey' in newSettings ||
       'dictateAndSendHotkey' in newSettings ||
       'outputRecordingHotkey' in newSettings ||
-      'commandHotkey' in newSettings
+      'commandHotkey' in newSettings ||
+      'continuousHotkey' in newSettings
     ) {
       reRegisterHotkeys()
     }
@@ -484,6 +486,24 @@ app.whenReady().then(() => {
     const wavBuffer = coerceWavArg(wavArg)
     const wav = wavBuffer ? { buffer: wavBuffer, filename: 'audio.wav' } : null
     return transcribeAudio(audioBuffer, filename, context, wav, { fromDictation: true })
+  }))
+
+  // Continuous (hands-free) mode: the overlay renderer owns the mic, segments
+  // utterances and sends each one here. Same provider chain / cleanup options as
+  // dictation:transcribe; the result goes to the controller, never back to the renderer.
+  ipcMain.handle('continuous:transcribe', guard(async (_event, wavData: unknown, durationMs: unknown) => {
+    const controller = getContinuousController()
+    if (!controller.isActive()) return
+    markServerUsed()
+    const wavBuffer = coerceWavArg(wavData)
+    if (!wavBuffer) return
+    const settings = loadSettings()
+    const context = settings.contextAwareTone
+      ? await getActiveContext({ includeWindowTitle: settings.windowTitlePermissionEnabled })
+      : null
+    const dur = typeof durationMs === 'number' && Number.isFinite(durationMs) ? durationMs : 0
+    const text = await transcribeAudio(wavBuffer, 'audio.wav', context, { buffer: wavBuffer, filename: 'audio.wav' }, { fromDictation: true })
+    await controller.onTranscript(typeof text === 'string' ? text : '', dur)
   }))
 
   // Renderer-reported capture failures (e.g. no usable microphone) -> toast
@@ -694,6 +714,7 @@ app.whenReady().then(() => {
 
   // Create system tray icon (replaces anchor window)
   createTray()
+  setContinuousStateListener(refreshTrayForContinuous)
 
   // Auto-update from GitHub releases
   initAutoUpdater(loadSettings().checkForUpdates !== false)

@@ -36,4 +36,17 @@ describe('buildTrayMenuTemplate', () => {
     ;(items[0] as any).click(); expect(o.onInstallUpdate).toHaveBeenCalled()
     expect(items.at(-1)!.label).toBe('Quit')
   })
+  it('omits the continuous item when no toggle is wired', () => {
+    expect(find(buildTrayMenuTemplate(opts()), /ciągły/)).toBeUndefined()
+  })
+  it('continuous item mirrors state and toggles via callback', () => {
+    const o = opts({ continuousActive: true, onToggleContinuous: vi.fn() })
+    const item = find(buildTrayMenuTemplate(o), /^Tryb ciągły \(hands-free\)$/)
+    expect(item.type).toBe('checkbox')
+    expect(item.checked).toBe(true)
+    item.click({ checked: false })
+    expect(o.onToggleContinuous).toHaveBeenCalledTimes(1)
+    const off = find(buildTrayMenuTemplate(opts({ continuousActive: false, onToggleContinuous: vi.fn() })), /ciągły/)
+    expect(off.checked).toBe(false)
+  })
 })

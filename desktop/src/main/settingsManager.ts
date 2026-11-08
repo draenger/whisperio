@@ -172,6 +172,20 @@ export interface AppSettings {
   /** Voiced-frame threshold in dBFS, clamped to -70..-30 (lower = more sensitive). */
   silenceGateThresholdDbfs: number
   trimSilence: boolean
+  /** Continuous (hands-free) mode: toggle hotkey; '' = off. */
+  continuousHotkey: string
+  /** Press Enter after each pasted utterance. */
+  continuousAutoSend: boolean
+  /** Pause (ms, 400..5000) that ends an utterance. */
+  continuousSilenceMs: number
+  /** Shortest utterance (ms, 200..3000) that is transcribed. */
+  continuousMinUtteranceMs: number
+  /** Pin the window active at start; paste only there, queue otherwise. */
+  continuousPinTarget: boolean
+  /** Voiced-frame threshold in dBFS for continuous mode (same -70..-30 clamp). */
+  continuousThresholdDbfs: number
+  /** Ignore mic input for this many ms (0..5000, 0 = off) after each paste/Enter. */
+  continuousEchoGuardMs: number
   // Opt-in: after auto-paste, put the user's previous clipboard back (only if
   // the clipboard still holds the dictated text). See dictation/clipboardRestore.ts.
   restoreClipboard: boolean
@@ -349,6 +363,13 @@ const DEFAULT_SETTINGS: AppSettings = {
   silenceGate: false,
   silenceGateThresholdDbfs: -50,
   trimSilence: false,
+  continuousHotkey: 'Ctrl+Alt+Space',
+  continuousAutoSend: true,
+  continuousSilenceMs: 1200,
+  continuousMinUtteranceMs: 500,
+  continuousPinTarget: false,
+  continuousThresholdDbfs: -45,
+  continuousEchoGuardMs: 0,
   restoreClipboard: false,
   clipboardRestoreDelayMs: 700,
   outputRecordingHotkey: '',
@@ -534,6 +555,18 @@ export function clampSilenceGateThreshold(v: unknown): number {
   return Math.min(-30, Math.max(-70, n))
 }
 
+function clampInt(v: unknown, min: number, max: number, def: number): number {
+  const n = typeof v === 'number' ? v : Number.NaN
+  if (!Number.isFinite(n)) return def
+  return Math.min(max, Math.max(min, Math.round(n)))
+}
+
+export function clampContinuousThreshold(v: unknown): number {
+  const n = typeof v === 'number' ? v : Number.NaN
+  if (!Number.isFinite(n)) return -45
+  return Math.min(-30, Math.max(-70, n))
+}
+
 export function loadSettings(): AppSettings {
   const filePath = getSettingsPath()
   if (!existsSync(filePath)) {
@@ -567,6 +600,13 @@ export function loadSettings(): AppSettings {
   merged.clipboardRestoreDelayMs = clampRestoreDelay(merged.clipboardRestoreDelayMs)
   if (merged.hotkeyMode !== 'toggle' && merged.hotkeyMode !== 'hold') merged.hotkeyMode = 'toggle'
   merged.silenceGateThresholdDbfs = clampSilenceGateThreshold(merged.silenceGateThresholdDbfs)
+  merged.continuousHotkey = typeof merged.continuousHotkey === 'string' ? merged.continuousHotkey : DEFAULT_SETTINGS.continuousHotkey
+  merged.continuousAutoSend = typeof merged.continuousAutoSend === 'boolean' ? merged.continuousAutoSend : true
+  merged.continuousPinTarget = merged.continuousPinTarget === true
+  merged.continuousSilenceMs = clampInt(merged.continuousSilenceMs, 400, 5000, 1200)
+  merged.continuousMinUtteranceMs = clampInt(merged.continuousMinUtteranceMs, 200, 3000, 500)
+  merged.continuousThresholdDbfs = clampContinuousThreshold(merged.continuousThresholdDbfs)
+  merged.continuousEchoGuardMs = clampInt(merged.continuousEchoGuardMs, 0, 5000, 0)
   // Snippets migration: pre-snippets files have no key -> [] (fresh array, not
   // the shared default); a hand-edited non-array or bad entries are filtered.
   merged.snippets = sanitizeSnippets(merged.snippets)

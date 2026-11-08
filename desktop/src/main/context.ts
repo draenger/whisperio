@@ -98,3 +98,19 @@ export function resolveToneProfile(
   }
   return 'neutral'
 }
+
+/**
+ * Identity of the foreground window for continuous-mode target pinning.
+ * `id` combines the owning process id and the window id so two windows of the
+ * same app (or a recycled window id) are told apart. Never reads the title;
+ * fail-soft: null on any error.
+ */
+export async function getActiveWindowRef(): Promise<{ id: string; owner?: string } | null> {
+  try {
+    const win = await activeWindow({ accessibilityPermission: false, screenRecordingPermission: false })
+    if (!win) return null
+    return { id: `${win.owner?.processId ?? 0}:${win.id}`, owner: win.owner?.name }
+  } catch {
+    return null
+  }
+}

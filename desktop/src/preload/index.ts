@@ -8,6 +8,28 @@ export interface OverlayInfo {
   recordingType: 'input' | 'output'
 }
 
+export interface ContinuousConfig {
+  continuousAutoSend: boolean
+  continuousSilenceMs: number
+  continuousMinUtteranceMs: number
+  continuousPinTarget: boolean
+  continuousThresholdDbfs: number
+  continuousEchoGuardMs: number
+}
+
+export interface ContinuousStateEvent {
+  active: boolean
+  /** When set: ignore mic input for this many ms (own paste/Enter just happened). */
+  echoGuardMs?: number
+}
+
+export interface ContinuousAPI {
+  onStart: (callback: (config: ContinuousConfig) => void) => () => void
+  onStop: (callback: () => void) => () => void
+  onState: (callback: (state: ContinuousStateEvent) => void) => () => void
+  transcribe: (wavData: ArrayBuffer, durationMs: number) => Promise<void>
+}
+
 export interface DictationAPI {
   onActivate: (callback: (sessionId?: number) => void) => () => void
   onActivateOutput: (callback: (sessionId?: number) => void) => () => void
@@ -126,6 +148,13 @@ export interface AppSettings {
   silenceGate: boolean
   silenceGateThresholdDbfs: number
   trimSilence: boolean
+  continuousHotkey: string
+  continuousAutoSend: boolean
+  continuousSilenceMs: number
+  continuousMinUtteranceMs: number
+  continuousPinTarget: boolean
+  continuousThresholdDbfs: number
+  continuousEchoGuardMs: number
   outputRecordingHotkey: string
   fallbackEnabled: boolean
   experimentalParakeet: boolean
@@ -460,6 +489,7 @@ export interface HistoryEncryptionProgress {
 
 export interface WhisperioAPI {
   dictation: DictationAPI
+  continuous: ContinuousAPI
   settings: SettingsAPI
   recordings: RecordingsAPI
   history: HistoryAPI
@@ -535,6 +565,32 @@ const dictationApi: DictationAPI = {
     ipcRenderer.invoke('dictation:error', title, body),
   transcribe: (audioData: ArrayBuffer, filename: string, wavData?: ArrayBuffer | null) =>
     ipcRenderer.invoke('dictation:transcribe', Buffer.from(audioData), filename, wavData ? Buffer.from(wavData) : null)
+}
+
+const continuousApi: ContinuousAPI = {
+  onStart: (callback) => {
+    const handler = (_event: Electron.IpcRendererEvent, config: ContinuousConfig): void => callback(config)
+    ipcRenderer.on('continuous:start', handler)
+    return () => {
+      ipcRenderer.removeListener('continuous:start', handler)
+    }
+  },
+  onStop: (callback) => {
+    const handler = (): void => callback()
+    ipcRenderer.on('continuous:stop', handler)
+    return () => {
+      ipcRenderer.removeListener('continuous:stop', handler)
+    }
+  },
+  onState: (callback) => {
+    const handler = (_event: Electron.IpcRendererEvent, state: ContinuousStateEvent): void => callback(state)
+    ipcRenderer.on('continuous:state', handler)
+    return () => {
+      ipcRenderer.removeListener('continuous:state', handler)
+    }
+  },
+  transcribe: (wavData: ArrayBuffer, durationMs: number) =>
+    ipcRenderer.invoke('continuous:transcribe', Buffer.from(wavData), durationMs)
 }
 
 const settingsApi: SettingsAPI = {
@@ -686,6 +742,7 @@ const conversationApi: ConversationAPI = {
 
 contextBridge.exposeInMainWorld('api', {
   dictation: dictationApi,
+  continuous: continuousApi,
   settings: settingsApi,
   recordings: recordingsApi,
   history: historyApi,

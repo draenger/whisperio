@@ -95,6 +95,13 @@ const DEFAULT_SETTINGS = {
   silenceGate: false,
   silenceGateThresholdDbfs: -50,
   trimSilence: false,
+  continuousHotkey: 'Ctrl+Alt+Space',
+  continuousAutoSend: true,
+  continuousSilenceMs: 1200,
+  continuousMinUtteranceMs: 500,
+  continuousPinTarget: false,
+  continuousThresholdDbfs: -45,
+  continuousEchoGuardMs: 0,
   restoreClipboard: false,
   clipboardRestoreDelayMs: 700,
   outputRecordingHotkey: '',
@@ -743,5 +750,41 @@ describe('silenceGate defaults and threshold clamp', () => {
     expect(loadWith({ silenceGateThresholdDbfs: 0 }).silenceGateThresholdDbfs).toBe(-30)
     expect(loadWith({ silenceGateThresholdDbfs: 'loud' }).silenceGateThresholdDbfs).toBe(-50)
     expect(loadWith({ silenceGateThresholdDbfs: null }).silenceGateThresholdDbfs).toBe(-50)
+  })
+})
+
+describe('continuous mode settings defaults and clamps', () => {
+  function loadWith(obj: unknown): AppSettings {
+    mockExistsSync.mockReturnValue(true)
+    mockReadFileSync.mockReturnValue(JSON.stringify(obj))
+    return loadSettings()
+  }
+  it('defaults when absent', () => {
+    const r = loadWith({})
+    expect(r.continuousHotkey).toBe('Ctrl+Alt+Space')
+    expect(r.continuousAutoSend).toBe(true)
+    expect(r.continuousSilenceMs).toBe(1200)
+    expect(r.continuousMinUtteranceMs).toBe(500)
+    expect(r.continuousPinTarget).toBe(false)
+    expect(r.continuousThresholdDbfs).toBe(-45)
+    expect(r.continuousEchoGuardMs).toBe(0)
+  })
+  it('clamps silence, min utterance, echo guard and threshold', () => {
+    expect(loadWith({ continuousSilenceMs: 10 }).continuousSilenceMs).toBe(400)
+    expect(loadWith({ continuousSilenceMs: 99999 }).continuousSilenceMs).toBe(5000)
+    expect(loadWith({ continuousSilenceMs: 'x' }).continuousSilenceMs).toBe(1200)
+    expect(loadWith({ continuousMinUtteranceMs: 1 }).continuousMinUtteranceMs).toBe(200)
+    expect(loadWith({ continuousMinUtteranceMs: 9000 }).continuousMinUtteranceMs).toBe(3000)
+    expect(loadWith({ continuousEchoGuardMs: -5 }).continuousEchoGuardMs).toBe(0)
+    expect(loadWith({ continuousEchoGuardMs: 60000 }).continuousEchoGuardMs).toBe(5000)
+    expect(loadWith({ continuousThresholdDbfs: -120 }).continuousThresholdDbfs).toBe(-70)
+    expect(loadWith({ continuousThresholdDbfs: 0 }).continuousThresholdDbfs).toBe(-30)
+    expect(loadWith({ continuousThresholdDbfs: null }).continuousThresholdDbfs).toBe(-45)
+  })
+  it('keeps an empty hotkey (off) and rejects non-boolean flags', () => {
+    const r = loadWith({ continuousHotkey: '', continuousAutoSend: 'yes', continuousPinTarget: 'true' })
+    expect(r.continuousHotkey).toBe('')
+    expect(r.continuousAutoSend).toBe(true)
+    expect(r.continuousPinTarget).toBe(false)
   })
 })

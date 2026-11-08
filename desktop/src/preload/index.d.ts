@@ -6,6 +6,28 @@ export interface OverlayInfo {
   recordingType: 'input' | 'output'
 }
 
+export interface ContinuousConfig {
+  continuousAutoSend: boolean
+  continuousSilenceMs: number
+  continuousMinUtteranceMs: number
+  continuousPinTarget: boolean
+  continuousThresholdDbfs: number
+  continuousEchoGuardMs: number
+}
+
+export interface ContinuousStateEvent {
+  active: boolean
+  /** When set: ignore mic input for this many ms (own paste/Enter just happened). */
+  echoGuardMs?: number
+}
+
+export interface ContinuousAPI {
+  onStart: (callback: (config: ContinuousConfig) => void) => () => void
+  onStop: (callback: () => void) => () => void
+  onState: (callback: (state: ContinuousStateEvent) => void) => () => void
+  transcribe: (wavData: ArrayBuffer, durationMs: number) => Promise<void>
+}
+
 export interface DictationAPI {
   onActivate: (callback: (sessionId?: number) => void) => () => void
   onActivateOutput: (callback: (sessionId?: number) => void) => () => void
@@ -118,6 +140,13 @@ export interface AppSettings {
   silenceGate: boolean
   silenceGateThresholdDbfs: number
   trimSilence: boolean
+  continuousHotkey: string
+  continuousAutoSend: boolean
+  continuousSilenceMs: number
+  continuousMinUtteranceMs: number
+  continuousPinTarget: boolean
+  continuousThresholdDbfs: number
+  continuousEchoGuardMs: number
   restoreClipboard: boolean
   clipboardRestoreDelayMs: number
   outputRecordingHotkey: string
@@ -447,6 +476,7 @@ export interface HistoryEncryptionProgress {
 
 export interface WhisperioAPI {
   dictation: DictationAPI
+  continuous: ContinuousAPI
   settings: SettingsAPI
   recordings: RecordingsAPI
   history: HistoryAPI
