@@ -12,6 +12,7 @@ export interface TrayMenuOptions {
   /** Continuous (hands-free) mode state + toggle; item is omitted when no toggle is wired. */
   continuousActive?: boolean
   onToggleContinuous?: () => void
+  onPinWindow: () => void
   onQuit: () => void
 }
 
@@ -47,6 +48,7 @@ export function buildTrayMenuTemplate(o: TrayMenuOptions): MenuItemConstructorOp
           }
         ] as MenuItemConstructorOptions[])
       : []),
+    { label: 'Przypnij bieżące okno (przycisk słuchawek)', click: () => o.onPinWindow() },
     { type: 'separator' },
     { label: 'Quit', click: () => o.onQuit() }
   )

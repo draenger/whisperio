@@ -106,7 +106,11 @@ function createOverlayForDisplay(display: Electron.Display): BrowserWindow {
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true,
-      sandbox: false
+      sandbox: false,
+      // Headset-button cue tones play from this (usually hidden) window with no user gesture.
+      autoplayPolicy: 'no-user-gesture-required',
+      // Continuous mode captures the mic here while the window may be hidden: never throttle timers/audio.
+      backgroundThrottling: false
     }
   })
 

@@ -3,6 +3,7 @@ import { registerHotkey, unregisterHotkey, getActiveHotkey, reRegisterHotkeys as
 import { ensureAccessibilityPermission } from './autoPaste'
 import { flushPendingClipboardRestore } from './clipboardRestore'
 import { registerContinuousHotkey, unregisterContinuousHotkey } from './continuousWiring'
+import { reapplyHeadsetButton } from './headsetButtonRuntime'
 
 export { pauseHotkeys, resumeHotkeys, cliToggle, cliSend, cliStart, cliStop, cliCancel }
 
@@ -10,6 +11,7 @@ export { pauseHotkeys, resumeHotkeys, cliToggle, cliSend, cliStart, cliStop, cli
 export function reRegisterHotkeys(): void {
   reRegisterNormalHotkeys()
   registerContinuousHotkey()
+  reapplyHeadsetButton()
 }
 
 export function initDictation(): void {

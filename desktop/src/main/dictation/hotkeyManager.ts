@@ -22,6 +22,8 @@ import { rewriteClipboardForCommand } from '../transcribe'
 import { handleCommandError, notifyInfo } from '../errorHandler'
 import { createWatchdog, onTranscriptionActivity } from './watchdog'
 import { isContinuousActive } from './continuousMode'
+import { playCue } from './buttonCues'
+import { getFocusController } from './focusTarget'
 
 setKeyHoldNotifier((title, body) => notifyInfo(title, body))
 
@@ -104,6 +106,52 @@ let sendEnterForSession: number | null = null
  * insert. Read (and reset) by handleResult() below, set by activateCommand(). */
 let activeSessionIsCommand = false
 
+/** Session id started by the headset button (null = none). Bound to a session id like sendEnterForSession. */
+let buttonSessionId: number | null = null
+/** True while the first press is still starting the session (overlay load is async). */
+let buttonStarting = false
+
+function isButtonSession(): boolean {
+  return buttonSessionId !== null && buttonSessionId === currentSessionId
+}
+
+/**
+ * Headset button press: a toggle over the dictate-and-send session. First press
+ * pins the paste target + starts recording (+ start cue); second press stops and
+ * transcribes immediately; presses while transcribing/pasting only give a 'held'
+ * cue (never force-reset: the user cannot see the screen).
+ */
+export async function buttonToggle(): Promise<void> {
+  if (buttonStarting) return
+  // Continuous mode owns the mic and the paste target; a button press must not start a competing session.
+  if (isContinuousActive()) {
+    playCue('held')
+    return
+  }
+  if (state === 'idle') {
+    buttonStarting = true
+    try {
+      const focus = getFocusController()
+      if (loadSettings().buttonAutoPin !== false || !focus.getPinned()) {
+        await focus.pinForeground()
+      }
+      await activateWith(null, true)
+      if (getState() === 'recording') {
+        buttonSessionId = currentSessionId
+        playCue('start')
+      } else {
+        playCue('error')
+      }
+    } finally {
+      buttonStarting = false
+    }
+  } else if (state === 'recording') {
+    await activateWith(null, isButtonSession())
+  } else {
+    playCue('held')
+  }
+}
+
 /** Safety timer — resets from 'transcribing' if no result comes back */
 // Watchdog (not a fixed timer): transcribe.ts notes activity as each provider
 // attempt / cleanup starts, which extends the idle window; an absolute cap
@@ -111,6 +159,7 @@ let activeSessionIsCommand = false
 const transcribeWatchdog = createWatchdog({
   onFire: (reason) => {
     if (state !== 'transcribing') return
+    if (isButtonSession()) playCue('error')
     console.error(`[Whisperio] Transcription watchdog fired (${reason}) — force-resetting to idle`)
     // Invalidate so a result that arrives after this is dropped
     // rather than auto-pasted into whatever now has focus.
@@ -417,12 +466,15 @@ async function handleResult(
     return
   }
   const shouldSend = sendEnterForSession !== null && sendEnterForSession === currentSessionId
+  const isButton = isButtonSession()
+  buttonSessionId = null
   sendEnterForSession = null
   const isCommand = activeSessionIsCommand
   activeSessionIsCommand = false
   unregisterEscape()
   if (!text || !text.trim()) {
     if (reason === 'silent') notifyInfo('Whisperio', 'Nothing heard — recording was silent')
+    if (isButton) playCue('error')
     setState('idle')
     hideOverlay()
     restoreTargetWindow()
@@ -436,6 +488,15 @@ async function handleResult(
     setState('pasting')
     hideOverlay()
     restoreTargetWindow()
+    if (isButton && !(await getFocusController().restore())) {
+      // Headset flow: the user is not looking at the screen. Never paste (or
+      // press Enter) into an unverified window — keep the text on the clipboard.
+      clipboard.writeText(text.trim())
+      console.warn('[Whisperio] Pinned window could not be re-focused — not pasting, text left on clipboard')
+      playCue('error')
+      notifyInfo('Whisperio', 'Could not return to the pinned window — text is on the clipboard')
+      return
+    }
     await autoPaste(text.trim())
     if (shouldSend) {
       // Small delay so the paste lands before Enter
@@ -443,8 +504,10 @@ async function handleResult(
       sendEnter()
       console.log('[Whisperio] Sent Enter after paste (dictate-and-send)')
     }
+    if (isButton) playCue('sent')
   } catch (err) {
     console.error('[Whisperio] Error during paste:', err)
+    if (isButton) playCue('error')
   } finally {
     setState('idle')
   }

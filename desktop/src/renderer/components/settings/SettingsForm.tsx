@@ -10,6 +10,7 @@ import { ContextTonePanel, type ToneProfileId } from './ContextTonePanel'
 import { SnippetsPanel, type SnippetEntry } from './SnippetsPanel'
 import { UsagePanel } from './UsagePanel'
 import { PrivacyPanel } from './PrivacyPanel'
+import { HeadsetButtonPanel } from './HeadsetButtonPanel'
 import { KeyStorageHint } from './KeyStorageHint'
 
 // Derived from the global window.api typings (preload) without a cross-project import
@@ -2841,6 +2842,7 @@ function HotkeysTab({
           Click Change to record a hotkey. Press and release keys to set. Escape or Cancel to abort.
         </span>
       </div>
+      <HeadsetButtonPanel s={s} theme={theme} />
     </>
   )
 }

@@ -6,6 +6,7 @@ import { loadSettings } from '../settingsManager'
 import { getActiveWindowRef } from '../context'
 import { autoPaste, sendEnter } from './autoPaste'
 import { sendToPrimaryOverlay } from './overlayWindow'
+import { playCue } from './buttonCues'
 import {
   ContinuousController,
   registerContinuousController,
@@ -33,9 +34,15 @@ export function getContinuousController(): ContinuousController {
     controller = new ContinuousController({
       getSettings: readSettings,
       getActiveWindow: getActiveWindowRef,
-      paste: (text) => autoPaste(text),
+      paste: async (text) => {
+        await autoPaste(text)
+        playCue('sent')
+      },
       sendEnter: () => sendEnter(),
-      beep: () => shell.beep(),
+      beep: () => {
+        shell.beep()
+        playCue('held')
+      },
       notifyRenderer: (msg) => {
         if (msg.channel === 'continuous:start') sendToPrimaryOverlay('continuous:start', msg.settings)
         else if (msg.channel === 'continuous:stop') sendToPrimaryOverlay('continuous:stop')
