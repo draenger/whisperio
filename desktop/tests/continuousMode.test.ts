@@ -201,4 +201,37 @@ describe('ContinuousController', () => {
     await Promise.all([p1, p2])
     expect(events.filter((e) => e.startsWith('paste'))).toEqual(['paste:first spoken line', 'paste:second spoken line'])
   })
+
+  it('a failing paste is logged and does not break the queue for the next transcript', async () => {
+    const log = vi.fn()
+    let fail = true
+    const pasted: string[] = []
+    const c = new ContinuousController({
+      getSettings: () => ({ continuousAutoSend: false, continuousSilenceMs: 1200, continuousMinUtteranceMs: 500,
+        continuousPinTarget: false, continuousThresholdDbfs: -45, continuousEchoGuardMs: 0 }),
+      getActiveWindow: async () => WIN_A,
+      paste: async (t) => { if (fail) { fail = false; throw new Error('clipboard busy') } pasted.push(t) },
+      sendEnter: () => {}, beep: () => {}, notifyRenderer: () => {}, log
+    })
+    await c.start()
+    await c.onTranscript('first sentence here', 2000)
+    expect(log).toHaveBeenCalledWith(expect.stringContaining('paste failed: clipboard busy'))
+    await c.onTranscript('second sentence here', 2000)
+    expect(pasted).toEqual(['second sentence here'])
+  })
+
+  it('drain timer stops itself once the queue was emptied by cancel', async () => {
+    const { c, events, setActive } = setup({ continuousPinTarget: true })
+    await c.start()
+    setActive(WIN_B)
+    await c.onTranscript('held item here', 2000)
+    expect(c.queued).toHaveLength(1)
+    await c.onTranscript('anuluj', 800)
+    expect(c.queued).toEqual([])
+    await flush(3000)
+    setActive(WIN_A)
+    await flush(3000)
+    expect(events.filter((e) => e.startsWith('paste:'))).toEqual([])
+    expect(vi.getTimerCount()).toBe(0)
+  })
 })

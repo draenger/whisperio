@@ -9,12 +9,32 @@ vi.mock('active-win', () => ({
   default: (...args: unknown[]) => mockActiveWindow(...args)
 }))
 
-import { getActiveContext, resolveToneProfile, type DictationContext } from '../src/main/context'
+import { getActiveContext, getActiveWindowRef, resolveToneProfile, type DictationContext } from '../src/main/context'
 import type { ToneProfileId } from '../src/main/llm/prompts'
 
 describe('context.ts', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+  })
+
+  describe('getActiveWindowRef', () => {
+    it('builds id as "<pid>:<windowId>" and never reads the title', async () => {
+      mockActiveWindow.mockResolvedValue({ id: 4242, title: 'secret', owner: { name: 'Code', processId: 77 } })
+      const ref = await getActiveWindowRef()
+      expect(ref).toEqual({ id: '77:4242', owner: 'Code' })
+      expect(JSON.stringify(ref)).not.toContain('secret')
+      expect(mockActiveWindow.mock.calls[0][0]).toEqual({ accessibilityPermission: false, screenRecordingPermission: false })
+    })
+    it('falls back to pid 0 when owner is missing', async () => {
+      mockActiveWindow.mockResolvedValue({ id: 5 })
+      expect(await getActiveWindowRef()).toEqual({ id: '0:5', owner: undefined })
+    })
+    it('is null when there is no window or active-win throws', async () => {
+      mockActiveWindow.mockResolvedValue(undefined)
+      expect(await getActiveWindowRef()).toBeNull()
+      mockActiveWindow.mockRejectedValue(new Error('x'))
+      expect(await getActiveWindowRef()).toBeNull()
+    })
   })
 
   describe('getActiveContext', () => {

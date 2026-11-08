@@ -26,6 +26,9 @@ export default defineConfig({
         'src/main/recordingsWindow.ts',
         'src/main/dictation/index.ts',
         'src/main/dictation/overlayWindow.ts',
+        // Thin Electron wiring (globalShortcut/ipcMain/BrowserWindow/session HID permission); the decision
+        // logic lives in headsetButton.ts / buttonTrigger.ts, which are unit-tested.
+        'src/main/dictation/headsetButtonRuntime.ts',
         // Electron-runtime-only: safeStorage/Keychain, net, shell — exercised via
         // manual/smoke testing. The pure crypto core (secretCrypto.ts) IS tested.
         'src/main/secretVault.ts',

@@ -59,4 +59,16 @@ describe('buildTrayMenuTemplate', () => {
     expect(o.onPinWindow).toHaveBeenCalledTimes(1)
     expect(o.onQuit).not.toHaveBeenCalled()
   })
+  it('settings / recordings / quit items call exactly their own callback', () => {
+    const o = opts()
+    const items = buildTrayMenuTemplate(o) as any[]
+    find(items, /^Settings$/).click()
+    expect(o.onOpenSettings).toHaveBeenCalledTimes(1)
+    find(items, /^Recordings$/).click()
+    expect(o.onOpenRecordings).toHaveBeenCalledTimes(1)
+    find(items, /^Quit$/).click()
+    expect(o.onQuit).toHaveBeenCalledTimes(1)
+    expect(o.onOpenSettings).toHaveBeenCalledTimes(1)
+    expect(o.onInstallUpdate).not.toHaveBeenCalled()
+  })
 })
