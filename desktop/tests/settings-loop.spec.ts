@@ -46,7 +46,8 @@ const SETTINGS_UI_FILES = [
   path.join(DESKTOP_ROOT, 'src/renderer/components/settings/CleanupPanel.tsx'),
   path.join(DESKTOP_ROOT, 'src/renderer/components/settings/ModelPicker.tsx'),
   path.join(DESKTOP_ROOT, 'src/renderer/components/settings/UsagePanel.tsx'),
-  path.join(DESKTOP_ROOT, 'src/renderer/components/settings/PrivacyPanel.tsx')
+  path.join(DESKTOP_ROOT, 'src/renderer/components/settings/PrivacyPanel.tsx'),
+  path.join(DESKTOP_ROOT, 'src/renderer/components/settings/HeadsetButtonPanel.tsx')
 ].filter((f) => fs.existsSync(f))
 
 // theme/accentColor are the one pair whose actual save-on-change control
