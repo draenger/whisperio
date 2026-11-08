@@ -14,6 +14,7 @@ export interface DictationAPI {
   onDeactivate: (callback: (sessionId: number) => void) => () => void
   onCancel: (callback: () => void) => () => void
   onStateChanged: (callback: (state: string) => void) => () => void
+  onCue: (callback: (kind: 'start' | 'sent' | 'error' | 'held') => void) => () => void
   onOverlayInfo: (callback: (info: OverlayInfo) => void) => () => void
   sendResult: (text: string, sessionId?: number, reason?: 'silent') => Promise<void>
   reportError?: (title: string, body: string) => Promise<void>
@@ -114,6 +115,11 @@ export interface AppSettings {
   // doc comment. Empty string = disabled.
   commandHotkey: string
   hotkeyMode: 'toggle' | 'hold'
+  buttonTrigger: ButtonTriggerDto | null
+  buttonTriggerSwallow: boolean
+  buttonAction: 'dictate-and-send' | 'continuous-toggle'
+  buttonAutoPin: boolean
+  soundCues: boolean
   restoreClipboard: boolean
   clipboardRestoreDelayMs: number
   theme: 'dark' | 'light'
@@ -458,6 +464,49 @@ export interface HistoryEncryptionProgress {
   total: number
 }
 
+export type ButtonTriggerDto =
+  | { kind: 'accelerator'; accelerator: string }
+  | { kind: 'hid'; vendorId: number; productId: number; reportId: number; pattern: number[]; mask: number[] }
+  | { kind: 'appcommand'; id: number }
+
+export interface LearnEventDto {
+  source: 'keyboard' | 'hid'
+  key?: string
+  code?: string
+  keyCode?: number
+  vendorId?: number
+  productId?: number
+  usagePage?: number
+  usage?: number
+  reportId?: number
+  data?: number[]
+}
+
+export type LearnResultDto =
+  | { ok: true; trigger: ButtonTriggerDto; description: string }
+  | { ok: false; reason: 'timeout' | 'cancelled'; message: string }
+
+export interface HidDeviceChoice {
+  deviceId: string
+  name: string
+  vendorId: number
+  productId: number
+}
+
+export interface ButtonAPI {
+  learnStart: () => Promise<boolean>
+  learnCancel: () => void
+  sendLearnEvent: (ev: LearnEventDto) => void
+  onLearnResult: (cb: (r: LearnResultDto) => void) => () => void
+  clear: () => Promise<void>
+  getLog: () => Promise<string[]>
+  pinCurrent: () => Promise<void>
+  hidReport: (r: { vendorId: number; productId: number; reportId: number; data: number[] }) => void
+  onConfigChanged: (cb: () => void) => () => void
+  onHidSelectRequest: (cb: (devices: HidDeviceChoice[]) => void) => () => void
+  hidSelectReply: (deviceId: string | null) => void
+}
+
 export interface WhisperioAPI {
   dictation: DictationAPI
   settings: SettingsAPI
@@ -473,6 +522,7 @@ export interface WhisperioAPI {
   usage: UsageAPI
   context: ContextAPI
   conversation: ConversationAPI
+  button: ButtonAPI
 }
 
 const dictationApi: DictationAPI = {
@@ -507,6 +557,15 @@ const dictationApi: DictationAPI = {
     ipcRenderer.on('dictation:cancel', callback)
     return () => {
       ipcRenderer.removeListener('dictation:cancel', callback)
+    }
+  },
+  onCue: (callback) => {
+    const handler = (_event: Electron.IpcRendererEvent, kind: 'start' | 'sent' | 'error' | 'held'): void => {
+      callback(kind)
+    }
+    ipcRenderer.on('cue:play', handler)
+    return () => {
+      ipcRenderer.removeListener('cue:play', handler)
     }
   },
   onStateChanged: (callback: (state: string) => void) => {
@@ -684,6 +743,32 @@ const conversationApi: ConversationAPI = {
     ipcRenderer.invoke('conversation:save', Buffer.from(audioData), metadata)
 }
 
+const buttonApi: ButtonAPI = {
+  learnStart: () => ipcRenderer.invoke('button:learn-start'),
+  learnCancel: () => ipcRenderer.send('button:learn-cancel'),
+  sendLearnEvent: (ev) => ipcRenderer.send('button:learn-event', ev),
+  onLearnResult: (cb) => {
+    const h = (_e: Electron.IpcRendererEvent, r: LearnResultDto): void => cb(r)
+    ipcRenderer.on('button:learn-result', h)
+    return () => ipcRenderer.removeListener('button:learn-result', h)
+  },
+  clear: () => ipcRenderer.invoke('button:clear'),
+  getLog: () => ipcRenderer.invoke('button:get-log'),
+  pinCurrent: () => ipcRenderer.invoke('button:pin-current'),
+  hidReport: (r) => ipcRenderer.send('button:hid-report', r),
+  onConfigChanged: (cb) => {
+    const h = (): void => cb()
+    ipcRenderer.on('button:config-changed', h)
+    return () => ipcRenderer.removeListener('button:config-changed', h)
+  },
+  onHidSelectRequest: (cb) => {
+    const h = (_e: Electron.IpcRendererEvent, d: HidDeviceChoice[]): void => cb(d)
+    ipcRenderer.on('hid:select-request', h)
+    return () => ipcRenderer.removeListener('hid:select-request', h)
+  },
+  hidSelectReply: (id) => ipcRenderer.send('hid:select-reply', id)
+}
+
 contextBridge.exposeInMainWorld('api', {
   dictation: dictationApi,
   settings: settingsApi,
@@ -699,4 +784,5 @@ contextBridge.exposeInMainWorld('api', {
   usage: usageApi,
   context: contextApi,
   conversation: conversationApi,
+  button: buttonApi,
 })

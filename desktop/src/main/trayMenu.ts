@@ -9,6 +9,7 @@ export interface TrayMenuOptions {
   onOpenSettings: () => void
   onOpenRecordings: () => void
   onSetHotkeyMode: (mode: HotkeyMode) => void
+  onPinWindow: () => void
   onQuit: () => void
 }
 
@@ -34,6 +35,7 @@ export function buildTrayMenuTemplate(o: TrayMenuOptions): MenuItemConstructorOp
           click: (item) => o.onSetHotkeyMode(item.checked ? 'hold' : 'toggle')
         }
       : { label: 'Hold to talk (not available on Linux)', type: 'checkbox', checked: false, enabled: false },
+    { label: 'Przypnij bieżące okno (przycisk słuchawek)', click: () => o.onPinWindow() },
     { type: 'separator' },
     { label: 'Quit', click: () => o.onQuit() }
   )

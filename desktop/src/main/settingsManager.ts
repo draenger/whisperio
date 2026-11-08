@@ -7,6 +7,7 @@ import { join } from 'path'
 // ToneProfileId + its human-readable descriptions (Work Item B).
 import type { ToneProfileId } from './llm/prompts'
 import { sanitizeSnippets, type Snippet } from './snippets'
+import { sanitizeButtonTrigger, sanitizeButtonAction, type ButtonTrigger, type ButtonAction } from './buttonTrigger'
 
 export type ProviderId =
   | 'openai'
@@ -159,6 +160,16 @@ export interface AppSettings {
   // start, press again to stop; 'hold' = record while held, release to
   // transcribe (dictation/keyHold.ts; falls back to toggle where unsupported).
   hotkeyMode: 'toggle' | 'hold'
+  // Headset button (Jabra etc.): learned trigger (null = feature off), whether
+  // the key is consumed (globalShortcut; required for keyboard/media keys —
+  // there is no non-consuming global key observer), the action it performs,
+  // whether each first press re-pins the active window as paste target, and
+  // short WebAudio confirmation tones.
+  buttonTrigger: ButtonTrigger | null
+  buttonTriggerSwallow: boolean
+  buttonAction: ButtonAction
+  buttonAutoPin: boolean
+  soundCues: boolean
   // 'violet-legacy' (added in STEP0 theming wiring) was removed from the
   // product in VIOLET-OUT — see migrateLegacyTheme() below, which maps any
   // saved 'violet-legacy' value back to 'dark' on load.
@@ -341,6 +352,11 @@ const DEFAULT_SETTINGS: AppSettings = {
   dictateAndSendHotkey: '',
   commandHotkey: 'Ctrl+Shift+C',
   hotkeyMode: 'toggle',
+  buttonTrigger: null,
+  buttonTriggerSwallow: false,
+  buttonAction: 'dictate-and-send',
+  buttonAutoPin: true,
+  soundCues: true,
   theme: 'dark',
   accentColor: 'blue',
   inputDeviceId: '',
@@ -534,6 +550,15 @@ export function clampSilenceGateThreshold(v: unknown): number {
   return Math.min(-30, Math.max(-70, n))
 }
 
+/** Clamp/validate the headset-button fields of a merged settings object (in place). */
+export function normalizeButtonSettings(m: AppSettings): void {
+  m.buttonTrigger = sanitizeButtonTrigger(m.buttonTrigger)
+  m.buttonAction = sanitizeButtonAction(m.buttonAction)
+  m.buttonTriggerSwallow = m.buttonTriggerSwallow === true
+  m.buttonAutoPin = m.buttonAutoPin !== false
+  m.soundCues = m.soundCues !== false
+}
+
 export function loadSettings(): AppSettings {
   const filePath = getSettingsPath()
   if (!existsSync(filePath)) {
@@ -567,6 +592,7 @@ export function loadSettings(): AppSettings {
   merged.clipboardRestoreDelayMs = clampRestoreDelay(merged.clipboardRestoreDelayMs)
   if (merged.hotkeyMode !== 'toggle' && merged.hotkeyMode !== 'hold') merged.hotkeyMode = 'toggle'
   merged.silenceGateThresholdDbfs = clampSilenceGateThreshold(merged.silenceGateThresholdDbfs)
+  normalizeButtonSettings(merged)
   // Snippets migration: pre-snippets files have no key -> [] (fresh array, not
   // the shared default); a hand-edited non-array or bad entries are filtered.
   merged.snippets = sanitizeSnippets(merged.snippets)
@@ -577,6 +603,7 @@ export function saveSettings(settings: Partial<AppSettings>): AppSettings {
   const current = loadSettings()
   if (settingsUnavailable) throw new SettingsUnavailableError()
   const merged = { ...current, ...settings }
+  normalizeButtonSettings(merged)
   const filePath = getSettingsPath()
   // Durable atomic write: temp file -> fsync -> rename over settings.json.
   // A crash/power loss leaves the previous, valid file or the complete new one.

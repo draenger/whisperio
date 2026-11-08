@@ -2,6 +2,7 @@ import { app, BrowserWindow, desktopCapturer, dialog, ipcMain, Notification, pow
 import path from 'path'
 import { assertTrustedSender, isTrustedAppUrl, sanitizeRecordingUpdate } from './ipcValidation'
 import { initDictation, cleanupDictation, reRegisterHotkeys, pauseHotkeys, resumeHotkeys, cliToggle, cliSend, cliStart, cliStop, cliCancel } from './dictation'
+import { initHeadsetButton, applyHeadsetButton, installHidAccess, disposeHeadsetButton } from './dictation/headsetButtonRuntime'
 import { parseControlArgv, hasUrlArg, createOpenUrlHandler, createUrlDispatcher, dispatchCliCommand, shouldRegisterProtocol } from './cliControl'
 import { createTray, destroyTray } from './tray'
 import { loadSettings, saveSettings } from './settingsManager'
@@ -292,7 +293,7 @@ app.whenReady().then(() => {
   // Fail closed for any other origin so a future remote/iframe navigation can't
   // silently obtain mic access.
   session.defaultSession.setPermissionRequestHandler((webContents, permission, callback) => {
-    if (permission === 'media' && isInternalUrl(webContents?.getURL())) {
+    if ((permission === 'media' || (permission as string) === 'hid') && isInternalUrl(webContents?.getURL())) {
       callback(true)
     } else {
       callback(false)
@@ -300,15 +301,15 @@ app.whenReady().then(() => {
   })
 
   session.defaultSession.setPermissionCheckHandler((webContents, permission, requestingOrigin) => {
-    if (permission !== 'media') return false
+    if (permission !== 'media' && permission !== 'hid') return false
     // Prefer the live webContents URL; fall back to the requesting origin.
     const url = webContents?.getURL() || requestingOrigin
     return isInternalUrl(url)
   })
 
-  // The app uses no WebHID/WebSerial/WebUSB — deny all device permissions
-  // rather than the previous fail-open `() => true`.
-  session.defaultSession.setDevicePermissionHandler(() => false)
+  // WebHID is used ONLY by the headset-button feature (our own windows); every
+  // other device class (serial/USB) and every foreign origin stays denied.
+  installHidAccess(session.defaultSession, isInternalUrl)
 
   // Block any attempt to navigate a window to an external origin, or to open a
   // new window — defence in depth so untrusted content can never gain a
@@ -419,6 +420,18 @@ app.whenReady().then(() => {
       'commandHotkey' in newSettings
     ) {
       reRegisterHotkeys()
+    }
+    // reRegisterHotkeys() unregisters ALL global shortcuts, including the headset button's.
+    if (
+      'buttonTrigger' in newSettings ||
+      'buttonTriggerSwallow' in newSettings ||
+      'buttonAction' in newSettings ||
+      'dictationHotkey' in newSettings ||
+      'dictateAndSendHotkey' in newSettings ||
+      'outputRecordingHotkey' in newSettings ||
+      'commandHotkey' in newSettings
+    ) {
+      applyHeadsetButton()
     }
     return saved
   }))
@@ -691,6 +704,7 @@ app.whenReady().then(() => {
 
   // Initialize Whisperio dictation (overlay + hotkey)
   initDictation()
+  initHeadsetButton()
 
   // Create system tray icon (replaces anchor window)
   createTray()
@@ -719,6 +733,7 @@ app.on('before-quit', () => {
   void shutdownParakeet()
   // Don't leave the managed whisper-server holding RAM and port 8178.
   stopServer()
+  disposeHeadsetButton()
   cleanupDictation()
   destroyTray()
 })

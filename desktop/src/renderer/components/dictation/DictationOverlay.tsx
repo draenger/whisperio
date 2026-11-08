@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import type { JSX } from 'react'
 import { useDictation } from '../../hooks/useDictation'
+import { useHeadsetHid } from '../../hooks/useHeadsetHid'
+import { playCueSound } from '../../audio/cues'
 import { Ghost } from '../common/Ghost'
 
 /**
@@ -102,6 +104,9 @@ export function DictationOverlay(): JSX.Element {
   const prevMainStateRef = useRef<MainState>('idle')
   const { startRecording, startOutputRecording, stopAndTranscribe, cancelRecording, isRecording, lastWordCount } =
     useDictation()
+  // Headset button: observe HID reports for the saved trigger + play confirmation tones (this window is always alive).
+  useHeadsetHid()
+  useEffect(() => window.api.dictation.onCue(playCueSound), [])
   // Lead teal accent, sourced from tokens.css (--wsp-accent) — see useTokenColor.
   const accentTeal = useTokenColor('--wsp-accent', '#1cc8b4')
 

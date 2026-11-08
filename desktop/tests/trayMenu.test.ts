@@ -5,7 +5,7 @@ function opts(over: Partial<TrayMenuOptions> = {}): TrayMenuOptions {
   return {
     platform: 'win32', hotkeyMode: 'toggle', updateReadyVersion: null,
     onInstallUpdate: vi.fn(), onOpenSettings: vi.fn(), onOpenRecordings: vi.fn(),
-    onSetHotkeyMode: vi.fn(), onQuit: vi.fn(), ...over
+    onSetHotkeyMode: vi.fn(), onPinWindow: vi.fn(), onQuit: vi.fn(), ...over
   }
 }
 const find = (items: any[], re: RegExp) => items.find((i) => re.test(i.label ?? ''))
@@ -35,5 +35,15 @@ describe('buildTrayMenuTemplate', () => {
     expect(items[0].label).toBe('Restart to update (v1.2.3)')
     ;(items[0] as any).click(); expect(o.onInstallUpdate).toHaveBeenCalled()
     expect(items.at(-1)!.label).toBe('Quit')
+  })
+  it('has a pin-current-window item (before Quit) wired to onPinWindow', () => {
+    const o = opts()
+    const items = buildTrayMenuTemplate(o)
+    const idx = items.findIndex((i) => /Przypnij bieżące okno/.test(i.label ?? ''))
+    expect(idx).toBeGreaterThan(-1)
+    expect(idx).toBeLessThan(items.length - 1)
+    ;(items[idx] as any).click()
+    expect(o.onPinWindow).toHaveBeenCalledTimes(1)
+    expect(o.onQuit).not.toHaveBeenCalled()
   })
 })

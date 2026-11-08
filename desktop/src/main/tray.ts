@@ -4,6 +4,7 @@ import { is } from '@electron-toolkit/utils'
 import { openSettingsWindow } from './settingsWindow'
 import { loadSettings, saveSettings } from './settingsManager'
 import { buildTrayMenuTemplate } from './trayMenu'
+import { pinCurrentWindowSoon } from './dictation/headsetButtonRuntime'
 import { getActiveHotkey, getActiveSendHotkey } from './dictation/hotkeyManager'
 
 let tray: Tray | null = null
@@ -86,6 +87,7 @@ function rebuildMenu(): void {
       saveSettings({ hotkeyMode: mode })
       rebuildMenu()
     },
+    onPinWindow: () => pinCurrentWindowSoon(),
     onQuit: () => app.quit()
   })
   tray.setContextMenu(Menu.buildFromTemplate(items))

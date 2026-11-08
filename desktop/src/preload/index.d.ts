@@ -12,6 +12,7 @@ export interface DictationAPI {
   onDeactivate: (callback: (sessionId: number) => void) => () => void
   onCancel: (callback: () => void) => () => void
   onStateChanged: (callback: (state: string) => void) => () => void
+  onCue: (callback: (kind: 'start' | 'sent' | 'error' | 'held') => void) => () => void
   onOverlayInfo: (callback: (info: OverlayInfo) => void) => () => void
   sendResult: (text: string, sessionId?: number, reason?: 'silent') => Promise<void>
   transcribe: (audioData: ArrayBuffer, filename: string, wavData?: ArrayBuffer | null) => Promise<string>
@@ -108,6 +109,11 @@ export interface AppSettings {
   dictateAndSendHotkey: string
   commandHotkey: string
   hotkeyMode: 'toggle' | 'hold'
+  buttonTrigger: ButtonTriggerDto | null
+  buttonTriggerSwallow: boolean
+  buttonAction: 'dictate-and-send' | 'continuous-toggle'
+  buttonAutoPin: boolean
+  soundCues: boolean
   theme: 'dark' | 'light'
   /** Internal: app version the Linux basic_text warning was last shown for (no UI control). */
   linuxKeyringWarningShownFor: string
@@ -445,6 +451,49 @@ export interface HistoryEncryptionProgress {
   total: number
 }
 
+export type ButtonTriggerDto =
+  | { kind: 'accelerator'; accelerator: string }
+  | { kind: 'hid'; vendorId: number; productId: number; reportId: number; pattern: number[]; mask: number[] }
+  | { kind: 'appcommand'; id: number }
+
+export interface LearnEventDto {
+  source: 'keyboard' | 'hid'
+  key?: string
+  code?: string
+  keyCode?: number
+  vendorId?: number
+  productId?: number
+  usagePage?: number
+  usage?: number
+  reportId?: number
+  data?: number[]
+}
+
+export type LearnResultDto =
+  | { ok: true; trigger: ButtonTriggerDto; description: string }
+  | { ok: false; reason: 'timeout' | 'cancelled'; message: string }
+
+export interface HidDeviceChoice {
+  deviceId: string
+  name: string
+  vendorId: number
+  productId: number
+}
+
+export interface ButtonAPI {
+  learnStart: () => Promise<boolean>
+  learnCancel: () => void
+  sendLearnEvent: (ev: LearnEventDto) => void
+  onLearnResult: (cb: (r: LearnResultDto) => void) => () => void
+  clear: () => Promise<void>
+  getLog: () => Promise<string[]>
+  pinCurrent: () => Promise<void>
+  hidReport: (r: { vendorId: number; productId: number; reportId: number; data: number[] }) => void
+  onConfigChanged: (cb: () => void) => () => void
+  onHidSelectRequest: (cb: (devices: HidDeviceChoice[]) => void) => () => void
+  hidSelectReply: (deviceId: string | null) => void
+}
+
 export interface WhisperioAPI {
   dictation: DictationAPI
   settings: SettingsAPI
@@ -460,6 +509,7 @@ export interface WhisperioAPI {
   usage: UsageAPI
   context: ContextAPI
   conversation: ConversationAPI
+  button: ButtonAPI
 }
 
 declare global {

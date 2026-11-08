@@ -11,6 +11,10 @@ function getIconPath(): string {
   return join(process.resourcesPath, 'icons/whisperio.ico')
 }
 
+export function getSettingsWindow(): BrowserWindow | null {
+  return settingsWin && !settingsWin.isDestroyed() ? settingsWin : null
+}
+
 export function openSettingsWindow(initialTab?: string): void {
   if (settingsWin && !settingsWin.isDestroyed()) {
     if (initialTab) {
