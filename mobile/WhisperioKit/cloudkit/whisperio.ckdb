@@ -1,0 +1,61 @@
+DEFINE SCHEMA
+
+    RECORD TYPE CD_DigestEntity (
+        CD_date               TIMESTAMP QUERYABLE SORTABLE,
+        CD_dayKey             STRING QUERYABLE SEARCHABLE SORTABLE,
+        CD_entityName         STRING QUERYABLE SEARCHABLE SORTABLE,
+        CD_groupsData         BYTES,
+        CD_modifiedAt         TIMESTAMP QUERYABLE SORTABLE,
+        CD_recordingIDsData   BYTES,
+        CD_summary            STRING QUERYABLE SEARCHABLE SORTABLE,
+        CD_summaryGeneratedAt TIMESTAMP QUERYABLE SORTABLE,
+        "___createTime"       TIMESTAMP,
+        "___createdBy"        REFERENCE,
+        "___etag"             STRING,
+        "___modTime"          TIMESTAMP,
+        "___modifiedBy"       REFERENCE,
+        "___recordID"         REFERENCE,
+        GRANT WRITE TO "_creator",
+        GRANT CREATE TO "_icloud",
+        GRANT READ TO "_world"
+    );
+
+    RECORD TYPE CD_RecordingEntity (
+        CD_category         STRING QUERYABLE SEARCHABLE SORTABLE,
+        CD_duration         DOUBLE QUERYABLE SORTABLE,
+        CD_entityName       STRING QUERYABLE SEARCHABLE SORTABLE,
+        CD_error            STRING QUERYABLE SEARCHABLE SORTABLE,
+        CD_filename         STRING QUERYABLE SEARCHABLE SORTABLE,
+        CD_id               STRING QUERYABLE SEARCHABLE SORTABLE,
+        CD_modifiedAt       TIMESTAMP QUERYABLE SORTABLE,
+        CD_providerRaw      STRING QUERYABLE SEARCHABLE SORTABLE,
+        CD_render           STRING QUERYABLE SEARCHABLE SORTABLE,
+        CD_renderPresetID   STRING QUERYABLE SEARCHABLE SORTABLE,
+        CD_segmentsData     BYTES,
+        CD_source           STRING,
+        CD_speakerNamesData BYTES,
+        CD_statusRaw        STRING QUERYABLE SEARCHABLE SORTABLE,
+        CD_timestamp        TIMESTAMP QUERYABLE SORTABLE,
+        CD_transcription    STRING QUERYABLE SEARCHABLE SORTABLE,
+        "___createTime"     TIMESTAMP,
+        "___createdBy"      REFERENCE,
+        "___etag"           STRING,
+        "___modTime"        TIMESTAMP,
+        "___modifiedBy"     REFERENCE,
+        "___recordID"       REFERENCE,
+        GRANT WRITE TO "_creator",
+        GRANT CREATE TO "_icloud",
+        GRANT READ TO "_world"
+    );
+
+    RECORD TYPE Users (
+        "___createTime" TIMESTAMP,
+        "___createdBy"  REFERENCE,
+        "___etag"       STRING,
+        "___modTime"    TIMESTAMP,
+        "___modifiedBy" REFERENCE,
+        "___recordID"   REFERENCE,
+        roles           LIST<INT64>,
+        GRANT WRITE TO "_creator",
+        GRANT READ TO "_world"
+    );

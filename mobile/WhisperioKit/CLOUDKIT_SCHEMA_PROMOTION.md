@@ -81,6 +81,7 @@ Tests: `Scripts/tests/test-preflight.sh`.
 
 ## Cross-references
 
+- [CLOUDKIT_SCHEMA_RUNBOOK.md](CLOUDKIT_SCHEMA_RUNBOOK.md) — the step-by-step for a PENDING row (in Polish): `Scripts/cloudkit-schema.sh plan` → `import-dev` (Development only, built from the live export plus the missing fields of `cloudkit/whisperio.ckdb`) → the single Console click → `verify-prod`.
 - `CloudKitSchema.swift` — the hand-built schema + `initializeSchemaForDevelopment()`; its doc
   comment carries the same four-step release note this file expands on.
 - `CloudKitSchemaParityTests.swift` — headless test that fails CI the moment the hand-built schema
