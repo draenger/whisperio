@@ -1,0 +1,3 @@
+# False positives, one gitleaks fingerprint per line (commit:file:rule:line). Never add a real key here: rotate it.
+# Fake "testKey" constant of an offline HTTP stub test (no real provider is called).
+8d9be031ae35dbc75224080b03c544f316d1b7b0:mobile/WhisperioKit/Tests/WhisperioKitTests/ProviderKeyValidatorHTTPTests.swift:generic-api-key:9
