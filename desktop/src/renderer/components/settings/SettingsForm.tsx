@@ -11,6 +11,7 @@ import { SnippetsPanel, type SnippetEntry } from './SnippetsPanel'
 import { UsagePanel } from './UsagePanel'
 import { PrivacyPanel } from './PrivacyPanel'
 import { KeyStorageHint } from './KeyStorageHint'
+import { KeyInput, KeyStatusContext, type KeyStatusEntry } from './KeyInput'
 
 // Derived from the global window.api typings (preload) without a cross-project import
 type UpdaterState = Awaited<ReturnType<Window['api']['updater']['getStatus']>>
@@ -532,6 +533,9 @@ export function SettingsForm(): ReactElement {
   // window stuck on "Loading..." forever (setLoading(false) never ran because
   // it lived inside the .then()). See the retry screen below the loading guard.
   const [loadError, setLoadError] = useState(false)
+  // Raw provider keys never reach the renderer: main returns '' for them plus this additive
+  // keyStatus (set flag + masked hint). Inputs below hold only what the user typed this session.
+  const [keyStatus, setKeyStatus] = useState<Record<string, KeyStatusEntry>>({})
   const [saved, setSaved] = useState(false)
   const [saveError, setSaveError] = useState(false)
   const [appVersion, setAppVersion] = useState('')
@@ -631,6 +635,7 @@ export function SettingsForm(): ReactElement {
     setLoadError(false)
     return window.api.settings.load().then((loaded) => {
       const settings = loaded as SettingsWithCleanup
+      setKeyStatus((loaded as { keyStatus?: Record<string, KeyStatusEntry> }).keyStatus ?? {})
       setSttProvider(settings.sttProvider ?? 'openai')
       setProviderChain(settings.providerChain ?? [settings.sttProvider ?? 'openai'])
       setApiKey(settings.openaiApiKey ?? '')
@@ -792,6 +797,22 @@ export function SettingsForm(): ReactElement {
     ).then(() => true, () => false)
     setSaveError(!ok)
     if (!ok) return
+    // Typed keys are now stored in main: drop them from the renderer and show the saved mask.
+    const typed: Array<[string, string, (v: string) => void]> = [
+      ['openaiApiKey', apiKey, setApiKey], ['elevenlabsApiKey', elevenlabsApiKey, setElevenlabsApiKey],
+      ['replicateApiKey', replicateApiKey, setReplicateApiKey], ['groqApiKey', groqApiKey, setGroqApiKey],
+      ['deepgramApiKey', deepgramApiKey, setDeepgramApiKey], ['assemblyaiApiKey', assemblyaiApiKey, setAssemblyaiApiKey],
+      ['mistralApiKey', mistralApiKey, setMistralApiKey], ['sttApiKey', sttApiKey, setSttApiKey],
+      ['anthropicApiKey', anthropicApiKey, setAnthropicApiKey]
+    ]
+    const sent = typed.filter(([, v]) => v !== '')
+    if (sent.length > 0) {
+      for (const [, v, set] of sent) set('')
+      void window.api.settings.load().then(
+        (l) => setKeyStatus((l as { keyStatus?: Record<string, KeyStatusEntry> }).keyStatus ?? {}),
+        () => undefined
+      )
+    }
     setSaved(true)
     // Saved pulse duration per docs/design/wz-shell-excerpts.jsx's auto-save
     // affordance contract (1400ms) — the footer flips back to the resting
@@ -823,6 +844,18 @@ export function SettingsForm(): ReactElement {
 
   const s = makeStyles(theme)
 
+  // Explicit clear of a stored key (an empty input alone means "unchanged" in main).
+  const keyCtx = {
+    status: keyStatus,
+    clearKey: (field: string): void => {
+      void window.api.settings
+        .save({ clearKeys: [field] } as unknown as Parameters<Window['api']['settings']['save']>[0])
+        .then(() => window.api.settings.load())
+        .then((l) => setKeyStatus((l as { keyStatus?: Record<string, KeyStatusEntry> }).keyStatus ?? {}))
+        .catch(() => setSaveError(true))
+    }
+  }
+
   if (loading) {
     return (
       <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', background: theme.bg }}>
@@ -850,6 +883,7 @@ export function SettingsForm(): ReactElement {
   }
 
   return (
+    <KeyStatusContext.Provider value={keyCtx}>
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', background: theme.bg }}>
       <TitleBar title={activeTab === 'recordings' ? 'Whisperio Recordings' : 'Whisperio Settings'} />
 
@@ -1114,6 +1148,7 @@ export function SettingsForm(): ReactElement {
         </div>
       </div>
     </div>
+    </KeyStatusContext.Provider>
   )
 }
 
@@ -1458,13 +1493,7 @@ export function SelfhostedSettings({
           <label style={{ ...s.label, marginTop: '8px' }}>Model Name</label>
           <input type="text" value={whisperModel} onChange={(e) => setWhisperModel(e.target.value)} placeholder="whisper-1" style={s.input} />
           <label style={{ ...s.label, marginTop: '8px' }}>API Key (optional)</label>
-          <input
-            type="password"
-            value={sttApiKey}
-            onChange={(e) => setSttApiKey(e.target.value)}
-            placeholder="Bearer token, if your server requires one"
-            style={s.input}
-          />
+          <KeyInput field="sttApiKey" value={sttApiKey} onChange={setSttApiKey} placeholder="Bearer token, if your server requires one" s={s} theme={theme} />
           <span style={s.hint}>Bearer token for your private STT server. Leave blank if it doesn&apos;t require auth.</span>
           <KeyStorageHint s={s} />
         </>
@@ -1966,7 +1995,7 @@ function ProvidersTab({
                     {provider.id === 'openai' && (
                       <>
                         <label style={s.label}>API Key</label>
-                        <input type="password" value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder="sk-..." style={s.input} />
+                        <KeyInput field="openaiApiKey" value={apiKey} onChange={setApiKey} placeholder="sk-..." s={s} theme={theme} />
                         <KeyStorageHint s={s} />
                         <label style={{ ...s.label, marginTop: '8px' }}>Transcription Prompt</label>
                         <textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} rows={2} style={s.textarea} />
@@ -1975,7 +2004,7 @@ function ProvidersTab({
                     {provider.id === 'elevenlabs' && (
                       <>
                         <label style={s.label}>API Key</label>
-                        <input type="password" value={elevenlabsApiKey} onChange={(e) => setElevenlabsApiKey(e.target.value)} placeholder="xi-..." style={s.input} />
+                        <KeyInput field="elevenlabsApiKey" value={elevenlabsApiKey} onChange={setElevenlabsApiKey} placeholder="xi-..." s={s} theme={theme} />
                         <KeyStorageHint s={s} />
                       </>
                     )}
@@ -1994,13 +2023,7 @@ function ProvidersTab({
                     {provider.id === 'replicate' && (
                       <>
                         <label style={s.label}>API Key</label>
-                        <input
-                          type="password"
-                          value={replicateApiKey}
-                          onChange={(e) => setReplicateApiKey(e.target.value)}
-                          placeholder="r8_..."
-                          style={s.input}
-                        />
+                        <KeyInput field="replicateApiKey" value={replicateApiKey} onChange={setReplicateApiKey} placeholder="r8_..." s={s} theme={theme} />
                         <span style={s.hint}>Shared with the AI Cleanup Replicate provider below — one key, both uses.</span>
                         <KeyStorageHint s={s} />
                         <label style={{ ...s.label, marginTop: '8px' }}>Model</label>
@@ -2017,52 +2040,28 @@ function ProvidersTab({
                     {provider.id === 'groq' && (
                       <>
                         <label style={s.label}>API Key</label>
-                        <input
-                          type="password"
-                          value={groqApiKey}
-                          onChange={(e) => setGroqApiKey(e.target.value)}
-                          placeholder="gsk_..."
-                          style={s.input}
-                        />
+                        <KeyInput field="groqApiKey" value={groqApiKey} onChange={setGroqApiKey} placeholder="gsk_..." s={s} theme={theme} />
                         <KeyStorageHint s={s} />
                       </>
                     )}
                     {provider.id === 'deepgram' && (
                       <>
                         <label style={s.label}>API Key</label>
-                        <input
-                          type="password"
-                          value={deepgramApiKey}
-                          onChange={(e) => setDeepgramApiKey(e.target.value)}
-                          placeholder="dg_..."
-                          style={s.input}
-                        />
+                        <KeyInput field="deepgramApiKey" value={deepgramApiKey} onChange={setDeepgramApiKey} placeholder="dg_..." s={s} theme={theme} />
                         <KeyStorageHint s={s} />
                       </>
                     )}
                     {provider.id === 'assemblyai' && (
                       <>
                         <label style={s.label}>API Key</label>
-                        <input
-                          type="password"
-                          value={assemblyaiApiKey}
-                          onChange={(e) => setAssemblyaiApiKey(e.target.value)}
-                          placeholder="aai_..."
-                          style={s.input}
-                        />
+                        <KeyInput field="assemblyaiApiKey" value={assemblyaiApiKey} onChange={setAssemblyaiApiKey} placeholder="aai_..." s={s} theme={theme} />
                         <KeyStorageHint s={s} />
                       </>
                     )}
                     {provider.id === 'mistral' && (
                       <>
                         <label style={s.label}>API Key</label>
-                        <input
-                          type="password"
-                          value={mistralApiKey}
-                          onChange={(e) => setMistralApiKey(e.target.value)}
-                          placeholder="api key..."
-                          style={s.input}
-                        />
+                        <KeyInput field="mistralApiKey" value={mistralApiKey} onChange={setMistralApiKey} placeholder="api key..." s={s} theme={theme} />
                         <KeyStorageHint s={s} />
                       </>
                     )}
